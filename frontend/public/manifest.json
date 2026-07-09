@@ -1,0 +1,20 @@
+{
+  "name": "myNutri",
+  "short_name": "myNutri",
+  "description": "Personal Arabic nutrition tracker",
+  "start_url": "/diary",
+  "scope": "/",
+  "display": "standalone",
+  "dir": "rtl",
+  "lang": "ar",
+  "background_color": "#f7f8f3",
+  "theme_color": "#0f766e",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

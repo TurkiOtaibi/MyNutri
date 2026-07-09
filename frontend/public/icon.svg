@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="myNutri">
+  <rect width="128" height="128" rx="24" fill="#0f766e"/>
+  <circle cx="64" cy="66" r="34" fill="#f7f8f3"/>
+  <path d="M36 68c20 20 42 22 58 0-20-5-39-5-58 0Z" fill="#86efac"/>
+  <path d="M61 35c12 7 19 16 20 29-12-4-20-13-20-29Z" fill="#fbbf24"/>
+  <path d="M48 52c7-13 17-21 32-22-4 16-15 24-32 22Z" fill="#22c55e"/>
+  <path d="M36 94h56" stroke="#17211b" stroke-width="8" stroke-linecap="round"/>
+</svg>
