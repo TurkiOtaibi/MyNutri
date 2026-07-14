@@ -1,8 +1,11 @@
 import type {
   DiaryEntryInput,
   DiaryEntryResponse,
+  MealType,
   FoodInput,
+  FoodListResponse,
   FoodResponse,
+  FoodSort,
   ProfileInput,
   ProfileResponse,
   TargetResponse,
@@ -15,7 +18,8 @@ const API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN ?? "dev-token";
 export class ApiError extends Error {
   constructor(
     message: string,
-    public status: number
+    public status: number,
+    public detail?: unknown
   ) {
     super(message);
   }
@@ -42,13 +46,15 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
   if (!response.ok) {
     let message = `API request failed with ${response.status}`;
+    let detail: unknown = undefined;
     try {
-      const body = (await response.json()) as { detail?: string };
-      message = body.detail ?? message;
+      const body = (await response.json()) as { detail?: string | unknown };
+      detail = body.detail;
+      message = typeof body.detail === "string" ? body.detail : message;
     } catch {
       // Keep the status-based message when the server has no JSON body.
     }
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, detail);
   }
 
   return response.json() as Promise<T>;
@@ -84,6 +90,44 @@ export function listFoods(query = ""): Promise<FoodResponse[]> {
   return apiFetch<FoodResponse[]>(`/foods${suffix}`);
 }
 
+export interface FoodListOptions {
+  search?: string;
+  category?: string;
+  sort?: FoodSort;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listFoodsPage(options: FoodListOptions = {}): Promise<FoodListResponse> {
+  const params = new URLSearchParams({
+    page: String(options.page ?? 1),
+    page_size: String(options.pageSize ?? 20),
+    sort: options.sort ?? "name"
+  });
+  if (options.search?.trim()) params.set("search", options.search.trim());
+  if (options.category) params.set("category", options.category);
+  const result = await apiFetch<FoodListResponse | FoodResponse[]>(`/foods?${params.toString()}`);
+  if (!Array.isArray(result)) return result;
+
+  const page = options.page ?? 1;
+  const pageSize = options.pageSize ?? 20;
+  const start = (page - 1) * pageSize;
+  const categories = [...new Set(result.map((food) => food.category?.trim()).filter((value): value is string => Boolean(value)))].sort();
+  return {
+    items: result.slice(start, start + pageSize),
+    total: result.length,
+    page,
+    page_size: pageSize,
+    total_pages: result.length ? Math.ceil(result.length / pageSize) : 0,
+    categories,
+    uncategorized_count: result.filter((food) => !food.category?.trim()).length
+  };
+}
+
+export function getFood(foodId: string): Promise<FoodResponse> {
+  return apiFetch<FoodResponse>(`/foods/${foodId}`);
+}
+
 export function createFood(payload: FoodInput & { id?: string }): Promise<FoodResponse> {
   return apiFetch<FoodResponse>("/foods", {
     method: "POST",
@@ -106,10 +150,21 @@ export function listDiaryEntries(entryDate: string): Promise<DiaryEntryResponse[
   return apiFetch<DiaryEntryResponse[]>(`/diary?entry_date=${encodeURIComponent(entryDate)}`);
 }
 
+export function listDiaryHistory(): Promise<DiaryEntryResponse[]> {
+  return apiFetch<DiaryEntryResponse[]>("/diary");
+}
+
 export function createDiaryEntry(payload: DiaryEntryInput): Promise<DiaryEntryResponse> {
   return apiFetch<DiaryEntryResponse>("/diary", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+export function updateDiaryEntry(entryId: string, quantity: number, mealType: MealType): Promise<DiaryEntryResponse> {
+  return apiFetch<DiaryEntryResponse>(`/diary/${entryId}`, {
+    method: "PUT",
+    body: JSON.stringify({ quantity, meal_type: mealType })
   });
 }
 

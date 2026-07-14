@@ -1,12 +1,12 @@
 # myNutri
 
-Personal Arabic-first nutrition tracker built as an offline-first PWA.
+Personal Arabic-first online nutrition tracker.
 
 ## Stack
 
 - Backend: FastAPI, SQLModel, Alembic
 - Database: PostgreSQL
-- Frontend: Next.js, TypeScript, Tailwind CSS, Base UI, Dexie
+- Frontend: Next.js, TypeScript, Tailwind CSS, Base UI
 - Calc engine: Python pure functions with pytest coverage
 
 ## Local Development

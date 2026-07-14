@@ -6,7 +6,7 @@ import { Providers } from "@/components/Providers";
 
 export const metadata: Metadata = {
   title: "myNutri",
-  description: "متتبع تغذية شخصي يعمل دون اتصال.",
+  description: "متتبع تغذية شخصي يعمل عبر الاتصال بالخادم.",
   manifest: "/manifest.json",
   icons: {
     icon: "/icon.svg",

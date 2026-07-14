@@ -1,45 +1,206 @@
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from math import ceil
+from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from pydantic import ValidationError
+from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
 from app.models import Food, utcnow
-from app.schemas import FoodCreate, FoodResponse, FoodUpdate
+from app.schemas import FoodCreate, FoodResponse, FoodSort, FoodUpdate
+from app.services.food_validation_errors import duplicate_food_detail, food_validation_http_exception
 
+FOOD_FIELDS = (
+    "name",
+    "brand",
+    "category",
+    "nutrition_basis",
+    "default_unit_type",
+    "unit_amount",
+    "unit_basis",
+    "calories",
+    "protein_g",
+    "carb_g",
+    "fat_g",
+    "fiber_g",
+    "sugar_g",
+    "added_sugar_g",
+    "saturated_fat_g",
+    "trans_fat_g",
+    "sodium_mg",
+    "cholesterol_mg",
+    "potassium_mg",
+    "calcium_mg",
+    "iron_mg",
+    "magnesium_mg",
+    "zinc_mg",
+    "vitamin_d_mcg",
+    "vitamin_b12_mcg",
+    "vitamin_c_mg",
+    "vitamin_a_mcg",
+    "folate_mcg",
+    "vitamin_k_mcg",
+    "notes",
+    "data_source",
+)
+
+UNCATEGORIZED_CATEGORY = "__uncategorized__"
+
+
+@dataclass(frozen=True)
+class FoodPage:
+    items: list[Food]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    categories: list[str]
+    uncategorized_count: int
 
 def net_carbs(food: Food) -> float:
     fiber = float(food.fiber_g or 0)
-    return round(float(food.carb_g) - fiber, 2)
+    return round(max(float(food.carb_g) - fiber, 0), 2)
+
+
+def _enum_value(value: Any) -> Any:
+    return getattr(value, "value", value)
+
+
+def _float_or_none(value: Any) -> float | None:
+    return None if value is None else float(value)
+
+
+def _food_data(food: Food) -> dict[str, Any]:
+    data: dict[str, Any] = {}
+    for field in FOOD_FIELDS:
+        value = getattr(food, field)
+        if field in {"nutrition_basis", "default_unit_type", "unit_basis"}:
+            data[field] = _enum_value(value)
+        elif isinstance(value, (int, float)) or value is not None and field.endswith(("_g", "_mg", "_mcg")):
+            data[field] = _float_or_none(value)
+        elif field in {"unit_amount", "calories", "protein_g", "carb_g", "fat_g"}:
+            data[field] = float(value)
+        else:
+            data[field] = value
+    return data
 
 
 def to_food_response(food: Food) -> FoodResponse:
     return FoodResponse(
         id=food.id,
-        name=food.name,
-        serving_label=food.serving_label,
-        serving_grams=None if food.serving_grams is None else float(food.serving_grams),
-        calories=float(food.calories),
-        protein_g=float(food.protein_g),
-        carb_g=float(food.carb_g),
-        fat_g=float(food.fat_g),
-        saturated_fat_g=None if food.saturated_fat_g is None else float(food.saturated_fat_g),
-        trans_fat_g=None if food.trans_fat_g is None else float(food.trans_fat_g),
-        cholesterol_mg=None if food.cholesterol_mg is None else float(food.cholesterol_mg),
-        sodium_mg=None if food.sodium_mg is None else float(food.sodium_mg),
-        fiber_g=None if food.fiber_g is None else float(food.fiber_g),
-        total_sugars_g=None if food.total_sugars_g is None else float(food.total_sugars_g),
-        added_sugar_g=None if food.added_sugar_g is None else float(food.added_sugar_g),
+        **_food_data(food),
         net_carbs_g=net_carbs(food),
         created_at=food.created_at,
         updated_at=food.updated_at,
     )
 
 
+def normalize_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip()).casefold()
+
+
+def duplicate_key(data: dict[str, Any]) -> tuple[str, str, str, float, str]:
+    return (
+        normalize_text(str(data["name"])),
+        str(_enum_value(data["nutrition_basis"])),
+        str(_enum_value(data["default_unit_type"])),
+        round(float(data["unit_amount"]), 4),
+        str(_enum_value(data["unit_basis"])),
+    )
+
+
+def _duplicate_detail() -> list[dict[str, Any]]:
+    return duplicate_food_detail()
+
+
+def ensure_not_duplicate(session: Session, data: dict[str, Any], food_id: UUID | None = None) -> None:
+    target_key = duplicate_key(data)
+    foods = session.exec(select(Food)).all()
+    for food in foods:
+        if food_id is not None and food.id == food_id:
+            continue
+        if duplicate_key(_food_data(food)) == target_key:
+            raise HTTPException(status_code=422, detail=_duplicate_detail())
+
+
+def _validated_update_data(food: Food, payload: FoodUpdate) -> dict[str, Any]:
+    current = _food_data(food)
+    updates = payload.model_dump(exclude_unset=True)
+    current.update(updates)
+    try:
+        return FoodCreate.model_validate(current).model_dump(exclude={"id"})
+    except ValidationError as error:
+        raise food_validation_http_exception(error) from error
+
+
 def list_foods(session: Session, query: str | None = None) -> list[Food]:
     statement = select(Food).order_by(Food.name)
-    if query:
-        statement = statement.where(Food.name.ilike(f"%{query.strip()}%"))
+    if query and query.strip():
+        pattern = f"%{query.strip()}%"
+        statement = statement.where(or_(Food.name.ilike(pattern), Food.brand.ilike(pattern)))
     return list(session.exec(statement).all())
+
+
+def list_foods_page(
+    session: Session,
+    *,
+    search: str | None = None,
+    category: str | None = None,
+    sort: FoodSort = "name",
+    page: int = 1,
+    page_size: int = 20,
+) -> FoodPage:
+    conditions = []
+    normalized_search = search.strip() if search else ""
+    if normalized_search:
+        pattern = f"%{normalized_search}%"
+        conditions.append(or_(Food.name.ilike(pattern), Food.brand.ilike(pattern)))
+
+    if category == UNCATEGORIZED_CATEGORY:
+        conditions.append((Food.category.is_(None)) | (func.trim(Food.category) == ""))
+    elif category:
+        conditions.append(Food.category == category)
+
+    count_statement = select(func.count()).select_from(Food)
+    if conditions:
+        count_statement = count_statement.where(*conditions)
+    total = int(session.exec(count_statement).one())
+
+    statement = select(Food)
+    if conditions:
+        statement = statement.where(*conditions)
+
+    serving_factor = Food.unit_amount / 100
+    if sort == "recent":
+        statement = statement.order_by(Food.created_at.desc(), Food.name)
+    elif sort == "calories":
+        statement = statement.order_by((Food.calories * serving_factor).desc(), Food.name)
+    elif sort == "protein":
+        statement = statement.order_by((Food.protein_g * serving_factor).desc(), Food.name)
+    else:
+        statement = statement.order_by(Food.name)
+
+    statement = statement.offset((page - 1) * page_size).limit(page_size)
+    items = list(session.exec(statement).all())
+
+    category_rows = session.exec(select(Food.category)).all()
+    categories = sorted({value.strip() for value in category_rows if value and value.strip()}, key=str.casefold)
+    uncategorized_count = sum(1 for value in category_rows if value is None or not value.strip())
+
+    return FoodPage(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=ceil(total / page_size) if total else 0,
+        categories=categories,
+        uncategorized_count=uncategorized_count,
+    )
 
 
 def get_food(session: Session, food_id: UUID) -> Food:
@@ -50,21 +211,15 @@ def get_food(session: Session, food_id: UUID) -> Food:
 
 
 def create_food(session: Session, payload: FoodCreate) -> Food:
-    data = payload.model_dump()
-    if payload.id is None:
-        data.pop("id")
-    else:
+    data = payload.model_dump(exclude={"id"})
+    if payload.id is not None:
         existing = session.get(Food, payload.id)
         if existing is not None:
-            for key, value in data.items():
-                if key != "id":
-                    setattr(existing, key, value)
-            existing.updated_at = utcnow()
-            session.add(existing)
-            session.commit()
-            session.refresh(existing)
-            return existing
+            ensure_not_duplicate(session, data, food_id=existing.id)
+            return update_food(session, existing.id, FoodUpdate.model_validate(data))
+        data["id"] = payload.id
 
+    ensure_not_duplicate(session, data)
     food = Food(**data)
     session.add(food)
     session.commit()
@@ -74,8 +229,9 @@ def create_food(session: Session, payload: FoodCreate) -> Food:
 
 def update_food(session: Session, food_id: UUID, payload: FoodUpdate) -> Food:
     food = get_food(session, food_id)
-    updates = payload.model_dump(exclude_unset=True)
-    for key, value in updates.items():
+    data = _validated_update_data(food, payload)
+    ensure_not_duplicate(session, data, food_id=food.id)
+    for key, value in data.items():
         setattr(food, key, value)
     food.updated_at = utcnow()
     session.add(food)

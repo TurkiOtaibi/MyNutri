@@ -25,9 +25,14 @@ export function AppNav() {
         <nav className="nav-links" aria-label="التنقل الرئيسي">
           {links.map((link) => {
             const Icon = link.icon;
-            const active = pathname === link.href;
+            const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
             return (
-              <Link key={link.href} className={`nav-link ${active ? "active" : ""}`} href={link.href}>
+              <Link
+                key={link.href}
+                className={`nav-link ${active ? "active" : ""}`}
+                href={link.href}
+                aria-current={active ? "page" : undefined}
+              >
                 <Icon size={18} />
                 <span>{link.label}</span>
               </Link>
