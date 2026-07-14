@@ -6,17 +6,17 @@
 **Project:** myNutri  
 **Target expansion:** Nutrition Quality & Progress  
 **Implemented baseline:** Existing operational product; do not rebuild from scratch  
-**Current audited main checkpoint:** `3ecd4605790102fd67e64ee09b40faac74fc1e42`  
+**Supersedes:** The incomplete 42-line copy previously stored at this path  
 
 > myNutri and NutriPlan are separate projects. Their scope, entities, decisions, and requirements must never be mixed.
 
 ---
 
-## How to use this register
+# How to use this register
 
 This is the governing product source for reconciling the existing myNutri implementation with the approved Nutrition Quality & Progress expansion.
 
-The current code, migrations, APIs, and tests are evidence of implementation. This document is the authority for product intent and expansion scope.
+The current code, migrations, APIs, and tests are evidence of implementation. This register is the authority for product intent and expansion scope.
 
 When sources conflict, use this precedence:
 
@@ -29,6 +29,18 @@ When sources conflict, use this precedence:
 
 Historical requirements explicitly superseded here must not be reintroduced.
 
+Each requirement must be classified during reconciliation as:
+
+```text
+PRESERVE — implemented behavior that must not regress
+MODIFY   — implemented behavior intentionally changed
+ADD      — new capability
+DEFER    — outside the active wave
+REMOVE   — implemented behavior intentionally removed
+```
+
+Readiness statements in this register apply to the named expansion wave, not to the already developed myNutri product.
+
 ---
 
 # PD-000 — Implemented baseline and expansion boundary
@@ -39,53 +51,44 @@ myNutri is an already developed brownfield product with an implemented Frontend,
 
 This expansion must preserve the implemented baseline. It does not authorize a greenfield rewrite.
 
-Codex must classify each requirement as one of:
+The implementation must not:
 
-```text
-Implemented and verified
-Implemented but uncommitted
-Partially implemented
-New required delta
-Superseded historical requirement
-Deferred
-No change required
-```
-
-The expansion must not:
-
-- rebuild stable modules without evidence and an approved reason;
-- replace working APIs unnecessarily;
-- weaken existing tests;
-- alter historical Diary nutrition silently;
+- rebuild stable modules without a demonstrated need;
+- reintroduce offline personal-data storage, Dexie, mutation queues, or sync;
+- reintroduce multiple profiles;
+- replace stable APIs unnecessarily;
+- weaken existing regression coverage;
+- reinterpret historical Diary data silently;
 - redesign unrelated routes;
-- reintroduce offline personal-data storage, Dexie sync, mutation queues, or multiple profiles.
+- assume old Architecture/System Plan decisions are still active.
 
-The following historical directions are superseded for this release:
+The following old assumptions are superseded:
 
 - offline-first personal-data architecture;
-- Dexie as a nutrition-data source of truth;
-- `/sync` and offline mutation queues;
-- multiple tracked profiles;
-- serving-only Food source of truth;
+- multiple tracked people/profiles;
+- serving-based Food nutrition as the source of truth;
 - meal type deferred;
-- micronutrients excluded from the product;
-- archive/inactive Food lifecycle.
+- micronutrients entirely excluded;
+- archive/inactive Food lifecycle where current hard-delete behavior is the approved baseline.
 
-`Ready to Build: No` applies only to the named expansion wave, not to the existing product.
+Direct gram/ml Diary logging remains deferred in this expansion unless a later formal decision changes it.
 
 ---
 
-# PD-001 — Governance and change control
+# PD-001 — Document authority and change control
 
 **Status:** Approved
 
-Lifecycle:
+This register is the single product authority for the Nutrition Quality & Progress expansion.
 
-```text
-Draft → Under Review → Approved → Frozen → Superseded
-```
+After a wave is frozen:
 
-A wave becomes Ready to Build only when:
+- Critical security, safety, or data-integrity changes may enter immediately.
+- High-impact scope changes require a formal Change Decision.
+- Medium/Low improvements go to the backlog unless explicitly approved.
+- A good idea alone does not reopen frozen scope.
+
+A wave can be declared Ready to Build only when:
 
 ```text
 Critical issues: 0
@@ -93,42 +96,44 @@ High unresolved issues: 0
 Verdict: Ready to Build
 ```
 
-After freeze:
-
-- Critical security, privacy, safety, or data-integrity changes may enter immediately.
-- High-impact changes require a formal Change Decision.
-- Medium/Low ideas move to backlog unless explicitly approved.
-
-No broad implementation starts from chat text alone.
-
 ---
 
 # PD-002 — Product definition and boundaries
 
 **Status:** Approved
 
-myNutri is a personal Arabic-first nutrition and health-progress tracker that helps the user understand their eating pattern, targets, and trends and choose practical improvements.
+myNutri is a personal Arabic-first nutrition and health-progress product that helps the user record food, understand dietary patterns, follow targets, and make gradual practical improvements.
 
 Primary job:
 
 > When I record my food and progress, I want to understand whether my overall pattern is improving and what practical change matters most next.
 
-Principles:
+Product principles:
 
-- truth before false precision;
-- patterns before isolated days;
-- explanation before recommendation;
-- improvement without blame;
-- Backend rules are authoritative;
-- history is not silently reinterpreted;
-- no unified Health Score;
-- data quality is separate from nutrition quality.
+1. Truth before false precision.
+2. Missing data is never treated as zero.
+3. Patterns matter more than one isolated day.
+4. Recommendations must be explainable.
+5. Improvement language must remain neutral and non-punitive.
+6. Backend rules are authoritative.
+7. Historical data is versioned and not silently reinterpreted.
+8. There is no unified Health Score.
+9. Data quality is separate from nutrition quality.
 
-myNutri is not a medical diagnosis/treatment system, clinical nutrition platform, multi-client dietitian product, or substitute for a clinician.
+myNutri is not:
+
+- a diagnosis or treatment system;
+- a replacement for a physician or dietitian;
+- a clinical platform for pregnancy, kidney disease, bariatric care, eating disorders, or similar cases;
+- a supplement, medication, or laboratory tracker in this release;
+- a full recipe-management system;
+- an AI system that independently changes nutritional targets;
+- a product that labels a single Food simply healthy/unhealthy;
+- a product that promises disease prevention or longer life.
 
 Approved claim direction:
 
-> Supports better food-quality awareness, sustainable habits, and health-related lifestyle improvement.
+> myNutri supports food-quality awareness, sustainable habits, and health-related lifestyle improvement.
 
 ---
 
@@ -136,7 +141,7 @@ Approved claim direction:
 
 **Status:** Approved
 
-Approved main tabs:
+The main tabs are:
 
 ```text
 اليوميات
@@ -145,17 +150,21 @@ Approved main tabs:
 الملف
 ```
 
-## Diary — اليوميات
+No additional main tab may be introduced in this release without a formal change decision.
 
-Contains date navigation, meal sections, entries, calories/macros, additional nutrient details, day status, and a contextual link to Nutrition Pattern Analysis.
+## اليوميات
 
-## Foods — الأطعمة
+Includes date navigation, calories, macros, meal sections, Add/Edit/Delete Diary entries, meal totals, additional nutrient details, day status, and a contextual link to nutrition analysis.
 
-Contains Food CRUD, per-100g/per-100ml source data, servings, nutrients, category, group contributions, analytical traits, ingredients, NOVA, source reliability, and nutrition-data completeness.
+## الأطعمة
 
-## Progress — التقدم
+Includes Food list/search, create/edit/detail/delete, per-100g/per-100ml nutrition source, serving display, approved nutrients, primary category, simple/composite type, food-group contributions, analytical traits, ingredients, NOVA, source, reliability, and completeness.
 
-Approved routes:
+## التقدم
+
+Includes Nutrition Pattern Analysis, weekly priority, weight, waist, blood pressure, activity, comparisons, weekly goals, milestones, and four-week calorie review.
+
+Approved detail routes:
 
 ```text
 /progress
@@ -167,84 +176,53 @@ Approved routes:
 /progress/calorie-review
 ```
 
-The main Progress page is a compact executive summary, not a dense dashboard.
+## الملف
 
-## Profile — الملف
+Includes personal calculation inputs, goal, activity, cut intensity, macro settings, target preview, current targets, additional nutrient targets, and calculation explanation.
 
-Contains body data, activity, goal, cut intensity, macro settings, target preview, current targets, additional nutrient targets, and calculation explanation.
-
-The four tabs must remain usable at 320px without horizontal scrolling.
+The four main tabs must remain usable at 320px without horizontal scrolling.
 
 ---
 
-# PD-004 — Expansion waves
+# PD-004 — Expansion waves and scope sequencing
 
 **Status:** Approved
 
-Every requirement must be tagged:
-
-```text
-PRESERVE
-MODIFY
-ADD
-DEFER
-REMOVE
-```
+The expansion is delivered in four waves on top of the current product.
 
 ## Wave 1 — Nutrition & Data Foundation
 
 Includes:
 
-- revised macro and deficit policy;
-- central versioned nutrient and food-group registries;
-- approved additional nutrient targets;
-- source type and derived reliability;
-- ingredients and NOVA foundations;
-- simple/composite Food model and quantitative food-group contributions;
-- nullable nutrient semantics;
-- Diary Snapshot v2 foundation;
+- revised calorie/macro policy;
+- central nutrient registry;
+- central food-group registry;
+- source reliability registry;
+- NOVA definitions;
+- nullable approved nutrient data;
+- source and ingredients metadata;
+- Food simple/composite classification;
+- quantitative food-group contributions;
+- Diary Snapshot v2;
 - Target Plan Versions;
 - rule versioning;
-- additive data/API contracts;
-- migrations only where the current schema does not already support the decision.
+- additive API/data contracts;
+- migration and compatibility planning;
+- golden calculations and characterization tests.
 
 ## Wave 2 — Foods & Diary Experience
 
-Includes:
-
-- new Foods/Profile/Diary UI for approved fields and targets;
-- completeness and source reliability in Food Details;
-- additional nutrient Daily Details and coverage;
-- meal macros;
-- day logging status;
-- no false zero rendering.
+Includes UI entry/display of approved nutrients, food groups, traits, source, reliability, ingredients, NOVA, completeness, Diary coverage, additional nutrient details, meal macros, and day status.
 
 ## Wave 3 — Nutrition Pattern Analysis
 
-Includes:
-
-- rolling seven-day analysis;
-- minimum complete-day and coverage rules;
-- food-group and nutrient pattern analysis;
-- NOVA analysis;
-- contributors;
-- deterministic weekly priorities;
-- optional weekly behavior goals;
-- previous-period comparisons;
-- Analysis Snapshots and shadow-mode validation.
+Includes rolling seven-day analysis, data sufficiency, food-group analysis, nutrient analysis, NOVA, protein diversity, contributor drill-down, weekly priorities, behavior goals, comparisons, and Analysis Snapshots.
 
 ## Wave 4 — Health Progress
 
-Includes:
+Includes historical weight, waist, blood pressure, activity, four-week calorie review, and calm health milestones.
 
-- weight history and seven-day average;
-- waist circumference;
-- blood pressure;
-- physical activity;
-- four-week calorie-target review;
-- calm health milestones.
-
-A later wave does not start until the current wave passes its gate.
+A later wave must not be implemented during an earlier wave unless required as a documented dependency.
 
 ---
 
@@ -252,20 +230,26 @@ A later wave does not start until the current wave passes its gate.
 
 **Status:** Approved
 
-- Preserve Mifflin–St Jeor as the calculation basis.
-- Preserve Backend as the only authoritative calculation implementation.
-- Cut options:
+Continue using the server-side Mifflin–St Jeor calculation and the current approved activity-factor model.
+
+When goal = cut, offer:
 
 | Option | Deficit |
 |---|---:|
 | خفيف | 15% |
-| عادي | 20% — default |
+| عادي | 20% — default/recommended |
 | قوي | 25% |
 
-- Automatic deficit is capped at 750 kcal/day.
-- Show resulting calories before save.
-- Very-low or implausible output must follow Backend safety validation and cannot be silently accepted.
-- These options are not promises of an exact weight-loss rate.
+Rules:
+
+- automatic deficit may not exceed 750 kcal/day;
+- resulting calories are shown before save;
+- under 800 kcal/day is blocked in normal product mode;
+- 800–1200 kcal/day requires a strong caution and specialist-review language;
+- the selected percentage is not presented as a guaranteed weight-loss rate;
+- backend remains authoritative.
+
+Existing Profile validation ranges not explicitly changed by this register remain governed by the current approved baseline. They are not a Wave 1 product gap merely because an older document contains different ranges.
 
 ---
 
@@ -285,7 +269,7 @@ When BMI < 30:
 calculation_weight = actual_weight
 ```
 
-When BMI ≥ 30:
+When BMI >= 30:
 
 ```text
 reference_weight = 25 × height_m²
@@ -293,7 +277,19 @@ adjusted_weight = reference_weight + 0.33 × (actual_weight − reference_weight
 calculation_weight = adjusted_weight
 ```
 
-The same default factor applies to men and women. The user may customize grams/kg. The UI must explain the weight basis used. Clinical exceptions are deferred.
+Then:
+
+```text
+protein_target_g = calculation_weight × protein_per_kg
+```
+
+Rules:
+
+- same default factor for men and women;
+- user may customize grams/kg;
+- UI explains the weight basis used;
+- custom existing values are preserved;
+- clinical exceptions are deferred.
 
 ---
 
@@ -301,54 +297,63 @@ The same default factor applies to men and women. The user may customize grams/k
 
 **Status:** Approved
 
-Default fat percentage:
+Approved default fat percentages:
 
 - men: 25% of target calories;
 - women: 30% of target calories.
 
-These are myNutri product defaults inside the adult reference range, not a claim that every man or woman physiologically requires that exact value.
+These are product defaults within the adult reference range, not a claim that every person physiologically requires that exact percentage.
 
-Custom fat values are preserved. Sex changes update fat only when the prior value is still default-controlled. Restore Defaults returns to the sex-aware default.
+Rules:
 
-Carbohydrates receive remaining calories:
+- custom fat percentage is preserved;
+- changing sex updates fat only when the current value is still controlled by the prior default;
+- Restore Defaults returns to the sex-aware default;
+- Preview and Save must use the same backend calculation.
+
+Carbohydrates receive the remaining calories:
 
 ```text
 carb_calories = target_calories − protein_calories − fat_calories
 carb_target_g = carb_calories ÷ 4
 ```
 
-Rules:
+Warnings:
 
-- below 130 g: calm reference warning;
-- below 100 g: stronger warning;
-- zero or negative calculated carbohydrate allocation is invalid;
-- preview and save must reject it with a structured `invalid_macro_allocation` error;
-- `carb_clamped` may remain temporarily for backward compatibility but must never be silently presented as a valid target.
+- below 130 g: calm general-reference warning;
+- below 100 g: stronger warning.
 
-The formula must not be reproduced in TypeScript.
+A zero or negative resulting carbohydrate allocation is invalid. Preview and Save must reject it through a structured server-authoritative error. Silent clamping to an ordinary valid zero-carb target is not approved.
 
 ---
 
-# PD-008 — Target recalculation and historical plans
+# PD-008 — Target recalculation and historical Target Plans
 
 **Status:** Approved
 
-- Review targets every four weeks.
-- Use seven-day average weight with at least four measurements.
-- Do not react to one weight reading.
-- Preserve selected cut intensity.
-- Do not prompt when the calculated difference is below approximately 50 kcal.
-- Show current and proposed targets and the reason.
-- Apply only after user approval.
-- Store immutable Target Plan Versions with effective dates and rule versions.
-- Historical days retain the target plan active at their date.
+Review calorie targets every four weeks.
 
-Profile validation reconciliation for this expansion:
+Rules:
 
-- this release does not introduce new age/height/weight range requirements;
-- preserve current Backend validation unless a later formal decision changes it;
-- historical D-009/D-012 range proposals are superseded for this expansion;
-- exact Arabic read-error wording is not frozen; meaning, clarity, and accessibility are authoritative.
+- use a seven-day average weight;
+- require at least four weight measurements in that period;
+- never recalculate from one reading;
+- preserve the selected cut intensity;
+- do not prompt when the calculated difference is below approximately 50 kcal;
+- show current versus proposed calories/macros and the reason;
+- apply only after user confirmation;
+- historical days retain the Target Plan active at that time.
+
+Target Plan Versions are immutable and store:
+
+- effective date range;
+- calculation inputs;
+- calories and macros;
+- approved additional nutrient targets;
+- goal and deficit intensity;
+- protein basis and calculation weight;
+- custom settings;
+- calculation and registry versions.
 
 ---
 
@@ -356,7 +361,30 @@ Profile validation reconciliation for this expansion:
 
 **Status:** Approved
 
-Supported target types:
+The approved Wave 1 registry contains these nutrients as nullable values:
+
+```text
+fiber_g
+added_sugar_g
+saturated_fat_g
+trans_fat_g
+sodium_mg
+potassium_mg
+cholesterol_mg
+calcium_mg
+iron_mg
+magnesium_mg
+zinc_mg
+selenium_mcg
+vitamin_b12_mcg
+folate_dfe_mcg
+vitamin_a_rae_mcg
+iodine_mcg
+```
+
+Known zero is valid. Unknown is null.
+
+Approved target types:
 
 ```text
 minimum
@@ -372,57 +400,60 @@ Approved targets:
 
 | Nutrient | Type | Target |
 |---|---|---|
-| Fiber | Minimum | 30 g/day |
-| Added sugar | Maximum | 10% of calories |
-| Saturated fat | Maximum | 10% of calories |
-| Trans fat | Maximum | less than 1% of calories |
-| Sodium | Maximum | less than 2000 mg/day |
-| Potassium | Adequate | Men 3400 mg; Women 2600 mg |
-| Cholesterol | Monitor only | No numeric target |
-| Zinc | Recommended | Men 11 mg; Women 8 mg |
-| Selenium | Recommended | 55 mcg |
-| Vitamin B12 | Recommended | 2.4 mcg |
-| Folate | Recommended | 400 mcg DFE |
-| Vitamin A | Recommended | Men 900 mcg RAE; Women 700 mcg RAE |
-| Iodine | Recommended | 150 mcg |
+| Fiber | minimum | 30 g/day |
+| Added sugar | maximum | 10% of target calories |
+| Saturated fat | maximum | 10% of target calories |
+| Trans fat | maximum | less than 1% of target calories |
+| Sodium | maximum | less than 2000 mg/day |
+| Potassium | adequate | Men 3400 mg; Women 2600 mg |
+| Cholesterol | monitor_only | no numeric target |
+| Calcium | recommended | age/sex table below |
+| Iron | recommended | age/sex table below |
+| Magnesium | recommended | age/sex table below |
+| Zinc | recommended | Men 11 mg; Women 8 mg |
+| Selenium | recommended | 55 mcg/day |
+| Vitamin B12 | recommended | 2.4 mcg/day |
+| Folate | recommended | 400 mcg DFE/day |
+| Vitamin A | recommended | Men 900 mcg RAE; Women 700 mcg RAE |
+| Iodine | recommended | 150 mcg/day |
 
 Calcium:
 
-| Group | Target |
-|---|---:|
-| Adults 19–50 | 1000 mg |
-| Men 51–70 | 1000 mg |
-| Women 51–70 | 1200 mg |
-| Adults >70 | 1200 mg |
+- age 19–50: 1000 mg;
+- men 51–70: 1000 mg;
+- women 51–70: 1200 mg;
+- over 70: 1200 mg.
 
 Iron:
 
-| Group | Target |
-|---|---:|
-| Adult men | 8 mg |
-| Women 19–50 | 18 mg |
-| Women ≥51 | 8 mg |
+- adult men: 8 mg;
+- women 19–50: 18 mg;
+- women 51+: 8 mg.
 
 Magnesium:
 
-| Group | Target |
-|---|---:|
-| Men 19–30 | 400 mg |
-| Men ≥31 | 420 mg |
-| Women 19–30 | 310 mg |
-| Women ≥31 | 320 mg |
+- men 19–30: 400 mg;
+- men 31+: 420 mg;
+- women 19–30: 310 mg;
+- women 31+: 320 mg.
 
 Calorie-derived limits:
 
 ```text
-added_sugar_g = calories × 10% ÷ 4
-saturated_fat_g = calories × 10% ÷ 9
-trans_fat_g = calories × 1% ÷ 9
+added_sugar_limit_g = target_calories × 0.10 ÷ 4
+saturated_fat_limit_g = target_calories × 0.10 ÷ 9
+trans_fat_limit_g = target_calories × 0.01 ÷ 9
 ```
 
-Fiber 30 g is a myNutri quality target; the general reference may be shown as 25 g. Exceeding fiber target is not a warning.
+The 30 g fiber value is an approved myNutri food-quality target, not an exact clinical prescription. Exceeding it is not a warning.
 
-Deferred nutrients include Vitamin D, C, E, K, B1, B2, B3, B6, phosphorus, copper, choline, omega-3 targets, and water/fluids.
+Deferred nutrients:
+
+- Vitamin D, C, E, K;
+- B1, B2, B3, B6;
+- phosphorus, copper, choline;
+- omega-3 targets;
+- water/fluid targets.
 
 ---
 
@@ -430,89 +461,153 @@ Deferred nutrients include Vitamin D, C, E, K, B1, B2, B3, B6, phosphorus, coppe
 
 **Status:** Approved
 
-Approved positive targets:
+The approved groups include:
 
-| Group | Operational serving | Target |
-|---|---:|---|
-| Vegetables | 80 g | Shared with fruit: 400 g/day |
-| Fruit | 80 g | Shared with vegetables: 400 g/day |
-| Dried fruit | 30 g | One fruit serving |
-| Whole grains | Grain equivalent | At least 50% of known grain servings |
-| Legumes | 80 g cooked / ½ cup | 3 servings/week |
-| Nuts and seeds | 30 g | 5 servings/week |
-| Seafood | 100 g edible portion | 2 servings/week |
-| Omega-3-rich seafood | Trait | At least 1 seafood serving/week |
-| Dairy/fortified alternatives | By subtype | 2 servings/day |
+- vegetables;
+- fruits;
+- legumes;
+- whole grains;
+- refined grains;
+- nuts and seeds;
+- fish and seafood;
+- dairy and fortified alternatives;
+- eggs;
+- poultry;
+- red meat;
+- processed meat;
+- oils and added fats;
+- sweets;
+- sugar-sweetened beverages;
+- unsweetened beverages;
+- herbs and spices;
+- other.
 
-Dairy references:
+Approved goals:
 
+## Vegetables and fruit
+
+- combined target: 400 g/day;
+- display vegetables and fruit separately plus combined total;
+- operational serving: 80 g;
+- dried fruit: 30 g = one serving;
+- 100% juice/smoothie may contribute no more than one fruit serving/day;
+- potatoes and starchy roots do not count;
+- legumes are separate.
+
+## Whole grains
+
+- at least 50% of known grain equivalents are whole grain;
+- mixed Foods are split using actual contributions;
+- unknown grain type stays unknown;
+- show classification coverage.
+
+## Legumes
+
+- 80 g cooked or 1/2 cup = one serving;
+- minimum 3 servings/week;
+- fractional servings accumulate.
+
+## Nuts and seeds
+
+- 30 g = one serving;
+- minimum 5 servings/week;
+- peanuts count nutritionally;
+- nut oils do not count as nuts/seeds servings.
+
+## Seafood
+
+- 100 g edible/drained weight = one serving;
+- minimum 2 servings/week;
+- at least one serving/week should be omega-3-rich through a separate trait.
+
+## Dairy and fortified alternatives
+
+- minimum 2 servings/day;
 - milk/laban/kefir: 250 ml;
 - yogurt: approximately 170–200 g;
 - hard cheese: 30 g;
 - cottage cheese/ricotta: 120 g;
-- calcium-fortified alternative: 250 ml.
+- fortified plant alternative: 250 ml with known calcium fortification;
+- butter, ghee, cream, and ice cream do not complete the dairy target.
 
-Rules:
+## Eggs
 
-- vegetables and fruit are displayed separately plus combined total;
-- 100% juice/smoothie contributes at most one fruit serving/day;
-- starchy roots do not count toward the 400 g target;
-- legumes are separate;
-- plant alternatives count only when calcium fortification data are known;
-- butter, ghee, cream, and ice cream do not satisfy dairy.
+- one large whole egg is approximately 50 g;
+- monitor only; no minimum;
+- distinguish whole egg from egg whites.
 
-Monitor-only groups:
+## Poultry
 
-- eggs;
-- poultry;
-- added oils/fats;
-- unsweetened beverages;
-- herbs/spices.
+- 100 g cooked edible meat = one operational serving;
+- monitor only; no minimum;
+- processed poultry is processed meat for pattern analysis.
 
-Red meat:
+## Red meat
 
-- 100 g cooked edible portion is the operational serving;
+- 100 g cooked edible meat = one serving;
 - no minimum;
-- maximum 500 g/week;
-- 350–500 g is near the limit;
-- above 500 g is over the limit.
+- weekly maximum 500 g;
+- 350–500 g = near limit;
+- above 500 g = over limit.
 
-Minimize groups:
+## Processed meat
 
-- processed meat;
-- sweets;
-- sugar-sweetened beverages;
-- NOVA 4 Foods.
+- minimize;
+- no numeric safe allowance;
+- show grams and frequency.
 
-No numeric “safe allowance” is created for minimize groups.
+## Oils and added fats
+
+- monitor only;
+- track amount and source;
+- nuts, fish, and avocado do not count as added oil.
+
+## Sweets and sugar-sweetened beverages
+
+- minimize;
+- no numeric safe allowance;
+- show amount and frequency;
+- 100% juice is not classified as a sugar-sweetened beverage, but its fruit contribution is capped.
+
+Unsweetened beverages and herbs/spices are monitor only.
 
 ---
 
-# PD-011 — Food classification and quantitative contributions
+# PD-011 — Food classification and quantitative group contributions
 
 **Status:** Approved
 
 Each Food has:
 
 1. one primary category for organization;
-2. `simple` or `composite` Food type;
-3. quantitative food-group contributions per 100 g or 100 ml;
+2. Food kind: simple or composite;
+3. multiple quantitative food-group contributions per 100 g or 100 ml;
 4. separate analytical traits;
-5. contribution certainty/status: known, estimated, or unknown.
+5. group-data status: known, estimated, or unknown.
 
-Primary category does not directly drive analysis. Quantitative contributions do.
+Primary category does not directly drive analysis. Quantitative contributions drive analysis.
 
-For composite Foods:
+Composite Foods do not require a full recipe engine in this release. Contributions are entered manually.
 
-- full recipe engine is deferred;
-- contributions are entered manually;
-- non-overlapping contribution totals cannot exceed the 100 g/100 ml basis;
-- totals may be below 100;
-- traits do not add to contribution totals.
+Validation:
 
-Approved category set includes vegetables, fruit, legumes, whole grains, refined grains, nuts/seeds, seafood, dairy/fortified alternatives, eggs, poultry, red meat, processed meat, oils/added fats, sweets, sugar-sweetened drinks, unsweetened drinks, herbs/spices, and other.
+- contribution amount is non-negative;
+- one Food has at most one row per group key;
+- total non-overlapping contributions may not exceed 100 g or 100 ml per basis;
+- total may be lower than 100;
+- analytical traits do not add to the contribution sum.
 
-Direct gram/ml Diary logging remains deferred. Existing serving-based Diary input is preserved in Waves 1–2.
+Approved traits include, where supported:
+
+- sweetened;
+- unsweetened;
+- processed;
+- omega-3-rich seafood;
+- calcium-fortified;
+- unsaturated-fat source;
+- smoked/salted when analytically useful.
+
+Traits must not create duplicate servings.
 
 ---
 
@@ -530,35 +625,44 @@ NOVA values:
 unknown
 ```
 
-- NOVA is not inferred from macros alone.
-- Ingredients and source information support classification.
-- System suggestions require user review.
-- NOVA 4 is “minimize,” without an invented safe threshold.
-- Analysis may show percentage of recorded calories, frequency, largest contributors, and classification coverage.
-- NOVA remains separate from nutrient quality, food groups, and source reliability.
+Rules:
 
-Foods support ingredients text and ingredients source. Ingredients are used for transparency, not danger labeling.
+- NOVA is not inferred from macros alone;
+- ingredients and source support classification;
+- system suggestions require user review;
+- NOVA 4 is a minimize dimension without a fabricated safe threshold;
+- Food Details shows NOVA;
+- seven-day analysis may show percentage of recorded calories from NOVA 4, frequency, top contributors, and classification coverage;
+- NOVA remains separate from nutrient quality, food groups, completeness, and source reliability.
+
+Foods support ingredients text and ingredients source.
+
+Ingredients are used for transparency and classification, not to declare ingredients dangerous.
 
 ---
 
-# PD-013 — Completeness, source reliability, and coverage
+# PD-013 — Completeness, source reliability, and Diary coverage
 
 **Status:** Approved
 
-These are separate concepts.
+These are separate dimensions and must never be combined into one score.
 
 ## Food nutrition completeness
 
-Answers how many supported nutrient values exist. Displayed in Food Details only.
+Answers: how many supported nutrition values are present?
+
+Display only in Food Details, not Foods list, Add Food search, Diary rows, or Diary search results.
 
 Suggested status bands:
 
-| Completion | Status |
+| Percentage | Status |
 |---:|---|
 | 90–100% | مكتملة جدًا |
 | 75–89% | جيدة |
 | 50–74% | جزئية |
-| <50% | محدودة |
+| below 50% | محدودة |
+
+Known zero counts as present. Null counts as missing.
 
 ## Source reliability
 
@@ -569,12 +673,12 @@ Approved source types:
 - official product label;
 - official manufacturer website;
 - official restaurant information;
-- calculated Food;
+- calculated recipe/Food;
 - manual estimate;
 - multiple sources;
 - unknown.
 
-The user selects source type; Backend derives reliability. Reliability is not a user-selected rating.
+The user selects source type. Backend derives reliability; the user does not directly choose a reliability rating.
 
 ## Diary nutrient coverage
 
@@ -584,13 +688,17 @@ Initial method:
 entries with a known value ÷ total Diary entries × 100
 ```
 
-- explicit zero is known;
-- `null` is unknown;
-- when no entry has a known value, aggregate amount remains `null` and UI shows `غير متوفر`;
-- partial known totals use `على الأقل`;
-- coverage is not adequacy.
+Known explicit zero counts as known. Null counts as unknown.
 
-Completeness and reliability must not be combined into one score.
+When coverage is incomplete, the amount is shown as `على الأقل`.
+
+When no entry has a known value, the amount is `غير متوفر`, not numeric zero, and target progress/status is suppressed.
+
+Coverage is not nutrient adequacy.
+
+## Food-group coverage
+
+Food-group analysis must report the share of logged Foods with usable group contribution data and must not issue strong conclusions when coverage is insufficient.
 
 ---
 
@@ -598,26 +706,27 @@ Completeness and reliability must not be combined into one score.
 
 **Status:** Approved
 
-New Diary entries use a structured, versioned Snapshot v2 containing:
+New Diary entries use a versioned Snapshot v2 containing:
 
 - Food identity at logging time;
 - calories and macros;
-- approved additional nutrients, preserving `null`;
+- all approved additional nutrients as number or null;
 - food-group contributions;
 - analytical traits;
 - NOVA;
 - source type and derived reliability;
 - completeness state;
-- relevant rule versions;
+- registry/rule versions;
 - snapshot schema version.
 
 Rules:
 
-- quantity editing scales known values and preserves `null`;
-- meal moves preserve the same snapshot;
-- source Food edits/deletion never mutate historical Diary data;
-- Backend reads legacy Snapshot v1 and new Snapshot v2;
-- no historical enrichment from current Food data.
+- quantity editing scales known values and preserves null;
+- meal movement preserves the same snapshot;
+- Food edit/delete cannot change old Diary snapshots;
+- existing Snapshot v1 data remains readable;
+- no historical backfill from the current Food row;
+- backend creates snapshots; frontend does not submit authoritative nutrient totals.
 
 ---
 
@@ -633,11 +742,13 @@ partial
 complete
 ```
 
-- Adding one Food does not automatically mark the day complete.
-- User explicitly confirms completion.
-- An empty day can be explicitly completed.
-- Partial/unregistered days are never treated as zero-intake days.
-- Strong weekly analysis requires complete days.
+Rules:
+
+- one Food entry does not automatically make a day complete;
+- the user explicitly marks a day complete;
+- an intentionally empty day may be explicitly completed;
+- partial and unregistered days are never treated as zero-intake days;
+- strong seven-day analysis uses completed days.
 
 ---
 
@@ -645,26 +756,43 @@ complete
 
 **Status:** Approved
 
+Analysis window:
+
 - rolling last seven days;
 - previous seven days for comparison;
-- minimum four complete days for strong analysis;
-- adequate metric-specific coverage is required.
+- not a fixed calendar week.
 
-Approved section order:
+Strong analysis requires:
 
-1. Weekly priority.
-2. Data sufficiency/confidence.
-3. Food-group pattern.
-4. Daily nutrient pattern.
-5. Elements to limit.
-6. Protein-source diversity.
-7. NOVA pattern.
-8. Previous-period comparison.
-9. Contributors.
+- at least four complete days;
+- sufficient coverage for the metric being analyzed.
 
-Comparison uses daily averages, not raw totals. Both periods require sufficient complete days and comparable coverage. Missing days never become zero.
+Page order:
 
-Each result can expose contributing Foods and unknown entries.
+1. weekly priority;
+2. data sufficiency and confidence;
+3. food groups;
+4. daily nutrients;
+5. elements to limit;
+6. protein-source diversity;
+7. NOVA pattern;
+8. previous-period comparison;
+9. contributors.
+
+Rules:
+
+- no unified Health Score;
+- compare daily averages, not raw totals;
+- each comparison period needs at least four complete days;
+- missing days never become zero;
+- material coverage differences may block improvement claims;
+- each metric can expose top contributors and unknown entries.
+
+Suggested recommendation eligibility by metric coverage:
+
+- 75% or higher: eligible for strong priority;
+- 50–74%: limited-confidence result;
+- below 50%: excluded from strong priority.
 
 ---
 
@@ -675,33 +803,29 @@ Each result can expose contributing Foods and unknown entries.
 Maximum output:
 
 - one main priority;
-- one secondary priority when justified.
+- one secondary priority only when justified.
 
 Priority order:
 
-1. repeated exceedance of limit-type dimensions;
-2. largest positive food-group/nutrient gap;
-3. micronutrients only with strong coverage and persistent evidence.
+1. repeated overages of limit/minimize dimensions;
+2. largest actionable positive gap;
+3. micronutrients only with strong coverage and persistent evidence, normally across at least two weeks.
 
-Operational coverage guidance:
+Every priority stores/displays:
 
-- 75%+ may support a strong priority;
-- 50–74% supports limited-confidence messaging;
-- below 50% is excluded from priority selection.
-
-Every priority stores:
-
-- rule key and version;
+- rule key;
+- title;
 - measured reason;
-- input facts;
-- coverage/confidence;
-- excluded alternatives;
+- confidence;
+- coverage;
 - one practical action;
-- explanation of why it appeared.
+- rule version;
+- facts used;
+- excluded alternatives or conflict resolution where relevant.
 
-The engine is deterministic and Backend-owned. AI may help phrase text later but must not choose targets or calculate priority.
+The engine must avoid contradictory or duplicative recommendations and prefer replacement over simple addition where calories are already high.
 
-Shadow mode, golden scenarios, conflict tests, and manual review are required before launch.
+Recommendation decisions are deterministic. AI may be used later only for phrasing, never for targets, eligibility, or calculation.
 
 ---
 
@@ -709,78 +833,99 @@ Shadow mode, golden scenarios, conflict tests, and manual review are required be
 
 **Status:** Approved
 
-A weekly priority may be accepted as an optional behavior goal.
+A weekly priority may become an optional behavior goal.
+
+Rules:
 
 - one primary active goal by default;
-- user may accept, edit, defer, reject, or end;
-- progress is derived from Diary data;
-- no manual success checkbox as the source of truth;
-- no XP, points, streak punishment, or shame;
-- incomplete data prevents false success/failure claims;
-- rejected goals are not immediately repeated without new evidence.
+- user can accept, edit, defer, reject, change, or end it;
+- progress is derived from Diary data, not a manual success checkbox;
+- no XP, points, punishment, or lost streaks;
+- insufficient data prevents false success/failure claims;
+- rejected goals are not immediately repeated without new evidence;
+- if incomplete, use neutral wording and offer repeat, reduce, change, or end.
 
-Neutral follow-up options include repeat, reduce scope, choose another goal, or end.
+Reminder policy:
+
+- at most one contextual midweek reminder when there is no progress;
+- one end-of-week review;
+- external notifications remain optional.
 
 ---
 
-# PD-019 — Analysis snapshot lifecycle
+# PD-019 — Analysis snapshots and lifecycle
 
 **Status:** Approved
 
-Live analysis updates as Diary changes.
+Current analysis is live and updates as Diary data changes.
 
 Finalized Analysis Snapshots store:
 
-- period;
+- analysis period;
 - generated time;
-- complete/partial/unregistered counts;
-- coverage;
+- complete/partial/missing day counts;
+- metric coverage;
 - aggregated results;
 - priorities;
-- registry and analysis-rule versions;
+- analysis-rule version;
+- registry versions;
 - revision number.
 
-A historical Diary edit marks affected analyses stale and creates a new revision using the original analysis-rule version. Previous revisions remain auditable. History is never silently reinterpreted.
+When historical Diary data changes:
+
+- affected snapshots are marked stale;
+- recomputation uses the original applicable rule version;
+- a new revision is created;
+- the previous revision remains auditable;
+- history is not silently reinterpreted with newer rules.
 
 ---
 
-# PD-020 — Progress and health measurements
+# PD-020 — Progress tab and health measurements
 
 **Status:** Approved
 
 ## Weight
 
-- timestamped history;
-- seven-day average when at least four measurements exist;
+- historical timestamped measurements;
+- seven-day average when at least four readings exist;
 - four-week trend;
-- no target change from one reading.
+- no plan change from one reading;
+- deletion recalculates trends.
 
-## Waist
+## Waist circumference
 
-- optional history;
+- optional;
+- timestamped history;
 - four- and eight-week trends;
-- standardized measurement guidance;
+- standardized measurement instructions;
 - no diagnosis or automatic calorie change.
 
 ## Blood pressure
 
-- systolic and diastolic;
+- optional systolic and diastolic;
 - pulse optional;
-- history and averages;
-- no diagnosis or automatic target change.
+- history and trends;
+- no diagnosis or automatic nutrition changes.
 
-## Activity
+## Physical activity
 
 - steps;
-- resistance exercise;
-- aerobic exercise;
+- resistance training;
+- aerobic activity;
 - active days/week;
 - seven- and thirty-day trends;
-- no automatic daily calorie adjustment.
+- no daily calorie adjustment.
 
-## Calorie review
+## Four-week calorie review
 
-Every four weeks, using seven-day average weight and user approval. The system shows current target, proposed target, and reason. It does not prompt for approximately <50 kcal differences.
+- uses seven-day average weight;
+- retains chosen deficit intensity;
+- ignores changes below approximately 50 kcal;
+- shows current versus proposed targets and reason;
+- requires user confirmation.
+
+Sleep, laboratory tests, smoking/alcohol tracking, medications, and supplements are deferred.
 
 ---
 
@@ -788,47 +933,70 @@ Every four weeks, using seven-day average weight and user approval. The system s
 
 **Status:** Approved
 
-Use calm health milestones, not gamification.
+Use calm, meaningful health milestones rather than gamification.
 
-Examples include sustained fiber/food-group improvement, activity consistency, completed weekly behavior goals, and meaningful weight/waist progress.
+Possible milestones include:
 
-No milestone for lowest calories, largest deficit, longest fasting, or fastest weight loss. Historical achievements are not removed after later regression.
+- repeated fiber achievement;
+- improved vegetables/fruit pattern;
+- consistent activity;
+- completed weekly behavior goals;
+- sustained weight or waist progress;
+- improved logging completeness.
+
+Rules:
+
+- no XP, levels, coins, or artificial reward economy;
+- no milestone for lowest calories, longest fasting, largest deficit, or fastest loss;
+- historical achievements are not removed after later regression.
 
 ---
 
-# PD-022 — Behavioral safety
+# PD-022 — Behavioral safety and user language
 
 **Status:** Approved
 
 The system must:
 
 - use neutral language;
-- avoid “failure,” shame, and punishment;
-- focus on trends, not one day;
+- avoid shame and `failure` wording;
+- avoid punishment for missed logging;
 - avoid celebrating under-eating;
+- focus on trends rather than one day;
 - avoid automatic harsher goals;
-- avoid compensatory exercise or meal-skipping advice;
-- warn about unsafe/invalid low-intake configurations;
-- support simplified presentation of sensitive numbers where designed.
+- never encourage compensatory exercise or meal skipping;
+- warn about implausibly low targets;
+- support a simplified view that can hide precise macros/remaining calories/weight from the home surface;
+- allow tracking pause as a planned safety capability.
 
-Exact wording is not globally frozen unless specified in an acceptance criterion. Meaning, clarity, Arabic quality, and accessibility are authoritative.
+Exact historical error-message wording is not frozen by this register unless an acceptance criterion explicitly quotes it. Clear Arabic behavior and meaning are authoritative; older exact-copy decisions may be superseded by newer approved UX copy.
+
+Approved tone example:
+
+```text
+تجاوزت الهدف اليومي بـ 120 سعرة
+يوم واحد لا يحدد اتجاهك
+```
 
 ---
 
-# PD-023 — Ownership and security
+# PD-023 — Ownership, privacy, and security
 
 **Status:** Approved
 
-All personal records are scoped to the authenticated user.
+All user-created records are scoped to the authenticated user.
 
-- Backend derives identity from authentication context.
-- Frontend does not send an authoritative `user_id`.
-- Every read/update/delete verifies ownership.
-- Normal user operations do not use Service Role.
-- Unauthorized existence is not leaked.
-- Food deletion does not delete historical Diary snapshots.
+Rules:
 
-Comprehensive export and delete-all-data are deferred. Existing individual delete actions remain.
+- backend derives identity from the session;
+- frontend does not send an authoritative user_id;
+- every read/update/delete verifies ownership;
+- normal operations do not use Service Role;
+- Foods, Diary entries, target plans, measurements, analyses, and weekly goals are owner-bound;
+- historical snapshots survive source Food deletion;
+- error responses do not leak unauthorized record existence.
+
+Comprehensive export and delete-all-data are deferred. Existing individual deletion behavior remains available according to the current approved baseline.
 
 ---
 
@@ -844,42 +1012,62 @@ Expand → Migrate → Contract
 
 Rules:
 
-- inspect the current schema first;
-- create only the exact expansion delta;
-- additive nullable fields first;
-- no unknown value is backfilled with zero;
-- preserve legacy Foods and Diary;
-- old entries remain Snapshot v1;
-- new entries may use Snapshot v2;
-- no automatic Food-group/NOVA/source guessing;
-- first Target Plan Version begins at activation; prior targets are not invented;
-- Backend supports compatible versions during rollout;
-- rollback remains possible.
+- inspect the current committed schema before proposing any migration;
+- additive nullable changes first;
+- never backfill unknown nutrients with zero;
+- legacy Foods and Diary entries remain usable;
+- Snapshot v1 and v2 compatibility is required;
+- no historical group/NOVA/source guessing;
+- do not invent historical Target Plan versions before activation;
+- rollback compatibility must be documented;
+- migrations must be rehearsed against a disposable PostgreSQL database with realistic copied data;
+- do not add a migration merely because this register names a concept; use the existing schema where it correctly supports the requirement.
 
-Migration rehearsal must run on a disposable realistic PostgreSQL copy. Existing migrations are baseline assets and must not be recreated unnecessarily.
+The audit must determine the exact migration delta from the current `main` baseline.
 
 ---
 
-# PD-025 — API and Backend source of truth
+# PD-025 — API and backend source of truth
 
 **Status:** Approved
 
-Existing APIs are the baseline and should be extended additively.
+Existing APIs are baseline assets. Extend them additively where practical.
 
-Approved API domains include:
+Backend is authoritative for:
 
-- `GET /nutrition/registry`;
-- additive Food nutrition/source/group fields;
-- Backend-created Diary snapshots;
-- day status;
-- target preview/current/history;
-- analysis/current/contributors/snapshots;
-- weekly behavior goals;
-- standard structured error contract.
+- BMR and TDEE;
+- deficits;
+- adjusted protein weight;
+- calorie and macro targets;
+- nutrient targets;
+- source reliability;
+- snapshots;
+- analysis eligibility and confidence;
+- weekly priorities.
 
-Frontend must not calculate BMR, TDEE, deficit, adjusted protein weight, macro targets, nutrient targets, analysis confidence, or weekly priority.
+Frontend must not duplicate these calculations.
 
-Important mutations should support idempotency where duplicate submission is possible.
+Approved API capability areas:
+
+1. Nutrition Registry.
+2. Food nutrition/source/group/trait extensions.
+3. Diary entry snapshot creation and scaling.
+4. Diary day summary and coverage.
+5. Day logging status.
+6. Target Plan preview/current/history.
+7. Nutrition Analysis and contributors.
+8. Analysis Snapshots.
+9. Weekly behavior goals.
+
+Mutation rules:
+
+- use idempotency where duplicate submission is harmful;
+- stable error codes with Arabic display messages;
+- missing values use null;
+- contracts remain additive/backward compatible where feasible;
+- frontend sends Food/date/meal/quantity inputs, while backend constructs authoritative snapshots.
+
+Direct gram/ml Diary logging remains deferred.
 
 ---
 
@@ -897,127 +1085,183 @@ analysis_rules_version
 snapshot_schema_version
 ```
 
-An umbrella `product_nutrition_rules_version` may also be exposed.
+An umbrella product nutrition rules version may also be exposed.
 
-Target plans, Diary snapshots, and Analysis Snapshots store the versions that produced them.
+Snapshots, Target Plans, and Analysis Snapshots store the versions that produced them.
+
+Rules are centralized in a backend-owned/versioned package covering:
+
+```text
+nutrients
+food_groups
+macro_policy
+deficit_policy
+analysis_policy
+source_reliability
+nova_definitions
+versioning
+```
+
+Frontend display metadata must come from the authoritative contract rather than an independently editable duplicate registry.
 
 ---
 
-# PD-027 — Recommendation validation
+# PD-027 — Recommendation validation and launch
 
 **Status:** Approved
 
-Every recommendation rule defines eligibility, exclusions, complete-day minimum, coverage minimum, priority category, Arabic templates, practical actions, and version.
+Every recommendation rule requires:
+
+- rule key and version;
+- eligibility conditions;
+- exclusions;
+- minimum complete days;
+- minimum coverage;
+- conflict behavior;
+- priority category;
+- Arabic templates;
+- practical actions.
 
 Release requirements:
 
 - unit tests;
 - golden scenarios;
-- missing-data tests;
+- null versus known-zero tests;
+- missing-data cases;
 - conflict tests;
-- behavioral-safety review;
-- shadow mode;
+- behavioral-safety copy review;
+- shadow/silent mode before user display;
 - manual review of realistic scenarios;
 - full regression.
 
-No recommendation is displayed merely because a single nutrient value is low on one incomplete day.
+No recommendation may be displayed as a strong conclusion when its own evidence and coverage gates are not satisfied.
 
 ---
 
-# PD-028 — Success metrics
+# PD-028 — Product success metrics
 
 **Status:** Approved
 
-Measure value, not clicks.
+Measure value rather than raw screen visits.
 
 Approved metrics include:
 
-- complete-day rate;
+- completed-day rate;
 - nutrient-data coverage;
-- Food-group classification coverage;
-- fiber and food-group pattern improvement;
-- reduction in processed-meat and sugary-drink frequency;
-- optional weekly goals accepted/completed;
-- user understanding of target calculations;
+- food-group coverage;
+- fiber-target frequency;
+- improvement in vegetables/fruit, legumes, whole grains, nuts, seafood, and dairy;
+- reduction in processed meat and sugar-sweetened beverage frequency;
+- weekly goals accepted and completed;
+- user understanding of target calculation;
 - correction rate of unrealistic targets;
 - sustained use without punitive behavior;
-- weight/waist trend when relevant.
+- weight or waist trends where relevant.
 
-App opens and screen views are not primary health-value metrics.
+App opens and page views are not primary product-success metrics.
 
 ---
 
-# PD-029 — Readiness and scope freeze
+# PD-029 — Readiness gate and formal scope freeze
 
 **Status:** Approved
 
+The existing myNutri baseline is implemented. This gate applies only to each expansion wave.
+
 A wave is Ready to Build only when:
 
-- its exact PRESERVE/MODIFY/ADD/DEFER/REMOVE matrix is complete;
-- Critical = 0;
-- High unresolved = 0;
-- data model, API, migrations, rollback, and compatibility are approved;
+- all governing decisions for that wave are present and reconciled;
+- baseline versus delta classification is complete;
+- Critical issues = 0;
+- High unresolved issues = 0;
+- data model and exact schema delta are approved;
+- migration and rollback plan are approved;
+- API contracts are approved;
 - user stories and acceptance criteria are complete;
-- calculation golden scenarios are fixed;
-- loading, empty, error, partial, legacy, RTL, keyboard, and responsive states are defined;
-- regression and physical-device status are explicit.
+- golden calculations are fixed;
+- loading, empty, error, partial, legacy, keyboard, RTL, and responsive states are defined;
+- verification and regression plans are approved.
 
 Readiness states:
 
-```text
-Not Ready
-Conditionally Ready
-Ready to Build
-```
+## Not Ready
 
-Only the active wave is frozen. Later-wave detail may remain approved product direction without being implementation-ready.
+Contradictory decisions, unresolved schema/API/calculation rules, or open Critical/High issues.
+
+## Conditionally Ready
+
+Foundation is sound and only documented Medium/Low gaps remain; spike/prototype work only.
+
+## Ready to Build
+
+Scope is frozen, contracts/tests/rollback are defined, and Critical/High unresolved issues are zero.
+
+After freeze:
+
+- Critical security/safety/data-integrity work may enter immediately;
+- High changes require formal approval;
+- other ideas go to backlog/future scope.
 
 ---
 
-# Explicitly deferred from the current expansion release
+# Explicit deferred scope
 
-- sleep;
+The following are not part of this expansion release unless a later Change Decision adds them:
+
+- sleep tracking;
 - laboratory tests;
 - medications and supplements;
-- pregnancy, breastfeeding, kidney disease, bariatric, eating-disorder, and other clinical modes;
-- deferred nutrients listed in PD-009;
-- full recipe/ingredient calculation engine;
+- pregnancy/breastfeeding and clinical disease modes;
+- full recipe and ingredient-calculation engine;
 - barcode scanning;
-- OCR and label import;
-- broad Food import;
-- allergies and unwanted-ingredient workflows;
-- vegetarian/vegan/gluten-free/halal labels;
+- OCR/label import;
+- general Food import expansion;
+- allergies and unwanted ingredients;
+- vegetarian/vegan/gluten-free/halal product labels;
 - full preparation-method taxonomy;
-- Food review workflow;
+- Food review states/workflow;
 - Food edit history;
-- comprehensive data export;
-- delete-all-data action;
-- offline sync;
-- multiple profiles;
-- direct gram/ml Diary logging in Waves 1–2;
-- AI nutrition decision-making;
-- unified Health Score.
+- comprehensive export;
+- delete all data;
+- offline personal-data storage and synchronization;
+- direct gram/ml Diary logging;
+- AI nutrition decisions;
+- unified Health Score;
+- the deferred nutrients named in PD-009.
 
 ---
 
-# Current governance status
+# Required reconciliation output
+
+The strict reconciliation must quote and classify every decision `PD-000` through `PD-029` and report:
 
 ```text
-Existing product baseline: Implemented and checkpointed on main
-Expansion register: Available and authoritative for reconciliation
-Wave 1 baseline/delta audit: Must be rerun against current main and this register
-Formal BA audit: Pending
-Formal QA audit: Pending
-Wave 1 migration/API freeze: Pending exact delta audit
-Wave 1 Ready to Build: No
-Existing product status: Not reclassified by this expansion readiness state
+Current audited HEAD
+Decision ID
+Exact governing requirement
+Current implementation evidence
+Classification
+Exact remaining delta
+Schema impact
+Migration impact
+API impact
+Test impact
+Severity
+Closure evidence
 ```
 
-Required next action:
+It must also reassess prior issues as:
 
-1. Reconcile every `PD-*` decision against current main.
-2. Reclassify prior provisional `NQ-*` audit entries under the formal IDs.
-3. Reassess all previous Critical/High issues as resolved, partially resolved, open, superseded, or reclassified.
-4. Produce `07_PRODUCT_DECISION_RECONCILIATION.md`.
-5. Produce `08_WAVE1_READINESS_RECHECK.md`.
-6. Do not implement until the recheck defines the exact Wave 1 delta and returns the appropriate verdict.
+```text
+Resolved
+Partially resolved
+Still open
+Superseded
+Reclassified
+```
+
+The output must not claim Wave 1 readiness until all formal requirements in this complete register have been considered.
+
+---
+
+**End of myNutri Product Decision Register & Expansion Scope Freeze v1.1**
