@@ -5,7 +5,6 @@ import { DirectionProvider } from "@base-ui-components/react/direction-provider"
 import { useEffect, useState } from "react";
 
 import { InstallPrompt } from "./InstallPrompt";
-import { SyncStatus } from "./SyncStatus";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(
@@ -31,7 +30,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={client}>
         {children}
         <InstallPrompt />
-        <SyncStatus />
       </QueryClientProvider>
     </DirectionProvider>
   );

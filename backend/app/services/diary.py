@@ -16,43 +16,80 @@ from app.schemas import (
 from app.services.food import get_food
 
 DETAIL_FIELDS = (
+    "fiber_g",
+    "sugar_g",
+    "added_sugar_g",
     "saturated_fat_g",
     "trans_fat_g",
-    "cholesterol_mg",
     "sodium_mg",
-    "fiber_g",
-    "total_sugars_g",
-    "added_sugar_g",
+    "cholesterol_mg",
+    "potassium_mg",
+    "calcium_mg",
+    "iron_mg",
+    "magnesium_mg",
+    "zinc_mg",
+    "vitamin_d_mcg",
+    "vitamin_b12_mcg",
+    "vitamin_c_mg",
+    "vitamin_a_mcg",
+    "folate_mcg",
+    "vitamin_k_mcg",
 )
 
 
-def make_snapshot(food: Food) -> dict[str, Any]:
+def make_snapshot(food: Food, quantity: float | None = None) -> dict[str, Any]:
     snapshot = {
         "food_id": str(food.id),
         "name": food.name,
-        "serving_label": food.serving_label,
-        "serving_grams": None if food.serving_grams is None else float(food.serving_grams),
+        "brand": food.brand,
+        "category": food.category,
+        "nutrition_basis": food.nutrition_basis.value,
+        "default_unit_type": food.default_unit_type.value,
+        "unit_amount": float(food.unit_amount),
+        "unit_basis": food.unit_basis.value,
         "calories": float(food.calories),
         "protein_g": float(food.protein_g),
         "carb_g": float(food.carb_g),
         "fat_g": float(food.fat_g),
+        "notes": food.notes,
+        "data_source": food.data_source,
+        "log_mode": "servings",
     }
     for field in DETAIL_FIELDS:
         value = getattr(food, field)
         snapshot[field] = None if value is None else float(value)
+    if quantity is not None:
+        snapshot["logged_quantity"] = float(quantity)
+        snapshot["calculated_totals"] = totals_from_snapshot(snapshot, quantity).model_dump()
     return snapshot
 
 
 def totals_from_snapshot(snapshot: dict[str, Any], quantity: float) -> NutritionTotals:
-    multiplier = float(quantity)
+    calculated = snapshot.get("calculated_totals")
+    logged_quantity = snapshot.get("logged_quantity")
+    if calculated is not None and logged_quantity is not None and float(logged_quantity) == float(quantity):
+        return NutritionTotals.model_validate(calculated)
+
+    if snapshot.get("nutrition_basis") in {"per_100g", "per_100ml"}:
+        log_mode = snapshot.get("log_mode") or "servings"
+        if log_mode == "grams":
+            multiplier = float(quantity) / 100
+        else:
+            multiplier = (float(quantity) * float(snapshot.get("unit_amount") or 0)) / 100
+    else:
+        multiplier = float(quantity)
+
     carb_g = float(snapshot.get("carb_g") or 0) * multiplier
     fiber_g = snapshot.get("fiber_g")
+    sugar_g = snapshot.get("sugar_g", snapshot.get("total_sugars_g"))
     totals: dict[str, Any] = {
         "calories": round(float(snapshot.get("calories") or 0) * multiplier, 2),
         "protein_g": round(float(snapshot.get("protein_g") or 0) * multiplier, 2),
         "carb_g": round(carb_g, 2),
         "fat_g": round(float(snapshot.get("fat_g") or 0) * multiplier, 2),
-        "net_carbs_g": round((float(snapshot.get("carb_g") or 0) - float(fiber_g or 0)) * multiplier, 2),
+        "net_carbs_g": round(max(float(snapshot.get("carb_g") or 0) - float(fiber_g or 0), 0) * multiplier, 2),
+        "total_sugars_g": None if sugar_g is None else round(float(sugar_g) * multiplier, 2),
+        "sugar_g": None if sugar_g is None else round(float(sugar_g) * multiplier, 2),
     }
     for field in DETAIL_FIELDS:
         value = snapshot.get(field)
@@ -67,6 +104,7 @@ def to_entry_response(entry: DiaryEntry) -> DiaryEntryResponse:
         entry_date=entry.entry_date,
         food_id=entry.food_id,
         quantity=float(entry.quantity),
+        meal_type=entry.meal_type,
         nutrition_snapshot=snapshot,
         totals=totals_from_snapshot(entry.nutrition_snapshot, float(entry.quantity)),
         created_at=entry.created_at,
@@ -95,7 +133,8 @@ def create_entry(session: Session, payload: DiaryEntryCreate) -> DiaryEntry:
             existing.entry_date = payload.entry_date
             existing.food_id = food.id
             existing.quantity = payload.quantity
-            existing.nutrition_snapshot = make_snapshot(food)
+            existing.meal_type = payload.meal_type
+            existing.nutrition_snapshot = make_snapshot(food, payload.quantity)
             session.add(existing)
             session.commit()
             session.refresh(existing)
@@ -105,7 +144,8 @@ def create_entry(session: Session, payload: DiaryEntryCreate) -> DiaryEntry:
         "entry_date": payload.entry_date,
         "food_id": food.id,
         "quantity": payload.quantity,
-        "nutrition_snapshot": make_snapshot(food),
+        "meal_type": payload.meal_type,
+        "nutrition_snapshot": make_snapshot(food, payload.quantity),
     }
     if payload.id is not None:
         entry_data["id"] = payload.id
@@ -118,15 +158,14 @@ def create_entry(session: Session, payload: DiaryEntryCreate) -> DiaryEntry:
 
 def update_entry(session: Session, entry_id: UUID, payload: DiaryEntryUpdate) -> DiaryEntry:
     entry = get_entry(session, entry_id)
-    updates = payload.model_dump(exclude_unset=True)
-    if "food_id" in updates and updates["food_id"] is not None:
-        food = get_food(session, updates["food_id"])
-        entry.food_id = food.id
-        entry.nutrition_snapshot = make_snapshot(food)
-    if "entry_date" in updates and updates["entry_date"] is not None:
-        entry.entry_date = updates["entry_date"]
-    if "quantity" in updates and updates["quantity"] is not None:
-        entry.quantity = updates["quantity"]
+    entry.quantity = payload.quantity
+    if payload.meal_type is not None:
+        entry.meal_type = payload.meal_type
+    snapshot = dict(entry.nutrition_snapshot)
+    snapshot.pop("calculated_totals", None)
+    snapshot["logged_quantity"] = float(payload.quantity)
+    snapshot["calculated_totals"] = totals_from_snapshot(snapshot, payload.quantity).model_dump()
+    entry.nutrition_snapshot = snapshot
 
     session.add(entry)
     session.commit()

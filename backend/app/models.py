@@ -33,6 +33,36 @@ class Goal(str, Enum):
     bulk = "bulk"
 
 
+class NutritionBasis(str, Enum):
+    per_100g = "per_100g"
+    per_100ml = "per_100ml"
+
+
+class DefaultUnitType(str, Enum):
+    g = "g"
+    ml = "ml"
+    cup = "cup"
+    slice = "slice"
+    piece = "piece"
+    scoop = "scoop"
+    serving = "serving"
+    tablespoon = "tablespoon"
+    teaspoon = "teaspoon"
+
+
+class UnitBasis(str, Enum):
+    g = "g"
+    ml = "ml"
+
+
+class MealType(str, Enum):
+    breakfast = "breakfast"
+    lunch = "lunch"
+    dinner = "dinner"
+    snack = "snack"
+    unspecified = "unspecified"
+
+
 class Profile(SQLModel, table=True):
     __tablename__ = "profile"
 
@@ -45,7 +75,7 @@ class Profile(SQLModel, table=True):
         sa_column=Column(SAEnum(ActivityLevel, name="activity_level_enum"), nullable=False)
     )
     goal: Goal = Field(sa_column=Column(SAEnum(Goal, name="goal_enum"), nullable=False))
-    protein_per_kg: float = Field(default=1.8, sa_column=Column(Numeric(4, 2), nullable=False))
+    protein_per_kg: float = Field(default=1.2, sa_column=Column(Numeric(4, 2), nullable=False))
     fat_pct: float = Field(default=0.25, sa_column=Column(Numeric(4, 2), nullable=False))
     updated_at: datetime = Field(
         default_factory=utcnow,
@@ -58,19 +88,42 @@ class Food(SQLModel, table=True):
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     name: str = Field(index=True)
-    serving_label: str
-    serving_grams: float | None = Field(default=None, sa_column=Column(Numeric(7, 2)))
+    brand: str | None = None
+    category: str | None = None
+    nutrition_basis: NutritionBasis = Field(
+        sa_column=Column(SAEnum(NutritionBasis, name="nutrition_basis_enum"), nullable=False)
+    )
+    default_unit_type: DefaultUnitType = Field(
+        sa_column=Column(SAEnum(DefaultUnitType, name="default_unit_type_enum"), nullable=False)
+    )
+    unit_amount: float = Field(sa_column=Column(Numeric(8, 2), nullable=False))
+    unit_basis: UnitBasis = Field(
+        sa_column=Column(SAEnum(UnitBasis, name="unit_basis_enum"), nullable=False)
+    )
     calories: float = Field(sa_column=Column(Numeric(8, 2), nullable=False))
     protein_g: float = Field(sa_column=Column(Numeric(7, 2), nullable=False))
     carb_g: float = Field(sa_column=Column(Numeric(7, 2), nullable=False))
     fat_g: float = Field(sa_column=Column(Numeric(7, 2), nullable=False))
+    fiber_g: float | None = Field(default=None, sa_column=Column(Numeric(7, 2)))
+    sugar_g: float | None = Field(default=None, sa_column=Column(Numeric(7, 2)))
+    added_sugar_g: float | None = Field(default=None, sa_column=Column(Numeric(7, 2)))
     saturated_fat_g: float | None = Field(default=None, sa_column=Column(Numeric(7, 2)))
     trans_fat_g: float | None = Field(default=None, sa_column=Column(Numeric(7, 2)))
-    cholesterol_mg: float | None = Field(default=None, sa_column=Column(Numeric(8, 2)))
     sodium_mg: float | None = Field(default=None, sa_column=Column(Numeric(8, 2)))
-    fiber_g: float | None = Field(default=None, sa_column=Column(Numeric(7, 2)))
-    total_sugars_g: float | None = Field(default=None, sa_column=Column(Numeric(7, 2)))
-    added_sugar_g: float | None = Field(default=None, sa_column=Column(Numeric(7, 2)))
+    cholesterol_mg: float | None = Field(default=None, sa_column=Column(Numeric(8, 2)))
+    potassium_mg: float | None = Field(default=None, sa_column=Column(Numeric(8, 2)))
+    calcium_mg: float | None = Field(default=None, sa_column=Column(Numeric(8, 2)))
+    iron_mg: float | None = Field(default=None, sa_column=Column(Numeric(7, 2)))
+    magnesium_mg: float | None = Field(default=None, sa_column=Column(Numeric(8, 2)))
+    zinc_mg: float | None = Field(default=None, sa_column=Column(Numeric(7, 2)))
+    vitamin_d_mcg: float | None = Field(default=None, sa_column=Column(Numeric(7, 2)))
+    vitamin_b12_mcg: float | None = Field(default=None, sa_column=Column(Numeric(8, 2)))
+    vitamin_c_mg: float | None = Field(default=None, sa_column=Column(Numeric(8, 2)))
+    vitamin_a_mcg: float | None = Field(default=None, sa_column=Column(Numeric(8, 2)))
+    folate_mcg: float | None = Field(default=None, sa_column=Column(Numeric(8, 2)))
+    vitamin_k_mcg: float | None = Field(default=None, sa_column=Column(Numeric(8, 2)))
+    notes: str | None = None
+    data_source: str | None = None
     created_at: datetime = Field(
         default_factory=utcnow,
         sa_column=Column(DateTime(timezone=True), nullable=False),
@@ -91,6 +144,10 @@ class DiaryEntry(SQLModel, table=True):
         sa_column=Column(ForeignKey("food.id", ondelete="SET NULL"), index=True, nullable=True),
     )
     quantity: float = Field(sa_column=Column(Numeric(8, 3), nullable=False))
+    meal_type: MealType = Field(
+        default=MealType.unspecified,
+        sa_column=Column(SAEnum(MealType, name="meal_type_enum"), nullable=False),
+    )
     nutrition_snapshot: dict[str, Any] = Field(
         default_factory=dict,
         sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False),

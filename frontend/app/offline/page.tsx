@@ -5,9 +5,12 @@ export default function OfflinePage() {
     <section className="section-panel">
       <h1 className="page-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <WifiOff size={26} />
-        دون اتصال
+        الاتصال غير متاح
       </h1>
-      <p className="page-kicker">يمكنك الرجوع للبيانات المخزنة محليًا، وستتم مزامنة التغييرات عند عودة الاتصال.</p>
+      <p className="page-kicker">
+        myNutri v1 يحتاج اتصالًا بالإنترنت لتحميل بيانات التغذية وحفظ التغييرات. لا يتم حفظ التغييرات محليًا ولا توجد
+        مزامنة لاحقة. تحقق من الاتصال ثم أعد المحاولة.
+      </p>
     </section>
   );
 }

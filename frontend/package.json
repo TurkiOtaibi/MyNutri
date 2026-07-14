@@ -6,18 +6,22 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "test:e2e:foods": "playwright test e2e/foods",
+    "test:e2e:foods:p0": "playwright test e2e/foods --grep @p0",
+    "test:e2e:foods:headed": "playwright test e2e/foods --headed"
   },
   "dependencies": {
     "@base-ui-components/react": "1.0.0-rc.0",
     "@tanstack/react-query": "5.101.2",
-    "dexie": "4.4.4",
     "lucide-react": "1.23.0",
     "next": "16.2.10",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "4.3.2",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",

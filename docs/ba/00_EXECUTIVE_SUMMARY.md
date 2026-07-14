@@ -1,96 +1,150 @@
 # BA Executive Summary
 
-Reverse-engineered requirements package for the current myNutri codebase.
+Mode: requirements update from confirmed product decisions D-001 through D-026.
 
-Mode: full  
-Scope: entire repository, including backend, frontend, docs, tests, online API behavior, optional installable shell behavior, and previous QA audit outputs.  
-Report-only: yes. No application code was changed.
+Scope:
+- myNutri v1 online-only personal nutrition system.
+- Existing BA package under `docs/ba/`.
+- QA audit evidence under `docs/qa/user-story-audit/` and `docs/qa/user-story-audit-v2/`.
+- Current implementation evidence from backend and frontend code.
 
-## Product Summary
+Application code changed: No.
+QA audit files changed: No.
 
-myNutri v1 is a personal Arabic-first RTL nutrition tracker defined as an online-only web system.
+## Product Scope
 
-The current codebase implements a single-owner, single-profile system with:
+myNutri v1 is an Arabic-first RTL, mobile-first, online-only personal nutrition tracker. It supports:
+- One personal profile in the current v1 scope.
+- Daily target calculation.
+- A shared current Food catalog.
+- Diary logging by servings or grams.
+- Weekly summary.
+- Online API reads and writes only.
+- Clear Arabic validation, network, and server error messages.
+- Food creation on a standalone mobile-first page.
+- Food deletion by permanent hard delete with confirmation.
+- Food nutrition values stored per 100g or per 100ml, with a default logging unit.
 
-- Profile and target calculation.
-- Food catalog CRUD.
-- Diary logging by serving quantity.
-- Sunday-to-Saturday weekly summary.
-- Nutrition snapshots for historical diary accuracy.
-- Online API reads and writes for Profile, Foods, and Diary.
-- Single-user token protection on API routes.
+Offline-first behavior is out of scope for v1. IndexedDB, offline mutation queues, sync push/pull, pending sync states, conflict handling, stale cache behavior, offline writes, and sync rejection handling are Future Scope only.
 
-Product decision: offline-first behavior is removed from v1. IndexedDB caches, offline mutation queues, sync push/pull, stale cache states, conflict handling, and offline writes are Future Scope. v1 changes are saved only after a successful API response.
+## Confirmed Product Decisions Applied
 
-## Current Implementation Status
+| Decision | Summary | BA status |
+|---|---|---|
+| D-001 | Remove offline write behavior from v1. | Applied |
+| D-002 | Service worker may cache static shell assets only; removal recommended if confusing. | Applied |
+| D-003 | Superseded by D-025; do not use archive/inactive Food delete in v1. | Superseded |
+| D-004 | Superseded by D-025; do not use `is_active` or `archived_at` in v1. | Superseded |
+| D-005 | Superseded by D-025; deleted Foods do not exist and do not block duplicates. | Superseded |
+| D-006 | Duplicate key is current-catalog normalized `name + nutrition_basis + default_unit_type + unit_amount + unit_basis`. | Applied |
+| D-007 | Gram-based Diary logging is required in v1. | Applied |
+| D-008 | Future Diary dates are blocked. | Applied |
+| D-009 | Birth date cannot be future; age must be 10-100. | Applied |
+| D-010 | Minimal Diary edit is quantity-only. | Applied |
+| D-011 | Exact Arabic validation/error messages are required. | Applied |
+| D-012 | Practical v1 validation ranges are defined. | Applied |
+| D-013 | Shared API error mapping is defined. | Applied |
+| D-014 | Superseded by D-025 for Food; Food permanent delete uses confirmation dialog. | Superseded |
+| D-015 | Mobile/browser support matrix is defined. | Applied |
+| D-016 | Multi-profile support is Future Scope; v1 uses one Profile model. | Applied |
+| D-017 | Profile reset/delete is out of scope for v1. | Applied |
+| D-018 | Diary entry delete requires confirmation. | Applied |
+| D-019 | Superseded by D-024/D-025 for Food catalog modeling; use default-unit fields. | Superseded |
+| D-020 | Long food names use two-line truncation in lists and full display in detail/edit. | Applied |
+| D-021 | Final Diary `log_mode` and mode-specific `quantity` API/storage contract is defined. | Applied |
+| D-022 | Exact Arabic read-failure copy is defined for Profile, Foods, Food detail, Diary day, Weekly, and general reads. | Applied |
+| D-023 | Stale item, duplicate-submit, retry, and minimum accessibility behavior is defined. | Applied |
+| D-024 | Add Food is a standalone page with `/foods/new`, details at `/foods/:id`, and edit at `/foods/:id/edit`. | Applied |
+| D-025 | Food deletion is permanent hard delete; no archive/inactive status or filters in v1. | Applied |
+| D-026 | Optional nutrient max ranges and cross-field validation rules are defined. | Applied |
 
-| Area | Status | Evidence | Confidence |
-|---|---|---|---|
-| Arabic-first RTL responsive shell | Confirmed | `frontend/app/layout.tsx`, `frontend/public/manifest.json`, `frontend/components/Providers.tsx` | High |
-| Single-user auth | Confirmed | `backend/app/core/auth.py`, protected routers | High |
-| Profile and target calculation | Confirmed | `backend/app/models.py`, `backend/app/services/calc.py`, `frontend/components/ProfilePage.tsx` | High |
-| Food catalog CRUD | Confirmed | `backend/app/api/routes/foods.py`, `frontend/components/FoodsPage.tsx` | High |
-| Diary logging by serving quantity | Confirmed | `backend/app/api/routes/diary.py`, `frontend/components/DiaryPage.tsx` | High |
-| Diary nutrition snapshots | Confirmed | `backend/app/services/diary.py`, `backend/tests/test_diary_snapshot.py` | High |
-| Weekly aggregation | Confirmed | `backend/app/services/aggregation.py`, `frontend/components/DiaryPage.tsx` | High |
-| Online-only v1 data behavior | Required / not fully aligned with current code | Product decision in `13_PRODUCT_DECISIONS.md`; current offline/sync code exists in `frontend/lib/db.ts` and `backend/app/api/routes/sync.py` | High |
-| Offline cache and sync queue | Future Scope / out of v1 | `frontend/lib/db.ts`, `backend/app/api/routes/sync.py`, `frontend/components/SyncStatus.tsx` | High |
-| Multi-person profiles | Missing | No `person` table, no `person_id` on diary entries | High |
-| Food archive/inactive lifecycle | Missing | No archive field; hard delete in `backend/app/services/food.py` | High |
-| Gram-based diary logging | Missing | `DiaryEntryInput.quantity` is servings only | High |
+## Product Areas
 
-## Product Areas Discovered
+1. App shell, RTL, mobile layout, and optional installable shell.
+2. Single-user token authentication and API access.
+3. Profile and target calculation.
+4. Food catalog, standalone Add/Edit pages, per-100g/per-100ml nutrition, and permanent delete lifecycle.
+5. Diary logging by servings or grams.
+6. Weekly summary.
+7. Online API error handling.
+8. Accessibility and Arabic validation.
+9. QA and testability coverage.
+10. Future offline/sync scope.
 
-1. App Shell, Navigation, RTL, and optional installable shell.
-2. Single-User Authentication.
-3. Profile and Target Calculation.
-4. Food Catalog.
-5. Diary and Weekly Tracking.
-6. Online Data Access and Network Error Handling.
-7. Health/Infrastructure.
-8. QA/Test Coverage.
+## Entities and Resources
 
-## Entities and Resources Discovered
+| Entity/resource | v1 status | Notes |
+|---|---|---|
+| Profile | Confirmed / needs validation alignment | Single profile, online save only. |
+| TargetResponse | Confirmed | Calculated from Profile; not stored. |
+| Food | Confirmed / needs data-model, duplicate, standalone-page, and delete-confirmation alignment | Nutrition source of truth is per 100g/per 100ml; delete is permanent hard delete. |
+| DiaryEntry | Confirmed / needs gram and quantity-edit alignment | Snapshot integrity remains required after Food edit/delete. |
+| NutritionSnapshot | Confirmed / needs gram/default-unit calculation definition | Freezes nutrition at logging time and must remain readable after Food deletion. |
+| WeekSummary | Confirmed | Sunday-to-Saturday aggregation. |
+| SyncOperation / QueuedMutation | Future Scope | Not a v1 requirement. |
+| Service worker | Constrained v1 shell only | Must not cache personal nutrition data. |
 
-| Entity/resource | Type | Status | Evidence |
-|---|---|---|---|
-| Profile | Database entity | Confirmed | `backend/app/models.py`, `backend/app/schemas.py` |
-| Food | Database entity | Confirmed | `backend/app/models.py`, `backend/app/schemas.py` |
-| DiaryEntry | Database entity | Confirmed | `backend/app/models.py`, `backend/app/schemas.py` |
-| NutritionSnapshot | JSON/value object | Confirmed | `backend/app/services/diary.py`, `backend/app/schemas.py` |
-| NutritionTotals | Computed value object | Confirmed | `backend/app/schemas.py`, `frontend/lib/db.ts` |
-| TargetResponse / TargetResult | Computed value object | Confirmed | `backend/app/services/calc.py`, `backend/app/schemas.py` |
-| SyncOperation | API payload | Future Scope / out of v1 | `backend/app/api/routes/sync.py`, `frontend/lib/types.ts` |
-| QueuedMutation | IndexedDB entity | Future Scope / out of v1 | `frontend/lib/db.ts`, `frontend/lib/types.ts` |
-| Local cache stores | IndexedDB stores | Future Scope / not source of truth in v1 | `frontend/lib/db.ts` |
+## Requirements Counts
 
-## Counts
-
-| Metric | Count |
+| Package area | Count |
 |---|---:|
-| Product areas | 8 |
-| Entities/resources | 9 |
-| Features documented | 38 |
-| User stories generated | 27 |
-| CRUD gaps | 18 |
-| Field/validation gaps | 42 |
-| Open questions | 30 |
+| Features documented | 45 |
+| User stories documented | 40 |
+| Product decisions documented | 26 |
+| Remaining product open questions | 0 |
+| Implementation alignment items | 19 |
+| Field/validation implementation gaps | 12 |
 
-## Highest-Risk Requirement Gaps
+## QA Audit Remediation
 
-1. Food delete is a hard delete without confirmation, while root Foods requirements require confirmation and archive/inactive behavior for used foods.
-2. The app is implemented as single-profile, while some later planning context discusses multi-person profiles.
-3. Required food numeric fields default to `0`, which can hide missing nutrition data.
-4. Server validation/API errors are often treated like offline success and queued locally in the current code; v1 now requires no offline queue and no save without API success.
-5. Net carbs can become negative because `fiber_g <= carb_g` is not enforced.
-6. Gram-based diary usage is planned in Foods requirements but not implemented.
-7. No custom Arabic field-level validation messages are defined.
-8. No direct Food/Profile/Diary route validation test suite exists beyond calc and snapshot tests; existing sync tests are now future-scope evidence.
-9. Online network error handling requirements need implementation alignment because current code can fall back to local cache/queue behavior.
-10. Accessibility is partial: labels exist, but icon-only actions rely mostly on `title`.
+The fresh v2 QA audit found 0 Critical and 2 High BA issues, plus supporting BA cleanup items. This update resolves the requirement-decision side of those findings:
+- Online-only write behavior is now explicit.
+- Food delete lifecycle is now permanent hard delete with confirmation.
+- Add Food standalone page routes and structure are decided.
+- Food data model is now per 100g/per 100ml with default unit fields.
+- Optional nutrient max ranges and cross-field validation rules are defined.
+- Duplicate rules are decided.
+- Negative net carbs validation is decided.
+- Gram logging is required and specified.
+- Future diary dates are blocked.
+- Profile date/age bounds are defined.
+- Arabic messages are defined.
+- Mobile/browser support matrix is defined.
+- Exact Diary gram-mode API/storage contract is defined.
+- Exact read-failure Arabic copy is defined.
+- Stale item, duplicate-submit, retry, and minimum accessibility behavior are defined.
+- Offline/cached-read artifacts are documented as Future Scope or implementation alignment, not v1 requirements.
+
+Remaining work is implementation alignment and QA verification, not product decision discovery.
+
+## Implementation Alignment Warning
+
+Current code still contradicts several v1 BA decisions:
+- `frontend/components/ProfilePage.tsx` queues failed profile saves.
+- `frontend/components/FoodsPage.tsx` queues failed food saves/deletes and writes local IndexedDB.
+- `frontend/components/DiaryPage.tsx` queues failed diary add/delete operations.
+- `frontend/lib/db.ts` contains IndexedDB cache and mutation queue behavior.
+- `frontend/components/SyncStatus.tsx` exposes sync/pending status.
+- `backend/app/api/routes/sync.py` and `backend/tests/test_sync.py` are future-scope evidence.
+- `frontend/public/service-worker.js` caches fetched GET responses.
+- Offline page/metadata and cached-read fallback behavior may imply offline data behavior.
+- Food archive fields are no longer v1 requirements; old archive references are superseded by D-025.
+- Current Food model/schema still uses serving-based fields and lacks the D-025 per-100g/per-100ml default-unit model.
+- Current Foods UI uses list-page form behavior and lacks standalone `/foods/new`, `/foods/:id`, and `/foods/:id/edit` pages.
+- Current Food delete hard deletes but needs confirmation, permanent-delete copy, and snapshot-after-delete verification.
+- Gram Diary logging and quantity-only edit UI are missing.
+- D-021 Diary `log_mode` storage/API contract is missing.
+- Diary entry delete confirmation may be missing.
+- Duplicate-submit, stale item, retry, and minimum accessibility behavior need implementation alignment.
+- Food `serving_grams` assumptions are superseded by D-025 default-unit requirements.
+- Long food name two-line truncation needs implementation/verification.
+
+These are not v1 requirements; they are implementation alignment items to address after BA approval.
 
 ## Readiness
 
-The codebase is usable as a personal nutrition tracker, but requirements are not fully ready for implementation expansion until the open product decisions in `12_OPEN_QUESTIONS.md` are resolved.
+BA readiness for another QA audit: Ready.
 
-Recommended next step: run the QA user-story coverage auditor against this `docs/ba` package, then revise the BA stories before implementation planning.
+Implementation planning readiness: Ready from a BA standpoint. Current code contradictions remain implementation alignment items, not unresolved BA decisions.
+
+QA test case generation readiness: Existing QA test cases must be updated before execution because Food archive/inactive and serving-based Food assumptions are superseded by D-024/D-025.

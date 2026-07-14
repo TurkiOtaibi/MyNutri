@@ -1,7 +1,9 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from typing import Any
+
+from fastapi import APIRouter, Body, Depends, Response, status
 from sqlmodel import Session
 
 from app.core.auth import require_single_user
@@ -16,6 +18,7 @@ from app.services.diary import (
     to_entry_response,
     update_entry,
 )
+from app.services.diary_validation_errors import validate_diary_payload
 
 router = APIRouter(prefix="/diary", tags=["diary"], dependencies=[Depends(require_single_user)])
 
@@ -34,8 +37,8 @@ def read_week(start: date, session: Session = Depends(get_session)) -> WeekSumma
 
 
 @router.post("", response_model=DiaryEntryResponse, status_code=status.HTTP_201_CREATED)
-def add_entry(payload: DiaryEntryCreate, session: Session = Depends(get_session)) -> DiaryEntryResponse:
-    return to_entry_response(create_entry(session, payload))
+def add_entry(payload: dict[str, Any] = Body(...), session: Session = Depends(get_session)) -> DiaryEntryResponse:
+    return to_entry_response(create_entry(session, validate_diary_payload(DiaryEntryCreate, payload)))
 
 
 @router.get("/{entry_id}", response_model=DiaryEntryResponse)
@@ -46,10 +49,10 @@ def read_entry(entry_id: UUID, session: Session = Depends(get_session)) -> Diary
 @router.put("/{entry_id}", response_model=DiaryEntryResponse)
 def edit_entry(
     entry_id: UUID,
-    payload: DiaryEntryUpdate,
+    payload: dict[str, Any] = Body(...),
     session: Session = Depends(get_session),
 ) -> DiaryEntryResponse:
-    return to_entry_response(update_entry(session, entry_id, payload))
+    return to_entry_response(update_entry(session, entry_id, validate_diary_payload(DiaryEntryUpdate, payload)))
 
 
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)

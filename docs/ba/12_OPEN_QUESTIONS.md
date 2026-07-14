@@ -1,60 +1,70 @@
 # Open Questions
 
-## Product Owner
+The decisions D-001 through D-026 are resolved and must not remain open. This file keeps only unresolved questions outside those decisions.
 
-1. Should `docs/ba` become the canonical BA source of truth, replacing root-level analysis files?
-2. Is multi-person/profile support in v1, or should the current single-profile implementation remain the v1 scope?
-3. Should used foods be archived/inactive while unused foods are hard deleted, or should all food deletes become archive/inactive?
-4. Should archived foods participate in duplicate-food checks?
-5. What exact rule defines an exact duplicate food: name + serving label + serving grams only, or more fields?
-6. Is gram-based diary logging required before serious personal use, or can serving-only logging remain v1?
-7. Should future diary dates be allowed?
-8. Should future birth dates be blocked?
-9. Should profile deletion/reset be supported?
-10. Should diary entry edit be exposed in the UI since the backend supports it?
+## Resolved Questions
 
-## Engineering
+| Former question | Status | Decision |
+|---|---|---|
+| How should IndexedDB/sync be handled for v1? | Resolved | D-001 |
+| Should service worker stay or be removed? | Resolved with conditional rule | D-002 |
+| Should foods hard delete or archive? | Resolved | D-003 |
+| Which archive fields should be used? | Resolved | D-004 |
+| Should archived foods block duplicates? | Resolved | D-005 |
+| What is the exact duplicate key? | Resolved | D-006 |
+| Is gram logging required in v1? | Resolved | D-007 |
+| Should future diary dates be allowed? | Resolved | D-008 |
+| Should future birth dates be blocked and what are age bounds? | Resolved | D-009 |
+| Should diary edit be exposed? | Resolved | D-010 |
+| What Arabic validation messages should be used? | Resolved | D-011 |
+| What max values should be enforced? | Resolved | D-012 |
+| What API error mapping should be shared? | Resolved | D-013 |
+| What food delete confirmation pattern should be used? | Resolved | D-014 |
+| Which browsers/devices are in scope? | Resolved | D-015 |
+| Is multi-person/profile support in v1 or Future Scope? | Resolved | D-016 |
+| Should profile deletion/reset be supported in v1? | Resolved | D-017 |
+| Should diary delete require confirmation? | Resolved | D-018 |
+| Should API naming remain `serving_grams` while UI says serving weight/grams? | Resolved | D-019 |
+| Should long food names wrap, truncate, or expand? | Resolved | D-020 |
+| What exact Diary API/storage contract should gram mode use? | Resolved | D-021 |
+| What exact Arabic copy should read failures use? | Resolved | D-022 |
+| How should stale items, duplicate submits, retries, and minimum accessibility behavior work? | Resolved | D-023 |
+| Should Add Food be inline on `/foods` or a standalone page? | Resolved | D-024 |
+| Should Food deletion be archive/inactive or permanent hard delete? | Resolved | D-025 |
+| Should Food nutrition values be source-of-truth per serving or per 100g/per 100ml? | Resolved | D-025 |
+| Should v1 use Food `is_active`, `archived_at`, archived status, or Active/Archived filters? | Resolved | D-025 |
+| What max ranges and cross-field rules should optional Food nutrients use? | Resolved | D-026 |
+| How should `sugar_g`, `added_sugar_g`, and legacy `total_sugars_g` map in v1? | Resolved | D-026 |
 
-11. What field should represent food lifecycle: `is_active`, `archived_at`, `deleted_at`, or another design?
-12. Should `serving_grams` be renamed to `serving_weight_g` in product/API language, or kept as-is?
-13. Should duplicate prevention be implemented as service validation only or also a normalized database constraint?
-14. What max values should be enforced for food nutrients, profile height/weight, and diary quantity?
-15. Should test coverage include both SQLite test DB and PostgreSQL-specific migration behavior?
-16. How should existing IndexedDB/sync code be removed, disabled, or hidden for v1 so no offline write behavior remains?
-17. Should the optional installable shell keep a service worker for shell assets only, or should the service worker be removed entirely for v1?
-18. What exact API-unreachable error handling pattern should be shared by Profile, Foods, Diary, and Week views?
+## Remaining Product Questions
 
-## UX / UI / Accessibility
+| ID | Question | Owner | Priority | Why it matters | Current recommendation |
+|---|---|---|---|---|---|
+| None | No remaining v1 product questions after D-001 through D-026. | N/A | N/A | N/A | N/A |
 
-19. What are the exact Arabic field-level validation messages?
-20. Should delete confirmation be a dialog, inline confirmation, or undo snackbar?
-21. Should diary delete also require confirmation?
-22. How should empty/loading/error/no-results/connection-error states differ on Profile, Foods, and Diary?
-23. Should fixed install or connection-error widgets reserve safe-area padding on iPhone/mobile web?
-24. What accessible names should be used for icon-only buttons?
-25. Should validation focus move to the first invalid field?
-26. Should long food names truncate, wrap, or show tooltip/detail expansion?
+## Resolved Scope Boundaries
 
-## QA
-
-27. Should QA generate tests from current implemented behavior or from planned root Foods decisions when they conflict?
-28. Which browsers/devices are in scope for mobile/responsive acceptance?
-29. Which online network-error cases must be automated: API down, 401, 404, 422, timeout, and generic 5xx?
-30. Should existing sync tests be kept as future-scope regression tests or removed from v1 QA runs?
-
-## Resolved by Product Decision
-
-The following questions are resolved for v1:
-
-- Offline-first is removed from v1.
-- Frontend must not queue local mutations after network or validation failure.
-- Sync conflicts, rejected sync operations, pending sync states, and stale cache behavior are Future Scope.
-- Local cached personal nutrition data must not be treated as v1 source of truth.
-- QA should replace offline/sync v1 expectations with online network-error tests.
-
-## Recommended Next Step
-
-1. Product review of this BA package.
-2. Resolve questions 2, 3, 4, 6, 10, 16, 17, 18, and 19 before implementation planning.
-3. Run the QA user-story coverage auditor against `docs/ba`.
-4. Convert approved stories into implementation tasks.
+The following are not v1 open questions:
+- Offline-first behavior.
+- Offline writes.
+- Sync queue/push/pull.
+- Pending sync status.
+- Conflict handling.
+- Stale cache behavior.
+- Sync rejection.
+- Future meal planning.
+- Brand in duplicate checks.
+- Multi-profile support and profile switching.
+- Profile reset/delete.
+- Diary delete confirmation.
+- Serving grams API naming.
+- Long food name display behavior.
+- Diary gram-mode API/storage contract.
+- Exact page-specific Arabic read-failure copy.
+- Stale item handling, duplicate-submit prevention, retry behavior, and minimum accessibility behavior.
+- Standalone Add Food page structure.
+- Permanent Food hard-delete lifecycle.
+- Food per-100g/per-100ml source-of-truth model.
+- Food archive/inactive state and filters.
+- Optional nutrient max ranges and cross-field validation.
+- Sugar field mapping: `sugar_g` is total sugar, `added_sugar_g` is added sugar, and `total_sugars_g` is legacy/current-code naming.

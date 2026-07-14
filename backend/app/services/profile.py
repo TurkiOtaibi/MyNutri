@@ -3,10 +3,11 @@ from sqlmodel import Session, select
 from app.models import Profile, utcnow
 from app.schemas import ProfileResponse, ProfileUpsert, TargetResponse
 from app.services.calc import calculate_targets
+from app.services.nutrients import nutrient_target_payloads
 
 
 def to_target_response(profile: Profile) -> TargetResponse:
-    return TargetResponse.model_validate(calculate_targets(profile).__dict__)
+    return TargetResponse.model_validate({**calculate_targets(profile).__dict__, "additional_targets": nutrient_target_payloads()})
 
 
 def to_profile_response(profile: Profile) -> ProfileResponse:
@@ -47,4 +48,4 @@ def upsert_profile(session: Session, payload: ProfileUpsert) -> Profile:
 
 def preview_targets(payload: ProfileUpsert) -> TargetResponse:
     profile = Profile(**payload.model_dump())
-    return TargetResponse.model_validate(calculate_targets(profile).__dict__)
+    return to_target_response(profile)

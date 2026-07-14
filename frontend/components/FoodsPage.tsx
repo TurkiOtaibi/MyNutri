@@ -1,297 +1,563 @@
 "use client";
 
-import { Info, Pencil, Plus, Save, Search, Trash2, X } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  MoreVertical,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Search,
+  Trash2,
+  X
+} from "lucide-react";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { createFood, deleteFood, listFoods, updateFood } from "@/lib/api";
-import { cacheFoods, getCachedFoods, getDb, queueMutation } from "@/lib/db";
-import type { FoodInput, FoodResponse } from "@/lib/types";
+import { ApiError, deleteFood, listFoodsPage } from "@/lib/api";
+import {
+  calculateServingNutrition,
+  defaultServingText,
+  formatServingCalories,
+  formatServingMacro
+} from "@/lib/food";
+import type { FoodResponse, FoodSort } from "@/lib/types";
 
-const emptyFood: FoodInput = {
-  name: "",
-  serving_label: "",
-  serving_grams: null,
-  calories: 0,
-  protein_g: 0,
-  carb_g: 0,
-  fat_g: 0,
-  saturated_fat_g: null,
-  trans_fat_g: null,
-  cholesterol_mg: null,
-  sodium_mg: null,
-  fiber_g: null,
-  total_sugars_g: null,
-  added_sugar_g: null
+import { FoodDeleteDialog } from "./FoodDeleteDialog";
+
+const FOODS_READ_ERROR = "تعذر تحميل قائمة الأطعمة. تحقق من الاتصال وحاول مرة أخرى.";
+const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
+const UNCATEGORIZED = "__uncategorized__";
+const PAGE_SIZE = 20;
+
+const sortLabels: Record<FoodSort, string> = {
+  name: "الاسم",
+  recent: "الأحدث إضافة",
+  calories: "السعرات للحصة",
+  protein: "البروتين للحصة"
 };
 
 export function FoodsPage() {
   const queryClient = useQueryClient();
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [draft, setDraft] = useState<FoodInput>(emptyFood);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [category, setCategory] = useState("");
+  const [sort, setSort] = useState<FoodSort>("name");
+  const [page, setPage] = useState(1);
+  const [mobileItems, setMobileItems] = useState<FoodResponse[]>([]);
+  const [knownCategories, setKnownCategories] = useState<string[]>([]);
+  const [uncategorizedCount, setUncategorizedCount] = useState(0);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<FoodResponse | null>(null);
   const [note, setNote] = useState("");
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const nextSearch = searchInput.trim();
+      if (nextSearch === search) return;
+      setSearch(nextSearch);
+      setPage(1);
+      setMobileItems([]);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [searchInput, search]);
+
   const foodsQuery = useQuery({
-    queryKey: ["foods", search],
-    queryFn: async () => {
-      try {
-        const foods = await listFoods(search);
-        await cacheFoods(foods);
-        return foods;
-      } catch {
-        const cached = await getCachedFoods();
-        return search.trim()
-          ? cached.filter((food) => food.name.toLowerCase().includes(search.trim().toLowerCase()))
-          : cached;
-      }
-    }
+    queryKey: ["foods", "catalog", search, category, sort, page],
+    queryFn: () => listFoodsPage({ search, category, sort, page, pageSize: PAGE_SIZE })
   });
 
-  const foods = foodsQuery.data ?? [];
-
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      if (editingId) return updateFood(editingId, draft);
-      return createFood(draft);
-    },
-    onSuccess: async () => {
-      setDraft(emptyFood);
-      setEditingId(null);
-      setNote("تم حفظ الطعام.");
-      await queryClient.invalidateQueries({ queryKey: ["foods"] });
-    },
-    onError: async () => {
-      const now = new Date().toISOString();
-      if (editingId) {
-        await getDb().foods.update(editingId, { ...draft, updated_at: now });
-        await queueMutation({ method: "PUT", path: `/foods/${editingId}`, body: draft });
-      } else {
-        const localId = crypto.randomUUID();
-        const localFood: FoodResponse = {
-          ...draft,
-          id: localId,
-          net_carbs_g: Number((draft.carb_g - (draft.fiber_g ?? 0)).toFixed(2)),
-          created_at: now,
-          updated_at: now
-        };
-        await getDb().foods.put(localFood);
-        await queueMutation({ method: "POST", path: "/foods", body: { ...draft, id: localId } });
-      }
-      setDraft(emptyFood);
-      setEditingId(null);
-      setNote("تم حفظ الطعام محليًا وسيزامن عند الاتصال.");
-      await queryClient.invalidateQueries({ queryKey: ["foods"] });
-    }
-  });
+  useEffect(() => {
+    const data = foodsQuery.data;
+    if (!data) return;
+    setKnownCategories(data.categories);
+    setUncategorizedCount(data.uncategorized_count);
+    setMobileItems((current) => {
+      if (data.page === 1) return data.items;
+      const ids = new Set(current.map((food) => food.id));
+      return [...current, ...data.items.filter((food) => !ids.has(food.id))];
+    });
+    if (data.total_pages > 0 && page > data.total_pages) setPage(data.total_pages);
+  }, [foodsQuery.dataUpdatedAt]);
 
   const deleteMutation = useMutation({
     mutationFn: deleteFood,
     onSuccess: async () => {
-      setNote("تم حذف الطعام.");
+      setDeleteTarget(null);
+      setOpenMenuId(null);
+      setNote("تم حذف الطعام نهائيًا.");
       await queryClient.invalidateQueries({ queryKey: ["foods"] });
     },
-    onError: async (_error, foodId) => {
-      await getDb().foods.delete(foodId);
-      await queueMutation({ method: "DELETE", path: `/foods/${foodId}` });
-      setNote("تم حذف الطعام محليًا وسيزامن عند الاتصال.");
-      await queryClient.invalidateQueries({ queryKey: ["foods"] });
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 404) {
+        setNote("لم يتم العثور على الطعام. حدّث القائمة وحاول مرة أخرى.");
+      } else {
+        setNote(WRITE_ERROR);
+      }
     }
   });
 
-  const filteredFoods = useMemo(() => foods, [foods]);
+  const data = foodsQuery.data;
+  const hasFilters = Boolean(search || category);
+  const desktopFoods = data?.items ?? [];
+  const canLoadMore = Boolean(data && page < data.total_pages);
+  const shownMobileCount = Math.min(mobileItems.length, data?.total ?? mobileItems.length);
+  const categoryOptions = useMemo(
+    () => [
+      { value: "", label: "الكل" },
+      ...knownCategories.map((value) => ({ value, label: value })),
+      ...(uncategorizedCount > 0 ? [{ value: UNCATEGORIZED, label: "غير مصنف" }] : [])
+    ],
+    [knownCategories, uncategorizedCount]
+  );
 
-  function update<K extends keyof FoodInput>(key: K, value: FoodInput[K]) {
-    setDraft((current) => ({ ...current, [key]: value }));
+  function resetCollection(next: { category?: string; sort?: FoodSort }) {
+    if (next.category !== undefined) setCategory(next.category);
+    if (next.sort !== undefined) setSort(next.sort);
+    setPage(1);
+    setMobileItems([]);
+    setOpenMenuId(null);
   }
 
-  function edit(food: FoodResponse) {
-    const { id, net_carbs_g, created_at, updated_at, ...input } = food;
-    setDraft(input);
-    setEditingId(id);
-    setNote("");
-  }
-
-  function resetForm() {
-    setDraft(emptyFood);
-    setEditingId(null);
-  }
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    saveMutation.mutate();
+  function clearFilters() {
+    setSearchInput("");
+    setSearch("");
+    setCategory("");
+    setPage(1);
+    setMobileItems([]);
   }
 
   return (
     <>
-      <div className="page-head">
+      <div className="foods-page-head">
         <div>
           <h1 className="page-title">الأطعمة</h1>
-          <p className="page-kicker">كل القيم لكل حصة واحدة، وصافي الكارب يحسب تلقائيًا.</p>
+          <p className="page-kicker">ابحث بسرعة واعرض القيم الغذائية حسب الحصة التي تستخدمها يوميًا.</p>
         </div>
+        <Link className="btn primary foods-add-button" href="/foods/new">
+          <Plus size={18} aria-hidden="true" />
+          إضافة طعام
+        </Link>
       </div>
 
-      <div className="workspace-grid">
-        <section className="section-panel">
-          <h2 className="panel-title">
-            القائمة
-            <span className="row-subtitle">{filteredFoods.length} عنصر</span>
-          </h2>
-
-          <label className="field" style={{ marginBottom: 12 }}>
-            <span>بحث</span>
-            <span style={{ position: "relative" }}>
-              <Search size={18} style={{ position: "absolute", insetInlineStart: 10, top: 12, color: "var(--muted)" }} />
-              <input
-                className="input"
-                style={{ paddingInlineStart: 36 }}
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="اسم الطعام"
-              />
-            </span>
-          </label>
-
-          <div className="food-list">
-            {filteredFoods.map((food) => (
-              <article className="food-row" key={food.id}>
-                <div>
-                  <div className="row-title">{food.name}</div>
-                  <div className="row-subtitle">
-                    {food.serving_label} · {food.calories} كالوري · بروتين {food.protein_g}g · كارب {food.carb_g}g · دهون{" "}
-                    {food.fat_g}g
-                  </div>
-                  <div className="row-subtitle">صافي الكارب {food.net_carbs_g}g</div>
-                </div>
-                <div className="row-actions">
-                  <button
-                    className="btn icon"
-                    type="button"
-                    title="تفاصيل"
-                    onClick={() => setDetailId((current) => (current === food.id ? null : food.id))}
-                  >
-                    <Info size={17} />
-                  </button>
-                  <button className="btn icon" type="button" title="تعديل" onClick={() => edit(food)}>
-                    <Pencil size={17} />
-                  </button>
-                  <button className="btn icon danger" type="button" title="حذف" onClick={() => deleteMutation.mutate(food.id)}>
-                    <Trash2 size={17} />
-                  </button>
-                </div>
-                {detailId === food.id ? <FoodDetails food={food} /> : null}
-              </article>
-            ))}
-            {filteredFoods.length === 0 ? <div className="state-note">لا توجد أطعمة بعد.</div> : null}
-          </div>
-        </section>
-
-        <form className="form-panel" onSubmit={submit}>
-          <h2 className="panel-title">{editingId ? "تعديل طعام" : "إضافة طعام"}</h2>
-          <div className="form-grid">
-            <label className="field">
-              <span>الاسم</span>
-              <input className="input" value={draft.name} onChange={(event) => update("name", event.target.value)} required />
-            </label>
-            <label className="field">
-              <span>الحصة</span>
-              <input
-                className="input"
-                value={draft.serving_label}
-                onChange={(event) => update("serving_label", event.target.value)}
-                placeholder="15 g / حبة / طبق"
-                required
-              />
-            </label>
-            <NumberField label="غرام الحصة" value={draft.serving_grams} onChange={(value) => update("serving_grams", value)} />
-            <NumberField label="السعرات" value={draft.calories} onChange={(value) => update("calories", value ?? 0)} required />
-            <NumberField label="البروتين g" value={draft.protein_g} onChange={(value) => update("protein_g", value ?? 0)} required />
-            <NumberField label="الكارب g" value={draft.carb_g} onChange={(value) => update("carb_g", value ?? 0)} required />
-            <NumberField label="الدهون g" value={draft.fat_g} onChange={(value) => update("fat_g", value ?? 0)} required />
-          </div>
-
-          <details className="details-block">
-            <summary>تفاصيل اختيارية</summary>
-            <div className="form-grid" style={{ marginTop: 12 }}>
-              <NumberField label="دهون مشبعة g" value={draft.saturated_fat_g} onChange={(value) => update("saturated_fat_g", value)} />
-              <NumberField label="دهون متحولة g" value={draft.trans_fat_g} onChange={(value) => update("trans_fat_g", value)} />
-              <NumberField label="كوليسترول mg" value={draft.cholesterol_mg} onChange={(value) => update("cholesterol_mg", value)} />
-              <NumberField label="صوديوم mg" value={draft.sodium_mg} onChange={(value) => update("sodium_mg", value)} />
-              <NumberField label="ألياف g" value={draft.fiber_g} onChange={(value) => update("fiber_g", value)} />
-              <NumberField label="سكر كلي g" value={draft.total_sugars_g} onChange={(value) => update("total_sugars_g", value)} />
-              <NumberField label="سكر مضاف g" value={draft.added_sugar_g} onChange={(value) => update("added_sugar_g", value)} />
-            </div>
-          </details>
-
-          <div className="actions">
-            <button className="btn primary" type="submit" disabled={saveMutation.isPending}>
-              {editingId ? <Save size={18} /> : <Plus size={18} />}
-              {editingId ? "حفظ" : "إضافة"}
-            </button>
-            {editingId ? (
-              <button className="btn" type="button" onClick={resetForm}>
-                <X size={18} />
-                إلغاء
+      <section className="foods-catalog" aria-label="كتالوج الأطعمة">
+        <div className="foods-search-row">
+          <label className="foods-search-field">
+            <span className="sr-only">بحث باسم الطعام</span>
+            <Search size={19} aria-hidden="true" />
+            <input
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="ابحث عن طعام..."
+              aria-label="بحث باسم الطعام"
+            />
+            {searchInput ? (
+              <button type="button" className="search-clear" onClick={() => setSearchInput("")} aria-label="مسح البحث">
+                <X size={17} aria-hidden="true" />
               </button>
             ) : null}
-            {note ? <span className="row-subtitle">{note}</span> : null}
+          </label>
+
+          <div className="foods-desktop-controls">
+            <label className="compact-control">
+              <span>التصنيف</span>
+              <select
+                value={category}
+                onChange={(event) => resetCollection({ category: event.target.value })}
+                aria-label="تصفية حسب التصنيف"
+              >
+                {categoryOptions.map((option) => (
+                  <option key={option.value || "all"} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="compact-control">
+              <span>الترتيب</span>
+              <select
+                value={sort}
+                onChange={(event) => resetCollection({ sort: event.target.value as FoodSort })}
+                aria-label="ترتيب الأطعمة"
+              >
+                {Object.entries(sortLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
-        </form>
-      </div>
+        </div>
+
+        <div className="foods-mobile-filters" aria-label="تصنيفات الأطعمة">
+          {categoryOptions.map((option) => (
+            <button
+              key={option.value || "all"}
+              type="button"
+              className={`category-chip ${category === option.value ? "active" : ""}`}
+              aria-pressed={category === option.value}
+              onClick={() => resetCollection({ category: option.value })}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="foods-result-bar">
+          {data && !foodsQuery.isError ? (
+            <span className="foods-result-count">
+              عرض {(data.page - 1) * data.page_size + 1}-
+              {Math.min(data.page * data.page_size, data.total)} من {data.total} طعامًا
+            </span>
+          ) : (
+            <span />
+          )}
+          <label className="foods-mobile-sort">
+            <span className="sr-only">ترتيب الأطعمة</span>
+            <select
+              value={sort}
+              onChange={(event) => resetCollection({ sort: event.target.value as FoodSort })}
+              aria-label="ترتيب الأطعمة"
+            >
+              {Object.entries(sortLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  ترتيب: {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {note ? (
+          <div className="catalog-notice" role={note === WRITE_ERROR ? "alert" : "status"} aria-live="polite">
+            {note}
+          </div>
+        ) : null}
+
+        {foodsQuery.isPending && page === 1 ? <FoodsLoading /> : null}
+
+        {foodsQuery.isError ? (
+          <div className="catalog-state" role="alert">
+            <strong>تعذر تحميل الأطعمة</strong>
+            <span>{FOODS_READ_ERROR}</span>
+            <button className="btn" type="button" onClick={() => foodsQuery.refetch()}>
+              <RotateCcw size={18} aria-hidden="true" />
+              إعادة المحاولة
+            </button>
+          </div>
+        ) : null}
+
+        {!foodsQuery.isPending && !foodsQuery.isError && data?.total === 0 ? (
+          <EmptyFoodsState hasFilters={hasFilters} onClear={clearFilters} />
+        ) : null}
+
+        {!foodsQuery.isError && (desktopFoods.length > 0 || mobileItems.length > 0) ? (
+          <>
+            <div className="food-table-wrap">
+              <table className="food-table serving-first-table">
+                <caption className="sr-only">قائمة الأطعمة والقيم الغذائية للحصة الافتراضية</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">الطعام</th>
+                    <th scope="col">التصنيف</th>
+                    <th scope="col">الحصة الافتراضية</th>
+                    <th scope="col">السعرات</th>
+                    <th scope="col">البروتين</th>
+                    <th scope="col">الكارب</th>
+                    <th scope="col">الدهون</th>
+                    <th scope="col"><span className="sr-only">الإجراءات</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {desktopFoods.map((food) => (
+                    <FoodTableRow
+                      key={food.id}
+                      food={food}
+                      menuOpen={openMenuId === `table:${food.id}`}
+                      onMenuChange={(open) => setOpenMenuId(open ? `table:${food.id}` : null)}
+                      onDelete={() => setDeleteTarget(food)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="food-card-list">
+              {mobileItems.map((food) => (
+                <FoodCard
+                  key={food.id}
+                  food={food}
+                  menuOpen={openMenuId === `card:${food.id}`}
+                  onMenuChange={(open) => setOpenMenuId(open ? `card:${food.id}` : null)}
+                  onDelete={() => setDeleteTarget(food)}
+                />
+              ))}
+              {foodsQuery.isPending && page > 1 ? <div className="loading-more" role="status">جاري تحميل المزيد...</div> : null}
+              {canLoadMore ? (
+                <button className="btn load-more" type="button" onClick={() => setPage((current) => current + 1)}>
+                  عرض المزيد
+                </button>
+              ) : null}
+              {data && mobileItems.length > 0 ? (
+                <p className="mobile-result-count">عرض {shownMobileCount} من {data.total} طعامًا</p>
+              ) : null}
+            </div>
+
+            {data && data.total_pages > 1 ? (
+              <DesktopPagination page={data.page} totalPages={data.total_pages} onChange={setPage} />
+            ) : null}
+          </>
+        ) : null}
+      </section>
+
+      <FoodDeleteDialog
+        food={deleteTarget}
+        pending={deleteMutation.isPending}
+        onCancel={() => {
+          setDeleteTarget(null);
+          setOpenMenuId(null);
+        }}
+        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+      />
     </>
   );
 }
 
-function FoodDetails({ food }: { food: FoodResponse }) {
-  return (
-    <div className="details-block" style={{ gridColumn: "1 / -1", marginTop: 0 }}>
-      <div className="form-grid">
-        <Detail label="غرام الحصة" value={food.serving_grams} unit="g" />
-        <Detail label="ألياف" value={food.fiber_g} unit="g" />
-        <Detail label="دهون مشبعة" value={food.saturated_fat_g} unit="g" />
-        <Detail label="دهون متحولة" value={food.trans_fat_g} unit="g" />
-        <Detail label="كوليسترول" value={food.cholesterol_mg} unit="mg" />
-        <Detail label="صوديوم" value={food.sodium_mg} unit="mg" />
-        <Detail label="سكر كلي" value={food.total_sugars_g} unit="g" />
-        <Detail label="سكر مضاف" value={food.added_sugar_g} unit="g" />
-      </div>
-    </div>
-  );
-}
-
-function Detail({ label, value, unit }: { label: string; value: number | null; unit: string }) {
-  return (
-    <div>
-      <div className="metric-label">{label}</div>
-      <div className="row-title">{value == null ? "-" : `${value} ${unit}`}</div>
-    </div>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  onChange,
-  required = false
+function FoodTableRow({
+  food,
+  menuOpen,
+  onMenuChange,
+  onDelete
 }: {
-  label: string;
-  value: number | null;
-  onChange: (value: number | null) => void;
-  required?: boolean;
+  food: FoodResponse;
+  menuOpen: boolean;
+  onMenuChange: (open: boolean) => void;
+  onDelete: () => void;
 }) {
+  const nutrition = calculateServingNutrition(food);
   return (
-    <label className="field">
-      <span>{label}</span>
-      <input
-        className="input"
-        type="number"
-        min="0"
-        step="0.01"
-        value={value ?? ""}
-        required={required}
-        onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))}
-      />
-    </label>
+    <tr>
+      <td>
+        <Link className="food-table-name" href={`/foods/${food.id}`} dir="auto" aria-label={`عرض تفاصيل ${food.name}`}>
+          {food.name}
+        </Link>
+        {food.brand ? <span className="food-table-brand" dir="auto">{food.brand}</span> : null}
+      </td>
+      <td>{food.category || "غير مصنف"}</td>
+      <td><span className="serving-label">{defaultServingText(food)}</span></td>
+      <NutritionCells nutrition={nutrition} />
+      <td className="table-actions-cell">
+        <FoodActionsMenu food={food} open={menuOpen} onOpenChange={onMenuChange} onDelete={onDelete} />
+      </td>
+    </tr>
+  );
+}
+
+function NutritionCells({ nutrition }: { nutrition: ReturnType<typeof calculateServingNutrition> }) {
+  if (!nutrition) {
+    return <td colSpan={4}><span className="nutrition-unavailable">غير متوفر</span></td>;
+  }
+  return (
+    <>
+      <td><strong>{formatServingCalories(nutrition.calories)}</strong><span className="cell-unit">سعرة</span></td>
+      <td><strong>{formatServingMacro(nutrition.protein_g)}</strong><span className="cell-unit">جم</span></td>
+      <td><strong>{formatServingMacro(nutrition.carb_g)}</strong><span className="cell-unit">جم</span></td>
+      <td><strong>{formatServingMacro(nutrition.fat_g)}</strong><span className="cell-unit">جم</span></td>
+    </>
+  );
+}
+
+function FoodCard({
+  food,
+  menuOpen,
+  onMenuChange,
+  onDelete
+}: {
+  food: FoodResponse;
+  menuOpen: boolean;
+  onMenuChange: (open: boolean) => void;
+  onDelete: () => void;
+}) {
+  const nutrition = calculateServingNutrition(food);
+  const secondary = [food.brand, food.category || "غير مصنف"].filter(Boolean).join(" · ");
+  return (
+    <article className="food-card">
+      <Link className="food-card-overlay" href={`/foods/${food.id}`} aria-label={`عرض تفاصيل ${food.name}`} />
+      <div className="food-card-heading">
+        <div>
+          <h2 className="food-card-title" title={food.name} dir="auto">{food.name}</h2>
+          <p className="food-card-secondary" dir="auto">{secondary}</p>
+        </div>
+        <FoodActionsMenu food={food} open={menuOpen} onOpenChange={onMenuChange} onDelete={onDelete} />
+      </div>
+      <span className="serving-badge">{defaultServingText(food)}</span>
+      {nutrition ? (
+        <div className="serving-macro-grid" aria-label="القيم الغذائية للحصة الافتراضية">
+          <ServingMetric value={formatServingCalories(nutrition.calories)} label="سعرة" />
+          <ServingMetric value={formatServingMacro(nutrition.protein_g)} label="بروتين" />
+          <ServingMetric value={formatServingMacro(nutrition.carb_g)} label="كارب" />
+          <ServingMetric value={formatServingMacro(nutrition.fat_g)} label="دهون" />
+        </div>
+      ) : (
+        <span className="nutrition-unavailable">تعذر حساب قيم الحصة</span>
+      )}
+    </article>
+  );
+}
+
+function ServingMetric({ value, label }: { value: string; label: string }) {
+  return (
+    <span className="serving-metric">
+      <strong>{value}</strong>
+      <small>{label}</small>
+    </span>
+  );
+}
+
+function FoodActionsMenu({
+  food,
+  open,
+  onOpenChange,
+  onDelete
+}: {
+  food: FoodResponse;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onDelete: () => void;
+}) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const firstItemRef = useRef<HTMLAnchorElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    firstItemRef.current?.focus();
+    const close = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) onOpenChange(false);
+    };
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onOpenChange(false);
+        buttonRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", keydown);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", keydown);
+    };
+  }, [open, onOpenChange]);
+
+  return (
+    <div className="food-actions-menu" ref={rootRef}>
+      <button
+        ref={buttonRef}
+        className="icon-button"
+        type="button"
+        aria-label={`إجراءات ${food.name}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => onOpenChange(!open)}
+      >
+        <MoreVertical size={20} aria-hidden="true" />
+      </button>
+      {open ? (
+        <div className="food-actions-popover" role="menu">
+          <Link ref={firstItemRef} href={`/foods/${food.id}/edit`} role="menuitem" onClick={() => onOpenChange(false)}>
+            <Pencil size={17} aria-hidden="true" />
+            تعديل
+          </Link>
+          <button
+            type="button"
+            role="menuitem"
+            className="danger-menu-item"
+            onClick={onDelete}
+          >
+            <Trash2 size={17} aria-hidden="true" />
+            حذف
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DesktopPagination({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (page: number) => void }) {
+  const pages = pageNumbers(page, totalPages);
+  return (
+    <nav className="foods-pagination" aria-label="صفحات الأطعمة">
+      <button type="button" className="pagination-button" disabled={page === 1} onClick={() => onChange(page - 1)} aria-label="الصفحة السابقة">
+        <ChevronRight size={18} aria-hidden="true" />
+        السابق
+      </button>
+      <div className="pagination-pages">
+        {pages.map((value, index) =>
+          value === "ellipsis" ? (
+            <span key={`ellipsis-${index}`} aria-hidden="true">…</span>
+          ) : (
+            <button
+              key={value}
+              type="button"
+              className={`pagination-number ${page === value ? "active" : ""}`}
+              aria-current={page === value ? "page" : undefined}
+              aria-label={`الصفحة ${value}`}
+              onClick={() => onChange(value)}
+            >
+              {value}
+            </button>
+          )
+        )}
+      </div>
+      <button type="button" className="pagination-button" disabled={page === totalPages} onClick={() => onChange(page + 1)} aria-label="الصفحة التالية">
+        التالي
+        <ChevronLeft size={18} aria-hidden="true" />
+      </button>
+    </nav>
+  );
+}
+
+function pageNumbers(page: number, totalPages: number): Array<number | "ellipsis"> {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1);
+  const values = new Set([1, totalPages, page - 1, page, page + 1]);
+  const sorted = [...values].filter((value) => value > 0 && value <= totalPages).sort((a, b) => a - b);
+  const result: Array<number | "ellipsis"> = [];
+  sorted.forEach((value, index) => {
+    if (index > 0 && value - sorted[index - 1] > 1) result.push("ellipsis");
+    result.push(value);
+  });
+  return result;
+}
+
+function FoodsLoading() {
+  return (
+    <div className="foods-loading" role="status" aria-live="polite">
+      <span className="sr-only">جاري تحميل الأطعمة.</span>
+      {Array.from({ length: 5 }, (_, index) => <span className="food-skeleton" key={index} />)}
+    </div>
+  );
+}
+
+function EmptyFoodsState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () => void }) {
+  if (hasFilters) {
+    return (
+      <div className="catalog-state">
+        <strong>لا توجد نتائج مطابقة للبحث.</strong>
+        <span>جرّب اسمًا آخر أو امسح عوامل التصفية.</span>
+        <button className="btn" type="button" onClick={onClear}>مسح البحث والتصفية</button>
+      </div>
+    );
+  }
+  return (
+    <div className="catalog-state">
+      <strong>لا توجد أطعمة بعد.</strong>
+      <span>أضف أول طعام لتبدأ بناء كتالوجك الشخصي.</span>
+      <Link className="btn primary" href="/foods/new">
+        <Plus size={18} aria-hidden="true" />
+        إضافة أول طعام
+      </Link>
+    </div>
   );
 }
