@@ -1,12 +1,12 @@
 # myNutri Product Decision Register & Expansion Scope Freeze
 
-**Version:** 1.1  
-**Status:** Approved governing source for baseline reconciliation; Wave 1 is not yet frozen or Ready to Build  
-**Document type:** Brownfield expansion / delta register  
-**Project:** myNutri  
-**Target expansion:** Nutrition Quality & Progress  
-**Implemented baseline:** Existing operational product; do not rebuild from scratch  
-**Supersedes:** The incomplete 42-line copy previously stored at this path  
+**Version:** 1.1
+**Status:** Approved governing source for baseline reconciliation; Wave 1 is not yet frozen or Ready to Build
+**Document type:** Brownfield expansion / delta register
+**Project:** myNutri
+**Target expansion:** Nutrition Quality & Progress
+**Implemented baseline:** Existing operational product; do not rebuild from scratch
+**Supersedes:** The incomplete 42-line copy previously stored at this path
 
 > myNutri and NutriPlan are separate projects. Their scope, entities, decisions, and requirements must never be mixed.
 
