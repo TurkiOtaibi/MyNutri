@@ -91,8 +91,8 @@ def test_quantity_only_update_recalculates_frozen_totals() -> None:
 
         assert response.quantity == 2
         assert response.totals.calories == 200
-        assert response.nutrition_snapshot.logged_quantity == 2
-        assert response.nutrition_snapshot.calculated_totals["calories"] == 200
+        assert response.nutrition_snapshot.logged_quantity == 1
+        assert response.nutrition_snapshot.calculated_totals["calories"] == 100
         assert response.entry_date == date.today()
         assert response.food_id == food.id
 

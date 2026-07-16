@@ -141,7 +141,7 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "0010_target_plan_expand"
+            "0011_diary_snapshot_v2_expand"
         )
     assert "principal" in inspector.get_table_names()
     for table in ("profile", "food", "diary_entry"):
@@ -163,6 +163,10 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     assert {
         "legacy_target_transition_snapshots", "target_plan", "idempotency_record"
     }.issubset(inspector.get_table_names())
+    diary_columns = {column["name"]: column for column in inspector.get_columns("diary_entry")}
+    assert diary_columns["target_plan_id"]["nullable"] is True
+    assert diary_columns["snapshot_schema_version"]["nullable"] is True
+    assert diary_columns["target_provenance"]["nullable"] is False
     engine.dispose()
 
 
@@ -280,6 +284,14 @@ def test_populated_backfill_fails_closed_then_reconciles_without_history_change(
             {"id": identifiers["diary"]},
         ).scalar_one()
         assert snapshot_after == snapshot_before
+        migrated_diary = connection.execute(
+            text(
+                "SELECT target_plan_id, target_provenance, snapshot_schema_version "
+                "FROM diary_entry WHERE id = :id"
+            ),
+            {"id": identifiers["diary"]},
+        ).one()
+        assert tuple(migrated_diary) == (None, "legacy_unversioned", None)
         migrated_food = connection.execute(
             text(
                 """
@@ -322,11 +334,93 @@ def test_populated_backfill_fails_closed_then_reconciles_without_history_change(
             ),
             {"id": other_principal},
         )
-        with pytest.raises(IntegrityError, match="fk_diary_entry_food_owner"):
+        with pytest.raises(IntegrityError, match="immutable|fk_diary_entry_food_owner"):
             connection.execute(
                 text("UPDATE diary_entry SET principal_id = :other WHERE id = :entry_id"),
                 {"other": other_principal, "entry_id": identifiers["diary"]},
             )
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_snapshot_v2_database_shape_is_immutable_and_blocks_lossy_downgrade() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "0004_principal_expand")
+    engine = create_engine(url)
+    entry_id = uuid4()
+    food_id = uuid4()
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO principal (id,status,created_at,updated_at) "
+                "VALUES (:id,'active',now(),now())"
+            ),
+            {"id": DEPLOYMENT_PRINCIPAL},
+        )
+    _run_alembic(url, "upgrade", "head")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO food
+                  (id,principal_id,name,nutrition_basis,default_unit_type,unit_amount,unit_basis,
+                   calories,protein_g,carb_g,fat_g,created_at,updated_at)
+                VALUES
+                  (:id,:principal,'Snapshot source','per_100g','serving',100,'g',
+                   100,1,2,3,now(),now())
+                """
+            ),
+            {"id": food_id, "principal": DEPLOYMENT_PRINCIPAL},
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO diary_entry
+                  (id,principal_id,entry_date,food_id,quantity,meal_type,nutrition_snapshot,
+                   target_plan_id,target_provenance,snapshot_schema_version,created_at)
+                VALUES
+                  (:id,:principal,'2026-07-16',:food,1,'breakfast',
+                   CAST(:document AS jsonb),NULL,'legacy_unversioned',2,now())
+                """
+            ),
+            {
+                "id": entry_id,
+                "principal": DEPLOYMENT_PRINCIPAL,
+                "food": food_id,
+                "document": json.dumps({"schema_version": 2}),
+            },
+        )
+        connection.execute(
+            text("UPDATE diary_entry SET quantity=2, meal_type='dinner' WHERE id=:id"),
+            {"id": entry_id},
+        )
+        before_delete = connection.execute(
+            text("SELECT nutrition_snapshot::text FROM diary_entry WHERE id=:id"),
+            {"id": entry_id},
+        ).scalar_one()
+        connection.execute(text("DELETE FROM food WHERE id=:id"), {"id": food_id})
+        preserved = connection.execute(
+            text("SELECT food_id,nutrition_snapshot::text FROM diary_entry WHERE id=:id"),
+            {"id": entry_id},
+        ).one()
+        assert preserved.food_id is None
+        assert preserved.nutrition_snapshot == before_delete
+    with engine.begin() as connection:
+        with pytest.raises(DBAPIError, match="immutable"):
+            connection.execute(
+                text(
+                    "UPDATE diary_entry SET nutrition_snapshot="
+                    "CAST(:document AS jsonb) WHERE id=:id"
+                ),
+                {
+                    "id": entry_id,
+                    "document": json.dumps({"schema_version": 2, "changed": True}),
+                },
+            )
+    downgrade = _run_alembic(url, "downgrade", "0010_target_plan_expand", check=False)
+    assert downgrade.returncode != 0
+    assert "Lossy Snapshot v2 downgrade prohibited" in downgrade.stderr
     engine.dispose()
 
 

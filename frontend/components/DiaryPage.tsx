@@ -1062,8 +1062,10 @@ function emptyNutritionTotals(): NutritionTotals {
     calories: 0, protein_g: 0, carb_g: 0, fat_g: 0, net_carbs_g: 0,
     saturated_fat_g: null, trans_fat_g: null, cholesterol_mg: null, sodium_mg: null,
     fiber_g: null, sugar_g: null, added_sugar_g: null, potassium_mg: null, calcium_mg: null,
-    iron_mg: null, magnesium_mg: null, zinc_mg: null, vitamin_d_mcg: null, vitamin_b12_mcg: null,
-    vitamin_c_mg: null, vitamin_a_mcg: null, folate_mcg: null, vitamin_k_mcg: null
+    iron_mg: null, magnesium_mg: null, zinc_mg: null, selenium_mcg: null,
+    vitamin_d_mcg: null, vitamin_b12_mcg: null, vitamin_c_mg: null,
+    vitamin_a_mcg: null, vitamin_a_rae_mcg: null, folate_mcg: null,
+    folate_dfe_mcg: null, vitamin_k_mcg: null, iodine_mcg: null
   };
 }
 

@@ -290,12 +290,16 @@ export interface NutritionTotals {
   iron_mg: number | null;
   magnesium_mg: number | null;
   zinc_mg: number | null;
+  selenium_mcg: number | null;
   vitamin_d_mcg: number | null;
   vitamin_b12_mcg: number | null;
+  vitamin_a_rae_mcg: number | null;
   vitamin_c_mg: number | null;
   vitamin_a_mcg: number | null;
   folate_mcg: number | null;
+  folate_dfe_mcg: number | null;
   vitamin_k_mcg: number | null;
+  iodine_mcg: number | null;
   total_sugars_g?: number | null;
   net_carbs_g: number;
 }
@@ -313,7 +317,10 @@ export interface DiaryEntryInput {
 export interface DiaryEntryResponse {
   id: string;
   entry_date: string;
-  food_id: string;
+  food_id: string | null;
+  target_plan_id: string | null;
+  target_provenance: "versioned_plan" | "legacy_unversioned" | "no_target_source";
+  snapshot_schema_version: number | null;
   quantity: number;
   meal_type: MealType;
   nutrition_snapshot: NutritionSnapshot;

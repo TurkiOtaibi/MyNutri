@@ -10,10 +10,15 @@ from app.schemas import (
     DiaryEntryCreate,
     DiaryEntryResponse,
     DiaryEntryUpdate,
-    NutritionSnapshot,
     NutritionTotals,
 )
 from app.services.food import get_food
+from app.services.snapshot import (
+    create_snapshot_v2,
+    normalized_snapshot,
+    totals_from_v2,
+)
+from app.services.target_plans import resolve_target_binding
 
 DETAIL_FIELDS = (
     "fiber_g",
@@ -98,17 +103,30 @@ def totals_from_snapshot(snapshot: dict[str, Any], quantity: float) -> Nutrition
 
 
 def to_entry_response(entry: DiaryEntry) -> DiaryEntryResponse:
-    snapshot = NutritionSnapshot.model_validate(entry.nutrition_snapshot)
+    snapshot = normalized_snapshot(entry.nutrition_snapshot, entry.snapshot_schema_version)
     return DiaryEntryResponse(
         id=entry.id,
         entry_date=entry.entry_date,
         food_id=entry.food_id,
+        target_plan_id=entry.target_plan_id,
+        target_provenance=entry.target_provenance,
+        snapshot_schema_version=entry.snapshot_schema_version,
         quantity=float(entry.quantity),
         meal_type=entry.meal_type,
         nutrition_snapshot=snapshot,
-        totals=totals_from_snapshot(entry.nutrition_snapshot, float(entry.quantity)),
+        totals=totals_for_entry(entry),
         created_at=entry.created_at,
     )
+
+
+def totals_for_entry(entry: DiaryEntry) -> NutritionTotals:
+    if entry.snapshot_schema_version is None:
+        normalized_snapshot(entry.nutrition_snapshot, None)
+        return totals_from_snapshot(entry.nutrition_snapshot, float(entry.quantity))
+    if entry.snapshot_schema_version == 2:
+        return totals_from_v2(entry.nutrition_snapshot, float(entry.quantity))
+    normalized_snapshot(entry.nutrition_snapshot, entry.snapshot_schema_version)
+    raise AssertionError("unreachable")
 
 
 def list_entries(
@@ -139,9 +157,14 @@ def get_entry(session: Session, principal: PrincipalContext, entry_id: UUID) -> 
 
 
 def create_entry(
-    session: Session, principal: PrincipalContext, payload: DiaryEntryCreate
+    session: Session,
+    principal: PrincipalContext,
+    payload: DiaryEntryCreate,
+    *,
+    snapshot_v2_writer_enabled: bool = False,
 ) -> DiaryEntry:
     food = get_food(session, principal, payload.food_id)
+    binding = resolve_target_binding(session, principal, payload.entry_date)
     if payload.id is not None:
         existing = session.get(DiaryEntry, payload.id)
         if existing is not None:
@@ -149,15 +172,21 @@ def create_entry(
                 from app.services.errors import resource_not_found
 
                 raise resource_not_found()
-            existing.entry_date = payload.entry_date
-            existing.food_id = food.id
-            existing.quantity = payload.quantity
-            existing.meal_type = payload.meal_type
-            existing.nutrition_snapshot = make_snapshot(food, payload.quantity)
-            session.add(existing)
-            session.commit()
-            session.refresh(existing)
-            return existing
+            if (
+                existing.entry_date == payload.entry_date
+                and existing.food_id == food.id
+                and float(existing.quantity) == float(payload.quantity)
+                and existing.meal_type == payload.meal_type
+            ):
+                session.rollback()
+                return existing
+            from fastapi import HTTPException
+
+            session.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "DIARY_ENTRY_ID_CONFLICT", "message_ar": "معرف اليومية مستخدم لمدخل مختلف."},
+            )
 
     entry_data = {
         "principal_id": principal.principal_id,
@@ -165,7 +194,14 @@ def create_entry(
         "food_id": food.id,
         "quantity": payload.quantity,
         "meal_type": payload.meal_type,
-        "nutrition_snapshot": make_snapshot(food, payload.quantity),
+        "target_plan_id": binding.plan.id if binding.plan else None,
+        "target_provenance": binding.provenance,
+        "snapshot_schema_version": 2 if snapshot_v2_writer_enabled else None,
+        "nutrition_snapshot": (
+            create_snapshot_v2(session, principal, food)
+            if snapshot_v2_writer_enabled
+            else make_snapshot(food, payload.quantity)
+        ),
     }
     if payload.id is not None:
         entry_data["id"] = payload.id
@@ -183,15 +219,10 @@ def update_entry(
     payload: DiaryEntryUpdate,
 ) -> DiaryEntry:
     entry = get_entry(session, principal, entry_id)
-    entry.quantity = payload.quantity
+    if payload.quantity is not None:
+        entry.quantity = payload.quantity
     if payload.meal_type is not None:
         entry.meal_type = payload.meal_type
-    snapshot = dict(entry.nutrition_snapshot)
-    snapshot.pop("calculated_totals", None)
-    snapshot["logged_quantity"] = float(payload.quantity)
-    snapshot["calculated_totals"] = totals_from_snapshot(snapshot, payload.quantity).model_dump()
-    entry.nutrition_snapshot = snapshot
-
     session.add(entry)
     session.commit()
     session.refresh(entry)

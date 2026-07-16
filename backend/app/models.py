@@ -78,6 +78,12 @@ class MealType(str, Enum):
     unspecified = "unspecified"
 
 
+class TargetProvenance(str, Enum):
+    versioned_plan = "versioned_plan"
+    legacy_unversioned = "legacy_unversioned"
+    no_target_source = "no_target_source"
+
+
 class FoodKind(str, Enum):
     simple = "simple"
     composite = "composite"
@@ -575,6 +581,27 @@ class DiaryEntry(SQLModel, table=True):
             ["food.id", "food.principal_id"],
             name="fk_diary_entry_food_owner",
         ),
+        ForeignKeyConstraint(
+            ["target_plan_id", "principal_id"],
+            ["target_plan.id", "target_plan.principal_id"],
+            name="fk_diary_entry_target_plan_owner",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "target_provenance IN ('versioned_plan','legacy_unversioned','no_target_source')",
+            name="ck_diary_entry_target_provenance",
+        ),
+        CheckConstraint(
+            "(target_provenance = 'versioned_plan' AND target_plan_id IS NOT NULL) OR "
+            "(target_provenance IN ('legacy_unversioned','no_target_source') AND target_plan_id IS NULL)",
+            name="ck_diary_entry_target_binding",
+        ),
+        CheckConstraint(
+            "snapshot_schema_version IS NULL OR snapshot_schema_version = 2",
+            name="ck_diary_entry_snapshot_version",
+        ),
+        Index("ix_diary_entry_principal_date_meal_created", "principal_id", "entry_date", "meal_type", "created_at"),
+        Index("ix_diary_entry_principal_target_plan", "principal_id", "target_plan_id"),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -587,6 +614,14 @@ class DiaryEntry(SQLModel, table=True):
     food_id: uuid.UUID | None = Field(
         default=None,
         sa_column=Column(ForeignKey("food.id", ondelete="SET NULL"), index=True, nullable=True),
+    )
+    target_plan_id: uuid.UUID | None = Field(default=None, nullable=True)
+    target_provenance: TargetProvenance = Field(
+        default=TargetProvenance.legacy_unversioned,
+        sa_column=Column(Text(), nullable=False),
+    )
+    snapshot_schema_version: int | None = Field(
+        default=None, sa_column=Column(SmallInteger(), nullable=True)
     )
     quantity: float = Field(sa_column=Column(Numeric(8, 3), nullable=False))
     meal_type: MealType = Field(

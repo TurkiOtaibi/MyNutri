@@ -14,7 +14,14 @@ def validate_diary_payload(schema: type[ModelT], payload: dict[str, Any]) -> Mod
         for item in error.errors():
             field = next((part for part in reversed(item.get("loc", ())) if isinstance(part, str)), None)
             error_type = str(item.get("type", "value_error"))
-            if field == "meal_type":
+            if error_type == "extra_forbidden":
+                if schema.__name__ == "DiaryEntryUpdate":
+                    message = "لا يمكن تغيير هذا الحقل بعد إنشاء اليومية؛ احذف المدخل وأنشئه من جديد."
+                    code = "IMMUTABLE_DIARY_ENTRY_FIELD"
+                else:
+                    message = "هذا الحقل يحدده الخادم ولا يقبله من العميل."
+                    code = "NON_AUTHORITATIVE_FIELD"
+            elif field == "meal_type":
                 message = "اختر قسم وجبة صحيحًا."
                 code = "invalid_meal_type"
             elif field == "quantity":

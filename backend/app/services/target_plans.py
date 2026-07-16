@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from base64 import urlsafe_b64decode, urlsafe_b64encode
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from hashlib import sha256
 import json
@@ -17,10 +18,12 @@ from app.models import (
     IdempotencyRecord,
     IdempotencyState,
     LegacyTargetTransitionSnapshot,
+    DiaryEntry,
     Principal,
     Profile,
     TargetPlan,
     TargetPlanStatus,
+    TargetProvenance,
     utcnow,
 )
 from app.nutrition_rules.versions import VERSIONS
@@ -43,6 +46,14 @@ class TargetPlanError(RuntimeError):
         self.code = code
         self.status_code = status_code
         self.message_ar = message_ar
+
+
+@dataclass(frozen=True, slots=True)
+class TargetBinding:
+    provenance: TargetProvenance
+    plan: TargetPlan | None = None
+    transition: LegacyTargetTransitionSnapshot | None = None
+    profile: Profile | None = None
 
 
 def _canonical_hash(payload: Any) -> str:
@@ -277,6 +288,22 @@ def activate_plan(
         session.add(new_plan)
         session.flush()
 
+        if was_new_profile and status == TargetPlanStatus.active:
+            same_date_entries = session.exec(
+                select(DiaryEntry)
+                .where(
+                    DiaryEntry.principal_id == principal.principal_id,
+                    DiaryEntry.entry_date == today,
+                    DiaryEntry.target_provenance == TargetProvenance.no_target_source,
+                    DiaryEntry.target_plan_id.is_(None),
+                )
+                .with_for_update()
+            ).all()
+            for entry in same_date_entries:
+                entry.target_plan_id = new_plan.id
+                entry.target_provenance = TargetProvenance.versioned_plan
+                session.add(entry)
+
         response = TargetPlanActivationResponse(
             plan=to_plan_summary(new_plan), replaced_plan=replaced_summary
         )
@@ -307,11 +334,10 @@ def activate_plan(
         raise
 
 
-def resolve_targets(
+def resolve_target_binding(
     session: Session, principal: PrincipalContext, requested_date: date
-) -> TargetSourceResponse:
+) -> TargetBinding:
     _advance_lifecycle(session, principal.principal_id, current_diary_date())
-    session.commit()
     plan = session.exec(
         select(TargetPlan)
         .where(
@@ -323,12 +349,7 @@ def resolve_targets(
         .order_by(TargetPlan.effective_from.desc())
     ).first()
     if plan:
-        return TargetSourceResponse(
-            target_provenance="versioned_plan",
-            target_source_detail="effective_target_plan",
-            plan=to_plan_summary(plan),
-            targets=_targets_from_plan(plan),
-        )
+        return TargetBinding(provenance=TargetProvenance.versioned_plan, plan=plan)
     transition = session.exec(
         select(LegacyTargetTransitionSnapshot).where(
             LegacyTargetTransitionSnapshot.principal_id == principal.principal_id,
@@ -336,13 +357,8 @@ def resolve_targets(
         )
     ).first()
     if transition:
-        return TargetSourceResponse(
-            target_provenance="legacy_unversioned",
-            target_source_detail="legacy_transition_snapshot",
-            plan=None,
-            targets=TargetResponse.model_validate(
-                transition.legacy_target_document["resolved_targets"]
-            ),
+        return TargetBinding(
+            provenance=TargetProvenance.legacy_unversioned, transition=transition
         )
     profile = session.exec(
         select(Profile).where(Profile.principal_id == principal.principal_id)
@@ -352,15 +368,41 @@ def resolve_targets(
             LegacyTargetTransitionSnapshot.principal_id == principal.principal_id
         )
     ).first()
-    if profile and any_transition is None and requested_date == current_diary_date():
+    if profile and any_transition is None and requested_date <= current_diary_date():
+        return TargetBinding(provenance=TargetProvenance.legacy_unversioned, profile=profile)
+    return TargetBinding(provenance=TargetProvenance.no_target_source)
+
+
+def resolve_targets(
+    session: Session, principal: PrincipalContext, requested_date: date
+) -> TargetSourceResponse:
+    binding = resolve_target_binding(session, principal, requested_date)
+    session.commit()
+    if binding.plan:
         return TargetSourceResponse(
-            target_provenance="legacy_unversioned",
+            target_provenance=binding.provenance.value,
+            target_source_detail="effective_target_plan",
+            plan=to_plan_summary(binding.plan),
+            targets=_targets_from_plan(binding.plan),
+        )
+    if binding.transition:
+        return TargetSourceResponse(
+            target_provenance=binding.provenance.value,
+            target_source_detail="legacy_transition_snapshot",
+            plan=None,
+            targets=TargetResponse.model_validate(
+                binding.transition.legacy_target_document["resolved_targets"]
+            ),
+        )
+    if binding.profile:
+        return TargetSourceResponse(
+            target_provenance=binding.provenance.value,
             target_source_detail="no_preserved_target_source",
             plan=None,
-            targets=to_target_response(profile, requested_date),
+            targets=to_target_response(binding.profile, requested_date),
         )
     return TargetSourceResponse(
-        target_provenance="no_target_source",
+        target_provenance=binding.provenance.value,
         target_source_detail="no_preserved_target_source",
         plan=None,
         targets=None,

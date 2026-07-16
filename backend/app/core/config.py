@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     deployment_principal_id: UUID | None = None
     principal_token_map: dict[str, UUID] = Field(default_factory=dict)
     calendar_timezone: str = "Asia/Riyadh"
+    snapshot_v2_writer_enabled: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")
 
