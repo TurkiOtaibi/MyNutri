@@ -12,7 +12,7 @@
 | High findings | `0` |
 | Contradictions | `0` |
 | Product decisions required | `0` |
-| Pinned revision | Pending until approval commit |
+| Pinned revision | `afa3a9bb220a7798920d7edc1b0949da15f2d7fe` |
 
 The approved contract defines exact PostgreSQL tables, columns, types, ownership, constraints, indexes, deletion, history, Target Plan, Snapshot v2, idempotency, and versions without modifying runtime schema.
 
@@ -23,6 +23,6 @@ Artifact 14 approval: Approved — Engineering and Data
 Critical issues: 0
 High issues: 0
 Product Owner decisions remaining: 0
-Pinned revision: Pending until approval commit
+Pinned revision: afa3a9bb220a7798920d7edc1b0949da15f2d7fe
 Verdict: Ready for documentation commit
 ```
