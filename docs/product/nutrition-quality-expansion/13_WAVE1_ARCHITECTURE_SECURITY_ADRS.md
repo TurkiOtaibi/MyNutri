@@ -981,21 +981,40 @@ Still open
 | ADR-006 | Snapshot v2 JSON schema, relational linkage, reader/writer rollout, and integrity envelope |
 | ADR-008 | Exact aggregation API and Arabic UI semantics |
 | ADR-009 | Idempotency persistence, canonical request identity, concurrency constraints, and API errors |
-| Artifact approval | Named approvers, approval date, pinned revision, and closure evidence remain Pending |
+| Artifact pinning | Formal approval is complete; the exact merge revision remains Pending until PR #3 is merged |
 
-## Artifact Closure Conditions
+## Artifact Lifecycle and Package Closure Conditions
 
-Artifact 13 may move beyond Draft only when:
+Artifact 13 formal approval is complete and is independent from completion of Artifacts 14–21. Artifact 13 does not return to Draft because later artifacts remain incomplete. It is approved but not yet pinned; the PR #3 merge revision must be recorded before Artifact 14 authoring begins.
 
-1. ADR-010 technical configuration, persistence, API, operational, and verification details are approved.
-2. Every ADR has the required Architecture and Security approvals.
-3. Unresolved technical details are assigned to and resolved by Artifacts 14–20.
-4. All decisions are traceable in Artifact 21.
-5. The exact approved revision is pinned in the Freeze Index.
-6. No deferred scope is reopened.
+Artifacts 14–21 resolve the delegated technical contracts and provide the traceability and verification required for the final Wave 1 package freeze. They are package-freeze dependencies, not prerequisites for Artifact 13 approval.
+
+The Wave 1 package may become Frozen and authorize Wave 1 implementation only when:
+
+1. Artifact 13 is pinned to the PR #3 merge revision.
+2. ADR-010 configuration, persistence, API, operational, and verification details are resolved in their assigned later artifacts.
+3. Artifacts 14–21 are completed, formally reviewed, approved, and pinned.
+4. All decisions are traceable in Artifact 21 with no unexplained gaps.
+5. The final readiness recheck reports zero Critical and High unresolved issues and no remaining Product Owner decisions.
+6. The exact Final Freeze Package Commit is recorded in the Freeze Index.
+7. No deferred scope is reopened.
 
 ```text
-Artifact status: Draft — Under Architecture and Security Review
-Freeze status: Draft — Not Frozen
-Implementation authorization: No
+Artifact 13 version: 1.0
+Artifact 13 status: Approved — Architecture and Security
+Artifact 13 formal approval: Complete
+Product Owner approval: Approved
+Architecture approval: Approved
+Security approval: Approved
+Formal review: Passed
+Critical findings: 0
+High findings: 0
+Substantive contradictions: 0
+Product Owner decisions remaining: 0
+Pinned revision: Pending until PR #3 merge
+Artifact 13 frozen: No
+Artifact 14 authoring: Allowed only after PR #3 is merged and the Artifact 13 merge SHA is recorded
+Artifacts 14–21: Pending
+Freeze Package status: Draft — Not Frozen
+Wave 1 implementation authorization: No
 ```

@@ -181,7 +181,7 @@ Product Owner decisions required: 0
 
 No correction to Artifact 13 is required before formal Architecture and Security approval.
 
-Formal approval still requires named Architecture and Security approvers, approval evidence, and an exact pinned revision through the Freeze Index process. Those governance actions are not findings against the architecture content.
+At review completion, formal approval and exact-revision pinning were the remaining governance actions. Formal approval was subsequently recorded; exact pinning remains pending until PR #3 merge. These governance actions are not findings against the architecture content.
 
 ## 11. Details Correctly Delegated to Artifacts 14-21
 
@@ -202,9 +202,9 @@ These delegations are appropriately bounded. None requires a new Product Owner d
 
 **Verdict: Ready for Architecture/Security Approval**
 
-Artifact 13 is sufficiently complete, consistent, secure, and precise to serve as the architecture foundation for Artifact 14. This recommendation does not itself mark Artifact 13 Approved or Frozen. Architecture and Security must still record formal approval and the Freeze Index must eventually pin the approved revision.
+Artifact 13 is sufficiently complete, consistent, secure, and precise to serve as the architecture foundation for Artifact 14. This review recommendation did not itself approve or freeze Artifact 13. Formal Product Owner, Architecture, and Security approval was subsequently recorded as version `1.0`; exact pinning remains pending until PR #3 merge.
 
-Artifact 13 remains `Draft - Under Architecture and Security Review` until that governance action occurs. Wave 1 remains `Not Ready to Build`, and product implementation remains unauthorized.
+Artifact 13 is `Approved — Architecture and Security` and is not Frozen. Artifacts 14–21 remain required for the final package freeze. Wave 1 remains `Not Ready to Build`, and product implementation remains unauthorized.
 
 ## 13. Readiness for Artifact 14
 
