@@ -12,7 +12,7 @@
 | Approval date | `2026-07-16` |
 | Review | `18A_WAVE1_GOLDEN_CALCULATIONS_REVIEW.md` |
 | Critical / High / Product decisions | `0 / 0 / 0` |
-| Pinned revision | Pending |
+| Pinned revision | `e714b4c374166a27a8aa1b40ab4b851ce0b92a9d` |
 | Versions | calculation `2.0.0`; Registry `1.0.0`; group/reliability/NOVA `1.0.0`; Snapshot `2` |
 | Implementation authorization | `No` |
 
