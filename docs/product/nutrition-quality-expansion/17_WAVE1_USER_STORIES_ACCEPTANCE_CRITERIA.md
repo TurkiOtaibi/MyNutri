@@ -12,7 +12,7 @@
 | Approval date | `2026-07-16` |
 | Review | `17A_WAVE1_USER_STORIES_ACCEPTANCE_REVIEW.md` |
 | Critical / High / Product decisions | `0 / 0 / 0` |
-| Pinned revision | Pending |
+| Pinned revision | `ffde6f597750b18e85d861c36d3dfad105d36f0e` |
 | Implementation authorization | `No` |
 
 ## Common Acceptance Contract

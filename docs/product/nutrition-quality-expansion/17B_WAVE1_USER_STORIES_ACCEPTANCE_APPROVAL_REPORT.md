@@ -9,6 +9,6 @@
 | Review | `17A_WAVE1_USER_STORIES_ACCEPTANCE_REVIEW.md` |
 | Stories | `18` |
 | Critical / High / contradictions / Product decisions | `0 / 0 / 0 / 0` |
-| Pinned revision | Pending until approval commit |
+| Pinned revision | `ffde6f597750b18e85d861c36d3dfad105d36f0e` |
 
 Coverage and documentation validation passed. No later-wave behavior or product implementation was authorized. `Verdict: Ready for documentation commit`.
