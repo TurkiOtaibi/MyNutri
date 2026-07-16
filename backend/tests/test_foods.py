@@ -1,4 +1,5 @@
 from datetime import date
+from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
@@ -8,8 +9,9 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.db.session import get_session
+from app.core.auth import PrincipalContext
 from app.main import app
-from app.models import DefaultUnitType, DiaryEntry, NutritionBasis, UnitBasis
+from app.models import DefaultUnitType, DiaryEntry, NutritionBasis, Principal, UnitBasis
 from app.schemas import FoodCreate
 from app.services.diary import make_snapshot, to_entry_response
 from app.services.food import (
@@ -19,6 +21,7 @@ from app.services.food import (
     list_foods,
     list_foods_page,
 )
+
 from app.services.food_validation_errors import (
     ABOVE_MAX_MESSAGE,
     ADDED_SUGAR_GT_SUGAR_MESSAGE,
@@ -32,6 +35,9 @@ from app.services.food_validation_errors import (
     SATURATED_TRANS_GT_FAT_MESSAGE,
 )
 
+TEST_PRINCIPAL_ID = UUID("00000000-0000-0000-0000-000000000001")
+TEST_PRINCIPAL = PrincipalContext(TEST_PRINCIPAL_ID)
+
 
 def session_fixture() -> Session:
     engine = create_engine(
@@ -40,7 +46,10 @@ def session_fixture() -> Session:
         poolclass=StaticPool,
     )
     SQLModel.metadata.create_all(engine)
-    return Session(engine)
+    session = Session(engine)
+    session.add(Principal(id=TEST_PRINCIPAL_ID))
+    session.commit()
+    return session
 
 
 def food_payload(**overrides):
@@ -101,10 +110,10 @@ def error_by_field(response) -> dict[str, dict]:
 
 def test_create_food_blocks_normalized_duplicate() -> None:
     with session_fixture() as session:
-        create_food(session, FoodCreate.model_validate(food_payload(name="Greek   Yogurt")))
+        create_food(session, TEST_PRINCIPAL, FoodCreate.model_validate(food_payload(name="Greek   Yogurt")))
 
         with pytest.raises(HTTPException) as error:
-            create_food(session, FoodCreate.model_validate(food_payload(name=" greek yogurt ")))
+            create_food(session, TEST_PRINCIPAL, FoodCreate.model_validate(food_payload(name=" greek yogurt ")))
 
         assert error.value.status_code == 422
         assert error.value.detail[0]["msg"] == DUPLICATE_FOOD_MESSAGE
@@ -264,20 +273,20 @@ def test_food_api_update_returns_structured_arabic_errors_after_merge(api_client
 
 def test_same_food_name_with_different_default_unit_is_allowed() -> None:
     with session_fixture() as session:
-        create_food(session, FoodCreate.model_validate(food_payload(default_unit_type=DefaultUnitType.serving)))
-        create_food(session, FoodCreate.model_validate(food_payload(default_unit_type=DefaultUnitType.cup)))
+        create_food(session, TEST_PRINCIPAL, FoodCreate.model_validate(food_payload(default_unit_type=DefaultUnitType.serving)))
+        create_food(session, TEST_PRINCIPAL, FoodCreate.model_validate(food_payload(default_unit_type=DefaultUnitType.cup)))
 
-        assert len(list_foods(session)) == 2
+        assert len(list_foods(session, TEST_PRINCIPAL)) == 2
 
 
 def test_deleted_food_does_not_block_duplicate_recreation() -> None:
     with session_fixture() as session:
-        food = create_food(session, FoodCreate.model_validate(food_payload()))
-        delete_food(session, food.id)
-        recreated = create_food(session, FoodCreate.model_validate(food_payload()))
+        food = create_food(session, TEST_PRINCIPAL, FoodCreate.model_validate(food_payload()))
+        delete_food(session, TEST_PRINCIPAL, food.id)
+        recreated = create_food(session, TEST_PRINCIPAL, FoodCreate.model_validate(food_payload()))
 
         assert recreated.id != food.id
-        assert len(list_foods(session)) == 1
+        assert len(list_foods(session, TEST_PRINCIPAL)) == 1
 
 
 def test_food_list_pagination_preserves_legacy_array_response(api_client: TestClient) -> None:
@@ -307,24 +316,27 @@ def test_food_page_combines_search_category_and_uncategorized_filters() -> None:
     with session_fixture() as session:
         create_food(
             session,
+            TEST_PRINCIPAL,
             FoodCreate.model_validate(food_payload(name="Arabic Oats", category="Breakfast")),
         )
         create_food(
             session,
+            TEST_PRINCIPAL,
             FoodCreate.model_validate(food_payload(name="Other Oats", category="Snacks")),
         )
         create_food(
             session,
+            TEST_PRINCIPAL,
             FoodCreate.model_validate(food_payload(name="Plain Oats", category=None)),
         )
 
-        breakfast = list_foods_page(session, search="oats", category="Breakfast")
+        breakfast = list_foods_page(session, TEST_PRINCIPAL, search="oats", category="Breakfast")
         assert [food.name for food in breakfast.items] == ["Arabic Oats"]
         assert breakfast.total == 1
         assert breakfast.categories == ["Breakfast", "Snacks"]
         assert breakfast.uncategorized_count == 1
 
-        uncategorized = list_foods_page(session, category=UNCATEGORIZED_CATEGORY)
+        uncategorized = list_foods_page(session, TEST_PRINCIPAL, category=UNCATEGORIZED_CATEGORY)
         assert [food.name for food in uncategorized.items] == ["Plain Oats"]
 
 
@@ -332,15 +344,17 @@ def test_food_search_matches_brand_for_diary_picker() -> None:
     with session_fixture() as session:
         create_food(
             session,
+            TEST_PRINCIPAL,
             FoodCreate.model_validate(food_payload(name="Arabic oats", brand="Gullon Oaty")),
         )
         create_food(
             session,
+            TEST_PRINCIPAL,
             FoodCreate.model_validate(food_payload(name="Other food", brand="Different")),
         )
 
-        legacy_results = list_foods(session, "gullon")
-        paged_results = list_foods_page(session, search="GULLON")
+        legacy_results = list_foods(session, TEST_PRINCIPAL, "gullon")
+        paged_results = list_foods_page(session, TEST_PRINCIPAL, search="GULLON")
 
         assert [food.name for food in legacy_results] == ["Arabic oats"]
         assert [food.name for food in paged_results.items] == ["Arabic oats"]
@@ -350,21 +364,23 @@ def test_food_page_sorts_by_derived_serving_calories_and_protein() -> None:
     with session_fixture() as session:
         create_food(
             session,
+            TEST_PRINCIPAL,
             FoodCreate.model_validate(
                 food_payload(name="Small Serving", calories=500, protein_g=20, unit_amount=10)
             ),
         )
         create_food(
             session,
+            TEST_PRINCIPAL,
             FoodCreate.model_validate(
                 food_payload(name="Large Serving", calories=100, protein_g=8, unit_amount=100)
             ),
         )
 
-        by_calories = list_foods_page(session, sort="calories")
+        by_calories = list_foods_page(session, TEST_PRINCIPAL, sort="calories")
         assert [food.name for food in by_calories.items] == ["Large Serving", "Small Serving"]
 
-        by_protein = list_foods_page(session, sort="protein")
+        by_protein = list_foods_page(session, TEST_PRINCIPAL, sort="protein")
         assert [food.name for food in by_protein.items] == ["Large Serving", "Small Serving"]
 
 
@@ -391,8 +407,9 @@ def test_optional_nutrient_max_ranges() -> None:
 
 def test_diary_snapshot_survives_food_hard_delete() -> None:
     with session_fixture() as session:
-        food = create_food(session, FoodCreate.model_validate(food_payload()))
+        food = create_food(session, TEST_PRINCIPAL, FoodCreate.model_validate(food_payload()))
         entry = DiaryEntry(
+            principal_id=TEST_PRINCIPAL_ID,
             entry_date=date(2026, 7, 9),
             food_id=food.id,
             quantity=1,
@@ -402,7 +419,7 @@ def test_diary_snapshot_survives_food_hard_delete() -> None:
         session.commit()
         session.refresh(entry)
 
-        delete_food(session, food.id)
+        delete_food(session, TEST_PRINCIPAL, food.id)
         response = to_entry_response(entry)
 
         assert response.nutrition_snapshot.name == "Greek Yogurt"

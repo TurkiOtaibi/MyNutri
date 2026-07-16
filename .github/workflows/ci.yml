@@ -8,6 +8,23 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mynutri_test_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mynutri_test_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_test_ci
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_test_ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,6 +39,18 @@ jobs:
       - name: Test backend
         working-directory: backend
         run: pytest
+      - name: Verify migration head and model drift
+        working-directory: backend
+        run: |
+          alembic heads
+          alembic check
+      - name: Verify production database preflight
+        working-directory: backend
+        env:
+          ENVIRONMENT: production
+          DEPLOYMENT_PRINCIPAL_ID: 00000000-0000-0000-0000-000000000001
+          SINGLE_USER_TOKEN: ci-only-secret
+        run: python -m app.db.preflight
       - name: Check migration SQL
         working-directory: backend
         run: alembic upgrade head --sql

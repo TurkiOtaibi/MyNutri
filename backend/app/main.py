@@ -4,13 +4,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
-from app.core.config import get_settings
-from app.db.session import create_db_and_tables
+from app.core.config import get_settings, validate_runtime_configuration
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    create_db_and_tables()
+    validate_runtime_configuration(get_settings())
     yield
 
 

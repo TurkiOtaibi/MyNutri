@@ -1,6 +1,10 @@
 from copy import deepcopy
+from uuid import UUID
 
 from sqlmodel import Session, SQLModel, create_engine
+
+from app.core.auth import PrincipalContext
+from app.models import Principal
 
 from scripts.import_foods_batch_001 import (
     MappingDecisionNeeded,
@@ -9,6 +13,9 @@ from scripts.import_foods_batch_001 import (
     dry_run,
     map_record,
 )
+
+TEST_PRINCIPAL_ID = UUID("00000000-0000-0000-0000-000000000001")
+TEST_PRINCIPAL = PrincipalContext(TEST_PRINCIPAL_ID)
 
 
 def sample_record(**overrides):
@@ -74,8 +81,10 @@ def test_apply_import_is_idempotent() -> None:
     SQLModel.metadata.create_all(engine)
     dataset = {"record_count": 1, "foods": [sample_record()]}
     with Session(engine) as session:
-        first = apply_import(session, deepcopy(dataset))
-        second = apply_import(session, deepcopy(dataset))
+        session.add(Principal(id=TEST_PRINCIPAL_ID))
+        session.commit()
+        first = apply_import(session, TEST_PRINCIPAL, deepcopy(dataset))
+        second = apply_import(session, TEST_PRINCIPAL, deepcopy(dataset))
 
     assert first[0].status == "inserted"
     assert second[0].status == "duplicate"
@@ -90,6 +99,8 @@ def test_dry_run_blocks_only_unsupported_unit() -> None:
         "foods": [sample_record(), sample_record(name="عبوة تجريبية", default_unit_name="علبة")],
     }
     with Session(engine) as session:
-        results = dry_run(session, dataset)
+        session.add(Principal(id=TEST_PRINCIPAL_ID))
+        session.commit()
+        results = dry_run(session, TEST_PRINCIPAL, dataset)
 
     assert [result.status for result in results] == ["valid", "blocked_decision"]

@@ -2,9 +2,9 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
-from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
+from app.core.auth import PrincipalContext
 from app.models import DiaryEntry, Food
 from app.schemas import (
     DiaryEntryCreate,
@@ -111,25 +111,44 @@ def to_entry_response(entry: DiaryEntry) -> DiaryEntryResponse:
     )
 
 
-def list_entries(session: Session, entry_date: date | None = None) -> list[DiaryEntry]:
-    statement = select(DiaryEntry).order_by(DiaryEntry.entry_date.desc(), DiaryEntry.created_at.desc())
+def list_entries(
+    session: Session, principal: PrincipalContext, entry_date: date | None = None
+) -> list[DiaryEntry]:
+    statement = (
+        select(DiaryEntry)
+        .where(DiaryEntry.principal_id == principal.principal_id)
+        .order_by(DiaryEntry.entry_date.desc(), DiaryEntry.created_at.desc())
+    )
     if entry_date is not None:
         statement = statement.where(DiaryEntry.entry_date == entry_date)
     return list(session.exec(statement).all())
 
 
-def get_entry(session: Session, entry_id: UUID) -> DiaryEntry:
-    entry = session.get(DiaryEntry, entry_id)
+def get_entry(session: Session, principal: PrincipalContext, entry_id: UUID) -> DiaryEntry:
+    entry = session.exec(
+        select(DiaryEntry).where(
+            DiaryEntry.id == entry_id,
+            DiaryEntry.principal_id == principal.principal_id,
+        )
+    ).first()
     if entry is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Diary entry not found.")
+        from app.services.errors import resource_not_found
+
+        raise resource_not_found()
     return entry
 
 
-def create_entry(session: Session, payload: DiaryEntryCreate) -> DiaryEntry:
-    food = get_food(session, payload.food_id)
+def create_entry(
+    session: Session, principal: PrincipalContext, payload: DiaryEntryCreate
+) -> DiaryEntry:
+    food = get_food(session, principal, payload.food_id)
     if payload.id is not None:
         existing = session.get(DiaryEntry, payload.id)
         if existing is not None:
+            if existing.principal_id != principal.principal_id:
+                from app.services.errors import resource_not_found
+
+                raise resource_not_found()
             existing.entry_date = payload.entry_date
             existing.food_id = food.id
             existing.quantity = payload.quantity
@@ -141,6 +160,7 @@ def create_entry(session: Session, payload: DiaryEntryCreate) -> DiaryEntry:
             return existing
 
     entry_data = {
+        "principal_id": principal.principal_id,
         "entry_date": payload.entry_date,
         "food_id": food.id,
         "quantity": payload.quantity,
@@ -156,8 +176,13 @@ def create_entry(session: Session, payload: DiaryEntryCreate) -> DiaryEntry:
     return entry
 
 
-def update_entry(session: Session, entry_id: UUID, payload: DiaryEntryUpdate) -> DiaryEntry:
-    entry = get_entry(session, entry_id)
+def update_entry(
+    session: Session,
+    principal: PrincipalContext,
+    entry_id: UUID,
+    payload: DiaryEntryUpdate,
+) -> DiaryEntry:
+    entry = get_entry(session, principal, entry_id)
     entry.quantity = payload.quantity
     if payload.meal_type is not None:
         entry.meal_type = payload.meal_type
@@ -173,8 +198,8 @@ def update_entry(session: Session, entry_id: UUID, payload: DiaryEntryUpdate) ->
     return entry
 
 
-def delete_entry(session: Session, entry_id: UUID) -> None:
-    entry = get_entry(session, entry_id)
+def delete_entry(session: Session, principal: PrincipalContext, entry_id: UUID) -> None:
+    entry = get_entry(session, principal, entry_id)
     session.delete(entry)
     session.commit()
 

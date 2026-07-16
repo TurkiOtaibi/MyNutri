@@ -2,6 +2,7 @@ from datetime import date, timedelta
 
 from sqlmodel import Session, select
 
+from app.core.auth import PrincipalContext
 from app.models import DiaryEntry
 from app.schemas import DaySummary, WeekSummary
 from app.services.diary import add_totals, empty_totals, totals_from_snapshot
@@ -12,18 +13,19 @@ def sunday_start(day: date) -> date:
     return day - timedelta(days=(day.weekday() + 1) % 7)
 
 
-def weekly_summary(session: Session, start: date) -> WeekSummary:
+def weekly_summary(session: Session, principal: PrincipalContext, start: date) -> WeekSummary:
     week_start = sunday_start(start)
     week_end = week_start + timedelta(days=6)
     entries = session.exec(
         select(DiaryEntry).where(
+            DiaryEntry.principal_id == principal.principal_id,
             DiaryEntry.entry_date >= week_start,
             DiaryEntry.entry_date <= week_end,
         )
     ).all()
 
     targets = None
-    profile = get_profile(session)
+    profile = get_profile(session, principal)
     if profile is not None:
         targets = to_target_response(profile)
 

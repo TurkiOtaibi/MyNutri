@@ -6,6 +6,7 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -13,6 +14,7 @@ from sqlalchemy import text
 from sqlmodel import Session
 
 from app.db.session import engine
+from app.core.auth import PrincipalContext
 from app.models import Food
 from app.schemas import FoodCreate
 from app.services.food import create_food, duplicate_key, list_foods, to_food_response
@@ -173,10 +175,12 @@ def validate_unit_values(name: str, values: dict[str, float | None], tolerance: 
     return checks
 
 
-def existing_by_key(session: Session) -> dict[tuple[str, str, str, float, str], Food]:
+def existing_by_key(
+    session: Session, principal: PrincipalContext
+) -> dict[tuple[str, str, str, float, str], Food]:
     return {
         duplicate_key(to_food_response(food).model_dump()): food
-        for food in list_foods(session)
+        for food in list_foods(session, principal)
     }
 
 
@@ -189,12 +193,14 @@ def validate_target_database(session: Session) -> str:
     return str(database_name)
 
 
-def dry_run(session: Session, dataset: dict[str, Any]) -> list[ImportResult]:
+def dry_run(
+    session: Session, principal: PrincipalContext, dataset: dict[str, Any]
+) -> list[ImportResult]:
     foods = dataset.get("foods")
     if not isinstance(foods, list) or dataset.get("record_count") != len(foods):
         raise ValueError("Dataset record_count does not match the foods array.")
 
-    current = existing_by_key(session)
+    current = existing_by_key(session, principal)
     batch_keys: set[tuple[str, str, str, float, str]] = set()
     results: list[ImportResult] = []
     for record in foods:
@@ -229,19 +235,21 @@ def dry_run(session: Session, dataset: dict[str, Any]) -> list[ImportResult]:
     return results
 
 
-def apply_import(session: Session, dataset: dict[str, Any]) -> list[ImportResult]:
-    results = dry_run(session, dataset)
+def apply_import(
+    session: Session, principal: PrincipalContext, dataset: dict[str, Any]
+) -> list[ImportResult]:
+    results = dry_run(session, principal, dataset)
     for result in results:
         if result.status != "valid" or result.payload is None:
             continue
         try:
-            food = create_food(session, FoodCreate.model_validate(result.payload))
+            food = create_food(session, principal, FoodCreate.model_validate(result.payload))
             result.status = "inserted"
             result.reason = "Created through the existing Food service."
             result.food_id = str(food.id)
         except HTTPException as error:
             if error.status_code == 422:
-                duplicate = existing_by_key(session).get(duplicate_key(result.payload))
+                duplicate = existing_by_key(session, principal).get(duplicate_key(result.payload))
                 result.status = "duplicate"
                 result.reason = "Matched an existing Food during insertion."
                 result.food_id = str(duplicate.id) if duplicate else None
@@ -260,14 +268,20 @@ def main() -> None:
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Validate and import myNutri Foods batch 001.")
     parser.add_argument("--input", required=True, type=Path)
+    parser.add_argument("--principal-id", required=True, type=UUID)
     parser.add_argument("--apply", action="store_true", help="Insert valid, non-duplicate records.")
     parser.add_argument("--output", type=Path, help="Optional JSON result file.")
     args = parser.parse_args()
 
     dataset = load_dataset(args.input)
+    principal = PrincipalContext(args.principal_id)
     with Session(engine) as session:
         database = validate_target_database(session)
-        results = apply_import(session, dataset) if args.apply else dry_run(session, dataset)
+        results = (
+            apply_import(session, principal, dataset)
+            if args.apply
+            else dry_run(session, principal, dataset)
+        )
 
     output = {
         "database": database,

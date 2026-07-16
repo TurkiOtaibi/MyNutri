@@ -41,6 +41,8 @@ class TargetResponse(BaseModel):
 
 
 class ProfileUpsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     sex: Sex
     birth_date: date
     height_cm: float = Field(gt=0)
@@ -105,6 +107,8 @@ def _clean_optional_text(value: str | None) -> str | None:
 
 
 class FoodBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     brand: str | None = None
     category: str | None = None
@@ -399,6 +403,8 @@ class NutritionTotals(BaseModel):
 
 
 class DiaryEntryCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: UUID | None = None
     entry_date: date
     food_id: UUID
@@ -414,6 +420,8 @@ class DiaryEntryCreate(BaseModel):
 
 
 class DiaryEntryUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     quantity: float = Field(gt=0, le=50)
     meal_type: MealType | None = None
 

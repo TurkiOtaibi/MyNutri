@@ -1,18 +1,24 @@
 from datetime import date, timedelta
+from uuid import UUID
 
 import pytest
 from pydantic import ValidationError
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
-from app.models import DefaultUnitType, DiaryEntry, Food, MealType, NutritionBasis, UnitBasis
+from app.core.auth import PrincipalContext
+from app.models import DefaultUnitType, DiaryEntry, Food, MealType, NutritionBasis, Principal, UnitBasis
 from app.schemas import DiaryEntryCreate, DiaryEntryUpdate
 from app.services.diary import make_snapshot, to_entry_response, totals_from_snapshot, update_entry
 from app.services.diary_validation_errors import validate_diary_payload
 
+TEST_PRINCIPAL_ID = UUID("00000000-0000-0000-0000-000000000001")
+TEST_PRINCIPAL = PrincipalContext(TEST_PRINCIPAL_ID)
+
 
 def test_diary_snapshot_freezes_food_values() -> None:
     food = Food(
+        principal_id=TEST_PRINCIPAL_ID,
         name="Greek yogurt",
         nutrition_basis=NutritionBasis.per_100g,
         default_unit_type=DefaultUnitType.serving,
@@ -53,6 +59,7 @@ def test_quantity_only_update_recalculates_frozen_totals() -> None:
     )
     SQLModel.metadata.create_all(engine)
     food = Food(
+        principal_id=TEST_PRINCIPAL_ID,
         name="Snapshot food",
         nutrition_basis=NutritionBasis.per_100g,
         default_unit_type=DefaultUnitType.serving,
@@ -64,10 +71,12 @@ def test_quantity_only_update_recalculates_frozen_totals() -> None:
         fat_g=5,
     )
     with Session(engine) as session:
+        session.add(Principal(id=TEST_PRINCIPAL_ID))
         session.add(food)
         session.commit()
         session.refresh(food)
         entry = DiaryEntry(
+            principal_id=TEST_PRINCIPAL_ID,
             entry_date=date.today(),
             food_id=food.id,
             quantity=1,
@@ -77,7 +86,7 @@ def test_quantity_only_update_recalculates_frozen_totals() -> None:
         session.commit()
         session.refresh(entry)
 
-        updated = update_entry(session, entry.id, DiaryEntryUpdate(quantity=2))
+        updated = update_entry(session, TEST_PRINCIPAL, entry.id, DiaryEntryUpdate(quantity=2))
         response = to_entry_response(updated)
 
         assert response.quantity == 2
@@ -133,6 +142,7 @@ def test_update_changes_quantity_and_meal_without_mutating_snapshot_identity() -
     )
     SQLModel.metadata.create_all(engine)
     food = Food(
+        principal_id=TEST_PRINCIPAL_ID,
         name="Meal snapshot food",
         nutrition_basis=NutritionBasis.per_100g,
         default_unit_type=DefaultUnitType.piece,
@@ -144,11 +154,13 @@ def test_update_changes_quantity_and_meal_without_mutating_snapshot_identity() -
         fat_g=5,
     )
     with Session(engine) as session:
+        session.add(Principal(id=TEST_PRINCIPAL_ID))
         session.add(food)
         session.commit()
         session.refresh(food)
         original_snapshot = make_snapshot(food, 1)
         entry = DiaryEntry(
+            principal_id=TEST_PRINCIPAL_ID,
             entry_date=date.today(),
             food_id=food.id,
             quantity=1,
@@ -161,6 +173,7 @@ def test_update_changes_quantity_and_meal_without_mutating_snapshot_identity() -
 
         updated = update_entry(
             session,
+            TEST_PRINCIPAL,
             entry.id,
             DiaryEntryUpdate(quantity=1.5, meal_type=MealType.dinner),
         )

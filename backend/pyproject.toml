@@ -23,6 +23,7 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = ["migration: requires a disposable PostgreSQL database"]
 
 [tool.ruff]
 line-length = 100
