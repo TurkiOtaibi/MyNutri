@@ -5,7 +5,18 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import JSON, Column, DateTime, Enum as SAEnum, ForeignKey, Numeric
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Enum as SAEnum,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Numeric,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -63,10 +74,41 @@ class MealType(str, Enum):
     unspecified = "unspecified"
 
 
-class Profile(SQLModel, table=True):
-    __tablename__ = "profile"
+class PrincipalStatus(str, Enum):
+    active = "active"
+    disabled = "disabled"
+
+
+class Principal(SQLModel, table=True):
+    __tablename__ = "principal"
+    __table_args__ = (CheckConstraint("status IN ('active', 'disabled')", name="ck_principal_status"),)
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    status: PrincipalStatus = Field(
+        default=PrincipalStatus.active,
+        sa_column=Column(Text(), nullable=False, server_default=PrincipalStatus.active.value),
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow,
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
+    updated_at: datetime = Field(
+        default_factory=utcnow,
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
+
+
+class Profile(SQLModel, table=True):
+    __tablename__ = "profile"
+    __table_args__ = (
+        UniqueConstraint("principal_id", name="uq_profile_principal_id"),
+        UniqueConstraint("id", "principal_id", name="uq_profile_id_principal_id"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False, index=True)
+    )
     sex: Sex = Field(sa_column=Column(SAEnum(Sex, name="sex_enum"), nullable=False))
     birth_date: date
     height_cm: float = Field(sa_column=Column(Numeric(6, 2), nullable=False))
@@ -85,8 +127,12 @@ class Profile(SQLModel, table=True):
 
 class Food(SQLModel, table=True):
     __tablename__ = "food"
+    __table_args__ = (UniqueConstraint("id", "principal_id", name="uq_food_id_principal_id"),)
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False, index=True)
+    )
     name: str = Field(index=True)
     brand: str | None = None
     category: str | None = None
@@ -136,8 +182,19 @@ class Food(SQLModel, table=True):
 
 class DiaryEntry(SQLModel, table=True):
     __tablename__ = "diary_entry"
+    __table_args__ = (
+        UniqueConstraint("id", "principal_id", name="uq_diary_entry_id_principal_id"),
+        ForeignKeyConstraint(
+            ["food_id", "principal_id"],
+            ["food.id", "food.principal_id"],
+            name="fk_diary_entry_food_owner",
+        ),
+    )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False, index=True)
+    )
     entry_date: date = Field(index=True)
     food_id: uuid.UUID | None = Field(
         default=None,

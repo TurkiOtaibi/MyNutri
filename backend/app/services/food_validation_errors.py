@@ -63,6 +63,7 @@ NUMERIC_FOOD_FIELDS = {
 }
 
 SELECT_FOOD_FIELDS = {"nutrition_basis", "default_unit_type", "unit_basis"}
+AUTHORITATIVE_OWNER_FIELDS = {"principal_id", "owner_id", "user_id"}
 
 CUSTOM_MESSAGE_CODES = {
     ABOVE_MAX_MESSAGE: "above_max",
@@ -93,6 +94,19 @@ def duplicate_food_detail() -> list[dict[str, Any]]:
 
 
 def validate_food_payload(schema: type[ModelT], payload: dict[str, Any]) -> ModelT:
+    submitted_owner_fields = AUTHORITATIVE_OWNER_FIELDS.intersection(payload)
+    if submitted_owner_fields:
+        field = sorted(submitted_owner_fields)[0]
+        raise HTTPException(
+            status_code=422,
+            detail=[
+                food_error_detail(
+                    field,
+                    "non_authoritative_field",
+                    "لا يمكن للعميل تحديد مالك السجل.",
+                )
+            ],
+        )
     try:
         return schema.model_validate(payload)
     except ValidationError as error:

@@ -15,8 +15,8 @@
 
 | Stage | Branch | Worktree | Base SHA | Implementation commit | PR | CI / gates | Review verdict | Merge SHA | Verification status | Unresolved risks |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 00 Baseline and plan | `impl/wave1-00-baseline-and-execution-plan` | `C:\Users\DELTA\Desktop\MyNutri-wave1-00` | `c9c12eb6922636833945308055597aaed55cc971` | Pending | Pending | Local baseline passed; GitHub pending | Pending | Pending | 42 Backend passed; PostgreSQL/Alembic passed; 245 E2E passed; typecheck/build/audit passed | Deterministic E2E seed setup required by Stage 08 |
-| 01 Principal ownership | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Not started | None recorded |
+| 00 Baseline and plan | `impl/wave1-00-baseline-and-execution-plan` | Removed after merge | `c9c12eb6922636833945308055597aaed55cc971` | `e2f9243a5add25609d3ff23ebbc09859ad509036` | `#6` | Local baseline and GitHub CI passed | Critical 0; High 0; merged | `381a039f242ab3e5ea1fcff3b52668bf3dd8cf3b` | 42 Backend passed; PostgreSQL/Alembic passed; 245 E2E passed; typecheck/build/audit passed | Deterministic E2E seed setup required by Stage 08 |
+| 01 Principal ownership | `impl/wave1-01-principal-ownership` | `C:\Users\DELTA\Desktop\MyNutri-wave1-01` | `381a039f242ab3e5ea1fcff3b52668bf3dd8cf3b` | Pending | Pending | Local required gates passed; GitHub pending | Critical 0; High 0; local strict review passed | Pending | 55 Backend passed; PostgreSQL migration rehearsals passed; 245 E2E passed; Frontend typecheck/build/audit passed | Physical-device release evidence remains deferred to Stage 08 |
 | 02 Rules/Registry/calculations | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Not started | None recorded |
 | 03 Food nutrition foundation | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Not started | None recorded |
 | 04 Target Plans | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Not started | None recorded |

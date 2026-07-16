@@ -6,11 +6,12 @@ from math import ceil
 from typing import Any
 from uuid import UUID
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
+from app.core.auth import PrincipalContext
 from app.models import Food, utcnow
 from app.schemas import FoodCreate, FoodResponse, FoodSort, FoodUpdate
 from app.services.food_validation_errors import duplicate_food_detail, food_validation_http_exception
@@ -118,9 +119,14 @@ def _duplicate_detail() -> list[dict[str, Any]]:
     return duplicate_food_detail()
 
 
-def ensure_not_duplicate(session: Session, data: dict[str, Any], food_id: UUID | None = None) -> None:
+def ensure_not_duplicate(
+    session: Session,
+    principal: PrincipalContext,
+    data: dict[str, Any],
+    food_id: UUID | None = None,
+) -> None:
     target_key = duplicate_key(data)
-    foods = session.exec(select(Food)).all()
+    foods = session.exec(select(Food).where(Food.principal_id == principal.principal_id)).all()
     for food in foods:
         if food_id is not None and food.id == food_id:
             continue
@@ -138,8 +144,8 @@ def _validated_update_data(food: Food, payload: FoodUpdate) -> dict[str, Any]:
         raise food_validation_http_exception(error) from error
 
 
-def list_foods(session: Session, query: str | None = None) -> list[Food]:
-    statement = select(Food).order_by(Food.name)
+def list_foods(session: Session, principal: PrincipalContext, query: str | None = None) -> list[Food]:
+    statement = select(Food).where(Food.principal_id == principal.principal_id).order_by(Food.name)
     if query and query.strip():
         pattern = f"%{query.strip()}%"
         statement = statement.where(or_(Food.name.ilike(pattern), Food.brand.ilike(pattern)))
@@ -148,6 +154,7 @@ def list_foods(session: Session, query: str | None = None) -> list[Food]:
 
 def list_foods_page(
     session: Session,
+    principal: PrincipalContext,
     *,
     search: str | None = None,
     category: str | None = None,
@@ -155,7 +162,7 @@ def list_foods_page(
     page: int = 1,
     page_size: int = 20,
 ) -> FoodPage:
-    conditions = []
+    conditions = [Food.principal_id == principal.principal_id]
     normalized_search = search.strip() if search else ""
     if normalized_search:
         pattern = f"%{normalized_search}%"
@@ -188,7 +195,9 @@ def list_foods_page(
     statement = statement.offset((page - 1) * page_size).limit(page_size)
     items = list(session.exec(statement).all())
 
-    category_rows = session.exec(select(Food.category)).all()
+    category_rows = session.exec(
+        select(Food.category).where(Food.principal_id == principal.principal_id)
+    ).all()
     categories = sorted({value.strip() for value in category_rows if value and value.strip()}, key=str.casefold)
     uncategorized_count = sum(1 for value in category_rows if value is None or not value.strip())
 
@@ -203,34 +212,44 @@ def list_foods_page(
     )
 
 
-def get_food(session: Session, food_id: UUID) -> Food:
-    food = session.get(Food, food_id)
+def get_food(session: Session, principal: PrincipalContext, food_id: UUID) -> Food:
+    food = session.exec(
+        select(Food).where(Food.id == food_id, Food.principal_id == principal.principal_id)
+    ).first()
     if food is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Food not found.")
+        from app.services.errors import resource_not_found
+
+        raise resource_not_found()
     return food
 
 
-def create_food(session: Session, payload: FoodCreate) -> Food:
+def create_food(session: Session, principal: PrincipalContext, payload: FoodCreate) -> Food:
     data = payload.model_dump(exclude={"id"})
     if payload.id is not None:
         existing = session.get(Food, payload.id)
         if existing is not None:
-            ensure_not_duplicate(session, data, food_id=existing.id)
-            return update_food(session, existing.id, FoodUpdate.model_validate(data))
+            if existing.principal_id != principal.principal_id:
+                from app.services.errors import resource_not_found
+
+                raise resource_not_found()
+            ensure_not_duplicate(session, principal, data, food_id=existing.id)
+            return update_food(session, principal, existing.id, FoodUpdate.model_validate(data))
         data["id"] = payload.id
 
-    ensure_not_duplicate(session, data)
-    food = Food(**data)
+    ensure_not_duplicate(session, principal, data)
+    food = Food(principal_id=principal.principal_id, **data)
     session.add(food)
     session.commit()
     session.refresh(food)
     return food
 
 
-def update_food(session: Session, food_id: UUID, payload: FoodUpdate) -> Food:
-    food = get_food(session, food_id)
+def update_food(
+    session: Session, principal: PrincipalContext, food_id: UUID, payload: FoodUpdate
+) -> Food:
+    food = get_food(session, principal, food_id)
     data = _validated_update_data(food, payload)
-    ensure_not_duplicate(session, data, food_id=food.id)
+    ensure_not_duplicate(session, principal, data, food_id=food.id)
     for key, value in data.items():
         setattr(food, key, value)
     food.updated_at = utcnow()
@@ -240,7 +259,7 @@ def update_food(session: Session, food_id: UUID, payload: FoodUpdate) -> Food:
     return food
 
 
-def delete_food(session: Session, food_id: UUID) -> None:
-    food = get_food(session, food_id)
+def delete_food(session: Session, principal: PrincipalContext, food_id: UUID) -> None:
+    food = get_food(session, principal, food_id)
     session.delete(food)
     session.commit()
