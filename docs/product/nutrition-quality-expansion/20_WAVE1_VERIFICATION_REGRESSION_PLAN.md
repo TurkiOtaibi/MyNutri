@@ -12,7 +12,7 @@
 | Approval date | `2026-07-16` |
 | Review | `20A_WAVE1_VERIFICATION_REGRESSION_REVIEW.md` |
 | Critical / High / Product decisions | `0 / 0 / 0` |
-| Pinned revision | Pending |
+| Pinned revision | `02d1abed01aeb5681b3f84245b692516235da60b` |
 | Implementation authorization | `No` |
 
 ## 1. Gate Policy

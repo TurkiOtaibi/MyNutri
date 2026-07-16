@@ -9,6 +9,6 @@
 | Review | `20A_WAVE1_VERIFICATION_REGRESSION_REVIEW.md` |
 | Critical / High / contradictions / Product decisions | `0 / 0 / 0 / 0` |
 | Physical-device evidence | Pending implementation; release blocker only |
-| Pinned revision | Pending until approval commit |
+| Pinned revision | `02d1abed01aeb5681b3f84245b692516235da60b` |
 
 The verification design is approved. No product test was executed or re-certified by this documentation task. `Verdict: Ready for documentation commit`.
