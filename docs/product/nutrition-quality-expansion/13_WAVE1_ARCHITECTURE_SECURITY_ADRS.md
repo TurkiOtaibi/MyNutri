@@ -19,7 +19,7 @@
 | High issues at approval | `0` |
 | Substantive contradictions at approval | `0` |
 | Product Owner decisions remaining at approval | `0` |
-| Pinned commit/revision | Pending until PR merge |
+| Pinned commit/revision | `c7c48746715d24238acd70cd4eea137bf0f87cfd` |
 | Implemented Baseline Code Commit | `d6caf0a124e5ffec63cabd1972ed742b3e7fc8bd` |
 | Governing Register Commit | `255b8339e66e7dd6da0cb48ad7d93c2f0243e66f` |
 | Governance Decision Direction Commit | `b9869dfe0a1dc26190aaa6478f2114da82a0793e` |
@@ -981,11 +981,11 @@ Still open
 | ADR-006 | Snapshot v2 JSON schema, relational linkage, reader/writer rollout, and integrity envelope |
 | ADR-008 | Exact aggregation API and Arabic UI semantics |
 | ADR-009 | Idempotency persistence, canonical request identity, concurrency constraints, and API errors |
-| Artifact pinning | Formal approval is complete; the exact merge revision remains Pending until PR #3 is merged |
+| Artifact pinning | Complete at PR #3 merge revision `c7c48746715d24238acd70cd4eea137bf0f87cfd` |
 
 ## Artifact Lifecycle and Package Closure Conditions
 
-Artifact 13 formal approval is complete and is independent from completion of Artifacts 14–21. Artifact 13 does not return to Draft because later artifacts remain incomplete. It is approved but not yet pinned; the PR #3 merge revision must be recorded before Artifact 14 authoring begins.
+Artifact 13 formal approval is complete and is independent from completion of Artifacts 14–21. Artifact 13 does not return to Draft because later artifacts remain incomplete. It is approved and pinned to the PR #3 merge revision, so Artifact 14 documentation authoring may begin.
 
 Artifacts 14–21 resolve the delegated technical contracts and provide the traceability and verification required for the final Wave 1 package freeze. They are package-freeze dependencies, not prerequisites for Artifact 13 approval.
 
@@ -1011,7 +1011,7 @@ Critical findings: 0
 High findings: 0
 Substantive contradictions: 0
 Product Owner decisions remaining: 0
-Pinned revision: Pending until PR #3 merge
+Pinned revision: c7c48746715d24238acd70cd4eea137bf0f87cfd
 Artifact 13 frozen: No
 Artifact 14 authoring: Allowed only after PR #3 is merged and the Artifact 13 merge SHA is recorded
 Artifacts 14–21: Pending

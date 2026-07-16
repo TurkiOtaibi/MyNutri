@@ -78,11 +78,11 @@ Numeric artifact identifiers `13` through `21` are reserved for the formal modul
 
 ## 4. Required Freeze Artifacts
 
-Artifact 13 is formally approved as Architecture and Security direction but remains unpinned until its pull request is merged. It is not Frozen and is not yet approved freeze-package evidence. Artifact 14 authoring may begin only after the Artifact 13 merge revision is recorded. Artifacts 14-21 do not exist and remain `Not Created`.
+Artifact 13 is formally approved as Architecture and Security direction and pinned to PR #3 merge revision `c7c48746715d24238acd70cd4eea137bf0f87cfd`. It is not Frozen. Artifact 14 documentation authoring may begin. Artifacts 14-21 do not exist and remain `Not Created`.
 
 | Artifact ID | Exact path | Purpose | Status | Owner | Approver | Approval date | Version | Pinned commit/revision | Dependencies | Supersedes | Blocking issues | Required for implementation start | Required for Wave 1 sign-off |
 |---|---|---|---|---|---|---|---|---|---|---|---|---:|---:|
-| `W1-ADR-13` | `docs/product/nutrition-quality-expansion/13_WAVE1_ARCHITECTURE_SECURITY_ADRS.md` | Architecture, security, Principal ownership, rule authority, and system-boundary ADRs | Approved | Architecture / Security | Product Owner / Architecture / Security | `2026-07-16` | `1.0` | Pending until PR merge | `DEC-C01-10`, `DEC-C02-11`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`, `DEC-H11` | None | Product Owner decisions: 0; Critical review findings: 0; High review findings: 0; approved but not yet pinned; review evidence: `docs/product/nutrition-quality-expansion/13A_WAVE1_ARCHITECTURE_SECURITY_REVIEW.md` | Yes | Yes |
+| `W1-ADR-13` | `docs/product/nutrition-quality-expansion/13_WAVE1_ARCHITECTURE_SECURITY_ADRS.md` | Architecture, security, Principal ownership, rule authority, and system-boundary ADRs | Approved | Architecture / Security | Product Owner / Architecture / Security | `2026-07-16` | `1.0` | `c7c48746715d24238acd70cd4eea137bf0f87cfd` | `DEC-C01-10`, `DEC-C02-11`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`, `DEC-H11` | None | Product Owner decisions: 0; Critical review findings: 0; High review findings: 0; approved and pinned; review evidence: `docs/product/nutrition-quality-expansion/13A_WAVE1_ARCHITECTURE_SECURITY_REVIEW.md` | Yes | Yes |
 | `W1-DATA-14` | `docs/product/nutrition-quality-expansion/14_WAVE1_PHYSICAL_DATA_MODEL.md` | Exact tables, fields, types, constraints, ownership, versions, and legacy semantics | Not Created | Pending | Pending | Pending | Pending | Pending | `W1-ADR-13`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`; governing decisions | None | C01; H01-H10 | Yes | Yes |
 | `W1-API-15` | `docs/product/nutrition-quality-expansion/15_WAVE1_API_CONTRACTS.md` | Requests, responses, errors, nulls, idempotency, ownership, and compatibility | Not Created | Pending | Pending | Pending | Pending | Pending | `W1-ADR-13`, `W1-DATA-14`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`, `DEC-H11` | None | C01; H01-H11 | Yes | Yes |
 | `W1-MIG-16` | `docs/product/nutrition-quality-expansion/16_WAVE1_MIGRATION_ROLLBACK_PLAN.md` | Expand-Migrate-Contract, rollback, realistic rehearsal, and legacy protection | Not Created | Pending | Pending | Pending | Pending | Pending | `W1-ADR-13`, `W1-DATA-14`, `W1-API-15`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10` | None | C01; H01-H10 | Yes | Yes |
@@ -107,10 +107,9 @@ Approval date: 2026-07-16
 Review evidence: docs/product/nutrition-quality-expansion/13A_WAVE1_ARCHITECTURE_SECURITY_REVIEW.md
 Critical review findings: 0
 High review findings: 0
-Pinned commit/revision: Pending until PR merge
+Pinned commit/revision: c7c48746715d24238acd70cd4eea137bf0f87cfd
 Artifact 13 frozen: No
-Artifact 14 authoring before Artifact 13 merge and pin: No
-Artifact 14 authoring after Artifact 13 merge and pin: Yes, documentation drafting only
+Artifact 14 authoring: Yes, documentation drafting only
 Implementation authorization: No
 Artifacts 14 through 21: Not Created
 ```
