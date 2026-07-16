@@ -148,6 +148,19 @@ function mockFoods(count: number): FoodRecord[] {
     }),
     id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
     net_carbs_g: 20,
+    nutrition_source: {
+      type: "unknown",
+      name: null,
+      reference: null,
+      reliability: "unknown",
+      reliability_rules_version: "1.0.0"
+    },
+    nova: {
+      classification: "unknown",
+      review_status: "unreviewed",
+      rules_version: "1.0.0"
+    },
+    group_contributions: [],
     created_at: "2026-07-10T00:00:00Z",
     updated_at: "2026-07-10T00:00:00Z"
   }));

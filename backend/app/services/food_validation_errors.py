@@ -22,7 +22,9 @@ FIBER_GT_CARBS_MESSAGE = "الألياف لا يمكن أن تكون أكبر م
 ADDED_SUGAR_GT_SUGAR_MESSAGE = "السكر المضاف لا يمكن أن يكون أكبر من إجمالي السكر."
 SATURATED_FAT_GT_FAT_MESSAGE = "الدهون المشبعة لا يمكن أن تكون أكبر من إجمالي الدهون."
 TRANS_FAT_GT_FAT_MESSAGE = "الدهون المتحولة لا يمكن أن تكون أكبر من إجمالي الدهون."
-SATURATED_TRANS_GT_FAT_MESSAGE = "مجموع الدهون المشبعة والمتحولة لا يمكن أن يكون أكبر من إجمالي الدهون."
+SATURATED_TRANS_GT_FAT_MESSAGE = (
+    "مجموع الدهون المشبعة والمتحولة لا يمكن أن يكون أكبر من إجمالي الدهون."
+)
 
 REQUIRED_FOOD_FIELDS = {
     "name",
@@ -54,15 +56,30 @@ NUMERIC_FOOD_FIELDS = {
     "iron_mg",
     "magnesium_mg",
     "zinc_mg",
+    "selenium_mcg",
     "vitamin_d_mcg",
     "vitamin_b12_mcg",
     "vitamin_c_mg",
     "vitamin_a_mcg",
+    "vitamin_a_rae_mcg",
     "folate_mcg",
+    "folate_dfe_mcg",
     "vitamin_k_mcg",
+    "iodine_mcg",
 }
 
-SELECT_FOOD_FIELDS = {"nutrition_basis", "default_unit_type", "unit_basis"}
+SELECT_FOOD_FIELDS = {
+    "nutrition_basis",
+    "default_unit_type",
+    "unit_basis",
+    "food_kind",
+    "group_data_status",
+    "group_data_completeness",
+    "type",
+    "source_type",
+    "classification",
+    "data_status",
+}
 AUTHORITATIVE_OWNER_FIELDS = {"principal_id", "owner_id", "user_id"}
 
 CUSTOM_MESSAGE_CODES = {
@@ -76,6 +93,22 @@ CUSTOM_MESSAGE_CODES = {
     TRANS_FAT_GT_FAT_MESSAGE: "trans_fat_gt_fat",
     SATURATED_TRANS_GT_FAT_MESSAGE: "saturated_trans_gt_fat",
     DUPLICATE_FOOD_MESSAGE: "duplicate_food",
+    "اسم مصدر البيانات الغذائية مطلوب لنوع المصدر المحدد.": "source_name_required",
+    "نوع مصدر المكونات مطلوب عند إدخال المكونات.": "ingredients_source_required",
+    "اسم مصدر المكونات مطلوب لنوع المصدر المحدد.": "ingredients_source_name_required",
+    "مجموعة غذائية غير معتمدة.": "invalid_food_group",
+    "النوع الفرعي مطلوب وغير متوافق مع المجموعة الغذائية.": "invalid_food_group_subtype",
+    "هذه المجموعة لا تقبل نوعًا فرعيًا.": "food_group_subtype_not_allowed",
+    "التصنيف الأساسي غير معتمد.": "invalid_primary_category",
+    "لا يمكن تكرار المجموعة الغذائية للطعام نفسه.": "duplicate_food_group",
+    "مجموع مساهمات المجموعات الغذائية لا يمكن أن يتجاوز 100.": "food_group_total_exceeded",
+    "لا يمكن تكرار السمة التحليلية.": "duplicate_analytical_trait",
+    "سمة تحليلية غير معتمدة.": "invalid_analytical_trait",
+    "الحالة غير المعروفة لا تقبل مساهمات غذائية.": "unknown_group_status_with_contributions",
+    "اكتمال التصنيف غير المعروف لا يقبل مساهمات غذائية.": "unknown_group_completeness_with_contributions",
+    "التصنيف الجزئي يتطلب مساهمة غذائية واحدة على الأقل.": "partial_group_data_requires_contribution",
+    "الحالة المؤكدة لا تقبل مساهمة تقديرية.": "known_group_data_contains_estimate",
+    "الحالة التقديرية تتطلب مساهمة تقديرية واحدة على الأقل.": "estimated_group_data_requires_estimate",
 }
 
 
@@ -90,7 +123,11 @@ def food_error_detail(
 
 
 def duplicate_food_detail() -> list[dict[str, Any]]:
-    return [food_error_detail("name", "duplicate_food", DUPLICATE_FOOD_MESSAGE, "value_error.duplicate_food")]
+    return [
+        food_error_detail(
+            "name", "duplicate_food", DUPLICATE_FOOD_MESSAGE, "value_error.duplicate_food"
+        )
+    ]
 
 
 def validate_food_payload(schema: type[ModelT], payload: dict[str, Any]) -> ModelT:
@@ -108,9 +145,28 @@ def validate_food_payload(schema: type[ModelT], payload: dict[str, Any]) -> Mode
             ],
         )
     try:
-        return schema.model_validate(payload)
+        validated = schema.model_validate(payload)
     except ValidationError as error:
         raise food_validation_http_exception(error) from error
+    if schema.__name__ == "FoodCreate":
+        for field in ("primary_category_key", "food_kind", "nutrition_source"):
+            if field not in payload or payload[field] is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=[food_error_detail(field, "required", REQUIRED_MESSAGE, "missing")],
+                )
+        if payload["food_kind"] == "unknown":
+            raise HTTPException(
+                status_code=422,
+                detail=[
+                    food_error_detail(
+                        "food_kind",
+                        "legacy_value_not_allowed",
+                        "اختر نوع الطعام: بسيط أو مركب.",
+                    )
+                ],
+            )
+    return validated
 
 
 def food_validation_http_exception(error: ValidationError) -> HTTPException:
@@ -136,7 +192,13 @@ def _format_error(item: dict[str, Any]) -> dict[str, Any]:
         return food_error_detail(field, "invalid_option", INVALID_SELECT_MESSAGE, error_type)
 
     if field in NUMERIC_FOOD_FIELDS:
-        if error_type in {"float_parsing", "float_type", "int_parsing", "int_type", "decimal_parsing"}:
+        if error_type in {
+            "float_parsing",
+            "float_type",
+            "int_parsing",
+            "int_type",
+            "decimal_parsing",
+        }:
             return food_error_detail(field, "invalid_number", INVALID_NUMBER_MESSAGE, error_type)
         if error_type in {"greater_than", "greater_than_equal"}:
             return food_error_detail(field, "below_min", BELOW_MIN_MESSAGE, error_type)

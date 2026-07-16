@@ -233,6 +233,34 @@ PRIMARY_CATEGORIES: tuple[str, ...] = (
     "other",
 )
 
+PRIMARY_CATEGORY_LABELS_AR: dict[str, str] = dict(
+    zip(
+        PRIMARY_CATEGORIES,
+        (
+            "الخضروات",
+            "الفواكه",
+            "البقوليات",
+            "الحبوب الكاملة",
+            "الحبوب المكررة",
+            "المكسرات والبذور",
+            "المأكولات البحرية",
+            "الألبان والبدائل المدعمة",
+            "البيض",
+            "الدواجن",
+            "اللحوم الحمراء",
+            "اللحوم المصنعة",
+            "الزيوت والدهون المضافة",
+            "الحلويات",
+            "المشروبات المحلاة بالسكر",
+            "المشروبات غير المحلاة",
+            "الأعشاب والتوابل",
+            "طبق مركب",
+            "أخرى",
+        ),
+        strict=True,
+    )
+)
+
 FOOD_GROUPS: tuple[dict[str, Any], ...] = (
     {
         "key": "vegetables",
@@ -335,32 +363,55 @@ FOOD_GROUPS: tuple[dict[str, Any], ...] = (
 )
 
 TRAITS: tuple[dict[str, str], ...] = tuple(
-    {"key": key}
-    for key in (
-        "sweetened",
-        "non_nutritive_sweetened",
-        "processed",
-        "omega3_rich_seafood",
-        "calcium_fortified",
-        "unsaturated_fat_source",
-        "smoked",
-        "salted",
-        "fruit_liquid_100_percent",
-        "dried_fruit",
-        "starchy_root",
+    {"key": key, "label_ar": label}
+    for key, label in (
+        ("sweetened", "محلى"),
+        ("non_nutritive_sweetened", "محلى بمُحلٍ غير مغذٍ"),
+        ("processed", "مصنع"),
+        ("omega3_rich_seafood", "مأكولات بحرية غنية بأوميغا 3"),
+        ("calcium_fortified", "مدعم بالكالسيوم"),
+        ("unsaturated_fat_source", "مصدر للدهون غير المشبعة"),
+        ("smoked", "مدخن"),
+        ("salted", "مملح"),
+        ("fruit_liquid_100_percent", "عصير أو سموذي فواكه 100%"),
+        ("dried_fruit", "فاكهة مجففة"),
+        ("starchy_root", "جذر نشوي"),
     )
 )
 
+FOOD_GROUP_LABELS_AR: dict[str, str] = {
+    key: PRIMARY_CATEGORY_LABELS_AR[key] for key in (item["key"] for item in FOOD_GROUPS)
+}
+
+FOOD_GROUP_SUBTYPE_LABELS_AR: dict[str, dict[str, str]] = {
+    "dairy_fortified_alternatives": {
+        "milk_laban_kefir": "حليب أو لبن أو كفير",
+        "yogurt": "زبادي",
+        "hard_cheese": "جبن صلب",
+        "cottage_ricotta": "جبن قريش أو ريكوتا",
+        "fortified_plant_alternative": "بديل نباتي مدعم",
+    },
+    "eggs": {
+        "whole_egg": "بيضة كاملة",
+        "egg_white": "بياض بيض",
+        "mixed_egg_product": "منتج بيض مختلط",
+    },
+}
+
 SOURCE_RELIABILITY: tuple[dict[str, str], ...] = (
-    {"type": "laboratory_analysis", "reliability": "high"},
-    {"type": "official_food_database", "reliability": "high"},
-    {"type": "official_product_label", "reliability": "high"},
-    {"type": "manufacturer_website", "reliability": "high"},
-    {"type": "official_restaurant", "reliability": "medium"},
-    {"type": "calculated_recipe", "reliability": "medium"},
-    {"type": "manual_estimate", "reliability": "low"},
-    {"type": "multiple_sources", "reliability": "mixed"},
-    {"type": "unknown", "reliability": "unknown"},
+    {"type": "laboratory_analysis", "label_ar": "تحليل مخبري", "reliability": "high"},
+    {
+        "type": "official_food_database",
+        "label_ar": "قاعدة بيانات غذائية رسمية",
+        "reliability": "high",
+    },
+    {"type": "official_product_label", "label_ar": "بطاقة منتج رسمية", "reliability": "high"},
+    {"type": "manufacturer_website", "label_ar": "موقع الشركة المصنعة", "reliability": "high"},
+    {"type": "official_restaurant", "label_ar": "بيانات مطعم رسمية", "reliability": "medium"},
+    {"type": "calculated_recipe", "label_ar": "وصفة محسوبة", "reliability": "medium"},
+    {"type": "manual_estimate", "label_ar": "تقدير يدوي", "reliability": "low"},
+    {"type": "multiple_sources", "label_ar": "مصادر متعددة", "reliability": "mixed"},
+    {"type": "unknown", "label_ar": "مصدر غير معروف", "reliability": "unknown"},
 )
 
 INGREDIENT_SOURCE_TYPES: tuple[str, ...] = (
@@ -374,6 +425,17 @@ INGREDIENT_SOURCE_TYPES: tuple[str, ...] = (
     "unknown",
 )
 
+INGREDIENT_SOURCE_LABELS_AR: dict[str, str] = {
+    "official_product_label": "بطاقة منتج رسمية",
+    "manufacturer_website": "موقع الشركة المصنعة",
+    "official_food_database": "قاعدة بيانات غذائية رسمية",
+    "official_restaurant": "بيانات مطعم رسمية",
+    "calculated_recipe": "وصفة محسوبة",
+    "manual_entry": "إدخال يدوي",
+    "multiple_sources": "مصادر متعددة",
+    "unknown": "مصدر غير معروف",
+}
+
 RELIABILITY_LEVELS: tuple[dict[str, str], ...] = (
     {"key": "high", "label_ar": "مرتفعة"},
     {"key": "medium", "label_ar": "متوسطة"},
@@ -384,6 +446,13 @@ RELIABILITY_LEVELS: tuple[dict[str, str], ...] = (
 
 NOVA = {
     "classifications": [1, 2, 3, 4, "unknown"],
+    "labels_ar": {
+        "1": "NOVA 1",
+        "2": "NOVA 2",
+        "3": "NOVA 3",
+        "4": "NOVA 4",
+        "unknown": "غير معروف",
+    },
     "review_statuses": ["unreviewed", "reviewed"],
     "automated_suggestions": False,
 }

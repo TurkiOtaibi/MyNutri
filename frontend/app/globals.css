@@ -854,6 +854,49 @@ a {
   background: var(--surface);
 }
 
+.food-classification-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.food-classification-list fieldset,
+.food-traits-fieldset {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.food-classification-list legend,
+.food-traits-fieldset legend {
+  padding-inline: 6px;
+  font-weight: 800;
+}
+
+.food-traits-fieldset {
+  margin-top: 14px;
+}
+
+.food-traits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 14px;
+}
+
+.checkbox-row {
+  display: flex;
+  min-height: 40px;
+  gap: 8px;
+  align-items: center;
+}
+
+.checkbox-row input {
+  width: 18px;
+  height: 18px;
+}
+
 .form-actions-sticky {
   position: sticky;
   bottom: 0;

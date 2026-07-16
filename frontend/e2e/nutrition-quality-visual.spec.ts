@@ -23,6 +23,10 @@ test("capture Diary meal macros and nutritional details", async ({ page, foodsAp
   await foodsApi.createDiary(food.id, input, 1, "breakfast");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/diary");
+  await page.waitForFunction(() => {
+    const picker = document.querySelector('input[aria-label="اختيار تاريخ اليوميات"]');
+    return picker != null && Object.keys(picker).some((key) => key.startsWith("__reactProps$"));
+  });
   await page.getByLabel("اختيار تاريخ اليوميات").fill(input);
   await expect(page.locator("#meal-section-breakfast")).toContainText("بروتين 12.6 جم");
   await page.screenshot({ path: resolve(output, "03-diary-meal-macros-390.png"), fullPage: true });

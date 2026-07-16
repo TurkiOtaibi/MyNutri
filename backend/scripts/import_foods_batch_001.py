@@ -158,7 +158,9 @@ def calculate_unit_values(payload: dict[str, Any]) -> dict[str, float | None]:
     }
 
 
-def validate_unit_values(name: str, values: dict[str, float | None], tolerance: float = 0.06) -> list[dict[str, Any]]:
+def validate_unit_values(
+    name: str, values: dict[str, float | None], tolerance: float = 0.06
+) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
     for field, expected in EXPECTED_UNIT_VALUES.get(name, {}).items():
         actual = values[field]
@@ -179,7 +181,7 @@ def existing_by_key(
     session: Session, principal: PrincipalContext
 ) -> dict[tuple[str, str, str, float, str], Food]:
     return {
-        duplicate_key(to_food_response(food).model_dump()): food
+        duplicate_key(to_food_response(session, principal, food).model_dump()): food
         for food in list_foods(session, principal)
     }
 
@@ -215,23 +217,59 @@ def dry_run(
             failed_checks = [check for check in unit_checks if not check["passed"]]
             if failed_checks:
                 results.append(
-                    ImportResult(name, "failed_validation", "Default-unit calculation mismatch.", None, payload_data, unit_values, unit_checks)
+                    ImportResult(
+                        name,
+                        "failed_validation",
+                        "Default-unit calculation mismatch.",
+                        None,
+                        payload_data,
+                        unit_values,
+                        unit_checks,
+                    )
                 )
             elif key in current:
                 results.append(
-                    ImportResult(name, "duplicate", "Matches an existing Food duplicate key.", str(current[key].id), payload_data, unit_values, unit_checks)
+                    ImportResult(
+                        name,
+                        "duplicate",
+                        "Matches an existing Food duplicate key.",
+                        str(current[key].id),
+                        payload_data,
+                        unit_values,
+                        unit_checks,
+                    )
                 )
             elif key in batch_keys:
                 results.append(
-                    ImportResult(name, "duplicate", "Duplicates an earlier record in this batch.", None, payload_data, unit_values, unit_checks)
+                    ImportResult(
+                        name,
+                        "duplicate",
+                        "Duplicates an earlier record in this batch.",
+                        None,
+                        payload_data,
+                        unit_values,
+                        unit_checks,
+                    )
                 )
             else:
                 batch_keys.add(key)
-                results.append(ImportResult(name, "valid", "Validated and ready to import.", None, payload_data, unit_values, unit_checks))
+                results.append(
+                    ImportResult(
+                        name,
+                        "valid",
+                        "Validated and ready to import.",
+                        None,
+                        payload_data,
+                        unit_values,
+                        unit_checks,
+                    )
+                )
         except MappingDecisionNeeded as error:
             results.append(ImportResult(name, "blocked_decision", str(error), None, None, None, []))
         except (ValidationError, ValueError) as error:
-            results.append(ImportResult(name, "failed_validation", str(error), None, None, None, []))
+            results.append(
+                ImportResult(name, "failed_validation", str(error), None, None, None, [])
+            )
     return results
 
 

@@ -5,7 +5,9 @@ import json
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
@@ -123,7 +125,7 @@ def test_immutable_baseline_revision_hashes() -> None:
 
 
 @pytest.mark.migration
-def test_fresh_postgresql_upgrade_has_one_head_and_owner_contract() -> None:
+def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None:
     url = _database_url()
     _reset_database(url)
     _run_alembic(url, "upgrade", "head")
@@ -132,14 +134,25 @@ def test_fresh_postgresql_upgrade_has_one_head_and_owner_contract() -> None:
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "0006_principal_contract"
+            "0008_food_groups_expand"
         )
     assert "principal" in inspector.get_table_names()
     for table in ("profile", "food", "diary_entry"):
-        owner = next(column for column in inspector.get_columns(table) if column["name"] == "principal_id")
+        owner = next(
+            column for column in inspector.get_columns(table) if column["name"] == "principal_id"
+        )
         assert owner["nullable"] is False
-    profile_uniques = {tuple(item["column_names"]) for item in inspector.get_unique_constraints("profile")}
+    profile_uniques = {
+        tuple(item["column_names"]) for item in inspector.get_unique_constraints("profile")
+    }
     assert ("principal_id",) in profile_uniques
+    food_columns = {column["name"]: column for column in inspector.get_columns("food")}
+    for field in ("selenium_mcg", "iodine_mcg", "folate_dfe_mcg", "vitamin_a_rae_mcg"):
+        assert food_columns[field]["nullable"] is True
+        assert str(food_columns[field]["type"]) == "NUMERIC(10, 3)"
+    assert {"food_group_contribution", "food_analytical_trait"}.issubset(
+        inspector.get_table_names()
+    )
     engine.dispose()
 
 
@@ -163,22 +176,60 @@ def test_populated_backfill_fails_closed_then_reconciles_without_history_change(
 
     with engine.begin() as connection:
         connection.execute(
-            text("INSERT INTO principal (id, status, created_at, updated_at) VALUES (:id, 'active', now(), now())"),
+            text(
+                "INSERT INTO principal (id, status, created_at, updated_at) VALUES (:id, 'active', now(), now())"
+            ),
             {"id": DEPLOYMENT_PRINCIPAL},
         )
     _run_alembic(url, "upgrade", "head")
 
     with engine.connect() as connection:
         for table in ("profile", "food", "diary_entry"):
-            assert connection.execute(
-                text(f"SELECT count(*) FROM {table} WHERE principal_id = :id"),
-                {"id": DEPLOYMENT_PRINCIPAL},
-            ).scalar_one() == 1
+            assert (
+                connection.execute(
+                    text(f"SELECT count(*) FROM {table} WHERE principal_id = :id"),
+                    {"id": DEPLOYMENT_PRINCIPAL},
+                ).scalar_one()
+                == 1
+            )
         snapshot_after = connection.execute(
             text("SELECT nutrition_snapshot::text FROM diary_entry WHERE id = :id"),
             {"id": identifiers["diary"]},
         ).scalar_one()
         assert snapshot_after == snapshot_before
+        migrated_food = connection.execute(
+            text(
+                """
+                SELECT primary_category_key, food_kind, group_data_status,
+                       group_data_completeness, nutrition_source_type,
+                       ingredients_text, nova_classification, nova_review_status,
+                       selenium_mcg, iodine_mcg, folate_dfe_mcg, vitamin_a_rae_mcg
+                  FROM food WHERE id = :id
+                """
+            ),
+            {"id": identifiers["food"]},
+        ).one()
+        assert tuple(migrated_food) == (
+            None,
+            "unknown",
+            "unknown",
+            "unknown",
+            "unknown",
+            None,
+            "unknown",
+            "unreviewed",
+            None,
+            None,
+            None,
+            None,
+        )
+        assert (
+            connection.execute(text("SELECT count(*) FROM food_group_contribution")).scalar_one()
+            == 0
+        )
+        assert (
+            connection.execute(text("SELECT count(*) FROM food_analytical_trait")).scalar_one() == 0
+        )
 
         other_principal = uuid4()
         connection.execute(
@@ -190,9 +241,7 @@ def test_populated_backfill_fails_closed_then_reconciles_without_history_change(
         )
         with pytest.raises(IntegrityError, match="fk_diary_entry_food_owner"):
             connection.execute(
-                text(
-                    "UPDATE diary_entry SET principal_id = :other WHERE id = :entry_id"
-                ),
+                text("UPDATE diary_entry SET principal_id = :other WHERE id = :entry_id"),
                 {"other": other_principal, "entry_id": identifiers["diary"]},
             )
     engine.dispose()
@@ -224,9 +273,12 @@ def test_ambiguous_principal_backfill_is_rejected() -> None:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
             "0004_principal_expand"
         )
-        assert connection.execute(
-            text("SELECT count(*) FROM profile WHERE principal_id IS NOT NULL")
-        ).scalar_one() == 0
+        assert (
+            connection.execute(
+                text("SELECT count(*) FROM profile WHERE principal_id IS NOT NULL")
+            ).scalar_one()
+            == 0
+        )
     engine.dispose()
 
     cleanup_engine = create_engine(url)
@@ -234,3 +286,94 @@ def test_ambiguous_principal_backfill_is_rejected() -> None:
         connection.execute(text("DELETE FROM principal WHERE id = :id"), {"id": other_principal})
     cleanup_engine.dispose()
     _run_alembic(url, "upgrade", "head")
+
+
+@pytest.mark.migration
+def test_food_group_total_is_enforced_under_concurrent_transactions() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "0004_principal_expand")
+    engine = create_engine(url)
+    food_id = uuid4()
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO principal (id, status, created_at, updated_at) "
+                "VALUES (:id, 'active', now(), now())"
+            ),
+            {"id": DEPLOYMENT_PRINCIPAL},
+        )
+    _run_alembic(url, "upgrade", "head")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO food
+                  (id, principal_id, name, nutrition_basis, default_unit_type,
+                   unit_amount, unit_basis, calories, protein_g, carb_g, fat_g,
+                   group_data_status, group_data_completeness, created_at, updated_at)
+                VALUES
+                  (:id, :principal, 'Concurrent contributions', 'per_100g',
+                   'serving', 100, 'g', 100, 10, 20, 5, 'known', 'partial', now(), now())
+                """
+            ),
+            {"id": food_id, "principal": DEPLOYMENT_PRINCIPAL},
+        )
+
+    barrier = Barrier(2)
+
+    def insert_contribution(group_key: str, amount: int) -> bool:
+        connection = engine.connect()
+        transaction = connection.begin()
+        try:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO food_group_contribution
+                      (id, principal_id, food_id, group_key, amount_per_100_basis,
+                       data_status, food_group_rules_version, created_at, updated_at)
+                    VALUES
+                      (:id, :principal, :food, :group_key, :amount, 'known',
+                       '1.0.0', now(), now())
+                    """
+                ),
+                {
+                    "id": uuid4(),
+                    "principal": DEPLOYMENT_PRINCIPAL,
+                    "food": food_id,
+                    "group_key": group_key,
+                    "amount": amount,
+                },
+            )
+            barrier.wait(timeout=10)
+            transaction.commit()
+            return True
+        except IntegrityError:
+            transaction.rollback()
+            return False
+        finally:
+            connection.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                lambda item: insert_contribution(*item),
+                (("fruits", 60), ("vegetables", 50)),
+            )
+        )
+
+    assert sorted(results) == [False, True]
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text(
+                    "SELECT sum(amount_per_100_basis) "
+                    "FROM food_group_contribution WHERE food_id = :food"
+                ),
+                {"food": food_id},
+            ).scalar_one()
+            <= 100
+        )
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM food WHERE id = :food"), {"food": food_id})
+    engine.dispose()

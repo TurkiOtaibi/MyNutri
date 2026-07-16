@@ -6,12 +6,20 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.db.session import get_session
 from app.core.auth import PrincipalContext
 from app.main import app
-from app.models import DefaultUnitType, DiaryEntry, NutritionBasis, Principal, UnitBasis
+from app.models import (
+    DefaultUnitType,
+    DiaryEntry,
+    FoodAnalyticalTrait,
+    FoodGroupContribution,
+    NutritionBasis,
+    Principal,
+    UnitBasis,
+)
 from app.schemas import FoodCreate
 from app.services.diary import make_snapshot, to_entry_response
 from app.services.food import (
@@ -57,6 +65,8 @@ def food_payload(**overrides):
         "name": "Greek Yogurt",
         "brand": "Local",
         "category": "Dairy",
+        "primary_category_key": "other",
+        "food_kind": "simple",
         "nutrition_basis": NutritionBasis.per_100g,
         "default_unit_type": DefaultUnitType.serving,
         "unit_amount": 170,
@@ -68,6 +78,7 @@ def food_payload(**overrides):
         "fiber_g": 1,
         "sugar_g": 4,
         "added_sugar_g": 0,
+        "nutrition_source": {"type": "unknown"},
     }
     payload.update(overrides)
     return payload
@@ -110,10 +121,16 @@ def error_by_field(response) -> dict[str, dict]:
 
 def test_create_food_blocks_normalized_duplicate() -> None:
     with session_fixture() as session:
-        create_food(session, TEST_PRINCIPAL, FoodCreate.model_validate(food_payload(name="Greek   Yogurt")))
+        create_food(
+            session, TEST_PRINCIPAL, FoodCreate.model_validate(food_payload(name="Greek   Yogurt"))
+        )
 
         with pytest.raises(HTTPException) as error:
-            create_food(session, TEST_PRINCIPAL, FoodCreate.model_validate(food_payload(name=" greek yogurt ")))
+            create_food(
+                session,
+                TEST_PRINCIPAL,
+                FoodCreate.model_validate(food_payload(name=" greek yogurt ")),
+            )
 
         assert error.value.status_code == 422
         assert error.value.detail[0]["msg"] == DUPLICATE_FOOD_MESSAGE
@@ -203,7 +220,9 @@ def test_food_api_returns_field_level_cross_field_errors(api_client: TestClient)
     assert errors["fiber_g"]["code"] == "fiber_gt_carbs"
     assert errors["fiber_g"]["msg"] == FIBER_GT_CARBS_MESSAGE
 
-    response = api_client.post("/foods", json=food_json(sugar_g=3, added_sugar_g=4), headers=auth_headers())
+    response = api_client.post(
+        "/foods", json=food_json(sugar_g=3, added_sugar_g=4), headers=auth_headers()
+    )
     errors = error_by_field(response)
 
     assert errors["added_sugar_g"]["code"] == "added_sugar_gt_sugar"
@@ -232,14 +251,18 @@ def test_food_api_returns_structured_duplicate_error(api_client: TestClient) -> 
     first = api_client.post("/foods", json=food_json(name="Greek   Yogurt"), headers=auth_headers())
     assert first.status_code == 201
 
-    response = api_client.post("/foods", json=food_json(name=" greek yogurt "), headers=auth_headers())
+    response = api_client.post(
+        "/foods", json=food_json(name=" greek yogurt "), headers=auth_headers()
+    )
     errors = error_by_field(response)
 
     assert errors["name"]["code"] == "duplicate_food"
     assert errors["name"]["msg"] == DUPLICATE_FOOD_MESSAGE
 
 
-def test_food_api_update_returns_structured_arabic_errors_for_direct_invalid_field(api_client: TestClient) -> None:
+def test_food_api_update_returns_structured_arabic_errors_for_direct_invalid_field(
+    api_client: TestClient,
+) -> None:
     created = api_client.post("/foods", json=food_json(), headers=auth_headers())
     assert created.status_code == 201
     food_id = created.json()["id"]
@@ -255,7 +278,9 @@ def test_food_api_update_returns_structured_arabic_errors_for_direct_invalid_fie
     assert errors["protein_g"]["msg"] == BELOW_MIN_MESSAGE
 
 
-def test_food_api_update_returns_structured_arabic_errors_after_merge(api_client: TestClient) -> None:
+def test_food_api_update_returns_structured_arabic_errors_after_merge(
+    api_client: TestClient,
+) -> None:
     created = api_client.post("/foods", json=food_json(), headers=auth_headers())
     assert created.status_code == 201
     food_id = created.json()["id"]
@@ -273,8 +298,16 @@ def test_food_api_update_returns_structured_arabic_errors_after_merge(api_client
 
 def test_same_food_name_with_different_default_unit_is_allowed() -> None:
     with session_fixture() as session:
-        create_food(session, TEST_PRINCIPAL, FoodCreate.model_validate(food_payload(default_unit_type=DefaultUnitType.serving)))
-        create_food(session, TEST_PRINCIPAL, FoodCreate.model_validate(food_payload(default_unit_type=DefaultUnitType.cup)))
+        create_food(
+            session,
+            TEST_PRINCIPAL,
+            FoodCreate.model_validate(food_payload(default_unit_type=DefaultUnitType.serving)),
+        )
+        create_food(
+            session,
+            TEST_PRINCIPAL,
+            FoodCreate.model_validate(food_payload(default_unit_type=DefaultUnitType.cup)),
+        )
 
         assert len(list_foods(session, TEST_PRINCIPAL)) == 2
 
@@ -425,3 +458,268 @@ def test_diary_snapshot_survives_food_hard_delete() -> None:
         assert response.nutrition_snapshot.name == "Greek Yogurt"
         assert response.nutrition_snapshot.nutrition_basis == NutritionBasis.per_100g
         assert response.totals.calories == 204
+
+
+def test_wave1_food_contract_preserves_exact_null_zero_and_legacy_values(
+    api_client: TestClient,
+) -> None:
+    payload = food_json(
+        name="Wave 1 exact nutrients",
+        selenium_mcg=0,
+        iodine_mcg=None,
+        folate_dfe_mcg=425.125,
+        vitamin_a_rae_mcg=None,
+        folate_mcg=350,
+        vitamin_a_mcg=700,
+    )
+
+    response = api_client.post("/foods", json=payload, headers=auth_headers())
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["selenium_mcg"] == 0
+    assert body["iodine_mcg"] is None
+    assert body["folate_dfe_mcg"] == 425.125
+    assert body["vitamin_a_rae_mcg"] is None
+    assert body["legacy_nutrition"] == {
+        "folate_mcg": 350.0,
+        "vitamin_a_mcg": 700.0,
+        "meaning_ar": "قيمة قديمة غير محددة المعيار",
+    }
+
+
+@pytest.mark.parametrize("missing_field", ("primary_category_key", "food_kind", "nutrition_source"))
+def test_wave1_new_food_requires_controlled_classification_and_source(
+    api_client: TestClient, missing_field: str
+) -> None:
+    payload = food_json(name=f"Missing {missing_field}")
+    payload.pop(missing_field)
+
+    response = api_client.post("/foods", json=payload, headers=auth_headers())
+
+    assert response.status_code == 422
+    assert error_by_field(response)[missing_field]["code"] == "required"
+
+
+def test_wave1_source_reliability_and_nova_are_backend_controlled(
+    api_client: TestClient,
+) -> None:
+    payload = food_json(name="Controlled source")
+    payload.update(
+        nutrition_source={
+            "type": "multiple_sources",
+            "name": "Label and database",
+            "reference": "REF-1",
+        },
+        ingredients={
+            "text": "شوفان، حليب",
+            "source_type": "official_product_label",
+            "source_name": "Product label",
+            "source_reference": None,
+        },
+        nova={"classification": "unknown"},
+    )
+
+    response = api_client.post("/foods", json=payload, headers=auth_headers())
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["nutrition_source"]["reliability"] == "mixed"
+    assert body["nutrition_source"]["reliability_rules_version"] == "1.0.0"
+    assert body["nova"] == {
+        "classification": "unknown",
+        "review_status": "reviewed",
+        "rules_version": "1.0.0",
+    }
+
+    payload["nutrition_source"]["reliability"] = "high"
+    rejected = api_client.post("/foods", json=payload, headers=auth_headers())
+    assert rejected.status_code == 422
+    assert error_by_field(rejected)["reliability"]["code"] == "invalid"
+
+
+def test_wave1_food_update_rejects_client_authoritative_reliability(
+    api_client: TestClient,
+) -> None:
+    created = api_client.post(
+        "/foods",
+        json=food_json(name="Update controlled source"),
+        headers=auth_headers(),
+    )
+    assert created.status_code == 201
+
+    rejected = api_client.put(
+        f"/foods/{created.json()['id']}",
+        json={"source_reliability": "high"},
+        headers=auth_headers(),
+    )
+
+    assert rejected.status_code == 422
+    assert error_by_field(rejected)["source_reliability"]["code"] == "invalid"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "code"),
+    [
+        (
+            {
+                "group_data_status": "known",
+                "group_data_completeness": "complete",
+                "group_contributions": [
+                    {
+                        "group_key": "fruits",
+                        "amount_per_100_basis": 60,
+                        "data_status": "known",
+                    },
+                    {
+                        "group_key": "fruits",
+                        "amount_per_100_basis": 40,
+                        "data_status": "known",
+                    },
+                ],
+            },
+            "duplicate_food_group",
+        ),
+        (
+            {
+                "group_data_status": "known",
+                "group_data_completeness": "complete",
+                "group_contributions": [
+                    {
+                        "group_key": "fruits",
+                        "amount_per_100_basis": 60,
+                        "data_status": "known",
+                    },
+                    {
+                        "group_key": "vegetables",
+                        "amount_per_100_basis": 41,
+                        "data_status": "known",
+                    },
+                ],
+            },
+            "food_group_total_exceeded",
+        ),
+        (
+            {
+                "group_data_status": "known",
+                "group_data_completeness": "complete",
+                "group_contributions": [
+                    {
+                        "group_key": "dairy_fortified_alternatives",
+                        "amount_per_100_basis": 100,
+                        "data_status": "known",
+                    }
+                ],
+            },
+            "invalid_food_group_subtype",
+        ),
+        (
+            {
+                "group_data_status": "estimated",
+                "group_data_completeness": "complete",
+                "group_contributions": [],
+            },
+            "estimated_group_data_requires_estimate",
+        ),
+    ],
+)
+def test_wave1_group_contract_returns_stable_validation_codes(
+    api_client: TestClient, overrides: dict, code: str
+) -> None:
+    response = api_client.post(
+        "/foods",
+        json=food_json(name=f"Invalid {code}", **overrides),
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["code"] == code
+
+
+def test_wave1_food_update_atomically_replaces_groups_and_traits(
+    api_client: TestClient,
+) -> None:
+    payload = food_json(
+        name="Composite food",
+        primary_category_key="mixed_dish",
+        food_kind="composite",
+        group_data_status="estimated",
+        group_data_completeness="partial",
+        group_contributions=[
+            {
+                "group_key": "whole_grains",
+                "amount_per_100_basis": 40,
+                "data_status": "estimated",
+            }
+        ],
+        analytical_traits=["sweetened"],
+    )
+    created = api_client.post("/foods", json=payload, headers=auth_headers())
+    assert created.status_code == 201
+
+    replaced = api_client.put(
+        f"/foods/{created.json()['id']}",
+        json={
+            "group_data_status": "known",
+            "group_data_completeness": "complete",
+            "group_contributions": [
+                {
+                    "group_key": "refined_grains",
+                    "amount_per_100_basis": 75,
+                    "data_status": "known",
+                }
+            ],
+            "analytical_traits": ["processed", "salted"],
+        },
+        headers=auth_headers(),
+    )
+
+    assert replaced.status_code == 200
+    assert [item["group_key"] for item in replaced.json()["group_contributions"]] == [
+        "refined_grains"
+    ]
+    assert replaced.json()["analytical_traits"] == ["processed", "salted"]
+
+
+def test_wave1_food_hard_delete_cascades_classification_children() -> None:
+    with session_fixture() as session:
+        food = create_food(
+            session,
+            TEST_PRINCIPAL,
+            FoodCreate.model_validate(
+                food_payload(
+                    name="Delete classification",
+                    group_data_status="known",
+                    group_data_completeness="complete",
+                    group_contributions=[
+                        {
+                            "group_key": "seafood",
+                            "amount_per_100_basis": 100,
+                            "data_status": "known",
+                        }
+                    ],
+                    analytical_traits=["omega3_rich_seafood"],
+                )
+            ),
+        )
+        assert session.exec(
+            select(FoodGroupContribution).where(FoodGroupContribution.food_id == food.id)
+        ).one()
+        assert session.exec(
+            select(FoodAnalyticalTrait).where(FoodAnalyticalTrait.food_id == food.id)
+        ).one()
+
+        delete_food(session, TEST_PRINCIPAL, food.id)
+
+        assert (
+            session.exec(
+                select(FoodGroupContribution).where(FoodGroupContribution.food_id == food.id)
+            ).first()
+            is None
+        )
+        assert (
+            session.exec(
+                select(FoodAnalyticalTrait).where(FoodAnalyticalTrait.food_id == food.id)
+            ).first()
+            is None
+        )

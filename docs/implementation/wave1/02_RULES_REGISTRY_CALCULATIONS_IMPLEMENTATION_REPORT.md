@@ -9,8 +9,8 @@
 | Branch | `impl/wave1-02-rules-registry-calculations` |
 | Worktree | `C:\Users\DELTA\Desktop\MyNutri-wave1-02` |
 | Base SHA | `eb0abc5324818a32046d8256e016c9d398a50b1b` |
-| Implementation commit | Pending |
-| Pull request | Pending |
+| Implementation commit | `4f7154ea3cb30cfb3f13b56ff0dfad665e23ccfc` |
+| Pull request | `#8` |
 | Report date | `2026-07-16` |
 
 This stage implements the Backend-owned Wave 1 nutrition rules package, runtime Registry, and calculation engine `2.0.0`. It does not add Food persistence fields, Target Plans, Snapshot v2, or later-wave analysis.
@@ -55,7 +55,7 @@ Modules are import-side-effect-free and calculations are pure. Rules are not dat
 Canonical UTF-8 JSON serialization sorts keys and removes insignificant whitespace. SHA-256 is deterministic and is locked with the exact independent version bundle in `rules_manifest.lock.json`.
 
 ```text
-rules_manifest_hash: 6fe76d3ca2d2f582a40ee9c7d1acf7e222a5f8b51661d3730d878e56b4fa2f6f
+rules_manifest_hash at Stage 02 merge: 6fe76d3ca2d2f582a40ee9c7d1acf7e222a5f8b51661d3730d878e56b4fa2f6f
 ```
 
 The manifest covers semantic calculation descriptors, nutrient rules, groups, traits, source mapping, NOVA, and all active/reserved versions. CI fails when current governed content differs from the released lock.
@@ -215,4 +215,4 @@ Later-wave features introduced: 0
 Stage verdict: Ready to Merge
 ```
 
-The Stage 02 commit, PR, CI result, reviewed head, and merge SHA remain Pending until their lifecycle steps complete.
+Stage 02 passed strict review and GitHub CI, then merged through PR `#8` at merge commit `76f7ac8a1b03179cfb4266409932c1c72ff00ece`. Stage 03 may add presentation-only Registry metadata before the initial Wave 1 release; any resulting manifest-lock update is recorded and reviewed in the Stage 03 report without changing governed keys, rules, or independent versions.

@@ -27,6 +27,10 @@ test.describe("@nutrition-quality", () => {
     const food = await foodsApi.create({ name: uniqueName("Nutrition quality"), calories: 156, protein_g: 12.6, carb_g: 1.2, fat_g: 10.6, fiber_g: 0, sodium_mg: null, potassium_mg: 410 });
     await foodsApi.createDiary(food.id, date, 1, "breakfast");
     await page.goto("/diary");
+    await page.waitForFunction(() => {
+      const picker = document.querySelector('input[aria-label="اختيار تاريخ اليوميات"]');
+      return picker != null && Object.keys(picker).some((key) => key.startsWith("__reactProps$"));
+    });
     await page.getByLabel("اختيار تاريخ اليوميات").fill(date);
     const breakfast = page.locator("#meal-section-breakfast");
     await expect(breakfast).toContainText("بروتين 12.6 جم");

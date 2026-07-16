@@ -8,6 +8,10 @@ function localDate(days = 0): string {
 
 async function selectDate(page: import("@playwright/test").Page, value: string) {
   const picker = page.getByLabel("اختيار تاريخ اليوميات");
+  await page.waitForFunction(() => {
+    const input = document.querySelector('input[aria-label="اختيار تاريخ اليوميات"]');
+    return input != null && Object.keys(input).some((key) => key.startsWith("__reactProps$"));
+  });
   await picker.fill(value);
   await expect(picker).toHaveValue(value);
   await expect(page.locator(".diary-entry-skeleton")).toHaveCount(0);

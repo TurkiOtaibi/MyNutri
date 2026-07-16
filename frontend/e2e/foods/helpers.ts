@@ -12,6 +12,10 @@ export type FoodPayload = {
   name: string;
   brand: string | null;
   category: string | null;
+  primary_category_key: string | null;
+  food_kind: "simple" | "composite" | "unknown";
+  group_data_status: "known" | "estimated" | "unknown";
+  group_data_completeness: "complete" | "partial" | "unknown";
   nutrition_basis: "per_100g" | "per_100ml";
   default_unit_type: "g" | "ml" | "cup" | "slice" | "piece" | "scoop" | "serving" | "tablespoon" | "teaspoon";
   unit_amount: number;
@@ -32,21 +36,33 @@ export type FoodPayload = {
   iron_mg: number | null;
   magnesium_mg: number | null;
   zinc_mg: number | null;
+  selenium_mcg: number | null;
   vitamin_d_mcg: number | null;
   vitamin_b12_mcg: number | null;
   vitamin_c_mg: number | null;
   vitamin_a_mcg: number | null;
+  vitamin_a_rae_mcg: number | null;
   folate_mcg: number | null;
+  folate_dfe_mcg: number | null;
   vitamin_k_mcg: number | null;
+  iodine_mcg: number | null;
   notes: string | null;
   data_source: string | null;
+  nutrition_source: { type: string; name: string | null; reference: string | null };
+  ingredients: { text: string | null; source_type: string | null; source_name: string | null; source_reference: string | null };
+  nova: { classification: "1" | "2" | "3" | "4" | "unknown" } | null;
+  group_contributions: Array<{ group_key: string; subtype_key?: string | null; amount_per_100_basis: number; data_status: "known" | "estimated" }>;
+  analytical_traits: string[];
 };
 
-export type FoodRecord = FoodPayload & {
+export type FoodRecord = Omit<FoodPayload, "nutrition_source" | "nova" | "group_contributions"> & {
   id: string;
   net_carbs_g: number;
   created_at: string;
   updated_at: string;
+  nutrition_source: FoodPayload["nutrition_source"] & { reliability: string; reliability_rules_version: string };
+  nova: { classification: "1" | "2" | "3" | "4" | "unknown"; review_status: "unreviewed" | "reviewed"; rules_version: string };
+  group_contributions: Array<FoodPayload["group_contributions"][number] & { food_group_rules_version: string }>;
 };
 
 export function uniqueName(label = "Food"): string {
@@ -58,6 +74,10 @@ export function validFood(overrides: Partial<FoodPayload> = {}): FoodPayload {
     name: uniqueName("Food"),
     brand: "E2E Brand",
     category: "E2E Category",
+    primary_category_key: "other",
+    food_kind: "simple",
+    group_data_status: "unknown",
+    group_data_completeness: "unknown",
     nutrition_basis: "per_100g",
     default_unit_type: "serving",
     unit_amount: 100,
@@ -78,14 +98,23 @@ export function validFood(overrides: Partial<FoodPayload> = {}): FoodPayload {
     iron_mg: null,
     magnesium_mg: null,
     zinc_mg: null,
+    selenium_mcg: null,
     vitamin_d_mcg: null,
     vitamin_b12_mcg: null,
     vitamin_c_mg: null,
     vitamin_a_mcg: null,
+    vitamin_a_rae_mcg: null,
     folate_mcg: null,
+    folate_dfe_mcg: null,
     vitamin_k_mcg: null,
+    iodine_mcg: null,
     notes: null,
     data_source: null,
+    nutrition_source: { type: "unknown", name: null, reference: null },
+    ingredients: { text: null, source_type: null, source_name: null, source_reference: null },
+    nova: null,
+    group_contributions: [],
+    analytical_traits: [],
     ...overrides
   };
 }
@@ -201,7 +230,9 @@ export async function fillRequiredFoodForm(page: Page, payload: Partial<FoodPayl
   const food = validFood(payload);
   await page.getByLabel(/اسم الطعام/).fill(food.name);
   if (food.brand != null) await page.getByLabel("العلامة التجارية").fill(food.brand);
-  if (food.category != null) await page.getByLabel("التصنيف").fill(food.category);
+  if (food.category != null) await page.getByLabel("الفئة القديمة (للتوافق)").fill(food.category);
+  await page.getByLabel(/التصنيف الأساسي/).selectOption(food.primary_category_key ?? "other");
+  await page.getByLabel(/نوع الطعام/).selectOption(food.food_kind);
   await page.getByLabel(/أساس القيم/).selectOption(food.nutrition_basis);
   await page.getByLabel(/السعرات/).fill(String(food.calories));
   await page.getByLabel(/البروتين g/).fill(String(food.protein_g));

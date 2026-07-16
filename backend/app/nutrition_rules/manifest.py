@@ -7,10 +7,14 @@ from typing import Any
 from app.nutrition_rules.policies import CALCULATION_POLICY
 from app.nutrition_rules.registry import (
     FOOD_GROUPS,
+    FOOD_GROUP_LABELS_AR,
+    FOOD_GROUP_SUBTYPE_LABELS_AR,
+    INGREDIENT_SOURCE_LABELS_AR,
     INGREDIENT_SOURCE_TYPES,
     NOVA,
     NUTRIENTS,
     PRIMARY_CATEGORIES,
+    PRIMARY_CATEGORY_LABELS_AR,
     RELIABILITY_LEVELS,
     SOURCE_RELIABILITY,
     TARGET_TYPES,
@@ -26,10 +30,26 @@ def rules_manifest() -> dict[str, Any]:
         "nutrients": [item.as_dict() for item in NUTRIENTS],
         "target_types": list(TARGET_TYPES),
         "primary_categories": list(PRIMARY_CATEGORIES),
+        "primary_category_definitions": [
+            {"key": key, "label_ar": PRIMARY_CATEGORY_LABELS_AR[key]} for key in PRIMARY_CATEGORIES
+        ],
         "food_groups": list(FOOD_GROUPS),
+        "food_group_definitions": [
+            {
+                "key": item["key"],
+                "label_ar": FOOD_GROUP_LABELS_AR[item["key"]],
+                "subtype_labels_ar": FOOD_GROUP_SUBTYPE_LABELS_AR.get(item["key"], {}),
+                **item,
+            }
+            for item in FOOD_GROUPS
+        ],
         "traits": list(TRAITS),
         "source_types": list(SOURCE_RELIABILITY),
         "ingredient_source_types": list(INGREDIENT_SOURCE_TYPES),
+        "ingredient_source_definitions": [
+            {"type": key, "label_ar": INGREDIENT_SOURCE_LABELS_AR[key]}
+            for key in INGREDIENT_SOURCE_TYPES
+        ],
         "reliability_levels": list(RELIABILITY_LEVELS),
         "nova": NOVA,
     }
@@ -54,10 +74,13 @@ def registry_response() -> dict[str, Any]:
         "nutrients": manifest["nutrients"],
         "target_types": manifest["target_types"],
         "primary_categories": manifest["primary_categories"],
+        "primary_category_definitions": manifest["primary_category_definitions"],
         "food_groups": manifest["food_groups"],
+        "food_group_definitions": manifest["food_group_definitions"],
         "traits": manifest["traits"],
         "source_types": manifest["source_types"],
         "ingredient_source_types": manifest["ingredient_source_types"],
+        "ingredient_source_definitions": manifest["ingredient_source_definitions"],
         "reliability_levels": manifest["reliability_levels"],
         "nova": manifest["nova"],
     }

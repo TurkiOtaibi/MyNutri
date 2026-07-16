@@ -34,7 +34,9 @@ def read_foods(
 ) -> list[FoodResponse] | FoodListResponse:
     # Preserve the original list response for Diary and existing API consumers.
     if page is None and search is None and category is None and sort == "name":
-        return [to_food_response(food) for food in list_foods(session, principal, q)]
+        return [
+            to_food_response(session, principal, food) for food in list_foods(session, principal, q)
+        ]
 
     result = list_foods_page(
         session,
@@ -46,7 +48,7 @@ def read_foods(
         page_size=page_size,
     )
     return FoodListResponse(
-        items=[to_food_response(food) for food in result.items],
+        items=[to_food_response(session, principal, food) for food in result.items],
         total=result.total,
         page=result.page,
         page_size=result.page_size,
@@ -63,7 +65,7 @@ def add_food(
     session: Session = Depends(get_session),
 ) -> FoodResponse:
     food_payload = validate_food_payload(FoodCreate, payload)
-    return to_food_response(create_food(session, principal, food_payload))
+    return to_food_response(session, principal, create_food(session, principal, food_payload))
 
 
 @router.get("/{food_id}", response_model=FoodResponse)
@@ -72,7 +74,7 @@ def read_food(
     principal: PrincipalContext = Depends(get_principal_context),
     session: Session = Depends(get_session),
 ) -> FoodResponse:
-    return to_food_response(get_food(session, principal, food_id))
+    return to_food_response(session, principal, get_food(session, principal, food_id))
 
 
 @router.put("/{food_id}", response_model=FoodResponse)
@@ -83,7 +85,9 @@ def edit_food(
     session: Session = Depends(get_session),
 ) -> FoodResponse:
     food_payload = validate_food_payload(FoodUpdate, payload)
-    return to_food_response(update_food(session, principal, food_id, food_payload))
+    return to_food_response(
+        session, principal, update_food(session, principal, food_id, food_payload)
+    )
 
 
 @router.delete("/{food_id}", status_code=status.HTTP_204_NO_CONTENT)
