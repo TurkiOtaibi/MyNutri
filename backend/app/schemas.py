@@ -92,6 +92,7 @@ class TargetResponse(BaseModel):
     additional_targets: list[AdditionalNutrientTarget] = Field(default_factory=list)
     calculation_engine_version: str
     nutrition_registry_version: str
+    preview_hash: str | None = None
 
 
 class ProfileUpsert(BaseModel):
@@ -105,6 +106,7 @@ class ProfileUpsert(BaseModel):
     goal: Goal
     protein_per_kg: float = Field(default=1.2, ge=1.0, le=3.0)
     fat_pct: float = Field(default=0.25, ge=0.2, le=0.3)
+    selected_cut_intensity: Literal[0.15, 0.2, 0.25] = 0.2
 
     @model_validator(mode="before")
     @classmethod
@@ -116,13 +118,60 @@ class ProfileUpsert(BaseModel):
 
 
 class ProfilePreview(ProfileUpsert):
-    selected_cut_intensity: Literal[0.15, 0.2, 0.25] = 0.2
+    pass
+
+
+class TargetPlanSummary(BaseModel):
+    id: UUID
+    status: Literal["active", "scheduled", "closed", "superseded_before_effective"]
+    effective_from: date
+    effective_to: date | None
+    calendar_timezone: str
+    predecessor_plan_id: UUID | None
+    superseded_by_plan_id: UUID | None
+    targets: TargetResponse
+    created_at: datetime
+    activated_at: datetime | None
+    closed_at: datetime | None
+    superseded_at: datetime | None
+
+
+class TargetSourceResponse(BaseModel):
+    target_provenance: Literal["versioned_plan", "legacy_unversioned", "no_target_source"]
+    target_source_detail: Literal[
+        "effective_target_plan", "legacy_transition_snapshot", "no_preserved_target_source"
+    ]
+    plan: TargetPlanSummary | None
+    targets: TargetResponse | None
+
+
+class TargetPlanActivationRequest(ProfilePreview):
+    confirmed: Literal[True]
+    expected_preview_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+
+class TargetPlanReplacementRequest(ProfilePreview):
+    replace_confirmed: Literal[True]
+    expected_preview_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+
+class TargetPlanActivationResponse(BaseModel):
+    plan: TargetPlanSummary
+    replaced_plan: TargetPlanSummary | None = None
+
+
+class TargetPlanHistoryResponse(BaseModel):
+    items: list[TargetPlanSummary]
+    next_cursor: str | None = None
 
 
 class ProfileResponse(ProfileUpsert):
     id: UUID
     updated_at: datetime
     targets: TargetResponse
+    target_provenance: Literal["versioned_plan", "legacy_unversioned"] = "legacy_unversioned"
+    effective_plan: TargetPlanSummary | None = None
+    pending_plan: TargetPlanSummary | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

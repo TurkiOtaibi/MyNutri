@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal, ROUND_HALF_EVEN
 from typing import Any
-from zoneinfo import ZoneInfo
 
+from app.core.calendar import current_diary_date
 from app.models import ActivityLevel, Goal, Sex
 from app.nutrition_rules.registry import NUTRIENTS
 from app.nutrition_rules.versions import VERSIONS
@@ -87,7 +87,7 @@ def decimal(value: object) -> Decimal:
 
 
 def age_on(birth_date: date, today: date | None = None) -> int:
-    current = today or datetime.now(ZoneInfo("Asia/Riyadh")).date()
+    current = today or current_diary_date()
     years = current.year - birth_date.year
     if (current.month, current.day) < (birth_date.month, birth_date.day):
         years -= 1
@@ -270,7 +270,9 @@ def calculate_targets(profile: Any, today: date | None = None) -> TargetResult:
     height_cm = decimal(profile.height_cm)
     bmr = calculate_bmr(profile.sex, weight, height_cm, age)
     tdee = bmr * ACTIVITY_FACTORS[profile.activity_level]
-    intensity = decimal(getattr(profile, "selected_cut_intensity", Decimal("0.20")))
+    intensity = decimal(
+        getattr(profile, "selected_cut_intensity", getattr(profile, "cut_intensity", Decimal("0.20")))
+    )
     requested, applied, cap_applied, final_calories = calculate_energy_target(
         tdee, profile.goal, intensity
     )

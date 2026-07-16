@@ -28,7 +28,7 @@ import {
   useState
 } from "react";
 
-import { ApiError, getProfile, previewProfile, saveProfile } from "@/lib/api";
+import { ApiError, activateTargetPlan, getProfile, previewProfile, replacePendingTargetPlan } from "@/lib/api";
 import { activityLabels, goalLabels, sexLabels } from "@/lib/labels";
 import { definitionsForTargets, formatNutrientValue, targetTypeLabels } from "@/lib/nutrients";
 import type { ActivityLevel, Goal, ProfileInput, ProfileResponse, Sex, TargetResponse } from "@/lib/types";
@@ -188,6 +188,7 @@ export function ProfilePage() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [activeSheet, setActiveSheet] = useState<SheetKind>(null);
   const [restoreOpen, setRestoreOpen] = useState(false);
+  const [activationOpen, setActivationOpen] = useState(false);
   const [discardHref, setDiscardHref] = useState<string | null>(null);
   const [saveError, setSaveError] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
@@ -197,6 +198,8 @@ export function ProfilePage() {
   const birthRef = useRef<HTMLInputElement>(null);
   const proteinRef = useRef<HTMLInputElement>(null);
   const fatRef = useRef<HTMLInputElement>(null);
+  const activationKeyRef = useRef<string | null>(null);
+  const activationSubmittingRef = useRef(false);
 
   const profileQuery = useQuery({ queryKey: ["profile"], queryFn: getProfile });
 
@@ -269,24 +272,35 @@ export function ProfilePage() {
   }, [dirty]);
 
   const mutation = useMutation({
-    mutationFn: saveProfile,
-    onSuccess: (profile: ProfileResponse) => {
+    mutationFn: ({ payload, previewHash, key }: { payload: ProfileInput; previewHash: string; key: string }) =>
+      profileQuery.data?.pending_plan
+        ? replacePendingTargetPlan(payload, previewHash, key)
+        : activateTargetPlan(payload, previewHash, key),
+    onSuccess: async (activation) => {
+      const refreshed = await profileQuery.refetch();
+      const profile = refreshed.data;
+      if (!profile) return;
       const confirmed = toDraft(profile);
       queryClient.setQueryData(["profile"], profile);
       setDraft(confirmed);
       setSavedDraft(confirmed);
-      setSavedTargets(profile.targets);
+      setSavedTargets(profile.targets ?? activation.plan.targets);
       setPreview(null);
       setPreviewFailed(false);
       setErrors({});
       setSaveError(false);
       setSavedNotice(true);
+      setActivationOpen(false);
+      activationKeyRef.current = null;
+      activationSubmittingRef.current = false;
       window.setTimeout(() => setSavedNotice(false), 2800);
     },
     onError: (error) => {
       const mapped = mapProfileApiErrors(error);
       if (Object.keys(mapped).length > 0) setErrors(mapped);
       else setSaveError(true);
+      setActivationOpen(false);
+      activationSubmittingRef.current = false;
     }
   });
 
@@ -330,7 +344,11 @@ export function ProfilePage() {
       window.setTimeout(() => invalid?.[1].current?.focus(), 0);
       return;
     }
-    if (!mutation.isPending) mutation.mutate(result.payload);
+    if (!preview?.preview_hash) {
+      requestPreview();
+      return;
+    }
+    setActivationOpen(true);
   }
 
   if (profileQuery.isPending) return <ProfileSkeleton />;
@@ -459,6 +477,7 @@ export function ProfilePage() {
         </section>
 
         <TargetsCard title="الأهداف اليومية" badge="محسوبة تلقائيًا" targets={savedTargets} />
+        {profileQuery.data?.pending_plan ? <ScheduledPlanCard plan={profileQuery.data.pending_plan} /> : null}
         <AdditionalTargetsCard targets={savedTargets} />
         <button className="profile-explain-action" type="button" onClick={() => setActiveSheet("calculation")}><Info size={17} /> كيف حُسبت أهدافي؟</button>
 
@@ -472,8 +491,8 @@ export function ProfilePage() {
         <div className="profile-save-bar" role="region" aria-label="حفظ تغييرات الملف الشخصي">
           <span>{Object.keys(errors).length > 0 ? "صحح الحقول المعلّمة للمتابعة" : saveError ? PROFILE_WRITE_ERROR : "تغييرات غير محفوظة"}</span>
           {saveError ? <small>تحقق من الاتصال ثم أعد المحاولة</small> : null}
-          <button className="btn primary" type="button" onClick={() => submit()} disabled={mutation.isPending}>
-            {mutation.isPending ? <><LoaderCircle className="spin" size={17} /> جارٍ حفظ التغييرات…</> : saveError ? <><RotateCcw size={17} /> إعادة المحاولة</> : "حفظ التغييرات"}
+          <button className="btn primary" type="button" onClick={() => submit()} disabled={mutation.isPending || previewPending || (Boolean(validation.payload) && !preview?.preview_hash)}>
+            {mutation.isPending ? <><LoaderCircle className="spin" size={17} /> جارٍ تفعيل الخطة…</> : saveError ? <><RotateCcw size={17} /> إعادة المحاولة</> : "مراجعة وتأكيد"}
           </button>
         </div>
       ) : null}
@@ -529,6 +548,28 @@ export function ProfilePage() {
             update("protein_per_kg", String(PROTEIN_DEFAULT));
             update("fat_percent", String(FAT_DEFAULTS[draft.sex] * 100));
             setRestoreOpen(false);
+          }}
+        />
+      ) : null}
+
+      {activationOpen && validation.payload && preview?.preview_hash ? (
+        <ProfileConfirm
+          title={profileQuery.data?.pending_plan ? "استبدال الخطة المجدولة؟" : "تأكيد الأهداف الجديدة؟"}
+          description={profileQuery.data?.pending_plan
+            ? "سيتم الاحتفاظ بالخطة المجدولة السابقة في السجل، وتبدأ الخطة البديلة في التاريخ المعروض."
+            : `المعاينة وحدها لا تحفظ الأهداف. ستبدأ الخطة في ${profileQuery.data ? "اليوم التالي" : "اليوم"}.`}
+          safeLabel="متابعة المراجعة"
+          confirmLabel={profileQuery.data?.pending_plan ? "استبدال الخطة" : "تفعيل الخطة"}
+          onClose={() => setActivationOpen(false)}
+          onConfirm={() => {
+            if (activationSubmittingRef.current) return;
+            activationSubmittingRef.current = true;
+            if (!activationKeyRef.current) activationKeyRef.current = crypto.randomUUID();
+            mutation.mutate({
+              payload: validation.payload!,
+              previewHash: preview.preview_hash!,
+              key: activationKeyRef.current
+            });
           }}
         />
       ) : null}
@@ -603,6 +644,20 @@ function AdditionalTargetsCard({ targets }: { targets: TargetResponse | null }) 
             {item.targetValue != null ? <small>{targetTypeLabels[item.targetType]}</small> : null}
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function ScheduledPlanCard({ plan }: { plan: NonNullable<ProfileResponse["pending_plan"]> }) {
+  return (
+    <section className="profile-preview-card" aria-label="الأهداف المجدولة">
+      <header><span>الخطة المجدولة</span><strong>تبدأ في <bdi dir="ltr">{plan.effective_from}</bdi></strong></header>
+      <div className="profile-preview-values">
+        <strong><bdi>{plan.targets.target_calories}</bdi> سعرة</strong>
+        <span>بروتين <bdi dir="ltr">{formatTargetNumber(plan.targets.protein_g)}</bdi> جم</span>
+        <span>كارب <bdi dir="ltr">{formatTargetNumber(plan.targets.carb_g)}</bdi> جم</span>
+        <span>دهون <bdi dir="ltr">{formatTargetNumber(plan.targets.fat_g)}</bdi> جم</span>
       </div>
     </section>
   );

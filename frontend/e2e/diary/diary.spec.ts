@@ -69,7 +69,8 @@ test.describe("@diary daily-use redesign", () => {
     }
   });
 
-  test("@p0 empty day shows one compact empty state and opens Add Entry sheet", async ({ page }) => {
+  test("@p0 empty day shows one compact empty state and opens Add Entry sheet", async ({ page, foodsApi }) => {
+    await foodsApi.create({ name: uniqueName("Empty-day recent food"), default_unit_type: "serving" });
     await page.goto("/diary");
     await page.getByLabel("اختيار تاريخ اليوميات").fill(localDate(-280));
     await expect(page.getByText("لا توجد أطعمة مسجلة اليوم")).toHaveCount(1);
@@ -77,7 +78,7 @@ test.describe("@diary daily-use redesign", () => {
     const dialog = page.getByRole("dialog", { name: "إضافة طعام" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية")).toBeFocused();
-    await expect(dialog.getByText(/الحصة|قطعة|حبة/).first()).toBeVisible();
+    await expect(dialog.getByText(/حصة|الحصة|قطعة|حبة/).first()).toBeVisible();
   });
 
   test("@p0 Food search, serving preview, and successful save update log and totals", async ({ page, foodsApi }) => {

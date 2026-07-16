@@ -10,6 +10,7 @@ import type {
   ProfileResponse,
   NutritionRegistryResponse,
   TargetResponse,
+  TargetPlanActivationResponse,
   WeekSummary
 } from "./types";
 
@@ -49,9 +50,9 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     let message = `API request failed with ${response.status}`;
     let detail: unknown = undefined;
     try {
-      const body = (await response.json()) as { detail?: string | unknown };
+      const body = (await response.json()) as { detail?: string | unknown; error?: { message_ar?: string } };
       detail = body.detail;
-      message = typeof body.detail === "string" ? body.detail : message;
+      message = body.error?.message_ar ?? (typeof body.detail === "string" ? body.detail : message);
     } catch {
       // Keep the status-based message when the server has no JSON body.
     }
@@ -83,6 +84,30 @@ export function previewProfile(payload: ProfileInput): Promise<TargetResponse> {
   return apiFetch<TargetResponse>("/profile/preview", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+export function activateTargetPlan(
+  payload: ProfileInput,
+  expectedPreviewHash: string,
+  idempotencyKey: string
+): Promise<TargetPlanActivationResponse> {
+  return apiFetch<TargetPlanActivationResponse>("/target-plans/activate", {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ ...payload, confirmed: true, expected_preview_hash: expectedPreviewHash })
+  });
+}
+
+export function replacePendingTargetPlan(
+  payload: ProfileInput,
+  expectedPreviewHash: string,
+  idempotencyKey: string
+): Promise<TargetPlanActivationResponse> {
+  return apiFetch<TargetPlanActivationResponse>("/target-plans/pending/replace", {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ ...payload, replace_confirmed: true, expected_preview_hash: expectedPreviewHash })
   });
 }
 

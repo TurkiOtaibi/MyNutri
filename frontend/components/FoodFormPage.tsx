@@ -60,6 +60,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   const [errors, setErrors] = useState<FoodFormErrors>({});
   const [note, setNote] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<FoodResponse | null>(null);
+  const [hydratedFoodId, setHydratedFoodId] = useState<string | null>(null);
   const isEdit = mode === "edit";
 
   const foodQuery = useQuery({
@@ -74,7 +75,10 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   });
 
   useEffect(() => {
-    if (foodQuery.data) setForm(foodToForm(foodQuery.data));
+    if (foodQuery.data) {
+      setForm(foodToForm(foodQuery.data));
+      setHydratedFoodId(foodQuery.data.id);
+    }
   }, [foodQuery.data]);
 
   const saveMutation = useMutation({
@@ -129,7 +133,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     saveMutation.mutate();
   }
 
-  if (isEdit && foodQuery.isPending) {
+  if (isEdit && (foodQuery.isPending || (foodQuery.data && hydratedFoodId !== foodQuery.data.id))) {
     return <div className="state-note">جاري تحميل تفاصيل الطعام.</div>;
   }
 

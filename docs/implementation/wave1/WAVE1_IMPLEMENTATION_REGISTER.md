@@ -18,8 +18,8 @@
 | 00 Baseline and plan | `impl/wave1-00-baseline-and-execution-plan` | Removed after merge | `c9c12eb6922636833945308055597aaed55cc971` | `e2f9243a5add25609d3ff23ebbc09859ad509036` | `#6` | Local baseline and GitHub CI passed | Critical 0; High 0; merged | `381a039f242ab3e5ea1fcff3b52668bf3dd8cf3b` | 42 Backend passed; PostgreSQL/Alembic passed; 245 E2E passed; typecheck/build/audit passed | Deterministic E2E seed setup required by Stage 08 |
 | 01 Principal ownership | `impl/wave1-01-principal-ownership` | Removed after merge | `381a039f242ab3e5ea1fcff3b52668bf3dd8cf3b` | `3f5415abc74f3c650ad1029a9f352d66dcc94d31` | `#7` | Local required gates and GitHub CI passed | Critical 0; High 0; merged | `eb0abc5324818a32046d8256e016c9d398a50b1b` | 55 Backend passed; PostgreSQL migration rehearsals passed; 245 E2E passed; Frontend typecheck/build/audit passed | Physical-device release evidence remains deferred to Stage 08 |
 | 02 Rules/Registry/calculations | `impl/wave1-02-rules-registry-calculations` | Removed after merge | `eb0abc5324818a32046d8256e016c9d398a50b1b` | `4f7154ea3cb30cfb3f13b56ff0dfad665e23ccfc` | `#8` | Local required gates and GitHub CI passed | Critical 0; High 0; merged | `76f7ac8a1b03179cfb4266409932c1c72ff00ece` | 86 Backend passed; W1-GC-001-015 passed; manifest lock passed; 245 E2E passed; typecheck/build/audit passed | Physical-device release evidence remains deferred to Stage 08 |
-| 03 Food nutrition foundation | `impl/wave1-03-food-nutrition-foundation` | `C:\Users\DELTA\Desktop\MyNutri-wave1-03` | `76f7ac8a1b03179cfb4266409932c1c72ff00ece` | Pending | Pending | Local required gates passed; GitHub pending | Critical 0; High 0; local strict review passed | Pending | 94 Backend unit/API tests; 5 PostgreSQL migration tests; 168 Food E2E and 249 full E2E passed; typecheck/build/drift passed | Physical-device release evidence remains deferred to Stage 08 |
-| 04 Target Plans | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Not started | None recorded |
+| 03 Food nutrition foundation | `impl/wave1-03-food-nutrition-foundation` | Removed after merge | `76f7ac8a1b03179cfb4266409932c1c72ff00ece` | `5b3d888397215af7d739bcc4ab1de4f0b5322ce7` | `#9` | Local required gates and GitHub CI passed | Critical 0; High 0; merged | `9121b893bbe582d851c7570cdb899a8564a896ae` | 94 Backend unit/API tests; 5 PostgreSQL migration tests; 168 Food E2E and 249 full E2E passed; typecheck/build/drift passed | Physical-device release evidence remains deferred to Stage 08 |
+| 04 Target Plans | `impl/wave1-04-target-plans` | `C:\Users\DELTA\Desktop\MyNutri-wave1-04-resumed` | `6252bfcdbd0c391284fd4adbdf8d5dfcf9e9cb24` | Pending | Pending | 112 Backend; 7 PostgreSQL rehearsals; 243 nonvisual E2E; typecheck/build passed | Critical 0; High 0; local strict review passed | Pending | W1-CD-01 implemented; PR/CI pending | Physical-device release evidence remains Stage 08 |
 | 05 Snapshot v2/Diary binding | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Not started | None recorded |
 | 06 Diary aggregation | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Not started | None recorded |
 | 07 Frontend integration | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Not started | None recorded |
@@ -34,3 +34,11 @@
 4. No stage is complete with Critical/High findings, failed required gates, unexplained traceability gaps, frozen deviations, or unexpected files.
 5. Physical-device and deployment readiness are reported separately from implementation completion.
 6. `frontend/debug-diary.png`, generated screenshots/results, secrets, databases, logs, and runtime artifacts are never registered as implementation files.
+
+## Change-Control Resumption
+
+- Stage 4 originally stopped at `9121b893bbe582d851c7570cdb899a8564a896ae` because immediate Profile preference persistence could reinterpret the transition date's legacy target.
+- W1-CD-01 change-package merge: `8b6c9d9f459d25af090d1bb726766f9aaf8a3cf4`.
+- W1-CD-01 re-pin merge and resumed Stage 4 base: `6252bfcdbd0c391284fd4adbdf8d5dfcf9e9cb24`.
+- Quarantined patch SHA-256: `a4c001675c6913dc637a2eb52a0bcb2b7b2fbd900e501f81d1d2605a5528bc53`.
+- The original worktree remains archived as `archive/impl-wave1-04-pre-w1-cd-01`; no old migration was reused.

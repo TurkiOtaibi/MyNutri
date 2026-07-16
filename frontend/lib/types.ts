@@ -44,6 +44,7 @@ export interface TargetResponse {
   additional_targets?: AdditionalNutrientTarget[];
   calculation_engine_version: string;
   nutrition_registry_version: string;
+  preview_hash?: string | null;
 }
 
 export type NutrientTargetType = "minimum" | "maximum" | "adequate" | "recommended" | "range" | "monitor_only" | "minimize";
@@ -135,6 +136,29 @@ export interface ProfileResponse extends ProfileInput {
   id: string;
   updated_at: string;
   targets: TargetResponse;
+  target_provenance: "versioned_plan" | "legacy_unversioned";
+  effective_plan: TargetPlanSummary | null;
+  pending_plan: TargetPlanSummary | null;
+}
+
+export interface TargetPlanSummary {
+  id: string;
+  status: "active" | "scheduled" | "closed" | "superseded_before_effective";
+  effective_from: string;
+  effective_to: string | null;
+  calendar_timezone: string;
+  predecessor_plan_id: string | null;
+  superseded_by_plan_id: string | null;
+  targets: TargetResponse;
+  created_at: string;
+  activated_at: string | null;
+  closed_at: string | null;
+  superseded_at: string | null;
+}
+
+export interface TargetPlanActivationResponse {
+  plan: TargetPlanSummary;
+  replaced_plan: TargetPlanSummary | null;
 }
 
 export interface FoodInput {
