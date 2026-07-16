@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { ApiError, getFood } from "@/lib/api";
+import { ApiError, getFood, getNutritionRegistry } from "@/lib/api";
 import {
   calculateServingNutrition,
   defaultServingText,
@@ -19,7 +19,7 @@ import {
   type FoodNutritionValues
 } from "@/lib/food";
 import type { FoodResponse } from "@/lib/types";
-import { additionalNutrients, nutrientValue } from "@/lib/nutrients";
+import { definitionsFromRegistry, nutrientValue, type NutrientDefinition } from "@/lib/nutrients";
 
 import { FoodDeleteDialog } from "./FoodDeleteDialog";
 import { useFoodDelete } from "./useFoodDelete";
@@ -78,6 +78,11 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
     queryKey: ["food", foodId],
     queryFn: () => getFood(foodId)
   });
+  const registryQuery = useQuery({
+    queryKey: ["nutrition-registry"],
+    queryFn: getNutritionRegistry,
+    staleTime: 300_000
+  });
 
   const deleteMutation = useFoodDelete({
     onDeleted: () => router.push("/foods"),
@@ -113,6 +118,7 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
   const basisNutrition = perBasisNutrition(food);
   const displayedNutrition = mode === "serving" ? servingNutrition : basisNutrition;
   const basisLabel = nutritionBasisLabels[food.nutrition_basis];
+  const registryNutrients = registryQuery.data ? definitionsFromRegistry(registryQuery.data) : null;
 
   return (
     <>
@@ -161,9 +167,14 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
         )}
       </section>
 
-      <NutritionCompleteness food={food} open={completenessOpen} onToggle={() => setCompletenessOpen((value) => !value)} />
-
-      {displayedNutrition ? <AdditionalFoodNutrients values={displayedNutrition} /> : null}
+      {registryNutrients ? (
+        <NutritionCompleteness food={food} nutrients={registryNutrients} open={completenessOpen} onToggle={() => setCompletenessOpen((value) => !value)} />
+      ) : (
+        <section className="catalog-state" role={registryQuery.isError ? "alert" : "status"}>
+          <strong>{registryQuery.isError ? "تعذر تحميل سجل المغذيات" : "جارٍ تحميل سجل المغذيات"}</strong>
+          {registryQuery.isError ? <button className="btn" type="button" onClick={() => registryQuery.refetch()}><RotateCcw size={18} /> إعادة المحاولة</button> : null}
+        </section>
+      )}
 
       <section className="nutrition-details-surface" aria-labelledby="nutrition-details-title">
         <div className="nutrition-details-toolbar">
@@ -231,10 +242,10 @@ function DetailServingMetric({ value, label, prominent = false }: { value: strin
   );
 }
 
-function NutritionCompleteness({ food, open, onToggle }: { food: FoodResponse; open: boolean; onToggle: () => void }) {
+function NutritionCompleteness({ food, nutrients, open, onToggle }: { food: FoodResponse; nutrients: NutrientDefinition[]; open: boolean; onToggle: () => void }) {
   const coreKeys = ["calories", "protein_g", "carb_g", "fat_g"] as const;
   const coreAvailable = coreKeys.filter((key) => food[key] != null).length;
-  const tracked = additionalNutrients.filter((item) => item.foodCompleteness);
+  const tracked = nutrients.filter((item) => item.foodCompleteness);
   const available = tracked.filter((item) => nutrientValue(food, item.key) !== null);
   const totalAvailable = coreAvailable + available.length;
   const totalFields = coreKeys.length + tracked.length;
@@ -253,20 +264,6 @@ function NutritionCompleteness({ food, open, onToggle }: { food: FoodResponse; o
       <div className="food-completeness-breakdown"><span>البيانات الأساسية <bdi>{corePercent}%</bdi></span><span>المغذيات الإضافية <bdi>{additionalPercent}%</bdi></span></div>
       <button type="button" className="food-completeness-toggle" aria-expanded={open} onClick={onToggle}>عرض التفاصيل <ChevronDown size={18} aria-hidden="true" /></button>
       {open ? <div className="food-completeness-missing"><h3>القيم غير المتوفرة</h3>{missing.length ? <ul>{missing.map((item) => <li key={item.key}>{item.label}</li>)}</ul> : <p>جميع القيم المتتبعة متوفرة.</p>}</div> : null}
-    </section>
-  );
-}
-
-function AdditionalFoodNutrients({ values }: { values: FoodNutritionValues }) {
-  return (
-    <section className="food-additional-nutrients" aria-labelledby="food-additional-title">
-      <h2 id="food-additional-title">المغذيات الإضافية</h2>
-      <dl>{additionalNutrients.map((item) => {
-        const raw = values[item.key];
-        const value = typeof raw === "number" ? raw : null;
-        const percentage = value != null && item.targetValue ? Math.round(value / item.targetValue * 100) : null;
-        return <div key={item.key}><dt>{item.label}</dt><dd>{value == null ? <span>غير متوفر</span> : <><bdi dir="ltr">{formatNutrientNumber(value)} {item.unit}</bdi>{percentage != null ? <small>{percentage}% من هدفك اليومي</small> : null}</>}</dd></div>;
-      })}</dl>
     </section>
   );
 }

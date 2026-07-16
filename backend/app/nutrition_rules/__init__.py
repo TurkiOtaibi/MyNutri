@@ -1,22 +1,24 @@
 from app.nutrition_rules.calculation import (
-    ACTIVITY_FACTORS as DECIMAL_ACTIVITY_FACTORS,
-    GOAL_FACTORS as DECIMAL_GOAL_FACTORS,
+    ACTIVITY_FACTORS,
+    GOAL_FACTORS,
     CalculationError,
     TargetResult,
     age_on,
     calculate_bmr,
     calculate_targets,
 )
-
-ACTIVITY_FACTORS = {key: float(value) for key, value in DECIMAL_ACTIVITY_FACTORS.items()}
-GOAL_FACTORS = {key: float(value) for key, value in DECIMAL_GOAL_FACTORS.items()}
+from app.nutrition_rules.manifest import registry_response, rules_manifest_hash
+from app.nutrition_rules.versions import VERSIONS
 
 __all__ = [
     "ACTIVITY_FACTORS",
     "GOAL_FACTORS",
     "CalculationError",
     "TargetResult",
+    "VERSIONS",
     "age_on",
     "calculate_bmr",
     "calculate_targets",
+    "registry_response",
+    "rules_manifest_hash",
 ]

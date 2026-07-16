@@ -1,60 +1,137 @@
 from datetime import date
 
-import pytest
-
-from app.models import ActivityLevel, DefaultUnitType, Food, Goal, NutritionBasis, Profile, Sex, UnitBasis
-from app.schemas import ProfileUpsert
-from app.services.calc import ACTIVITY_FACTORS, GOAL_FACTORS, calculate_targets
+from app.models import (
+    ActivityLevel,
+    DefaultUnitType,
+    Food,
+    Goal,
+    NutritionBasis,
+    Sex,
+    UnitBasis,
+)
+from app.nutrition_rules.calculation import resolved_nutrient_targets
+from app.nutrition_rules.registry import NUTRIENTS
+from app.schemas import ProfilePreview, ProfileUpsert
 from app.services.diary import make_snapshot, totals_from_snapshot
-from app.services.nutrients import ADDITIONAL_NUTRIENTS
-from app.services.profile import preview_targets, to_target_response
-
-
-def profile(sex: Sex = Sex.male, **changes: object) -> Profile:
-    data = dict(sex=sex, birth_date=date(1990, 1, 1), height_cm=170, weight_kg=80, activity_level=ActivityLevel.moderate, goal=Goal.maintain)
-    data.update(changes)
-    return Profile(**data)
+from app.services.profile import preview_targets
 
 
 def test_new_profile_defaults_are_sex_compatible() -> None:
-    male = ProfileUpsert(sex=Sex.male, birth_date=date(1990, 1, 1), height_cm=170, weight_kg=80, activity_level=ActivityLevel.moderate, goal=Goal.maintain)
-    female = ProfileUpsert(sex=Sex.female, birth_date=date(1990, 1, 1), height_cm=170, weight_kg=80, activity_level=ActivityLevel.moderate, goal=Goal.maintain)
+    common = dict(
+        birth_date=date(1990, 1, 1),
+        height_cm=170,
+        weight_kg=80,
+        activity_level=ActivityLevel.moderate,
+        goal=Goal.maintain,
+    )
+    male = ProfileUpsert(sex=Sex.male, **common)
+    female = ProfileUpsert(sex=Sex.female, **common)
     assert male.protein_per_kg == female.protein_per_kg == 1.2
     assert male.fat_pct == 0.25
     assert female.fat_pct == 0.30
 
 
-def test_female_sanity_scenario_and_preview_match_calculator() -> None:
-    payload = ProfileUpsert(sex=Sex.female, birth_date=date(1990, 1, 1), height_cm=165, weight_kg=115, activity_level=ActivityLevel.sedentary, goal=Goal.cut, protein_per_kg=1.2, fat_pct=0.30)
+def test_w1_gc_005_female_high_bmi_regression() -> None:
+    payload = ProfilePreview(
+        sex=Sex.female,
+        birth_date=date(1991, 1, 1),
+        height_cm=170,
+        weight_kg=115,
+        activity_level=ActivityLevel.sedentary,
+        goal=Goal.maintain,
+        protein_per_kg=1.2,
+        fat_pct=0.30,
+    )
     preview = preview_targets(payload)
-    direct = calculate_targets(Profile(**payload.model_dump()))
-    assert preview.protein_g == 138
-    assert preview.fat_g == direct.fat_g
-    assert preview.carb_g == direct.carb_g
-    assert preview.target_calories == direct.target_calories
+    protein = preview.protein_calculation
+    assert protein.basis == "adjusted_weight"
+    assert protein.reference_weight_kg == 72.25
+    assert protein.calculation_weight_kg == 86.3575
+    assert preview.protein_g == 103.6
+    assert protein.target_g == preview.protein_g
 
 
-def test_remaining_calories_feed_carbs_and_factors_are_unchanged() -> None:
-    item = profile(protein_per_kg=1.2, fat_pct=0.25)
-    result = calculate_targets(item, today=date(2026, 1, 1))
-    raw_target = result.tdee * GOAL_FACTORS[item.goal]
-    expected = (raw_target - result.protein_g * 4 - raw_target * float(item.fat_pct)) / 4
-    assert result.carb_g == pytest.approx(round(max(expected, 0), 1))
-    assert ACTIVITY_FACTORS[ActivityLevel.moderate] == 1.55
-    assert GOAL_FACTORS[Goal.cut] == 0.8
+def test_registry_contains_exactly_sixteen_wave1_nutrients_and_seven_target_types() -> None:
+    assert len(NUTRIENTS) == 16
+    assert {item.key for item in NUTRIENTS} == {
+        "fiber_g",
+        "added_sugar_g",
+        "saturated_fat_g",
+        "trans_fat_g",
+        "sodium_mg",
+        "potassium_mg",
+        "cholesterol_mg",
+        "calcium_mg",
+        "iron_mg",
+        "magnesium_mg",
+        "zinc_mg",
+        "selenium_mcg",
+        "vitamin_b12_mcg",
+        "folate_dfe_mcg",
+        "vitamin_a_rae_mcg",
+        "iodine_mcg",
+    }
+    approved_types = {
+        "minimum",
+        "maximum",
+        "adequate",
+        "recommended",
+        "range",
+        "monitor_only",
+        "minimize",
+    }
+    assert {item.target_type for item in NUTRIENTS} <= approved_types
 
 
-def test_registry_only_fiber_has_new_numeric_target() -> None:
-    indexed = {item.key: item for item in ADDITIONAL_NUTRIENTS}
-    assert indexed["fiber_g"].target_value == 30
-    assert indexed["fiber_g"].target_type == "minimum"
-    assert indexed["cholesterol_mg"].target_type == "monitor_only"
-    assert all(item.target_value is None for key, item in indexed.items() if key != "fiber_g")
-    assert len(to_target_response(profile()).additional_targets) == 6
+def test_w1_gc_008_through_015_resolved_nutrient_targets() -> None:
+    male = {
+        item["key"]: item["target_value"] for item in resolved_nutrient_targets(2000, Sex.male, 30)
+    }
+    female_51 = {
+        item["key"]: item["target_value"]
+        for item in resolved_nutrient_targets(2000, Sex.female, 51)
+    }
+    assert male == {
+        "fiber_g": 30.0,
+        "added_sugar_g": 50.0,
+        "saturated_fat_g": 22.2,
+        "trans_fat_g": 2.2,
+        "sodium_mg": 2000.0,
+        "potassium_mg": 3400.0,
+        "cholesterol_mg": None,
+        "calcium_mg": 1000.0,
+        "iron_mg": 8.0,
+        "magnesium_mg": 400.0,
+        "zinc_mg": 11.0,
+        "selenium_mcg": 55.0,
+        "vitamin_b12_mcg": 2.4,
+        "folate_dfe_mcg": 400.0,
+        "vitamin_a_rae_mcg": 900.0,
+        "iodine_mcg": 150.0,
+    }
+    assert female_51["potassium_mg"] == 2600
+    assert female_51["calcium_mg"] == 1200
+    assert female_51["iron_mg"] == 8
+    assert female_51["magnesium_mg"] == 320
+    assert female_51["zinc_mg"] == 8
+    assert female_51["vitamin_a_rae_mcg"] == 700
 
 
 def test_snapshot_preserves_known_zero_unknown_and_scales_known_values() -> None:
-    food = Food(name="Nutrient snapshot", nutrition_basis=NutritionBasis.per_100g, default_unit_type=DefaultUnitType.serving, unit_amount=50, unit_basis=UnitBasis.g, calories=100, protein_g=10, carb_g=20, fat_g=5, fiber_g=0, sodium_mg=None, potassium_mg=400)
+    food = Food(
+        name="Nutrient snapshot",
+        nutrition_basis=NutritionBasis.per_100g,
+        default_unit_type=DefaultUnitType.serving,
+        unit_amount=50,
+        unit_basis=UnitBasis.g,
+        calories=100,
+        protein_g=10,
+        carb_g=20,
+        fat_g=5,
+        fiber_g=0,
+        sodium_mg=None,
+        potassium_mg=400,
+    )
     snapshot = make_snapshot(food, 1)
     assert snapshot["fiber_g"] == 0
     assert snapshot["sodium_mg"] is None

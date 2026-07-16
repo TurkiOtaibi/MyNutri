@@ -4,7 +4,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models import ActivityLevel, DefaultUnitType, Goal, MealType, NutritionBasis, Sex, UnitBasis
+from app.models import (
+    ActivityLevel,
+    DefaultUnitType,
+    Goal,
+    MealType,
+    NutritionBasis,
+    Sex,
+    UnitBasis,
+)
 from app.services.food_validation_errors import (
     ABOVE_MAX_MESSAGE,
     ADDED_SUGAR_GT_SUGAR_MESSAGE,
@@ -24,20 +32,57 @@ class AdditionalNutrientTarget(BaseModel):
     unit: str
     precision: int
     order: int
-    target_type: Literal["minimum", "maximum", "range", "monitor_only"]
-    target_source: Literal["fixed", "calculated", "reference", "manual", "clinical"]
+    target_type: Literal[
+        "minimum", "maximum", "adequate", "recommended", "range", "monitor_only", "minimize"
+    ]
+    target_source: str
     target_value: float | None = None
+    target_rule: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProteinCalculationResponse(BaseModel):
+    basis: Literal["actual_weight", "adjusted_weight"]
+    bmi_used: float
+    actual_weight_kg: float
+    reference_weight_kg: float | None
+    calculation_weight_kg: float
+    protein_per_kg: float
+    target_g: float
+    explanation_ar: str
+    reference_weight_label_ar: str
+    calculation_engine_version: str
+
+
+class CalculationWarningResponse(BaseModel):
+    code: Literal["CARBOHYDRATE_BELOW_GENERAL_REFERENCE", "CARBOHYDRATE_VERY_LOW"]
+    severity: Literal["info", "warning"]
+    dimension: Literal["carbohydrate"]
+    value: float
+    reference_value: float
+    message_ar: str
 
 
 class TargetResponse(BaseModel):
     bmr: float
     tdee: float
     target_calories: int
+    calories: int
+    selected_cut_intensity: float
+    requested_deficit_kcal: float
+    applied_deficit_kcal: float
+    deficit_cap_applied: bool
+    final_target_calories: int
+    safety_outcome: Literal["normal", "specialist_review_required", "very_low_energy_blocked"]
+    can_activate: bool
     protein_g: float
+    protein_calculation: ProteinCalculationResponse
     fat_g: float
     carb_g: float
     carb_clamped: bool = False
+    calculation_warnings: list[CalculationWarningResponse] = Field(default_factory=list)
     additional_targets: list[AdditionalNutrientTarget] = Field(default_factory=list)
+    calculation_engine_version: str
+    nutrition_registry_version: str
 
 
 class ProfileUpsert(BaseModel):
@@ -59,6 +104,10 @@ class ProfileUpsert(BaseModel):
             value = dict(value)
             value["fat_pct"] = 0.30 if value.get("sex") in {Sex.female, "female"} else 0.25
         return value
+
+
+class ProfilePreview(ProfileUpsert):
+    selected_cut_intensity: Literal[0.15, 0.2, 0.25] = 0.2
 
 
 class ProfileResponse(ProfileUpsert):
@@ -202,7 +251,12 @@ class FoodBase(BaseModel):
         if value is not None and fat_g is not None and value > fat_g:
             raise ValueError(TRANS_FAT_GT_FAT_MESSAGE)
         saturated_fat_g = info.data.get("saturated_fat_g")
-        if value is not None and saturated_fat_g is not None and fat_g is not None and value + saturated_fat_g > fat_g:
+        if (
+            value is not None
+            and saturated_fat_g is not None
+            and fat_g is not None
+            and value + saturated_fat_g > fat_g
+        ):
             raise ValueError(SATURATED_TRANS_GT_FAT_MESSAGE)
         return value
 
@@ -307,7 +361,12 @@ class FoodUpdate(BaseModel):
         if value is not None and fat_g is not None and value > fat_g:
             raise ValueError(TRANS_FAT_GT_FAT_MESSAGE)
         saturated_fat_g = info.data.get("saturated_fat_g")
-        if value is not None and saturated_fat_g is not None and fat_g is not None and value + saturated_fat_g > fat_g:
+        if (
+            value is not None
+            and saturated_fat_g is not None
+            and fat_g is not None
+            and value + saturated_fat_g > fat_g
+        ):
             raise ValueError(SATURATED_TRANS_GT_FAT_MESSAGE)
         return value
 

@@ -9,8 +9,10 @@
 | Branch | `impl/wave1-01-principal-ownership` |
 | Worktree | `C:\Users\DELTA\Desktop\MyNutri-wave1-01` |
 | Base SHA | `381a039f242ab3e5ea1fcff3b52668bf3dd8cf3b` |
-| Implementation commit | Pending |
-| Pull request | Pending |
+| Implementation commit | `3f5415abc74f3c650ad1029a9f352d66dcc94d31` |
+| Pull request | `#7` |
+| Reviewed head | `3f5415abc74f3c650ad1029a9f352d66dcc94d31` |
+| Merge SHA | `eb0abc5324818a32046d8256e016c9d398a50b1b` |
 | Report date | `2026-07-16` |
 
 This stage implements durable single-Principal ownership, authenticated Principal context, owner-scoped data access, and Alembic-only schema authority. It does not implement later Wave 1 tables or any later-wave feature.
@@ -190,4 +192,4 @@ Later-wave features introduced: 0
 Stage verdict: Ready to Merge
 ```
 
-The implementation commit, GitHub PR, CI result, reviewed head, and merge SHA remain Pending until the corresponding lifecycle steps complete.
+GitHub CI passed Backend and Frontend jobs. PR `#7` was strictly reviewed at the recorded head and merged with a merge commit into `main` at `eb0abc5324818a32046d8256e016c9d398a50b1b`.

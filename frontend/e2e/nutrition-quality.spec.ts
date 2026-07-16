@@ -13,9 +13,13 @@ test.describe("@nutrition-quality", () => {
     await expect(card).toContainText("الألياف");
     await expect(card).toContainText("30 جم");
     await expect(card).toContainText("حد أدنى");
+    await expect(card).toContainText("البوتاسيوم");
+    await expect(card).toContainText("كمية كافية");
+    await expect(card).toContainText("الفولات (DFE)");
+    await expect(card).toContainText("فيتامين أ (RAE)");
     await expect(card).toContainText("الكوليسترول");
     await expect(card).toContainText("متابعة فقط");
-    await expect(card.getByText("لم يُحدد هدف افتراضي بعد")).toHaveCount(4);
+    await expect(card.locator(".profile-additional-target-row")).toHaveCount(16);
   });
 
   test("Diary meal macros and nutritional coverage use frozen snapshot values", async ({ page, foodsApi }) => {

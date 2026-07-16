@@ -36,7 +36,7 @@ import {
 import { addDays, formatDayNumber, formatLongArabicDate, formatShortDate, todayInputValue, weekStartSunday } from "@/lib/dates";
 import { calculateServingNutrition, defaultUnitLabels, defaultServingText, formatServingMacro, unitBasisLabels } from "@/lib/food";
 import { weekdays } from "@/lib/labels";
-import { additionalNutrients, definitionsForTargets, formatNutrientValue, nutrientValue, targetTypeLabels, type NutrientDefinition } from "@/lib/nutrients";
+import { definitionsForTargets, formatNutrientValue, nutrientValue, targetTypeLabels, type NutrientDefinition } from "@/lib/nutrients";
 import type {
   DiaryEntryInput,
   DiaryEntryResponse,
@@ -96,7 +96,7 @@ export function DiaryPage() {
 
   const targets = profileQuery.data?.targets ?? weekQuery.data?.targets ?? null;
   const entries = entriesQuery.data ?? [];
-  const totals = useMemo(() => sumEntries(entries), [entries]);
+  const totals = useMemo(() => sumEntries(entries, definitionsForTargets(targets)), [entries, targets]);
 
   useEffect(() => {
     if (!statusMessage) return;
@@ -1045,12 +1045,13 @@ function DiaryEntriesSkeleton() {
   return <div className="diary-entry-list" aria-label="جارٍ تحميل يوميات اليوم">{[1, 2, 3].map((item) => <div className="diary-entry-skeleton" key={item} />)}</div>;
 }
 
-function sumEntries(entries: DiaryEntryResponse[]): NutritionTotals {
+function sumEntries(entries: DiaryEntryResponse[], nutrients: NutrientDefinition[]): NutritionTotals {
   return entries.reduce((sum, entry) => {
     const next = { ...sum, calories: sum.calories + entry.totals.calories, protein_g: sum.protein_g + entry.totals.protein_g, carb_g: sum.carb_g + entry.totals.carb_g, fat_g: sum.fat_g + entry.totals.fat_g };
-    for (const definition of additionalNutrients) {
+    const dynamic = next as unknown as Record<string, number | null>;
+    for (const definition of nutrients) {
       const value = nutrientValue(entry.totals, definition.key);
-      if (value !== null) next[definition.key] = (next[definition.key] ?? 0) + value;
+      if (value !== null) dynamic[definition.key] = (dynamic[definition.key] ?? 0) + value;
     }
     return next;
   }, emptyNutritionTotals());
