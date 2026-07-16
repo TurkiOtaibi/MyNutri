@@ -13,7 +13,7 @@
 | Document ID | `W1-FREEZE-INDEX-12` |
 | Document title | Wave 1 Freeze Index |
 | Version | Pending |
-| Status | `Draft — Not Frozen` |
+| Status | `Draft — Awaiting Package Merge` |
 | Created date | 2026-07-15 |
 | Last updated date | 2026-07-16 |
 | Implemented Baseline Code Commit | `d6caf0a124e5ffec63cabd1972ed742b3e7fc8bd` |
@@ -21,16 +21,16 @@
 | Governance Decision Direction Commit | `b9869dfe0a1dc26190aaa6478f2114da82a0793e` |
 | Final Freeze Package Commit | Pending |
 | Wave | Wave 1 - Nutrition & Data Foundation |
-| Readiness verdict | `Not Ready to Build` |
-| Critical issue count | 2 |
-| High unresolved issue count | 11 |
-| Product Owner approval | Pending |
-| Architecture approval | Pending |
-| Security approval | Pending |
-| Engineering/Data approval | Pending |
-| API approval | Pending |
-| BA/UX approval | Pending |
-| QA approval | Pending |
+| Readiness verdict | `Ready to Build` pending package merge and final pin |
+| Critical issue count | 0 |
+| High unresolved issue count | 0 |
+| Product Owner approval | Approved through artifact authorities |
+| Architecture approval | Approved |
+| Security approval | Approved |
+| Engineering/Data approval | Approved |
+| API approval | Approved |
+| BA/UX approval | Approved |
+| QA approval | Approved |
 
 The approved C02 Product Owner decision selects this linked modular package structure. That approval does not approve this draft index, its missing artifacts, or implementation.
 
@@ -357,7 +357,7 @@ If any condition becomes false after freeze, change control under `PD-001` appli
 ## 8. Current Declaration
 
 ```text
-Current verdict: Not Ready to Build
-Current freeze status: Draft — Not Frozen
+Current verdict: Ready to Build pending package merge and final pin
+Current freeze status: Draft — Awaiting Package Merge
 Implementation authorization: No
 ```
