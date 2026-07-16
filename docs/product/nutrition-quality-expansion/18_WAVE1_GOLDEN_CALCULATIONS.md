@@ -5,14 +5,15 @@
 | Field | Value |
 |---|---|
 | Artifact ID | `W1-GOLDEN-18` |
-| Version | `1.0` |
+| Version | `1.1` |
 | Status | `Approved — Engineering and QA` |
 | Owner | Engineering / QA |
 | Approver | Engineering / QA |
 | Approval date | `2026-07-16` |
 | Review | `18A_WAVE1_GOLDEN_CALCULATIONS_REVIEW.md` |
+| Change review | `W1-CD-01A_LEGACY_TARGET_TRANSITION_IMPACT_REVIEW.md` |
 | Critical / High / Product decisions | `0 / 0 / 0` |
-| Pinned revision | `e714b4c374166a27a8aa1b40ab4b851ce0b92a9d` |
+| Pinned revision | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
 | Versions | calculation `2.0.0`; Registry `1.0.0`; group/reliability/NOVA `1.0.0`; Snapshot `2` |
 | Implementation authorization | `No` |
 
@@ -127,6 +128,26 @@ Valid v1 absent nutrient counts unknown; valid v2 zero counts known. Both normal
 | `W1-GC-033` | same key/different payload | 409, no change |
 | `W1-GC-034` | concurrent different keys | one commits; other conflict; no overlap/partial Profile update |
 | `W1-GC-035` | Riyadh 23:59:59 to 00:00 | current/next Diary date changes at Riyadh midnight regardless of host/browser UTC |
+
+## 6A. W1-CD-01 Legacy Transition Scenarios
+
+Common existing legacy input: male, birth `1996-01-01`, height `180.00`, weight `63.30`, moderate, cut, protein `1.20`, fat `0.25`, cut intensity `0.200`; pre-update resolved target is the exact Backend result `2000 kcal`, `76.0 g` protein, `299.0 g` carbohydrate, `55.6 g` fat, with its exact 16 resolved additional targets. Proposed input changes weight to `70.00` and cut intensity to `0.150`; the new plan output is recalculated by engine `2.0.0` and stored without intermediate rounding.
+
+| ID | Exact event | Required output |
+|---|---|---|
+| `W1-GC-036` | Existing legacy activation `2026-07-16T12:00:00+03:00` | one snapshot dated `2026-07-16`; captured target exactly `2000/76.0/299.0/55.6`; Profile immediately `70.00/0.150`; scheduled plan effective `2026-07-17` |
+| `W1-GC-037` | Resolve `2026-07-16` before and after commit | identical `2000/76.0/299.0/55.6`; after commit detail `legacy_transition_snapshot` |
+| `W1-GC-038` | Resolve `2026-07-17` | effective new Target Plan result and detail `effective_target_plan` |
+| `W1-GC-039` | Resolve `2026-07-15` after transition | `targets=null`, provenance `no_target_source`, detail `no_preserved_target_source` |
+| `W1-GC-040` | New Profile/no prior source activates current date | current-date active plan; transition snapshot row count `0` |
+| `W1-GC-041` | Replace pending plan on `2026-07-16` | original snapshot JSON hash unchanged; old pending superseded; exactly one new pending |
+| `W1-GC-042` | two concurrent first activations | exactly one snapshot; one scheduled plan; one commit and one stable conflict; no overlap |
+| `W1-GC-043` | failure after snapshot insert before commit | snapshot `0`; Profile unchanged; plan `0`; no completed idempotency result |
+| `W1-GC-044` | `2026-07-16T23:59:59+03:00` then `2026-07-17T00:00:00+03:00` | transition date follows Riyadh date at each instant; host/browser timezone has no effect |
+| `W1-GC-045` | same key/same canonical payload | original `201` body replayed; one snapshot and plan |
+| `W1-GC-046` | same key/different payload | `409 IDEMPOTENCY_KEY_REUSED`; snapshot/Profile/plan unchanged |
+
+All numeric equality is equality of persisted authoritative values, not display-text approximation. Unknown additional targets remain null and known zero remains zero.
 
 ## 7. Version Assertions
 

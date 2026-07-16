@@ -5,14 +5,15 @@
 | Field | Value |
 |---|---|
 | Artifact ID | `W1-BAQA-17` |
-| Version | `1.0` |
+| Version | `1.1` |
 | Status | `Approved — Product, BA, and UX` |
 | Owner | Product / BA / UX |
 | Approver | Product / BA / UX |
 | Approval date | `2026-07-16` |
 | Review | `17A_WAVE1_USER_STORIES_ACCEPTANCE_REVIEW.md` |
+| Change review | `W1-CD-01A_LEGACY_TARGET_TRANSITION_IMPACT_REVIEW.md` |
 | Critical / High / Product decisions | `0 / 0 / 0` |
-| Pinned revision | `ffde6f597750b18e85d861c36d3dfad105d36f0e` |
+| Pinned revision | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
 | Implementation authorization | `No` |
 
 ## Common Acceptance Contract
@@ -64,6 +65,20 @@ All stories are Arabic-first RTL, use Western numerals, preserve at least 44px t
 - **Acceptance:** Preview persists nothing. New Profile without target source may start today; legacy/existing starts next Riyadh date. Activation is atomic/idempotent. Current/proposed/scheduled targets are distinct.
 - **Negative:** Backdating/arbitrary scheduling/client effective date are rejected. Blocked H01/H03 result creates no plan or Profile update.
 - **Traceability:** H04; ADR-005/009/010; API lifecycle.
+
+#### W1-CD-01 acceptance extension
+
+- **Given** an existing legacy Profile at midday Riyadh, **when** its first confirmed activation succeeds, **then** one immutable transition snapshot captures the exact pre-update target, Profile preferences update immediately, today returns the identical captured target, and tomorrow returns the new Target Plan.
+- **Given** a pre-transition earlier date after activation, **when** targets are requested, **then** target source is unavailable and current Profile is not used.
+- **Given** a genuinely new Profile with no prior target source, **when** its current-date first plan activates, **then** no transition snapshot exists.
+- **Given** a pending next-date plan, **when** replacement is explicitly confirmed on the transition date, **then** the original snapshot is reused byte-for-byte and one pending plan remains.
+- **Given** concurrent first activations, **then** database/service locking permits one snapshot and one valid pending plan only; the loser receives a stable conflict.
+- **Given** same idempotency key and payload, **then** the original activation response replays; different payload conflicts without mutation.
+- **Given** any injected failure before commit, **then** no snapshot, Profile change, plan/lifecycle change, or success idempotency result remains.
+- **Authorization:** Principal A cannot read, resolve, mutate, or infer Principal B's transition source; missing and cross-owner identifiers are non-enumerating.
+- **Timezone:** the transition date changes only at `Asia/Riyadh` midnight, independent of server/browser timezone.
+- **Legacy:** Diary rows remain `legacy_unversioned` with null Target Plan ID and are not rewritten.
+- **UX/accessibility:** existing current-versus-scheduled labels remain; no new control or interaction is introduced.
 
 ### `W1-US-007` — Replace pending plan
 

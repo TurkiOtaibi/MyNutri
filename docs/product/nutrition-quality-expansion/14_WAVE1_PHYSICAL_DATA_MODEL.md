@@ -5,22 +5,111 @@
 | Field | Value |
 |---|---|
 | Artifact ID | `W1-DATA-14` |
-| Version | `1.0` |
+| Version | `1.1` |
 | Status | `Approved — Engineering and Data` |
 | Wave | `Wave 1 — Nutrition & Data Foundation` |
 | Owner | Engineering / Data |
 | Approver | Engineering / Data |
 | Approval date | `2026-07-16` |
 | Review evidence | `14A_WAVE1_PHYSICAL_DATA_MODEL_REVIEW.md` |
+| Change review evidence | `W1-CD-01A_LEGACY_TARGET_TRANSITION_IMPACT_REVIEW.md` |
 | Critical findings | `0` |
 | High findings | `0` |
 | Product Owner decisions remaining | `0` |
-| Pinned revision | `afa3a9bb220a7798920d7edc1b0949da15f2d7fe` |
+| Pinned revision | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
 | Implementation authorization | `No` |
 
 ## 1. Authority and Scope
 
 This contract translates approved Artifact 13, C01, and H01-H11 into a PostgreSQL design. It does not create models or migrations. Alembic remains the only deployed schema authority. Revisions `0001_initial` through `0003_diary_meal_type` are immutable.
+
+Version 1.1 adds only the W1-CD-01 Legacy Target Transition Snapshot contract. All other version 1.0 physical decisions remain unchanged.
+
+## 6A. Legacy Target Transition Snapshot
+
+Exact table name: `legacy_target_transition_snapshots`.
+
+| Column | PostgreSQL type | Null | Rule |
+|---|---|---:|---|
+| `id` | `uuid` | No | primary key; Backend generated |
+| `principal_id` | `uuid` | No | FK `principal(id) ON DELETE RESTRICT` |
+| `profile_id` | `uuid` | No | owner-consistent composite FK to `profile(id,principal_id) ON DELETE RESTRICT` |
+| `transition_date` | `date` | No | authoritative Riyadh activation date |
+| `calendar_timezone` | `varchar(64)` | No | check exactly `Asia/Riyadh` |
+| `target_document_schema_version` | `smallint` | No | check exactly `1` |
+| `legacy_target_document` | `jsonb` | No | validated immutable schema below |
+| `created_at` | `timestamptz` | No | Backend/database UTC audit time |
+
+Constraints and indexes:
+
+- `UNIQUE(profile_id)` enforces one transition snapshot per Profile.
+- `UNIQUE(id,principal_id)` provides an owner-consistent alternate key.
+- `UNIQUE(principal_id,transition_date)` is valid because C01 permits one Profile per Principal and prevents ambiguous same-day sources.
+- Composite FK `(profile_id,principal_id) -> profile(id,principal_id)` prevents cross-owner attachment.
+- Index `(principal_id,transition_date)` supports exact-date resolution.
+- Creation locks the Principal row and Profile row `FOR UPDATE`; uniqueness remains the final race guard.
+- A database trigger rejects every `UPDATE` and `DELETE`. There is no normal Product update/delete service or API.
+
+Exact `legacy_target_document` schema version 1:
+
+```json
+{
+  "schema_version": 1,
+  "source": "legacy_unversioned_transition",
+  "captured_profile_inputs": {
+    "sex": "male|female",
+    "birth_date": "YYYY-MM-DD",
+    "height_cm": 180.00,
+    "weight_kg": 75.00,
+    "activity_level": "sedentary|light|moderate|active|very_active",
+    "goal": "cut|maintain|bulk",
+    "protein_per_kg": 1.20,
+    "fat_pct": 0.25,
+    "cut_intensity": 0.200
+  },
+  "resolved_targets": {
+    "bmr": 1698.75,
+    "tdee": 2633.0625,
+    "target_calories": 2106,
+    "calories": 2106,
+    "selected_cut_intensity": 0.200,
+    "requested_deficit_kcal": 526.6125,
+    "applied_deficit_kcal": 526.6125,
+    "deficit_cap_applied": false,
+    "final_target_calories": 2106,
+    "safety_outcome": "normal|specialist_review_required|very_low_energy_blocked",
+    "can_activate": true,
+    "protein_g": 90.0,
+    "protein_calculation": {
+      "basis": "actual_weight|adjusted_weight",
+      "bmi_used": 23.1481,
+      "actual_weight_kg": 75.00,
+      "reference_weight_kg": null,
+      "calculation_weight_kg": 75.00,
+      "protein_per_kg": 1.20,
+      "target_g": 90.0,
+      "explanation_ar": "...",
+      "reference_weight_label_ar": "وزن مرجعي للحساب",
+      "calculation_engine_version": "2.0.0"
+    },
+    "carb_g": 285.3,
+    "fat_g": 58.5,
+    "carb_clamped": false,
+    "calculation_warnings": [],
+    "additional_targets": [],
+    "calculation_engine_version": "2.0.0",
+    "nutrition_registry_version": "1.0.0"
+  }
+}
+```
+
+The object and every nested object are closed: no unknown keys. Required fields are exactly those shown. `calculation_warnings` contains the exact Backend warning objects (`code`, `severity`, `dimension`, numeric `value`, numeric `reference_value`, `message_ar`) in deterministic code order. `additional_targets` contains exactly 16 entries in Registry display order; each closed item contains `key`, `label_ar`, `unit`, integer `precision`, integer `order`, `target_type`, `target_source`, nullable numeric `target_value`, and closed `target_rule` metadata as returned at capture. Approved Registry keys, units, and target-type vocabularies apply.
+
+JSON numbers are finite. Calorie values are integers; macro values are one decimal; Profile inputs use their database precision; deficit, BMI, BMR, TDEE, reference/calculation weight, warning values, and nutrient targets preserve the authoritative server result without an extra display-rounding pass. Null remains unknown and zero remains numeric zero. `carb_clamped` is always false. The version strings record the calculation and Registry context used for this current transition capture; they do not create a Target Plan, effective interval, or retroactive version for earlier legacy dates. The document stores no Diary nutrition values, owner supplied by a client, or bearer credential.
+
+Backend validation uses the schema selected by `target_document_schema_version` before insert. Service code exposes only normalized target fields and source detail, not raw JSON. Database immutability, service absence of mutation, and API absence of mutation form three enforcement layers.
+
+Resolution is Principal/date scoped: effective Target Plan first; this row only when `requested_date=transition_date`; otherwise no preserved target. Mutable Profile values are prohibited as a historical fallback after transition.
 
 All identifiers are PostgreSQL `uuid`. All timestamps are `timestamptz`, generated by the Backend/database in UTC. Diary and Target Plan calendar boundaries are `date` interpreted through the deployment-configured `Asia/Riyadh` calendar authority.
 

@@ -5,14 +5,15 @@
 | Field | Value |
 |---|---|
 | Artifact ID | `W1-MIG-16` |
-| Version | `1.0` |
+| Version | `1.1` |
 | Status | `Approved — Engineering, Data, and Operations` |
 | Owner | Engineering / Data / Operations |
 | Approver | Engineering / Data / Operations |
 | Approval date | `2026-07-16` |
 | Review evidence | `16A_WAVE1_MIGRATION_ROLLBACK_REVIEW.md` |
+| Change review evidence | `W1-CD-01A_LEGACY_TARGET_TRANSITION_IMPACT_REVIEW.md` |
 | Critical / High / Product decisions | `0 / 0 / 0` |
-| Pinned revision | `ead5de21fe1153126f6c19c9f7aeba6a732ace89` |
+| Pinned revision | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
 | Implementation authorization | `No` |
 
 ## 1. Baseline and Authority
@@ -28,11 +29,18 @@ Names are contract labels; implementation uses new immutable Alembic revisions w
 3. `0006_principal_contract`: owner non-null, one-Profile, owner indexes/FKs after reconciliation.
 4. `0007_food_quality_expand`: four nullable exact nutrients and controlled source/ingredients/NOVA/category/status fields.
 5. `0008_food_groups_expand`: contribution/trait tables, constraints, indexes, deferred total trigger.
-6. `0009_target_plan_expand`: Target Plan, immutable document/version/lifecycle, idempotency records, range/partial indexes.
-7. `0010_diary_snapshot_v2_expand`: Diary owner-consistent plan link, provenance, nullable schema version, indexes.
-8. `0011_wave1_constraint_contract`: constraints that require compatible readers and verified data; writer remains feature-gated.
+6. `0009_legacy_target_transition_expand`: immutable transition table, owner/date uniqueness, indexes, and update/delete rejection trigger.
+7. `0010_target_plan_expand`: Target Plan, immutable document/version/lifecycle, idempotency records, range/partial indexes.
+8. `0011_diary_snapshot_v2_expand`: Diary owner-consistent plan link, provenance, nullable schema version, indexes.
+9. `0012_wave1_constraint_contract`: constraints that require compatible readers and verified data; writer remains feature-gated.
 
 Each revision is independently reviewable. Physical implementation may split a boundary for transactional PostgreSQL requirements but may not reorder dependencies or combine unrelated changes.
+
+Version 1.1 requires the snapshot-aware reader to deploy with the writer disabled after `0009`. No migration creates snapshot rows or backfills historical targets. The first eligible activation creates its row at runtime in the same transaction as Profile and Target Plan changes.
+
+Required W1-CD-01 rehearsal adds: fresh and populated upgrade; zero rows after migration; exact first-runtime insert; one row under concurrent activation; owner/profile FK and immutable trigger failures; transaction rollback leaving zero rows; safe rerun after failed deployment; downgrade/re-upgrade before writes; and explicit refusal to downgrade after snapshot or Target Plan writes.
+
+The compatibility floor after first snapshot/plan write is the first release that understands `legacy_target_transition_snapshots` and the W1-CD-01 precedence. Application rollback keeps the expanded schema and may target only a verified snapshot-aware reader. Rollback to a reader that calculates historical targets from mutable Profile is prohibited. Schema downgrade is lossless only while both transition and Target Plan tables contain no data; otherwise it fails without deleting data.
 
 ## 3. Expand → Migrate → Contract
 
