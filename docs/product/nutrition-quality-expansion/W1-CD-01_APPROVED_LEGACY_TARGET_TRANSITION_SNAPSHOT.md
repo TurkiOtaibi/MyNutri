@@ -13,7 +13,7 @@
 | Engineering/Data approval | Approved |
 | API approval | Approved |
 | Approval date | `2026-07-16` |
-| Pinned revision | Pending |
+| Pinned revision | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
 | Implementation authorization | Paused pending re-freeze |
 
 ## Problem

@@ -12,7 +12,7 @@
 | Engineering/Data | Approved |
 | API | Approved |
 | Impact review | `W1-CD-01A_LEGACY_TARGET_TRANSITION_IMPACT_REVIEW.md` |
-| Pinned revision | Pending |
+| Pinned revision | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
 
 ## Approved Package
 

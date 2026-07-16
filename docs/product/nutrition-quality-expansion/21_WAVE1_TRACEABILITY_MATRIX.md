@@ -13,7 +13,7 @@
 | Review | `21A_WAVE1_TRACEABILITY_REVIEW.md` |
 | Change review | `W1-CD-01A_LEGACY_TARGET_TRANSITION_IMPACT_REVIEW.md` |
 | Critical / High / Product decisions / gaps | `0 / 0 / 0 / 0` |
-| Pinned revision | Pending |
+| Pinned revision | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
 | Implementation authorization | `No` |
 
 ## 1. Artifact Version and Pin Register
@@ -21,14 +21,14 @@
 | Artifact | Version | Approval | Pinned revision |
 |---|---:|---|---|
 | `W1-ADR-13` | 1.0 | Architecture and Security | `c7c48746715d24238acd70cd4eea137bf0f87cfd` |
-| `W1-DATA-14` | 1.1 | Engineering and Data | Pending |
-| `W1-API-15` | 1.1 | API and Architecture | Pending |
-| `W1-MIG-16` | 1.1 | Engineering, Data, Operations | Pending |
-| `W1-BAQA-17` | 1.1 | Product, BA, UX | Pending |
-| `W1-GOLDEN-18` | 1.1 | Engineering and QA | Pending |
+| `W1-DATA-14` | 1.1 | Engineering and Data | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
+| `W1-API-15` | 1.1 | API and Architecture | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
+| `W1-MIG-16` | 1.1 | Engineering, Data, Operations | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
+| `W1-BAQA-17` | 1.1 | Product, BA, UX | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
+| `W1-GOLDEN-18` | 1.1 | Engineering and QA | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
 | `W1-UI-19` | 1.0 | BA, UX, Accessibility | `6a392d11c747c784e37f42c9fd6bfb15cc010d5a` |
-| `W1-VERIFY-20` | 1.1 | QA, Security, Engineering | Pending |
-| `W1-TRACE-21` | 1.1 | BA, QA, Governance | Pending |
+| `W1-VERIFY-20` | 1.1 | QA, Security, Engineering | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
+| `W1-TRACE-21` | 1.1 | BA, QA, Governance | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
 
 Version 1.1 change register: W1-CD-01 maps to H04 and ADR-005; Artifact 14 `legacy_target_transition_snapshots` and document schema; Artifact 15 activation/resolution/source detail; Artifact 16 `0009_legacy_target_transition_expand` and compatibility floor; W1-US-006 extension; golden `W1-GC-036..046`; Artifact 20 mandatory transition gate; Stage 4 model, migration, service, route, schema, Profile/Diary integration, PostgreSQL, API, security, and UI tests.
 

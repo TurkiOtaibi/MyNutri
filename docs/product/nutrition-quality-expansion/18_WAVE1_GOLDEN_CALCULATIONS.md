@@ -13,7 +13,7 @@
 | Review | `18A_WAVE1_GOLDEN_CALCULATIONS_REVIEW.md` |
 | Change review | `W1-CD-01A_LEGACY_TARGET_TRANSITION_IMPACT_REVIEW.md` |
 | Critical / High / Product decisions | `0 / 0 / 0` |
-| Pinned revision | Pending |
+| Pinned revision | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
 | Versions | calculation `2.0.0`; Registry `1.0.0`; group/reliability/NOVA `1.0.0`; Snapshot `2` |
 | Implementation authorization | `No` |
 

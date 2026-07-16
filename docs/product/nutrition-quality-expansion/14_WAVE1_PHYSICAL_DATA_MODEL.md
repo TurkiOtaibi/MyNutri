@@ -16,7 +16,7 @@
 | Critical findings | `0` |
 | High findings | `0` |
 | Product Owner decisions remaining | `0` |
-| Pinned revision | Pending |
+| Pinned revision | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
 | Implementation authorization | `No` |
 
 ## 1. Authority and Scope

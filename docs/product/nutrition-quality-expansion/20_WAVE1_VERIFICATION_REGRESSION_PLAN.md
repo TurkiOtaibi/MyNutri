@@ -13,7 +13,7 @@
 | Review | `20A_WAVE1_VERIFICATION_REGRESSION_REVIEW.md` |
 | Change review | `W1-CD-01A_LEGACY_TARGET_TRANSITION_IMPACT_REVIEW.md` |
 | Critical / High / Product decisions | `0 / 0 / 0` |
-| Pinned revision | Pending |
+| Pinned revision | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
 | Implementation authorization | `No` |
 
 ## 1. Gate Policy

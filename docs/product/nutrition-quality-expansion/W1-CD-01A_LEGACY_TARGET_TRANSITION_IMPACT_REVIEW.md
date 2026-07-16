@@ -11,6 +11,7 @@
 | Review date | `2026-07-16` |
 | Reviewer roles | Architecture / Security / Engineering-Data / API / QA / Governance |
 | Verdict | Ready for Change Approval |
+| Approved content revision | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
 
 ## Sources Reviewed
 
