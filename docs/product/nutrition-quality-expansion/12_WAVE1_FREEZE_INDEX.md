@@ -13,7 +13,7 @@
 | Document ID | `W1-FREEZE-INDEX-12` |
 | Document title | Wave 1 Freeze Index |
 | Version | Pending |
-| Status | `Change Control in Progress — Implementation Paused` |
+| Status | `Change Control Approved — Awaiting Package Merge` |
 | Created date | 2026-07-15 |
 | Last updated date | 2026-07-16 |
 | Implemented Baseline Code Commit | `d6caf0a124e5ffec63cabd1972ed742b3e7fc8bd` |
@@ -22,7 +22,7 @@
 | Final Freeze Package Commit | `47265cd42138a9daca762a2c7cf6175065d5328b` |
 | Current Change Package Commit | Pending |
 | Wave | Wave 1 - Nutrition & Data Foundation |
-| Readiness verdict | `Paused pending W1-CD-01 re-freeze` |
+| Readiness verdict | `Ready to Re-Freeze` |
 | Critical issue count | 0 |
 | High unresolved issue count | 0 |
 | Product Owner approval | Approved through artifact authorities |
@@ -367,8 +367,8 @@ If any condition becomes false after freeze, change control under `PD-001` appli
 ## 8. Current Declaration
 
 ```text
-Current verdict: Paused pending W1-CD-01 re-freeze
-Current freeze status: Change Control in Progress — Implementation Paused
+Current verdict: Ready to Re-Freeze
+Current freeze status: Change Control Approved — Awaiting Package Merge
 Final Freeze Package Commit: 47265cd42138a9daca762a2c7cf6175065d5328b
 Current Change Package Commit: Pending
 Wave 1 implementation authorization: Paused pending W1-CD-01 re-freeze
