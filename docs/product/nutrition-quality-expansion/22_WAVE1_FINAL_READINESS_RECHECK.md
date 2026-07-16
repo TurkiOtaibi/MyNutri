@@ -7,8 +7,8 @@
 | Report ID | `W1-READY-22` |
 | Date | `2026-07-16` |
 | Branch | `docs/wave1-freeze-package-artifacts-14-21` |
-| Final package commit | Pending until package merge |
-| Product implementation authorization | `No` until final pinning PR merges |
+| Final package commit | `47265cd42138a9daca762a2c7cf6175065d5328b` |
+| Product implementation authorization | `Yes — Wave 1 only`, effective when this pinning change merges |
 
 ## Recheck Scope
 
@@ -53,4 +53,4 @@ Traceability gaps: 0
 Verdict: Ready to Build
 ```
 
-This is a package-content readiness verdict. Product implementation remains unauthorized until the package PR and final pinning PR merge and the Freeze Index records `Frozen — Ready to Build`.
+This is the final package-content readiness verdict. Package PR #4 merged at `47265cd42138a9daca762a2c7cf6175065d5328b`. When the final pinning PR merges, the Freeze Index records `Frozen — Ready to Build` and authorizes Wave 1 implementation only. Later waves remain unauthorized.
