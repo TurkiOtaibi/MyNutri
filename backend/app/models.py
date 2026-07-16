@@ -15,6 +15,8 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Numeric,
+    SmallInteger,
+    String,
     Text,
     UniqueConstraint,
     text as sa_text,
@@ -135,6 +137,18 @@ class ContributionDataStatus(str, Enum):
     estimated = "estimated"
 
 
+class TargetPlanStatus(str, Enum):
+    active = "active"
+    scheduled = "scheduled"
+    closed = "closed"
+    superseded_before_effective = "superseded_before_effective"
+
+
+class IdempotencyState(str, Enum):
+    in_progress = "in_progress"
+    completed = "completed"
+
+
 class PrincipalStatus(str, Enum):
     active = "active"
     disabled = "disabled"
@@ -184,10 +198,158 @@ class Profile(SQLModel, table=True):
     goal: Goal = Field(sa_column=Column(SAEnum(Goal, name="goal_enum"), nullable=False))
     protein_per_kg: float = Field(default=1.2, sa_column=Column(Numeric(4, 2), nullable=False))
     fat_pct: float = Field(default=0.25, sa_column=Column(Numeric(4, 2), nullable=False))
+    cut_intensity: float = Field(
+        default=0.2,
+        sa_column=Column(Numeric(4, 3), nullable=False, server_default="0.200"),
+    )
     updated_at: datetime = Field(
         default_factory=utcnow,
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )
+
+
+class LegacyTargetTransitionSnapshot(SQLModel, table=True):
+    __tablename__ = "legacy_target_transition_snapshots"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["profile_id", "principal_id"],
+            ["profile.id", "profile.principal_id"],
+            name="fk_legacy_transition_profile_owner",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("profile_id", name="uq_legacy_transition_profile"),
+        UniqueConstraint("id", "principal_id", name="uq_legacy_transition_id_principal"),
+        UniqueConstraint("principal_id", "transition_date", name="uq_legacy_transition_date"),
+        CheckConstraint("calendar_timezone = 'Asia/Riyadh'", name="ck_legacy_transition_timezone"),
+        CheckConstraint(
+            "target_document_schema_version = 1", name="ck_legacy_transition_schema_version"
+        ),
+        Index("ix_legacy_transition_principal_date", "principal_id", "transition_date"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    profile_id: uuid.UUID = Field(nullable=False)
+    transition_date: date = Field(nullable=False)
+    calendar_timezone: str = Field(sa_column=Column(String(64), nullable=False))
+    target_document_schema_version: int = Field(sa_column=Column(SmallInteger(), nullable=False))
+    legacy_target_document: dict[str, Any] = Field(
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+
+
+class TargetPlan(SQLModel, table=True):
+    __tablename__ = "target_plan"
+    __table_args__ = (
+        UniqueConstraint("id", "principal_id", name="uq_target_plan_id_principal"),
+        UniqueConstraint(
+            "principal_id", "activation_idempotency_key", name="uq_target_plan_principal_key"
+        ),
+        ForeignKeyConstraint(
+            ["profile_id", "principal_id"],
+            ["profile.id", "profile.principal_id"],
+            name="fk_target_plan_profile_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["predecessor_plan_id", "principal_id"],
+            ["target_plan.id", "target_plan.principal_id"],
+            name="fk_target_plan_predecessor_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["superseded_by_plan_id", "principal_id"],
+            ["target_plan.id", "target_plan.principal_id"],
+            name="fk_target_plan_superseding_owner",
+            ondelete="RESTRICT",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        CheckConstraint(
+            "status IN ('active','scheduled','closed','superseded_before_effective')",
+            name="ck_target_plan_status",
+        ),
+        CheckConstraint("effective_to IS NULL OR effective_to > effective_from", name="ck_target_plan_period"),
+        CheckConstraint("calendar_timezone = 'Asia/Riyadh'", name="ck_target_plan_timezone"),
+        CheckConstraint("calculation_document_schema_version > 0", name="ck_target_plan_document_version"),
+        CheckConstraint(
+            "(status IN ('active','closed') AND activated_at IS NOT NULL) OR "
+            "(status IN ('scheduled','superseded_before_effective') AND activated_at IS NULL)",
+            name="ck_target_plan_activation_state",
+        ),
+        CheckConstraint(
+            "status <> 'superseded_before_effective' OR "
+            "(superseded_at IS NOT NULL AND superseded_by_plan_id IS NOT NULL)",
+            name="ck_target_plan_supersession_state",
+        ),
+        Index(
+            "uq_target_plan_one_active", "principal_id", unique=True,
+            postgresql_where=sa_text("status = 'active' AND effective_to IS NULL"),
+            sqlite_where=sa_text("status = 'active' AND effective_to IS NULL"),
+        ),
+        Index(
+            "uq_target_plan_one_scheduled", "principal_id", unique=True,
+            postgresql_where=sa_text("status = 'scheduled'"),
+            sqlite_where=sa_text("status = 'scheduled'"),
+        ),
+        Index("ix_target_plan_principal_effective", "principal_id", "effective_from"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    profile_id: uuid.UUID = Field(nullable=False)
+    status: TargetPlanStatus = Field(sa_column=Column(Text(), nullable=False))
+    effective_from: date = Field(nullable=False)
+    effective_to: date | None = Field(default=None)
+    calendar_timezone: str = Field(sa_column=Column(String(64), nullable=False))
+    predecessor_plan_id: uuid.UUID | None = Field(default=None)
+    superseded_by_plan_id: uuid.UUID | None = Field(default=None)
+    activation_idempotency_key: str = Field(sa_column=Column(String(128), nullable=False))
+    calculation_document: dict[str, Any] = Field(
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    )
+    calculation_document_schema_version: int = Field(sa_column=Column(SmallInteger(), nullable=False))
+    calculation_engine_version: str = Field(sa_column=Column(String(32), nullable=False))
+    nutrition_registry_version: str = Field(sa_column=Column(String(32), nullable=False))
+    created_at: datetime = Field(default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False))
+    activated_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    closed_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    superseded_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+
+
+class IdempotencyRecord(SQLModel, table=True):
+    __tablename__ = "idempotency_record"
+    __table_args__ = (
+        UniqueConstraint("principal_id", "operation", "idempotency_key", name="uq_idempotency_scope"),
+        CheckConstraint("state IN ('in_progress','completed')", name="ck_idempotency_state"),
+        CheckConstraint(
+            "(state='in_progress' AND response_status IS NULL AND response_document IS NULL AND completed_at IS NULL) OR "
+            "(state='completed' AND response_status IS NOT NULL AND response_document IS NOT NULL AND completed_at IS NOT NULL)",
+            name="ck_idempotency_completion",
+        ),
+        Index("ix_idempotency_expiry", "expires_at"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    principal_id: uuid.UUID = Field(sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False))
+    operation: str = Field(sa_column=Column(String(64), nullable=False))
+    idempotency_key: str = Field(sa_column=Column(String(128), nullable=False))
+    request_hash: str = Field(sa_column=Column(String(64), nullable=False))
+    state: IdempotencyState = Field(sa_column=Column(Text(), nullable=False))
+    response_status: int | None = Field(default=None, sa_column=Column(SmallInteger()))
+    response_document: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON().with_variant(JSONB, "postgresql")))
+    resource_type: str | None = Field(default=None, sa_column=Column(String(64)))
+    resource_id: uuid.UUID | None = Field(default=None)
+    created_at: datetime = Field(default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False))
+    completed_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
 
 
 class Food(SQLModel, table=True):

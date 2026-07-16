@@ -8,12 +8,15 @@ import { API_TOKEN, API_URL } from "../foods/helpers";
 
 const output = resolve("..", "docs", "ui-ux", "screenshots", "profile-targets-redesign");
 const headers = { Authorization: `Bearer ${API_TOKEN}` };
-const profileApiPattern = /https?:\/\/[^/]+:8000\/profile$/;
+const escapedApiUrl = API_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const profileApiPattern = new RegExp(`^${escapedApiUrl}/profile$`);
+const targetPlanApiPattern = new RegExp(`^${escapedApiUrl}/target-plans/`);
 
 function inputFrom(profile: ProfileResponse): ProfileInput {
   return {
     sex: profile.sex, birth_date: profile.birth_date, height_cm: profile.height_cm, weight_kg: profile.weight_kg,
-    activity_level: profile.activity_level, goal: profile.goal, protein_per_kg: profile.protein_per_kg, fat_pct: profile.fat_pct
+    activity_level: profile.activity_level, goal: profile.goal, protein_per_kg: profile.protein_per_kg, fat_pct: profile.fat_pct,
+    selected_cut_intensity: profile.selected_cut_intensity
   };
 }
 
@@ -51,29 +54,31 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
     await page.getByRole("region", { name: "الأهداف المتوقعة بعد الحفظ" }).screenshot({ path: resolve(output, "14-expected-target-preview-390.png") });
 
     await page.getByLabel("الطول").fill("0");
-    await page.getByRole("button", { name: "حفظ التغييرات" }).click();
+    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
     await page.screenshot({ path: resolve(output, "09-validation-error-390.png") });
     await page.getByLabel("الطول").fill(String(original.height_cm));
 
-    await page.route(profileApiPattern, async (route) => {
-      if (route.request().method() !== "PUT") return route.continue();
+    await page.route(targetPlanApiPattern, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
       const response = await route.fetch();
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 900));
       return route.fulfill({ response });
     });
-    await page.getByRole("button", { name: "حفظ التغييرات" }).click();
-    await expect(page.getByText("جارٍ حفظ التغييرات…")).toBeVisible();
+    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+    await expect(page.getByText("جارٍ تفعيل الخطة…")).toBeVisible();
     await page.screenshot({ path: resolve(output, "10-saving-state-390.png") });
     await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
     await page.screenshot({ path: resolve(output, "12-successful-saved-state-390.png") });
-    await page.unroute(profileApiPattern);
+    await page.unroute(targetPlanApiPattern);
 
     await page.getByLabel("الوزن").fill(String(original.weight_kg + 2));
-    await page.route(profileApiPattern, (route) => route.request().method() === "PUT" ? route.abort("failed") : route.continue());
-    await page.getByRole("button", { name: "حفظ التغييرات" }).click();
+    await page.route(targetPlanApiPattern, (route) => route.request().method() === "POST" ? route.abort("failed") : route.continue());
+    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
     await expect(page.getByText("تعذر حفظ التغييرات")).toBeVisible();
     await page.screenshot({ path: resolve(output, "11-save-failure-retry-390.png") });
-    await page.unroute(profileApiPattern);
+    await page.unroute(targetPlanApiPattern);
 
     await page.getByRole("region", { name: "الأهداف اليومية" }).screenshot({ path: resolve(output, "13-unified-current-targets-390.png") });
     await page.getByRole("button", { name: "كيف حُسبت أهدافي؟" }).click();

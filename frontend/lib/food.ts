@@ -200,9 +200,17 @@ const optionalMax: Partial<Record<keyof FoodFormValues, number>> = {
 };
 
 export function foodToForm(food: FoodResponse): FoodFormValues {
+  const {
+    id: _id,
+    net_carbs_g: _netCarbs,
+    created_at: _createdAt,
+    updated_at: _updatedAt,
+    legacy_nutrition: _legacyNutrition,
+    ...editable
+  } = food;
   return {
     ...emptyFoodForm,
-    ...food,
+    ...editable,
     nutrition_source: {
       type: food.nutrition_source.type,
       name: food.nutrition_source.name,

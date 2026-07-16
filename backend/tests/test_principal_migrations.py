@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 from pathlib import Path
 from threading import Barrier
 from uuid import UUID, uuid4
@@ -13,7 +14,13 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlmodel import Session
+
+from app.core.auth import PrincipalContext
+from app.schemas import ProfilePreview, TargetPlanActivationRequest
+from app.services.profile import to_target_response
+from app.services.target_plans import TargetPlanError, activate_plan
 
 BASELINE_HASHES = {
     "0001_initial.py": "8a4a122abcdc3da143a472c4317a5789aa8ba96828cc0ad168ea8b776ed138e4",
@@ -134,7 +141,7 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "0008_food_groups_expand"
+            "0010_target_plan_expand"
         )
     assert "principal" in inspector.get_table_names()
     for table in ("profile", "food", "diary_entry"):
@@ -153,6 +160,82 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     assert {"food_group_contribution", "food_analytical_trait"}.issubset(
         inspector.get_table_names()
     )
+    assert {
+        "legacy_target_transition_snapshots", "target_plan", "idempotency_record"
+    }.issubset(inspector.get_table_names())
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_transition_snapshot_constraints_and_immutability() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "0004_principal_expand")
+    engine = create_engine(url)
+    profile_id = uuid4()
+    snapshot_id = uuid4()
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO principal (id,status,created_at,updated_at) "
+                "VALUES (:id,'active',now(),now())"
+            ),
+            {"id": DEPLOYMENT_PRINCIPAL},
+        )
+    _run_alembic(url, "upgrade", "head")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO profile
+                  (id,principal_id,sex,birth_date,height_cm,weight_kg,activity_level,goal,
+                   protein_per_kg,fat_pct,cut_intensity,updated_at)
+                VALUES
+                  (:id,:principal,'male','1990-01-01',175,80,'moderate','maintain',
+                   1.2,0.25,0.2,now())
+                """
+            ),
+            {"id": profile_id, "principal": DEPLOYMENT_PRINCIPAL},
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO legacy_target_transition_snapshots
+                  (id,principal_id,profile_id,transition_date,calendar_timezone,
+                   target_document_schema_version,legacy_target_document,created_at)
+                VALUES
+                  (:id,:principal,:profile,'2026-07-16','Asia/Riyadh',1,
+                   CAST(:document AS jsonb),now())
+                """
+            ),
+            {
+                "id": snapshot_id,
+                "principal": DEPLOYMENT_PRINCIPAL,
+                "profile": profile_id,
+                "document": json.dumps(
+                    {
+                        "schema_version": 1,
+                        "source": "legacy_unversioned_transition",
+                        "captured_profile_inputs": {},
+                        "resolved_targets": {},
+                    }
+                ),
+            },
+        )
+    with engine.begin() as connection:
+        with pytest.raises(DBAPIError, match="immutable"):
+            connection.execute(
+                text("UPDATE legacy_target_transition_snapshots SET transition_date='2026-07-17' WHERE id=:id"),
+                {"id": snapshot_id},
+            )
+    with engine.begin() as connection:
+        assert connection.execute(
+            text("SELECT transition_date FROM legacy_target_transition_snapshots WHERE id=:id"),
+            {"id": snapshot_id},
+        ).scalar_one() == date(2026, 7, 16)
+    downgrade = _run_alembic(url, "downgrade", "0008_food_groups_expand", check=False)
+    assert downgrade.returncode != 0
+    assert "Lossy" in downgrade.stderr
     engine.dispose()
 
 
@@ -376,4 +459,64 @@ def test_food_group_total_is_enforced_under_concurrent_transactions() -> None:
         )
     with engine.begin() as connection:
         connection.execute(text("DELETE FROM food WHERE id = :food"), {"food": food_id})
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_concurrent_first_legacy_activations_create_one_snapshot_and_plan() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "0004_principal_expand")
+    engine = create_engine(url)
+    profile_id = uuid4()
+    with engine.begin() as connection:
+        connection.execute(
+            text("INSERT INTO principal (id,status,created_at,updated_at) VALUES (:id,'active',now(),now())"),
+            {"id": DEPLOYMENT_PRINCIPAL},
+        )
+    _run_alembic(url, "upgrade", "head")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO profile
+                  (id,principal_id,sex,birth_date,height_cm,weight_kg,activity_level,goal,
+                   protein_per_kg,fat_pct,cut_intensity,updated_at)
+                VALUES
+                  (:id,:principal,'male','1990-01-01',175,80,'moderate','maintain',
+                   1.2,0.25,0.2,now())
+                """
+            ),
+            {"id": profile_id, "principal": DEPLOYMENT_PRINCIPAL},
+        )
+    draft = ProfilePreview(
+        sex="male", birth_date=date(1990, 1, 1), height_cm=175, weight_kg=82,
+        activity_level="moderate", goal="maintain", protein_per_kg=1.2, fat_pct=0.25,
+        selected_cut_intensity=0.2,
+    )
+    preview = to_target_response(draft)
+    request = TargetPlanActivationRequest(
+        **draft.model_dump(), confirmed=True, expected_preview_hash=preview.preview_hash
+    )
+    barrier = Barrier(2)
+
+    def activate(key: str) -> str:
+        with Session(engine) as session:
+            barrier.wait(timeout=10)
+            try:
+                activate_plan(
+                    session, PrincipalContext(principal_id=DEPLOYMENT_PRINCIPAL), request, key
+                )
+                return "created"
+            except TargetPlanError as error:
+                return error.code
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(activate, ("race-a", "race-b")))
+    assert results.count("created") == 1
+    assert set(results) == {"created", "TARGET_PLAN_PENDING_EXISTS"}
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM legacy_target_transition_snapshots")).scalar_one() == 1
+        assert connection.execute(text("SELECT count(*) FROM target_plan")).scalar_one() == 1
+        assert connection.execute(text("SELECT count(*) FROM idempotency_record")).scalar_one() == 1
     engine.dispose()

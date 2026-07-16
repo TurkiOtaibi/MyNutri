@@ -1,5 +1,6 @@
 from functools import lru_cache
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,6 +17,7 @@ class Settings(BaseSettings):
     previous_single_user_tokens: list[str] = Field(default_factory=list)
     deployment_principal_id: UUID | None = None
     principal_token_map: dict[str, UUID] = Field(default_factory=dict)
+    calendar_timezone: str = "Asia/Riyadh"
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")
 
@@ -34,6 +36,15 @@ class Settings(BaseSettings):
 
 
 def validate_runtime_configuration(settings: Settings) -> None:
+    if not settings.calendar_timezone:
+        raise RuntimeError("CALENDAR_TIMEZONE is required.")
+    try:
+        ZoneInfo(settings.calendar_timezone)
+    except ZoneInfoNotFoundError as error:
+        raise RuntimeError("CALENDAR_TIMEZONE must be a recognized IANA timezone.") from error
+    if settings.calendar_timezone != "Asia/Riyadh":
+        raise RuntimeError("Wave 1 requires CALENDAR_TIMEZONE=Asia/Riyadh.")
+
     if settings.environment != "production":
         return
 

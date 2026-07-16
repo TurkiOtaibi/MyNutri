@@ -9,6 +9,7 @@ from app.db.session import get_session
 from app.nutrition_rules.calculation import CalculationError
 from app.schemas import ProfilePreview, ProfileResponse, ProfileUpsert, TargetResponse
 from app.services.profile import get_profile, preview_targets, to_profile_response, upsert_profile
+from app.core.calendar import current_diary_date, next_diary_date
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -23,7 +24,16 @@ def read_profile(
         from app.services.errors import resource_not_found
 
         raise resource_not_found()
-    return to_profile_response(profile)
+    response = to_profile_response(profile)
+    from app.services.target_plans import pending_plan, resolve_targets
+
+    source = resolve_targets(session, principal, current_diary_date())
+    if source.targets is not None:
+        response.targets = source.targets
+        response.target_provenance = source.target_provenance
+        response.effective_plan = source.plan
+    response.pending_plan = pending_plan(session, principal)
+    return response
 
 
 @router.put("", response_model=ProfileResponse)
@@ -40,10 +50,11 @@ def save_profile(
 def preview_profile(
     payload: ProfilePreview,
     principal: PrincipalContext = Depends(get_principal_context),
+    session: Session = Depends(get_session),
 ) -> TargetResponse | JSONResponse:
-    del principal
     try:
-        return preview_targets(payload)
+        effective_date = current_diary_date() if get_profile(session, principal) is None else next_diary_date()
+        return preview_targets(payload, effective_date)
     except CalculationError as error:
         return JSONResponse(
             status_code=422,
