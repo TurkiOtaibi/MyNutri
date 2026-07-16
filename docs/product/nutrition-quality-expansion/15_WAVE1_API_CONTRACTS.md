@@ -13,7 +13,7 @@
 | Review evidence | `15A_WAVE1_API_CONTRACTS_REVIEW.md` |
 | Critical / High findings | `0 / 0` |
 | Product decisions remaining | `0` |
-| Pinned revision | Pending |
+| Pinned revision | `400366b39abb73bb2e2d2ba82c79c1cd524d6e67` |
 | Implementation authorization | `No` |
 
 ## 1. Common Boundary

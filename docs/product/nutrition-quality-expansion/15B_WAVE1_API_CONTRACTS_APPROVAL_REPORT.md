@@ -10,7 +10,7 @@
 | Review | `15A_WAVE1_API_CONTRACTS_REVIEW.md` |
 | Critical / High | `0 / 0` |
 | Contradictions / Product decisions | `0 / 0` |
-| Pinned revision | Pending until approval commit |
+| Pinned revision | `400366b39abb73bb2e2d2ba82c79c1cd524d6e67` |
 
 The additive contract is approved. It preserves existing routes and top-level compatibility fields while freezing ownership, Registry, target lifecycle, Food, Diary, snapshot, aggregation, error, null, caching, and deprecation semantics. Product implementation remains unauthorized.
 
