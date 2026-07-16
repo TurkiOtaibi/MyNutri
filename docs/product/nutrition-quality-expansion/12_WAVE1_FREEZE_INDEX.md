@@ -13,15 +13,15 @@
 | Document ID | `W1-FREEZE-INDEX-12` |
 | Document title | Wave 1 Freeze Index |
 | Version | Pending |
-| Status | `Draft — Awaiting Package Merge` |
+| Status | `Frozen — Ready to Build` |
 | Created date | 2026-07-15 |
 | Last updated date | 2026-07-16 |
 | Implemented Baseline Code Commit | `d6caf0a124e5ffec63cabd1972ed742b3e7fc8bd` |
 | Governing Register Commit | `255b8339e66e7dd6da0cb48ad7d93c2f0243e66f` |
 | Governance Decision Direction Commit | `b9869dfe0a1dc26190aaa6478f2114da82a0793e` |
-| Final Freeze Package Commit | Pending |
+| Final Freeze Package Commit | `47265cd42138a9daca762a2c7cf6175065d5328b` |
 | Wave | Wave 1 - Nutrition & Data Foundation |
-| Readiness verdict | `Ready to Build` pending package merge and final pin |
+| Readiness verdict | `Ready to Build` |
 | Critical issue count | 0 |
 | High unresolved issue count | 0 |
 | Product Owner approval | Approved through artifact authorities |
@@ -108,13 +108,16 @@ Review evidence: docs/product/nutrition-quality-expansion/13A_WAVE1_ARCHITECTURE
 Critical review findings: 0
 High review findings: 0
 Pinned commit/revision: c7c48746715d24238acd70cd4eea137bf0f87cfd
-Artifact 13 frozen: No
-Artifact 14 authoring: Yes, documentation drafting only
-Implementation authorization: No
-Artifacts 14 through 21: Not Created
+Artifact 13 frozen: Yes, included in Final Freeze Package Commit
+Artifact 14 authoring: Complete
+Implementation authorization: Yes — Wave 1 only
+Later-wave implementation authorization: No
+Artifacts 14 through 21: Approved, pinned, and included in Final Freeze Package Commit
 ```
 
-## 5. Current Issue Tracking
+## 5. Historical Issue and Implementation Tracking
+
+C01, C02, and H01-H11 have approved directions and complete freeze contracts. They are no longer unresolved Critical/High readiness findings. Their product implementation and executable verification remain future Wave 1 delivery work governed by Artifacts 13-21.
 
 ### Critical issues
 
@@ -271,9 +274,9 @@ Direct dependencies: H05, H08, and H10.
 Overall status: Open.
 ```
 
-### High unresolved issues
+### Historical High issues
 
-The following statuses are copied from the authoritative ordering in documents 08 and 09. This index does not resolve or reclassify them.
+The following rows preserve the authoritative ordering from documents 08 and 09. Each freeze-contract blocker is resolved; implementation remains pending and is not evidence of a current High readiness finding.
 
 | ID | Exact title | Current status |
 |---|---|---|
@@ -357,7 +360,9 @@ If any condition becomes false after freeze, change control under `PD-001` appli
 ## 8. Current Declaration
 
 ```text
-Current verdict: Ready to Build pending package merge and final pin
-Current freeze status: Draft — Awaiting Package Merge
-Implementation authorization: No
+Current verdict: Ready to Build
+Current freeze status: Frozen — Ready to Build
+Final Freeze Package Commit: 47265cd42138a9daca762a2c7cf6175065d5328b
+Wave 1 implementation authorization: Yes — Wave 1 only
+Later-wave implementation authorization: No
 ```
