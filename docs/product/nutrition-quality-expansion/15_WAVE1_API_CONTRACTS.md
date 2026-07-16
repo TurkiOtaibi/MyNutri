@@ -5,15 +5,16 @@
 | Field | Value |
 |---|---|
 | Artifact ID | `W1-API-15` |
-| Version | `1.0` |
+| Version | `1.1` |
 | Status | `Approved — API and Architecture` |
 | Owner | API / Architecture |
 | Approver | API / Architecture |
 | Approval date | `2026-07-16` |
 | Review evidence | `15A_WAVE1_API_CONTRACTS_REVIEW.md` |
+| Change review evidence | `W1-CD-01A_LEGACY_TARGET_TRANSITION_IMPACT_REVIEW.md` |
 | Critical / High findings | `0 / 0` |
 | Product decisions remaining | `0` |
-| Pinned revision | `400366b39abb73bb2e2d2ba82c79c1cd524d6e67` |
+| Pinned revision | Pending |
 | Implementation authorization | `No` |
 
 ## 1. Common Boundary
@@ -21,6 +22,27 @@
 All user-data routes require bearer authentication. A valid credential resolves an immutable Backend `PrincipalContext`; request bodies never accept authoritative `principal_id`, `owner_id`, or `user_id`. Missing/invalid credentials return `401`. A valid Principal requesting a missing or cross-owner identifier receives the same `404` body. Normal operations never use Service Role.
 
 Dates are Gregorian `YYYY-MM-DD`; Backend `Asia/Riyadh` determines today/next date. Decimal values are JSON numbers serialized to the display precision specified by the Registry, while persisted results retain Artifact 14 precision.
+
+Version 1.1 adds only W1-CD-01 target-source resolution. Existing requests, provenance values, and response compatibility remain unchanged.
+
+## 5A. Legacy Transition API Contract
+
+For the first activation of an existing legacy Profile, `POST /target-plans/activate` performs this ordered atomic transaction: lock Principal/Profile; resolve and validate idempotency; calculate the exact pre-update legacy target; insert the immutable transition snapshot if absent; update Profile preferences; create the next-date Target Plan; complete idempotency; commit. Any failure rolls back every step.
+
+Same-key/same-payload replay returns the original response and never recreates the snapshot. Same-key/different-payload returns `409 IDEMPOTENCY_KEY_REUSED`. A concurrent losing activation returns the stable applicable `409` conflict without leaking another Principal's identifiers. Same-day pending replacement reuses the existing snapshot and rejects any attempt to replace its document.
+
+Target-source responses retain `target_provenance` values `versioned_plan`, `legacy_unversioned`, and `no_target_source`, and add:
+
+```json
+{"target_source_detail":"effective_target_plan|legacy_transition_snapshot|no_preserved_target_source"}
+```
+
+- Transition date after activation: `target_provenance=legacy_unversioned`, detail `legacy_transition_snapshot`, normalized captured targets returned.
+- Tomorrow/later effective date: `target_provenance=versioned_plan`, detail `effective_target_plan`.
+- Earlier date without preserved source: `target_provenance=no_target_source`, detail `no_preserved_target_source`, `targets=null`, and no target evaluation.
+- Transition-date Diary rows remain `target_plan_id=null`; the detail describes day-level target resolution, not row rebinding.
+
+`GET /profile` and `GET /target-plans/current?date=` use the same precedence. Raw `legacy_target_document`, owner IDs, and snapshot IDs are not public. Cross-owner and missing resources remain the same non-enumerating `404 RESOURCE_NOT_FOUND`. No endpoint updates or deletes a transition snapshot.
 
 ### Error envelope
 

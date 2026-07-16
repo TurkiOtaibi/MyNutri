@@ -5,14 +5,15 @@
 | Field | Value |
 |---|---|
 | Artifact ID | `W1-VERIFY-20` |
-| Version | `1.0` |
+| Version | `1.1` |
 | Status | `Approved — QA, Security, and Engineering` |
 | Owner | QA / Security / Engineering |
 | Approver | QA / Security / Engineering |
 | Approval date | `2026-07-16` |
 | Review | `20A_WAVE1_VERIFICATION_REGRESSION_REVIEW.md` |
+| Change review | `W1-CD-01A_LEGACY_TARGET_TRANSITION_IMPACT_REVIEW.md` |
 | Critical / High / Product decisions | `0 / 0 / 0` |
-| Pinned revision | `02d1abed01aeb5681b3f84245b692516235da60b` |
+| Pinned revision | Pending |
 | Implementation authorization | `No` |
 
 ## 1. Gate Policy
@@ -20,6 +21,19 @@
 No Wave 1 implementation merges with any Critical/High defect, failed required check, unexplained traceability gap, migration mismatch, cross-Principal access, historical mutation, or false null/zero result. Evidence must belong to the exact final head. Existing meaningful regression tests cannot be weakened/deleted. This plan defines future implementation gates; current product tests are not re-certified by this documentation workflow.
 
 ## 2. Test Layers
+
+### W1-CD-01 mandatory gate
+
+- PostgreSQL fresh/populated migration proves the new table starts empty; constraints, owner-consistent FK, one-row/Profile uniqueness, exact Riyadh timezone check, JSON schema validation, and update/delete rejection execute.
+- Two-Principal API/service tests prove resolution and errors cannot expose another owner's snapshot or target values.
+- Transaction fault injection at each write boundary proves snapshot, Profile, plan/lifecycle, and idempotency completion roll back together.
+- Parallel PostgreSQL activation and replacement tests prove one snapshot, one pending plan, immutable snapshot reuse, and no overlap.
+- Golden `W1-GC-036..046` pass exactly, including transition-date target equality, immediate Profile update, tomorrow's plan, prior-date unavailable, new-Profile no-snapshot, replay/conflict, and Riyadh midnight.
+- Historical resolution tests fail if mutable current Profile is queried as fallback after transition.
+- Reader-before-writer deployment and mixed old/new rows pass before writer enablement. Rollback below the snapshot-aware compatibility floor is rejected after writes; no-write downgrade/re-upgrade is rehearsed losslessly.
+- API regression preserves provenance enum and returns only normalized additive source detail. UI regression proves existing current/scheduled/legacy states remain truthful with no new feature.
+
+This gate is mandatory for Stage 4 merge. A skipped PostgreSQL concurrency, atomicity, or rollback-floor test is a failure, not a pass.
 
 ### Backend unit and golden
 

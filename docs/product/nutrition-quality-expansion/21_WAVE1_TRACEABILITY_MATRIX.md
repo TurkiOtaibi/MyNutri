@@ -5,14 +5,15 @@
 | Field | Value |
 |---|---|
 | Artifact ID | `W1-TRACE-21` |
-| Version | `1.0` |
+| Version | `1.1` |
 | Status | `Approved — BA, QA, and Governance` |
 | Owner | BA / QA / Governance |
 | Approver | BA / QA / Governance |
 | Approval date | `2026-07-16` |
 | Review | `21A_WAVE1_TRACEABILITY_REVIEW.md` |
+| Change review | `W1-CD-01A_LEGACY_TARGET_TRANSITION_IMPACT_REVIEW.md` |
 | Critical / High / Product decisions / gaps | `0 / 0 / 0 / 0` |
-| Pinned revision | `da507c16e1d233238885e631d4daeed5d635aca5` |
+| Pinned revision | Pending |
 | Implementation authorization | `No` |
 
 ## 1. Artifact Version and Pin Register
@@ -20,14 +21,29 @@
 | Artifact | Version | Approval | Pinned revision |
 |---|---:|---|---|
 | `W1-ADR-13` | 1.0 | Architecture and Security | `c7c48746715d24238acd70cd4eea137bf0f87cfd` |
-| `W1-DATA-14` | 1.0 | Engineering and Data | `afa3a9bb220a7798920d7edc1b0949da15f2d7fe` |
-| `W1-API-15` | 1.0 | API and Architecture | `400366b39abb73bb2e2d2ba82c79c1cd524d6e67` |
-| `W1-MIG-16` | 1.0 | Engineering, Data, Operations | `ead5de21fe1153126f6c19c9f7aeba6a732ace89` |
-| `W1-BAQA-17` | 1.0 | Product, BA, UX | `ffde6f597750b18e85d861c36d3dfad105d36f0e` |
-| `W1-GOLDEN-18` | 1.0 | Engineering and QA | `e714b4c374166a27a8aa1b40ab4b851ce0b92a9d` |
+| `W1-DATA-14` | 1.1 | Engineering and Data | Pending |
+| `W1-API-15` | 1.1 | API and Architecture | Pending |
+| `W1-MIG-16` | 1.1 | Engineering, Data, Operations | Pending |
+| `W1-BAQA-17` | 1.1 | Product, BA, UX | Pending |
+| `W1-GOLDEN-18` | 1.1 | Engineering and QA | Pending |
 | `W1-UI-19` | 1.0 | BA, UX, Accessibility | `6a392d11c747c784e37f42c9fd6bfb15cc010d5a` |
-| `W1-VERIFY-20` | 1.0 | QA, Security, Engineering | `02d1abed01aeb5681b3f84245b692516235da60b` |
-| `W1-TRACE-21` | 1.0 | BA, QA, Governance | `da507c16e1d233238885e631d4daeed5d635aca5` |
+| `W1-VERIFY-20` | 1.1 | QA, Security, Engineering | Pending |
+| `W1-TRACE-21` | 1.1 | BA, QA, Governance | Pending |
+
+Version 1.1 change register: W1-CD-01 maps to H04 and ADR-005; Artifact 14 `legacy_target_transition_snapshots` and document schema; Artifact 15 activation/resolution/source detail; Artifact 16 `0009_legacy_target_transition_expand` and compatibility floor; W1-US-006 extension; golden `W1-GC-036..046`; Artifact 20 mandatory transition gate; Stage 4 model, migration, service, route, schema, Profile/Diary integration, PostgreSQL, API, security, and UI tests.
+
+| Change requirement | Data/API/Migration | Story/Golden | Verification | Implementation stage |
+|---|---|---|---|---|
+| preserve pre-update legacy target | 14 snapshot JSON; 15 activation | US-006; GC-036/037 | equality + immutable document | Stage 4 |
+| immediate Profile update/tomorrow plan | 15 transaction; 16 writer gate | GC-036/038 | atomicity | Stage 4 |
+| prior date unavailable/no Profile fallback | 15 precedence | GC-039 | historical fallback negative test | Stage 4/6 |
+| new Profile no snapshot | 15 activation branch | GC-040 | row-count/API test | Stage 4 |
+| replacement reuses snapshot | 14 uniqueness; 15 replace | GC-041 | JSON hash + concurrency | Stage 4 |
+| owner isolation and one snapshot | owner FKs/locks | GC-042 | two-Principal/parallel PG | Stage 4 |
+| rollback and idempotency | 15/16 | GC-043/045/046 | fault/replay/conflict | Stage 4 |
+| Riyadh authority | date/timezone checks | GC-044 | boundary clocks | Stage 4 |
+
+Artifact 19 remains version 1.0: no new user-visible state, action, copy, or interaction is required. Existing current, scheduled, legacy, loading, conflict, and unavailable states cover the normalized Backend source.
 
 Pinned revision identifies the approval content commit; subsequent pin metadata commits do not change the approved substantive contract.
 
@@ -132,11 +148,11 @@ Each stage is independently reviewable; no broad rewrite or later-wave mixing.
 ## 8. Readiness Checklist
 
 - Artifacts 13-20 approved and pinned: Yes.
-- Artifact 21 review pending at draft stage.
+- W1-CD-01 impact review passed; Artifact 21 v1.1 change approval is complete and pinning is pending.
 - Critical/High findings in approved artifacts: 0.
 - Product decisions remaining: 0.
 - Traceability gaps: 0.
 - Deferred scope preserved: Yes.
 - Product code changed by freeze authoring: No.
 
-Artifact 21 approval and pinning are required before final readiness recheck.
+W1-CD-01 approval commit and pinning are required before the change readiness recheck.
