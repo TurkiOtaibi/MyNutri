@@ -32,6 +32,8 @@ def _profile_payload(weight: float = 80) -> dict:
 def _food_payload(name: str = "Owner scoped food") -> dict:
     return {
         "name": name,
+        "primary_category_key": "other",
+        "food_kind": "simple",
         "nutrition_basis": "per_100g",
         "default_unit_type": "serving",
         "unit_amount": 100,
@@ -40,6 +42,7 @@ def _food_payload(name: str = "Owner scoped food") -> dict:
         "protein_g": 10,
         "carb_g": 20,
         "fat_g": 6,
+        "nutrition_source": {"type": "unknown"},
     }
 
 
@@ -112,9 +115,7 @@ def test_profile_and_food_are_isolated_between_two_principals(
     assert other_profile.status_code == 200
     assert other_profile.json()["id"] != created_profile.json()["id"]
 
-    created = principal_client.post(
-        "/foods", json=_food_payload(), headers=_headers("token-a")
-    )
+    created = principal_client.post("/foods", json=_food_payload(), headers=_headers("token-a"))
     assert created.status_code == 201
     food_id = created.json()["id"]
 
@@ -173,9 +174,7 @@ def test_cross_owner_mutations_and_diary_binding_are_non_enumerating(
     assert missing_entry.status_code == cross_entry.status_code == 404
     assert missing_entry.json() == cross_entry.json()
     assert principal_client.get("/diary", headers=_headers("token-b")).json() == []
-    week = principal_client.get(
-        "/diary/week?start=2026-01-01", headers=_headers("token-b")
-    )
+    week = principal_client.get("/diary/week?start=2026-01-01", headers=_headers("token-b"))
     assert week.status_code == 200
     assert week.json()["weekly_totals"]["calories"] == 0
 
@@ -186,9 +185,7 @@ def test_token_rotation_preserves_principal_ownership(principal_client: TestClie
     )
     food_id = created.json()["id"]
 
-    rotated_read = principal_client.get(
-        f"/foods/{food_id}", headers=_headers("rotated-token-a")
-    )
+    rotated_read = principal_client.get(f"/foods/{food_id}", headers=_headers("rotated-token-a"))
     assert rotated_read.status_code == 200
     assert rotated_read.json()["id"] == food_id
 
@@ -205,7 +202,9 @@ def test_client_authoritative_owner_fields_are_rejected(
     profile_payload = _profile_payload()
     profile_payload[field] = str(PRINCIPAL_B)
     assert (
-        principal_client.put("/profile", json=profile_payload, headers=_headers("token-a")).status_code
+        principal_client.put(
+            "/profile", json=profile_payload, headers=_headers("token-a")
+        ).status_code
         == 422
     )
 

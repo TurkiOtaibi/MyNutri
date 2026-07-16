@@ -1,12 +1,12 @@
 "use client";
 
-import { ArrowRight, Save, Trash2, X } from "lucide-react";
+import { ArrowRight, Plus, Save, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { ApiError, createFood, getFood, updateFood } from "@/lib/api";
+import { ApiError, createFood, getFood, getNutritionRegistry, updateFood } from "@/lib/api";
 import {
   defaultUnitLabels,
   defaultUnitOptions,
@@ -21,7 +21,7 @@ import {
   type FoodFormErrors,
   type FoodFormValues
 } from "@/lib/food";
-import type { FoodResponse } from "@/lib/types";
+import type { FoodResponse, NutritionRegistryResponse, NovaClassification } from "@/lib/types";
 
 import { FoodDeleteDialog } from "./FoodDeleteDialog";
 import { useFoodDelete } from "./useFoodDelete";
@@ -43,12 +43,14 @@ const optionalFields: (keyof FoodFormValues)[] = [
   "iron_mg",
   "magnesium_mg",
   "zinc_mg",
+  "selenium_mcg",
   "vitamin_d_mcg",
   "vitamin_b12_mcg",
   "vitamin_c_mg",
-  "vitamin_a_mcg",
-  "folate_mcg",
-  "vitamin_k_mcg"
+  "vitamin_a_rae_mcg",
+  "folate_dfe_mcg",
+  "vitamin_k_mcg",
+  "iodine_mcg"
 ];
 
 export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId?: string }) {
@@ -64,6 +66,11 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     queryKey: ["food", foodId],
     queryFn: () => getFood(foodId ?? ""),
     enabled: isEdit && Boolean(foodId)
+  });
+  const registryQuery = useQuery({
+    queryKey: ["nutrition-registry"],
+    queryFn: getNutritionRegistry,
+    staleTime: 300_000
   });
 
   useEffect(() => {
@@ -111,7 +118,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saveMutation.isPending) return;
+    if (saveMutation.isPending || !registryQuery.data || registryQuery.data.registry_schema_version !== 1) return;
     const nextErrors = validateFoodForm(form);
     setErrors(nextErrors);
     if (hasFoodErrors(nextErrors)) {
@@ -142,6 +149,26 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     );
   }
 
+  if (registryQuery.isPending) {
+    return <div className="state-note" role="status">جاري تحميل سجل التغذية.</div>;
+  }
+
+  if (registryQuery.isError || registryQuery.data.registry_schema_version !== 1) {
+    return (
+      <section className="section-panel">
+        <div className="state-note" role="alert">تعذر تحميل سجل التغذية المتوافق. لا يمكن حفظ بيانات طعام دون السجل المعتمد.</div>
+        <div className="actions">
+          <button className="btn" type="button" onClick={() => registryQuery.refetch()}>إعادة المحاولة</button>
+          <Link className="btn" href="/foods"><ArrowRight size={18} />رجوع</Link>
+        </div>
+      </section>
+    );
+  }
+
+  const registry = registryQuery.data;
+  const selectedSource = registry.source_types.find((item) => item.type === form.nutrition_source.type);
+  const reliabilityLabel = registry.reliability_levels.find((item) => item.key === selectedSource?.reliability)?.label_ar ?? "غير معروفة";
+
   return (
     <>
       <div className="page-head">
@@ -167,7 +194,27 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
         <FormSection title="معلومات الطعام الأساسية">
           <TextField label="اسم الطعام" value={form.name} required maxLength={foodTextMax.name} error={errors.name} onChange={(value) => update("name", value)} />
           <TextField label="العلامة التجارية" value={form.brand ?? ""} maxLength={foodTextMax.brand} error={errors.brand} onChange={(value) => update("brand", value)} />
-          <TextField label="التصنيف" value={form.category ?? ""} maxLength={foodTextMax.category} error={errors.category} onChange={(value) => update("category", value)} />
+          <TextField label="الفئة القديمة (للتوافق)" value={form.category ?? ""} maxLength={foodTextMax.category} error={errors.category} onChange={(value) => update("category", value)} />
+          <SelectField
+            label="التصنيف الأساسي"
+            value={form.primary_category_key ?? ""}
+            required
+            error={errors.primary_category_key}
+            onChange={(value) => update("primary_category_key", value)}
+            options={registry.primary_category_definitions.map((item) => [item.key, item.label_ar])}
+          />
+          <SelectField
+            label="نوع الطعام"
+            value={form.food_kind}
+            required
+            error={errors.food_kind}
+            onChange={(value) => update("food_kind", value as FoodFormValues["food_kind"])}
+            options={[
+              ["simple", "بسيط"],
+              ["composite", "مركب"],
+              ...(form.food_kind === "unknown" ? [["unknown", "قديم غير مصنف"] as [string, string]] : [])
+            ]}
+          />
         </FormSection>
 
         <FormSection title="أساس القيم الغذائية">
@@ -223,14 +270,52 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
             <NumberField label="حديد mg" value={form.iron_mg} error={errors.iron_mg} onChange={(value) => update("iron_mg", value)} />
             <NumberField label="مغنيسيوم mg" value={form.magnesium_mg} error={errors.magnesium_mg} onChange={(value) => update("magnesium_mg", value)} />
             <NumberField label="زنك mg" value={form.zinc_mg} error={errors.zinc_mg} onChange={(value) => update("zinc_mg", value)} />
+            <NumberField label="سيلينيوم mcg" value={form.selenium_mcg} error={errors.selenium_mcg} onChange={(value) => update("selenium_mcg", value)} />
             <NumberField label="فيتامين D mcg" value={form.vitamin_d_mcg} error={errors.vitamin_d_mcg} onChange={(value) => update("vitamin_d_mcg", value)} />
             <NumberField label="فيتامين B12 mcg" value={form.vitamin_b12_mcg} error={errors.vitamin_b12_mcg} onChange={(value) => update("vitamin_b12_mcg", value)} />
             <NumberField label="فيتامين C mg" value={form.vitamin_c_mg} error={errors.vitamin_c_mg} onChange={(value) => update("vitamin_c_mg", value)} />
-            <NumberField label="فيتامين A mcg" value={form.vitamin_a_mcg} error={errors.vitamin_a_mcg} onChange={(value) => update("vitamin_a_mcg", value)} />
-            <NumberField label="فولات mcg" value={form.folate_mcg} error={errors.folate_mcg} onChange={(value) => update("folate_mcg", value)} />
+            <NumberField label="فيتامين A RAE mcg" value={form.vitamin_a_rae_mcg} error={errors.vitamin_a_rae_mcg} onChange={(value) => update("vitamin_a_rae_mcg", value)} />
+            <NumberField label="فولات DFE mcg" value={form.folate_dfe_mcg} error={errors.folate_dfe_mcg} onChange={(value) => update("folate_dfe_mcg", value)} />
             <NumberField label="فيتامين K mcg" value={form.vitamin_k_mcg} error={errors.vitamin_k_mcg} onChange={(value) => update("vitamin_k_mcg", value)} />
+            <NumberField label="يود mcg" value={form.iodine_mcg} error={errors.iodine_mcg} onChange={(value) => update("iodine_mcg", value)} />
           </div>
         </details>
+
+        <FormSection title="مصدر البيانات الغذائية">
+          {errors.nutrition_source ? <div className="field-error" role="alert">{errors.nutrition_source}</div> : null}
+          <SelectField
+            label="نوع المصدر"
+            value={form.nutrition_source.type}
+            required
+            error={errors.nutrition_source}
+            onChange={(value) => setForm((current) => ({ ...current, nutrition_source: { ...current.nutrition_source, type: value as FoodFormValues["nutrition_source"]["type"] } }))}
+            options={registry.source_types.map((item) => [item.type, item.label_ar])}
+          />
+          <TextField label="اسم المصدر" value={form.nutrition_source.name ?? ""} required={form.nutrition_source.type !== "unknown"} onChange={(value) => setForm((current) => ({ ...current, nutrition_source: { ...current.nutrition_source, name: value } }))} />
+          <TextField label="مرجع المصدر" value={form.nutrition_source.reference ?? ""} onChange={(value) => setForm((current) => ({ ...current, nutrition_source: { ...current.nutrition_source, reference: value } }))} />
+          <div className="field"><span>موثوقية المصدر</span><div className="input" aria-label="موثوقية المصدر الحالية">{reliabilityLabel}</div></div>
+        </FormSection>
+
+        <FormSection title="المكونات وتصنيف NOVA">
+          {errors.ingredients ? <div className="field-error" role="alert">{errors.ingredients}</div> : null}
+          <TextAreaField label="المكونات" value={form.ingredients.text ?? ""} onChange={(value) => setForm((current) => ({ ...current, ingredients: { ...current.ingredients, text: value } }))} />
+          <SelectField
+            label="نوع مصدر المكونات"
+            value={form.ingredients.source_type ?? ""}
+            onChange={(value) => setForm((current) => ({ ...current, ingredients: { ...current.ingredients, source_type: (value || null) as FoodFormValues["ingredients"]["source_type"] } }))}
+            options={[["", "غير محدد"], ...registry.ingredient_source_definitions.map((item) => [item.type, item.label_ar] as [string, string])]}
+          />
+          <TextField label="اسم مصدر المكونات" value={form.ingredients.source_name ?? ""} onChange={(value) => setForm((current) => ({ ...current, ingredients: { ...current.ingredients, source_name: value } }))} />
+          <TextField label="مرجع مصدر المكونات" value={form.ingredients.source_reference ?? ""} onChange={(value) => setForm((current) => ({ ...current, ingredients: { ...current.ingredients, source_reference: value } }))} />
+          <SelectField
+            label="تصنيف NOVA"
+            value={form.nova?.classification ?? ""}
+            onChange={(value) => setForm((current) => ({ ...current, nova: value ? { classification: value as NovaClassification } : null }))}
+            options={[["", "غير مراجع"], ...registry.nova.classifications.map((item) => [String(item), registry.nova.labels_ar[String(item)]] as [string, string])]}
+          />
+        </FormSection>
+
+        <FoodGroupFields form={form} setForm={setForm} registry={registry} error={errors.group_contributions} />
 
         <FormSection title="ملاحظات ومصدر البيانات">
           <TextAreaField label="ملاحظات" value={form.notes ?? ""} maxLength={foodTextMax.notes} error={errors.notes} onChange={(value) => update("notes", value)} />
@@ -277,7 +362,12 @@ function mapFoodApiError(error: unknown): FoodFormErrors {
     const loc = "loc" in item && Array.isArray(item.loc) ? item.loc : [];
     const field = (explicitField ?? loc[loc.length - 1]) as keyof FoodFormValues | undefined;
     const msg = "msg" in item && typeof item.msg === "string" ? item.msg : VALIDATION_ERROR;
-    if (field && field in emptyFoodForm) next[field] = msg;
+    const code = "code" in item && typeof item.code === "string" ? item.code : "";
+    if (code.startsWith("source_")) next.nutrition_source = msg;
+    else if (code.startsWith("ingredients_")) next.ingredients = msg;
+    else if (code.includes("food_group") || code.includes("group_data")) next.group_contributions = msg;
+    else if (code.includes("analytical_trait")) next.analytical_traits = msg;
+    else if (field && field in emptyFoodForm) next[field] = msg;
     else next.form = msg;
   }
   return next;
@@ -290,6 +380,94 @@ function FormSection({ title, children }: { title: string; children: React.React
       <div className="form-grid">{children}</div>
     </section>
   );
+}
+
+function FoodGroupFields({
+  form,
+  setForm,
+  registry,
+  error
+}: {
+  form: FoodFormValues;
+  setForm: Dispatch<SetStateAction<FoodFormValues>>;
+  registry: NutritionRegistryResponse;
+  error?: string;
+}) {
+  const addContribution = () => {
+    const definition = registry.food_group_definitions.find(
+      (item) => !form.group_contributions.some((entry) => entry.group_key === item.key)
+    );
+    if (!definition) return;
+    const subtypes = subtypeKeys(definition);
+    setForm((current) => ({
+      ...current,
+      group_data_status: current.group_data_status === "unknown" ? "known" : current.group_data_status,
+      group_data_completeness: current.group_data_completeness === "unknown" ? "partial" : current.group_data_completeness,
+      group_contributions: [
+        ...current.group_contributions,
+        {
+          group_key: definition.key,
+          subtype_key: subtypes[0] ?? null,
+          amount_per_100_basis: 1,
+          data_status: "known"
+        }
+      ]
+    }));
+  };
+
+  return (
+    <section className="form-panel food-form-section" aria-labelledby="food-groups-title">
+      <h2 className="panel-title" id="food-groups-title">المجموعات والسمات التحليلية</h2>
+      {error ? <div className="field-error" role="alert">{error}</div> : null}
+      {form.group_contributions.length > 0 ? <p className="page-kicker">المقادير تتبع أساس الطعام لكل 100 جم أو 100 مل، ولا تُدخل وحدة منفصلة.</p> : null}
+      <div className="form-grid">
+        <SelectField label="حالة بيانات المجموعات" value={form.group_data_status} onChange={(value) => setForm((current) => ({ ...current, group_data_status: value as FoodFormValues["group_data_status"] }))} options={[["known", "مؤكدة"], ["estimated", "تقديرية"], ["unknown", "غير معروفة"]]} />
+        <SelectField label="اكتمال بيانات المجموعات" value={form.group_data_completeness} onChange={(value) => setForm((current) => ({ ...current, group_data_completeness: value as FoodFormValues["group_data_completeness"] }))} options={[["complete", "مكتملة"], ["partial", "جزئية"], ["unknown", "غير معروفة"]]} />
+      </div>
+
+      <div className="food-classification-list">
+        {form.group_contributions.map((entry, index) => {
+          const definition = registry.food_group_definitions.find((item) => item.key === entry.group_key);
+          const subtypes = definition ? subtypeKeys(definition) : [];
+          return (
+            <fieldset className="form-grid" key={`${entry.group_key}-${index}`}>
+              <legend>مساهمة {index + 1}</legend>
+              <SelectField
+                label={`المجموعة ${index + 1}`}
+                value={entry.group_key}
+                onChange={(value) => setForm((current) => ({ ...current, group_contributions: current.group_contributions.map((item, itemIndex) => itemIndex === index ? { ...item, group_key: value, subtype_key: subtypeKeys(registry.food_group_definitions.find((definitionItem) => definitionItem.key === value))[0] ?? null } : item) }))}
+                options={registry.food_group_definitions.map((item) => [item.key, item.label_ar])}
+              />
+              {subtypes.length ? (
+                <SelectField label={`النوع الفرعي ${index + 1}`} value={entry.subtype_key ?? ""} onChange={(value) => setForm((current) => ({ ...current, group_contributions: current.group_contributions.map((item, itemIndex) => itemIndex === index ? { ...item, subtype_key: value } : item) }))} options={subtypes.map((item) => [item, definition?.subtype_labels_ar[item] ?? item])} />
+              ) : null}
+              <NumberField label={`المقدار من 100 (${index + 1})`} value={entry.amount_per_100_basis} onChange={(value) => setForm((current) => ({ ...current, group_contributions: current.group_contributions.map((item, itemIndex) => itemIndex === index ? { ...item, amount_per_100_basis: value ?? 0 } : item) }))} />
+              <SelectField label={`يقين المساهمة ${index + 1}`} value={entry.data_status} onChange={(value) => setForm((current) => ({ ...current, group_contributions: current.group_contributions.map((item, itemIndex) => itemIndex === index ? { ...item, data_status: value as "known" | "estimated" } : item) }))} options={[["known", "مؤكدة"], ["estimated", "تقديرية"]]} />
+              <button className="btn danger" type="button" onClick={() => setForm((current) => ({ ...current, group_contributions: current.group_contributions.filter((_, itemIndex) => itemIndex !== index) }))} aria-label={`حذف المساهمة ${index + 1}`}><Trash2 size={18} />حذف</button>
+            </fieldset>
+          );
+        })}
+        <button className="btn" type="button" onClick={addContribution} disabled={form.group_contributions.length >= registry.food_group_definitions.length}><Plus size={18} />إضافة مساهمة</button>
+      </div>
+
+      <fieldset className="food-traits-fieldset">
+        <legend>السمات التحليلية</legend>
+        <div className="food-traits-grid">
+          {registry.traits.map((trait) => (
+            <label key={trait.key} className="checkbox-row">
+              <input type="checkbox" checked={form.analytical_traits.includes(trait.key)} onChange={(event) => setForm((current) => ({ ...current, analytical_traits: event.target.checked ? [...current.analytical_traits, trait.key] : current.analytical_traits.filter((item) => item !== trait.key) }))} />
+              <span>{trait.label_ar}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+    </section>
+  );
+}
+
+function subtypeKeys(definition: NutritionRegistryResponse["food_group_definitions"][number] | undefined): string[] {
+  if (!definition?.subtypes) return [];
+  return Array.isArray(definition.subtypes) ? definition.subtypes : Object.keys(definition.subtypes);
 }
 
 function TextField({

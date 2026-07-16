@@ -56,10 +56,21 @@ def test_registry_exposes_exact_version_bundle_and_authoritative_metadata(
     assert body["calculation_policy"]["calendar_timezone"] == "Asia/Riyadh"
     assert body["source_types"][-2] == {
         "type": "multiple_sources",
+        "label_ar": "مصادر متعددة",
         "reliability": "mixed",
     }
+    assert len(body["primary_category_definitions"]) == 19
+    assert len(body["food_group_definitions"]) == 17
+    assert len(body["traits"]) == 11
     assert body["nova"] == {
         "classifications": [1, 2, 3, 4, "unknown"],
+        "labels_ar": {
+            "1": "NOVA 1",
+            "2": "NOVA 2",
+            "3": "NOVA 3",
+            "4": "NOVA 4",
+            "unknown": "غير معروف",
+        },
         "review_statuses": ["unreviewed", "reviewed"],
         "automated_suggestions": False,
     }

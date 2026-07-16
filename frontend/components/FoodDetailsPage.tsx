@@ -56,15 +56,17 @@ const mineralNutrients: NutrientSpec[] = [
   { key: "calcium_mg", label: "الكالسيوم", unit: "ملجم" },
   { key: "iron_mg", label: "الحديد", unit: "ملجم" },
   { key: "magnesium_mg", label: "المغنيسيوم", unit: "ملجم" },
-  { key: "zinc_mg", label: "الزنك", unit: "ملجم" }
+  { key: "zinc_mg", label: "الزنك", unit: "ملجم" },
+  { key: "selenium_mcg", label: "السيلينيوم", unit: "مكجم" },
+  { key: "iodine_mcg", label: "اليود", unit: "مكجم" }
 ];
 
 const vitaminNutrients: NutrientSpec[] = [
   { key: "vitamin_d_mcg", label: "فيتامين D", unit: "مكجم" },
   { key: "vitamin_b12_mcg", label: "فيتامين B12", unit: "مكجم" },
   { key: "vitamin_c_mg", label: "فيتامين C", unit: "ملجم" },
-  { key: "vitamin_a_mcg", label: "فيتامين A", unit: "مكجم" },
-  { key: "folate_mcg", label: "الفولات", unit: "مكجم" },
+  { key: "vitamin_a_rae_mcg", label: "فيتامين A RAE", unit: "مكجم" },
+  { key: "folate_dfe_mcg", label: "الفولات DFE", unit: "مكجم" },
   { key: "vitamin_k_mcg", label: "فيتامين K", unit: "مكجم" }
 ];
 
@@ -119,6 +121,10 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
   const displayedNutrition = mode === "serving" ? servingNutrition : basisNutrition;
   const basisLabel = nutritionBasisLabels[food.nutrition_basis];
   const registryNutrients = registryQuery.data ? definitionsFromRegistry(registryQuery.data) : null;
+  const primaryCategoryLabel = registryQuery.data?.primary_category_definitions.find((item) => item.key === food.primary_category_key)?.label_ar;
+  const reliabilityLabel = registryQuery.data?.reliability_levels.find((item) => item.key === food.nutrition_source.reliability)?.label_ar;
+  const groupLabels = new Map(registryQuery.data?.food_group_definitions.map((item) => [item.key, item.label_ar]) ?? []);
+  const traitLabels = new Map(registryQuery.data?.traits.map((item) => [item.key, item.label_ar]) ?? []);
 
   return (
     <>
@@ -214,10 +220,22 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
         <dl className="metadata-rows">
           {food.brand ? <MetadataRow label="العلامة التجارية" value={food.brand} autoDirection /> : null}
           {food.category ? <MetadataRow label="التصنيف" value={food.category} autoDirection /> : null}
+          <MetadataRow label="التصنيف الأساسي" value={primaryCategoryLabel ?? "غير مصنف"} />
+          <MetadataRow label="نوع الطعام" value={food.food_kind === "simple" ? "بسيط" : food.food_kind === "composite" ? "مركب" : "قديم غير مراجع"} />
           <MetadataRow label="أساس القيم" value={basisLabel} />
           <MetadataRow label="تعريف الوحدة الافتراضية" value={defaultUnitText(food)} />
           {food.notes ? <MetadataRow label="ملاحظات" value={food.notes} multiline autoDirection /> : null}
-          {food.data_source ? <MetadataRow label="مصدر البيانات" value={food.data_source} multiline autoDirection /> : null}
+          <MetadataRow label="مصدر البيانات الغذائية" value={food.nutrition_source.name || registryQuery.data?.source_types.find((item) => item.type === food.nutrition_source.type)?.label_ar || "غير معروف"} multiline autoDirection />
+          <MetadataRow label="موثوقية المصدر" value={reliabilityLabel ?? "غير معروفة"} />
+          {food.nutrition_source.reference ? <MetadataRow label="مرجع المصدر" value={food.nutrition_source.reference} multiline autoDirection /> : null}
+          {food.ingredients.text ? <MetadataRow label="المكونات" value={food.ingredients.text} multiline autoDirection /> : null}
+          <MetadataRow label="تصنيف NOVA" value={`${food.nova.classification === "unknown" ? "غير معروف" : `NOVA ${food.nova.classification}`} · ${food.nova.review_status === "reviewed" ? "مراجع" : "غير مراجع"}`} />
+          <MetadataRow label="حالة بيانات المجموعات" value={`${food.group_data_status} · ${food.group_data_completeness}`} />
+          <MetadataRow label="مساهمات المجموعات" value={food.group_contributions.length ? food.group_contributions.map((item) => `${groupLabels.get(item.group_key) ?? item.group_key}: ${item.amount_per_100_basis}`).join("، ") : "لا توجد مساهمات مسجلة"} multiline />
+          <MetadataRow label="السمات التحليلية" value={food.analytical_traits.length ? food.analytical_traits.map((item) => traitLabels.get(item) ?? item).join("، ") : "لا توجد سمات مسجلة"} multiline />
+          {food.legacy_nutrition.folate_mcg != null ? <MetadataRow label="فولات قديم" value={`${food.legacy_nutrition.folate_mcg} مكجم · ${food.legacy_nutrition.meaning_ar}`} /> : null}
+          {food.legacy_nutrition.vitamin_a_mcg != null ? <MetadataRow label="فيتامين A قديم" value={`${food.legacy_nutrition.vitamin_a_mcg} مكجم · ${food.legacy_nutrition.meaning_ar}`} /> : null}
+          {food.data_source ? <MetadataRow label="مصدر البيانات القديم" value={food.data_source} multiline autoDirection /> : null}
           <MetadataRow label="تاريخ الإنشاء" value={formatDate(food.created_at)} />
           <MetadataRow label="آخر تحديث" value={formatDate(food.updated_at)} />
         </dl>

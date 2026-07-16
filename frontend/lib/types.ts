@@ -4,6 +4,13 @@ export type Goal = "cut" | "maintain" | "bulk";
 export type NutritionBasis = "per_100g" | "per_100ml";
 export type DefaultUnitType = "g" | "ml" | "cup" | "slice" | "piece" | "scoop" | "serving" | "tablespoon" | "teaspoon";
 export type UnitBasis = "g" | "ml";
+export type FoodKind = "simple" | "composite" | "unknown";
+export type GroupDataStatus = "known" | "estimated" | "unknown";
+export type GroupDataCompleteness = "complete" | "partial" | "unknown";
+export type NutritionSourceType = "laboratory_analysis" | "official_food_database" | "official_product_label" | "manufacturer_website" | "official_restaurant" | "calculated_recipe" | "manual_estimate" | "multiple_sources" | "unknown";
+export type IngredientsSourceType = "official_product_label" | "manufacturer_website" | "official_food_database" | "official_restaurant" | "calculated_recipe" | "manual_entry" | "multiple_sources" | "unknown";
+export type SourceReliability = "high" | "medium" | "low" | "mixed" | "unknown";
+export type NovaClassification = "1" | "2" | "3" | "4" | "unknown";
 
 export interface TargetResponse {
   bmr: number;
@@ -98,6 +105,30 @@ export interface NutritionRegistryResponse {
     completeness_participation: boolean;
     diary_coverage_participation: boolean;
   }>;
+  primary_category_definitions: Array<{ key: string; label_ar: string }>;
+  food_group_definitions: Array<{
+    key: string;
+    label_ar: string;
+    subtypes?: Record<string, unknown> | string[];
+    subtype_labels_ar: Record<string, string>;
+  }>;
+  traits: Array<{ key: string; label_ar: string }>;
+  source_types: Array<{
+    type: NutritionSourceType;
+    label_ar: string;
+    reliability: SourceReliability;
+  }>;
+  ingredient_source_definitions: Array<{
+    type: IngredientsSourceType;
+    label_ar: string;
+  }>;
+  reliability_levels: Array<{ key: SourceReliability; label_ar: string }>;
+  nova: {
+    classifications: Array<number | "unknown">;
+    labels_ar: Record<string, string>;
+    review_statuses: Array<"unreviewed" | "reviewed">;
+    automated_suggestions: false;
+  };
 }
 
 export interface ProfileResponse extends ProfileInput {
@@ -110,6 +141,10 @@ export interface FoodInput {
   name: string;
   brand: string | null;
   category: string | null;
+  primary_category_key: string | null;
+  food_kind: FoodKind;
+  group_data_status: GroupDataStatus;
+  group_data_completeness: GroupDataCompleteness;
   nutrition_basis: NutritionBasis;
   default_unit_type: DefaultUnitType;
   unit_amount: number;
@@ -130,14 +165,37 @@ export interface FoodInput {
   iron_mg: number | null;
   magnesium_mg: number | null;
   zinc_mg: number | null;
+  selenium_mcg: number | null;
   vitamin_d_mcg: number | null;
   vitamin_b12_mcg: number | null;
   vitamin_c_mg: number | null;
   vitamin_a_mcg: number | null;
+  vitamin_a_rae_mcg: number | null;
   folate_mcg: number | null;
+  folate_dfe_mcg: number | null;
   vitamin_k_mcg: number | null;
+  iodine_mcg: number | null;
   notes: string | null;
   data_source: string | null;
+  nutrition_source: {
+    type: NutritionSourceType;
+    name: string | null;
+    reference: string | null;
+  };
+  ingredients: {
+    text: string | null;
+    source_type: IngredientsSourceType | null;
+    source_name: string | null;
+    source_reference: string | null;
+  };
+  nova: { classification: NovaClassification } | null;
+  group_contributions: Array<{
+    group_key: string;
+    subtype_key: string | null;
+    amount_per_100_basis: number;
+    data_status: "known" | "estimated";
+  }>;
+  analytical_traits: string[];
 }
 
 export interface FoodResponse extends FoodInput {
@@ -145,6 +203,23 @@ export interface FoodResponse extends FoodInput {
   net_carbs_g: number;
   created_at: string;
   updated_at: string;
+  nutrition_source: FoodInput["nutrition_source"] & {
+    reliability: SourceReliability;
+    reliability_rules_version: string;
+  };
+  nova: {
+    classification: NovaClassification;
+    review_status: "unreviewed" | "reviewed";
+    rules_version: string;
+  };
+  group_contributions: Array<
+    FoodInput["group_contributions"][number] & { food_group_rules_version: string }
+  >;
+  legacy_nutrition: {
+    folate_mcg: number | null;
+    vitamin_a_mcg: number | null;
+    meaning_ar: string;
+  };
 }
 
 export type FoodSort = "name" | "recent" | "calories" | "protein";

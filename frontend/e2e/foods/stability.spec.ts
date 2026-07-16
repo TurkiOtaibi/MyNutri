@@ -48,7 +48,7 @@ test.describe("Add Food form stability @foods @stability", () => {
     await expect(page).toHaveURL(/\/foods\/new$/);
     await expect(page.getByLabel(/اسم الطعام/)).toHaveValue("E2E Stable Draft");
     await expect(page.getByLabel("العلامة التجارية")).toHaveValue("Stable Brand Continued");
-    await expect(page.getByLabel("التصنيف")).toHaveValue("Stable Category");
+    await expect(page.getByLabel("الفئة القديمة (للتوافق)")).toHaveValue("Stable Category");
     await expect(page.getByLabel(/السعرات/)).toHaveValue("321");
     await expect(page.getByLabel("ألياف g")).toHaveValue("3.5");
     await expect(page.locator("details.food-optional-section")).toHaveAttribute("open", "");
@@ -95,7 +95,9 @@ test.describe("Add Food form stability @foods @stability", () => {
     await page.goto("/foods/new");
     const form = page.locator("form.food-form-layout");
     await expect(form.locator('button[type="submit"]')).toHaveCount(1);
-    await expect(form.locator('button:not([type="submit"])')).toHaveCount(0);
+    const commandButtons = form.locator('button:not([type="submit"])');
+    await expect(commandButtons).toHaveCount(1);
+    await expect(commandButtons).toHaveAccessibleName("إضافة مساهمة");
     await expect(page.getByRole("link", { name: "رجوع" })).toHaveAttribute("href", "/foods");
     await expect(page.getByRole("link", { name: "إلغاء" })).toHaveAttribute("href", "/foods");
   });

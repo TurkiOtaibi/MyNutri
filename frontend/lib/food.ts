@@ -17,12 +17,16 @@ export type FoodNutritionValues = {
   iron_mg: number | null;
   magnesium_mg: number | null;
   zinc_mg: number | null;
+  selenium_mcg: number | null;
   vitamin_d_mcg: number | null;
   vitamin_b12_mcg: number | null;
   vitamin_c_mg: number | null;
   vitamin_a_mcg: number | null;
+  vitamin_a_rae_mcg: number | null;
   folate_mcg: number | null;
+  folate_dfe_mcg: number | null;
   vitamin_k_mcg: number | null;
+  iodine_mcg: number | null;
   net_carbs_g: number;
 };
 
@@ -86,12 +90,16 @@ const optionalNutritionFields = [
   "iron_mg",
   "magnesium_mg",
   "zinc_mg",
+  "selenium_mcg",
   "vitamin_d_mcg",
   "vitamin_b12_mcg",
   "vitamin_c_mg",
   "vitamin_a_mcg",
+  "vitamin_a_rae_mcg",
   "folate_mcg",
-  "vitamin_k_mcg"
+  "folate_dfe_mcg",
+  "vitamin_k_mcg",
+  "iodine_mcg"
 ] as const;
 
 export const defaultUnitOptions: DefaultUnitType[] = [
@@ -110,6 +118,10 @@ export const emptyFoodForm: FoodFormValues = {
   name: "",
   brand: null,
   category: null,
+  primary_category_key: "other",
+  food_kind: "simple",
+  group_data_status: "unknown",
+  group_data_completeness: "unknown",
   nutrition_basis: "per_100g",
   default_unit_type: "serving",
   unit_amount: 100,
@@ -130,14 +142,23 @@ export const emptyFoodForm: FoodFormValues = {
   iron_mg: null,
   magnesium_mg: null,
   zinc_mg: null,
+  selenium_mcg: null,
   vitamin_d_mcg: null,
   vitamin_b12_mcg: null,
   vitamin_c_mg: null,
   vitamin_a_mcg: null,
+  vitamin_a_rae_mcg: null,
   folate_mcg: null,
+  folate_dfe_mcg: null,
   vitamin_k_mcg: null,
+  iodine_mcg: null,
   notes: null,
-  data_source: null
+  data_source: null,
+  nutrition_source: { type: "unknown", name: null, reference: null },
+  ingredients: { text: null, source_type: null, source_name: null, source_reference: null },
+  nova: null,
+  group_contributions: [],
+  analytical_traits: []
 };
 
 const REQUIRED_MESSAGE = "هذا الحقل مطلوب.";
@@ -166,18 +187,29 @@ const optionalMax: Partial<Record<keyof FoodFormValues, number>> = {
   iron_mg: 100,
   magnesium_mg: 1000,
   zinc_mg: 100,
+  selenium_mcg: 9_999_999.999,
   vitamin_d_mcg: 250,
   vitamin_b12_mcg: 1000,
   vitamin_c_mg: 5000,
   vitamin_a_mcg: 3000,
+  vitamin_a_rae_mcg: 9_999_999.999,
   folate_mcg: 2000,
-  vitamin_k_mcg: 2000
+  folate_dfe_mcg: 9_999_999.999,
+  vitamin_k_mcg: 2000,
+  iodine_mcg: 9_999_999.999
 };
 
 export function foodToForm(food: FoodResponse): FoodFormValues {
   return {
     ...emptyFoodForm,
-    ...food
+    ...food,
+    nutrition_source: {
+      type: food.nutrition_source.type,
+      name: food.nutrition_source.name,
+      reference: food.nutrition_source.reference
+    },
+    nova: food.nova.review_status === "reviewed" ? { classification: food.nova.classification } : null,
+    group_contributions: food.group_contributions.map(({ food_group_rules_version: _, ...item }) => item)
   };
 }
 
@@ -195,6 +227,17 @@ export function normalizeFoodForm(values: FoodFormValues): FoodInput {
     category: cleanOptionalText(values.category),
     notes: cleanOptionalText(values.notes),
     data_source: cleanOptionalText(values.data_source),
+    nutrition_source: {
+      type: values.nutrition_source.type,
+      name: cleanOptionalText(values.nutrition_source.name),
+      reference: cleanOptionalText(values.nutrition_source.reference)
+    },
+    ingredients: {
+      text: cleanOptionalText(values.ingredients.text),
+      source_type: values.ingredients.source_type,
+      source_name: cleanOptionalText(values.ingredients.source_name),
+      source_reference: cleanOptionalText(values.ingredients.source_reference)
+    },
     calories: values.calories ?? 0,
     protein_g: values.protein_g ?? 0,
     carb_g: values.carb_g ?? 0,
@@ -240,6 +283,32 @@ export function validateFoodForm(values: FoodFormValues): FoodFormErrors {
   if (!values.nutrition_basis) errors.nutrition_basis = REQUIRED_MESSAGE;
   if (!values.default_unit_type) errors.default_unit_type = REQUIRED_MESSAGE;
   if (!values.unit_basis) errors.unit_basis = REQUIRED_MESSAGE;
+  if (!values.primary_category_key) errors.primary_category_key = REQUIRED_MESSAGE;
+  if (!values.food_kind || values.food_kind === "unknown") errors.food_kind = REQUIRED_MESSAGE;
+  if (values.nutrition_source.type !== "unknown" && !cleanOptionalText(values.nutrition_source.name)) {
+    errors.nutrition_source = "اسم مصدر البيانات الغذائية مطلوب لنوع المصدر المحدد.";
+  }
+  if (cleanOptionalText(values.ingredients.text) && !values.ingredients.source_type) {
+    errors.ingredients = "نوع مصدر المكونات مطلوب عند إدخال المكونات.";
+  } else if (
+    values.ingredients.source_type &&
+    values.ingredients.source_type !== "unknown" &&
+    !cleanOptionalText(values.ingredients.source_name)
+  ) {
+    errors.ingredients = "اسم مصدر المكونات مطلوب لنوع المصدر المحدد.";
+  }
+  const groupKeys = values.group_contributions.map((item) => item.group_key);
+  const groupTotal = values.group_contributions.reduce(
+    (total, item) => total + item.amount_per_100_basis,
+    0
+  );
+  if (new Set(groupKeys).size !== groupKeys.length) {
+    errors.group_contributions = "لا يمكن تكرار المجموعة الغذائية للطعام نفسه.";
+  } else if (groupTotal > 100) {
+    errors.group_contributions = "مجموع مساهمات المجموعات الغذائية لا يمكن أن يتجاوز 100.";
+  } else if (values.group_contributions.some((item) => item.amount_per_100_basis <= 0)) {
+    errors.group_contributions = "يجب أن تكون كل مساهمة أكبر من صفر.";
+  }
 
   validateNumber(errors, values, "unit_amount", { required: true, min: 1, max: 2000 });
   validateNumber(errors, values, "calories", { required: true, min: 0, max: 3000 });
@@ -321,12 +390,16 @@ export function calculateServingNutrition(food: FoodResponse): FoodNutritionValu
     iron_mg: null,
     magnesium_mg: null,
     zinc_mg: null,
+    selenium_mcg: null,
     vitamin_d_mcg: null,
     vitamin_b12_mcg: null,
     vitamin_c_mg: null,
     vitamin_a_mcg: null,
+    vitamin_a_rae_mcg: null,
     folate_mcg: null,
+    folate_dfe_mcg: null,
     vitamin_k_mcg: null,
+    iodine_mcg: null,
     net_carbs_g: scale(food.net_carbs_g) ?? 0
   };
 

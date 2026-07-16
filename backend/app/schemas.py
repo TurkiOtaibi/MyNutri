@@ -6,13 +6,22 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.models import (
     ActivityLevel,
+    ContributionDataStatus,
     DefaultUnitType,
+    FoodKind,
     Goal,
+    GroupDataCompleteness,
+    GroupDataStatus,
+    IngredientsSourceType,
     MealType,
+    NovaClassification,
+    NovaReviewStatus,
     NutritionBasis,
+    NutritionSourceType,
     Sex,
     UnitBasis,
 )
+from app.nutrition_rules.registry import FOOD_GROUPS, PRIMARY_CATEGORIES, SOURCE_RELIABILITY, TRAITS
 from app.services.food_validation_errors import (
     ABOVE_MAX_MESSAGE,
     ADDED_SUGAR_GT_SUGAR_MESSAGE,
@@ -131,12 +140,16 @@ OPTIONAL_NUTRIENT_MAX: dict[str, float] = {
     "iron_mg": 100,
     "magnesium_mg": 1000,
     "zinc_mg": 100,
+    "selenium_mcg": 9999999.999,
     "vitamin_d_mcg": 250,
     "vitamin_b12_mcg": 1000,
     "vitamin_c_mg": 5000,
     "vitamin_a_mcg": 3000,
+    "vitamin_a_rae_mcg": 9999999.999,
     "folate_mcg": 2000,
+    "folate_dfe_mcg": 9999999.999,
     "vitamin_k_mcg": 2000,
+    "iodine_mcg": 9999999.999,
 }
 
 FOOD_TEXT_MAX: dict[str, int] = {
@@ -155,12 +168,107 @@ def _clean_optional_text(value: str | None) -> str | None:
     return cleaned or None
 
 
+SOURCE_RELIABILITY_MAP = {item["type"]: item["reliability"] for item in SOURCE_RELIABILITY}
+GROUP_KEYS = {item["key"] for item in FOOD_GROUPS}
+TRAIT_KEYS = {item["key"] for item in TRAITS}
+SUBTYPE_KEYS = {
+    "dairy_fortified_alternatives": {
+        "milk_laban_kefir",
+        "yogurt",
+        "hard_cheese",
+        "cottage_ricotta",
+        "fortified_plant_alternative",
+    },
+    "eggs": {"whole_egg", "egg_white", "mixed_egg_product"},
+}
+
+
+class NutritionSourceInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: NutritionSourceType = NutritionSourceType.unknown
+    name: str | None = None
+    reference: str | None = None
+
+    @model_validator(mode="after")
+    def validate_name(self):
+        self.name = _clean_optional_text(self.name)
+        self.reference = _clean_optional_text(self.reference)
+        if self.type != NutritionSourceType.unknown and self.name is None:
+            raise ValueError("اسم مصدر البيانات الغذائية مطلوب لنوع المصدر المحدد.")
+        return self
+
+
+class NutritionSourceResponse(NutritionSourceInput):
+    reliability: Literal["high", "medium", "low", "mixed", "unknown"]
+    reliability_rules_version: str
+
+
+class IngredientsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str | None = None
+    source_type: IngredientsSourceType | None = None
+    source_name: str | None = None
+    source_reference: str | None = None
+
+    @model_validator(mode="after")
+    def validate_source(self):
+        self.text = _clean_optional_text(self.text)
+        self.source_name = _clean_optional_text(self.source_name)
+        self.source_reference = _clean_optional_text(self.source_reference)
+        if self.text is not None and self.source_type is None:
+            raise ValueError("نوع مصدر المكونات مطلوب عند إدخال المكونات.")
+        if (
+            self.source_type not in {None, IngredientsSourceType.unknown}
+            and self.source_name is None
+        ):
+            raise ValueError("اسم مصدر المكونات مطلوب لنوع المصدر المحدد.")
+        return self
+
+
+class NovaInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    classification: NovaClassification
+
+
+class NovaResponse(BaseModel):
+    classification: NovaClassification
+    review_status: NovaReviewStatus
+    rules_version: str
+
+
+class FoodGroupContributionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    group_key: str
+    subtype_key: str | None = None
+    amount_per_100_basis: float = Field(gt=0, le=100)
+    data_status: ContributionDataStatus
+
+    @model_validator(mode="after")
+    def validate_registry_key(self):
+        if self.group_key not in GROUP_KEYS:
+            raise ValueError("مجموعة غذائية غير معتمدة.")
+        allowed = SUBTYPE_KEYS.get(self.group_key)
+        if allowed is not None and self.subtype_key not in allowed:
+            raise ValueError("النوع الفرعي مطلوب وغير متوافق مع المجموعة الغذائية.")
+        if allowed is None and self.subtype_key is not None:
+            raise ValueError("هذه المجموعة لا تقبل نوعًا فرعيًا.")
+        return self
+
+
+class FoodGroupContributionResponse(FoodGroupContributionInput):
+    food_group_rules_version: str
+
+
 class FoodBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
     brand: str | None = None
     category: str | None = None
+    primary_category_key: str | None = None
+    food_kind: FoodKind = FoodKind.unknown
+    group_data_status: GroupDataStatus = GroupDataStatus.unknown
+    group_data_completeness: GroupDataCompleteness = GroupDataCompleteness.unknown
     nutrition_basis: NutritionBasis
     default_unit_type: DefaultUnitType
     unit_amount: float = Field(gt=0, le=2000)
@@ -181,14 +289,23 @@ class FoodBase(BaseModel):
     iron_mg: float | None = None
     magnesium_mg: float | None = None
     zinc_mg: float | None = None
+    selenium_mcg: float | None = None
     vitamin_d_mcg: float | None = None
     vitamin_b12_mcg: float | None = None
     vitamin_c_mg: float | None = None
     vitamin_a_mcg: float | None = None
+    vitamin_a_rae_mcg: float | None = None
     folate_mcg: float | None = None
+    folate_dfe_mcg: float | None = None
     vitamin_k_mcg: float | None = None
+    iodine_mcg: float | None = None
     notes: str | None = None
     data_source: str | None = None
+    nutrition_source: NutritionSourceInput = Field(default_factory=NutritionSourceInput)
+    ingredients: IngredientsInput = Field(default_factory=IngredientsInput)
+    nova: NovaInput | None = None
+    group_contributions: list[FoodGroupContributionInput] = Field(default_factory=list)
+    analytical_traits: list[str] = Field(default_factory=list)
 
     @field_validator("name")
     @classmethod
@@ -260,15 +377,63 @@ class FoodBase(BaseModel):
             raise ValueError(SATURATED_TRANS_GT_FAT_MESSAGE)
         return value
 
+    @model_validator(mode="after")
+    def validate_controlled_food_data(self):
+        if (
+            self.primary_category_key is not None
+            and self.primary_category_key not in PRIMARY_CATEGORIES
+        ):
+            raise ValueError("التصنيف الأساسي غير معتمد.")
+        groups = [item.group_key for item in self.group_contributions]
+        if len(groups) != len(set(groups)):
+            raise ValueError("لا يمكن تكرار المجموعة الغذائية للطعام نفسه.")
+        if sum(item.amount_per_100_basis for item in self.group_contributions) > 100:
+            raise ValueError("مجموع مساهمات المجموعات الغذائية لا يمكن أن يتجاوز 100.")
+        if len(self.analytical_traits) != len(set(self.analytical_traits)):
+            raise ValueError("لا يمكن تكرار السمة التحليلية.")
+        if any(item not in TRAIT_KEYS for item in self.analytical_traits):
+            raise ValueError("سمة تحليلية غير معتمدة.")
+        if self.group_data_status == GroupDataStatus.unknown and self.group_contributions:
+            raise ValueError("الحالة غير المعروفة لا تقبل مساهمات غذائية.")
+        if (
+            self.group_data_completeness == GroupDataCompleteness.unknown
+            and self.group_contributions
+        ):
+            raise ValueError("اكتمال التصنيف غير المعروف لا يقبل مساهمات غذائية.")
+        if (
+            self.group_data_completeness == GroupDataCompleteness.partial
+            and not self.group_contributions
+        ):
+            raise ValueError("التصنيف الجزئي يتطلب مساهمة غذائية واحدة على الأقل.")
+        if self.group_data_status == GroupDataStatus.known and any(
+            item.data_status != ContributionDataStatus.known for item in self.group_contributions
+        ):
+            raise ValueError("الحالة المؤكدة لا تقبل مساهمة تقديرية.")
+        if (
+            self.group_data_status == GroupDataStatus.estimated
+            and not any(
+                item.data_status == ContributionDataStatus.estimated
+                for item in self.group_contributions
+            )
+        ):
+            raise ValueError("الحالة التقديرية تتطلب مساهمة تقديرية واحدة على الأقل.")
+        return self
+
 
 class FoodCreate(FoodBase):
     id: UUID | None = None
 
 
 class FoodUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = None
     brand: str | None = None
     category: str | None = None
+    primary_category_key: str | None = None
+    food_kind: FoodKind | None = None
+    group_data_status: GroupDataStatus | None = None
+    group_data_completeness: GroupDataCompleteness | None = None
     nutrition_basis: NutritionBasis | None = None
     default_unit_type: DefaultUnitType | None = None
     unit_amount: float | None = Field(default=None, gt=0, le=2000)
@@ -289,14 +454,23 @@ class FoodUpdate(BaseModel):
     iron_mg: float | None = None
     magnesium_mg: float | None = None
     zinc_mg: float | None = None
+    selenium_mcg: float | None = None
     vitamin_d_mcg: float | None = None
     vitamin_b12_mcg: float | None = None
     vitamin_c_mg: float | None = None
     vitamin_a_mcg: float | None = None
+    vitamin_a_rae_mcg: float | None = None
     folate_mcg: float | None = None
+    folate_dfe_mcg: float | None = None
     vitamin_k_mcg: float | None = None
+    iodine_mcg: float | None = None
     notes: str | None = None
     data_source: str | None = None
+    nutrition_source: NutritionSourceInput | None = None
+    ingredients: IngredientsInput | None = None
+    nova: NovaInput | None = None
+    group_contributions: list[FoodGroupContributionInput] | None = None
+    analytical_traits: list[str] | None = None
 
     @field_validator("name")
     @classmethod
@@ -371,8 +545,19 @@ class FoodUpdate(BaseModel):
         return value
 
 
+class LegacyNutritionResponse(BaseModel):
+    folate_mcg: float | None
+    vitamin_a_mcg: float | None
+    meaning_ar: str = "قيمة قديمة غير محددة المعيار"
+
+
 class FoodResponse(FoodBase):
     id: UUID
+    nutrition_source: NutritionSourceResponse
+    nova: NovaResponse
+    group_contributions: list[FoodGroupContributionResponse]
+    analytical_traits: list[str]
+    legacy_nutrition: LegacyNutritionResponse
     net_carbs_g: float
     created_at: datetime
     updated_at: datetime

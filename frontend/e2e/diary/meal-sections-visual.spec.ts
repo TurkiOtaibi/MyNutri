@@ -27,6 +27,10 @@ test.describe("@diary @visual final meal sections", () => {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/diary");
+    await page.waitForFunction(() => {
+      const input = document.querySelector('input[aria-label="اختيار تاريخ اليوميات"]');
+      return input != null && Object.keys(input).some((key) => key.startsWith("__reactProps$"));
+    });
     await page.getByLabel("اختيار تاريخ اليوميات").fill(emptyDate);
     await expect(page.locator(".meal-section")).toHaveCount(4);
     await page.screenshot({ path: resolve(output, "diary-mobile-empty-390.png"), fullPage: true });
