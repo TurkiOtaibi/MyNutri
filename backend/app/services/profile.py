@@ -1,15 +1,14 @@
-from sqlmodel import Session, select
-from uuid import UUID
+from dataclasses import asdict
 
+from sqlmodel import Session, select
 from app.core.auth import PrincipalContext
 from app.models import Profile, utcnow
-from app.schemas import ProfileResponse, ProfileUpsert, TargetResponse
+from app.schemas import ProfilePreview, ProfileResponse, ProfileUpsert, TargetResponse
 from app.services.calc import calculate_targets
-from app.services.nutrients import nutrient_target_payloads
 
 
-def to_target_response(profile: Profile) -> TargetResponse:
-    return TargetResponse.model_validate({**calculate_targets(profile).__dict__, "additional_targets": nutrient_target_payloads()})
+def to_target_response(profile: Profile | ProfilePreview | ProfileUpsert) -> TargetResponse:
+    return TargetResponse.model_validate(asdict(calculate_targets(profile)))
 
 
 def to_profile_response(profile: Profile) -> ProfileResponse:
@@ -29,10 +28,14 @@ def to_profile_response(profile: Profile) -> ProfileResponse:
 
 
 def get_profile(session: Session, principal: PrincipalContext) -> Profile | None:
-    return session.exec(select(Profile).where(Profile.principal_id == principal.principal_id)).first()
+    return session.exec(
+        select(Profile).where(Profile.principal_id == principal.principal_id)
+    ).first()
 
 
-def upsert_profile(session: Session, principal: PrincipalContext, payload: ProfileUpsert) -> Profile:
+def upsert_profile(
+    session: Session, principal: PrincipalContext, payload: ProfileUpsert
+) -> Profile:
     profile = get_profile(session, principal)
     data = payload.model_dump()
     if profile is None:
@@ -48,6 +51,5 @@ def upsert_profile(session: Session, principal: PrincipalContext, payload: Profi
     return profile
 
 
-def preview_targets(payload: ProfileUpsert) -> TargetResponse:
-    profile = Profile(principal_id=UUID(int=0), **payload.model_dump())
-    return to_target_response(profile)
+def preview_targets(payload: ProfilePreview) -> TargetResponse:
+    return to_target_response(payload)

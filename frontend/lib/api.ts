@@ -8,6 +8,7 @@ import type {
   FoodSort,
   ProfileInput,
   ProfileResponse,
+  NutritionRegistryResponse,
   TargetResponse,
   WeekSummary
 } from "./types";
@@ -83,6 +84,10 @@ export function previewProfile(payload: ProfileInput): Promise<TargetResponse> {
     method: "POST",
     body: JSON.stringify(payload)
   });
+}
+
+export function getNutritionRegistry(): Promise<NutritionRegistryResponse> {
+  return apiFetch<NutritionRegistryResponse>("/nutrition/registry");
 }
 
 export function listFoods(query = ""): Promise<FoodResponse[]> {

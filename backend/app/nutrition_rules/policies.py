@@ -1,0 +1,48 @@
+CALCULATION_POLICY = {
+    "bmr": {"formula": "mifflin_st_jeor", "male_offset": 5, "female_offset": -161},
+    "activity_factors": {
+        "sedentary": "1.2",
+        "light": "1.375",
+        "moderate": "1.55",
+        "active": "1.725",
+        "very_active": "1.9",
+    },
+    "goal_policy": {
+        "cut_intensities": ["0.15", "0.20", "0.25"],
+        "default_cut_intensity": "0.20",
+        "maximum_deficit_kcal": 750,
+        "maintain_factor": "1.0",
+        "bulk_factor": "1.1",
+    },
+    "calorie_rounding": {"precision": 0, "mode": "half_even"},
+    "safety": {
+        "normal": {"minimum_exclusive": 1200, "can_activate": True},
+        "specialist_review_required": {
+            "minimum_inclusive": 800,
+            "maximum_inclusive": 1200,
+            "can_activate": False,
+        },
+        "very_low_energy_blocked": {"maximum_exclusive": 800, "can_activate": False},
+    },
+    "protein": {
+        "bmi_boundary": "30",
+        "boundary_comparison": "unrounded_backend_bmi",
+        "below_boundary_basis": "actual_weight",
+        "at_or_above_boundary_basis": "reference_plus_0.33_excess",
+        "reference_bmi": "25",
+        "final_precision": 1,
+        "rounding": "half_even",
+    },
+    "fat": {"male_default": "0.25", "female_default": "0.30", "kcal_per_g": 9},
+    "carbohydrate": {
+        "allocation": "final_calories_minus_raw_protein_calories_minus_fat_calories",
+        "kcal_per_g": 4,
+        "final_precision": 1,
+        "rounding": "half_even",
+        "general_reference_g": 130,
+        "very_low_boundary_g": 100,
+        "non_positive_result": "reject",
+    },
+    "decimal_arithmetic": True,
+    "calendar_timezone": "Asia/Riyadh",
+}

@@ -1,9 +1,13 @@
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 from sqlmodel import Session
 
 from app.core.auth import PrincipalContext, get_principal_context
 from app.db.session import get_session
-from app.schemas import ProfileResponse, ProfileUpsert, TargetResponse
+from app.nutrition_rules.calculation import CalculationError
+from app.schemas import ProfilePreview, ProfileResponse, ProfileUpsert, TargetResponse
 from app.services.profile import get_profile, preview_targets, to_profile_response, upsert_profile
 
 router = APIRouter(prefix="/profile", tags=["profile"])
@@ -34,8 +38,22 @@ def save_profile(
 
 @router.post("/preview", response_model=TargetResponse)
 def preview_profile(
-    payload: ProfileUpsert,
+    payload: ProfilePreview,
     principal: PrincipalContext = Depends(get_principal_context),
-) -> TargetResponse:
+) -> TargetResponse | JSONResponse:
     del principal
-    return preview_targets(payload)
+    try:
+        return preview_targets(payload)
+    except CalculationError as error:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "code": error.code,
+                    "message_ar": error.message_ar,
+                    "dimension": error.dimension,
+                    "details": {},
+                    "request_id": str(uuid4()),
+                }
+            },
+        )
