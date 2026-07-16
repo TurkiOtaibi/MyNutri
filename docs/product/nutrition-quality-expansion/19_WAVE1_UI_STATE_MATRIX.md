@@ -12,7 +12,7 @@
 | Approval date | `2026-07-16` |
 | Review | `19A_WAVE1_UI_STATE_MATRIX_REVIEW.md` |
 | Critical / High / Product decisions | `0 / 0 / 0` |
-| Pinned revision | Pending |
+| Pinned revision | `6a392d11c747c784e37f42c9fd6bfb15cc010d5a` |
 | Implementation authorization | `No` |
 
 ## 1. Global UI Contract
