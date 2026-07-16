@@ -1,10 +1,10 @@
 # Wave 1 Freeze Index
 
-> **This Freeze Index is a draft manifest.**
+> **This Freeze Index is the active frozen Wave 1 manifest.**
 >
-> **It does not authorize Wave 1 implementation.**
+> **It authorizes Wave 1 implementation only.**
 >
-> **It is not a Ready to Build declaration.**
+> **Later-wave implementation remains unauthorized.**
 
 ## 1. Header Metadata
 
@@ -13,16 +13,16 @@
 | Document ID | `W1-FREEZE-INDEX-12` |
 | Document title | Wave 1 Freeze Index |
 | Version | Pending |
-| Status | `Change Control Approved — Awaiting Package Merge` |
+| Status | `Frozen — Ready to Build` |
 | Created date | 2026-07-15 |
 | Last updated date | 2026-07-16 |
 | Implemented Baseline Code Commit | `d6caf0a124e5ffec63cabd1972ed742b3e7fc8bd` |
 | Governing Register Commit | `255b8339e66e7dd6da0cb48ad7d93c2f0243e66f` |
 | Governance Decision Direction Commit | `b9869dfe0a1dc26190aaa6478f2114da82a0793e` |
 | Final Freeze Package Commit | `47265cd42138a9daca762a2c7cf6175065d5328b` |
-| Current Change Package Commit | Pending |
+| Current Change Package Commit | `8b6c9d9f459d25af090d1bb726766f9aaf8a3cf4` |
 | Wave | Wave 1 - Nutrition & Data Foundation |
-| Readiness verdict | `Ready to Re-Freeze` |
+| Readiness verdict | `Ready to Build` |
 | Critical issue count | 0 |
 | High unresolved issue count | 0 |
 | Product Owner approval | Approved through artifact authorities |
@@ -34,7 +34,7 @@
 | QA approval | Approved |
 
 ```text
-Wave 1 implementation authorization: Paused pending W1-CD-01 re-freeze
+Wave 1 implementation authorization: Yes — resume from Stage 4
 Later-wave implementation authorization: No
 ```
 
@@ -117,7 +117,7 @@ High review findings: 0
 Pinned commit/revision: c7c48746715d24238acd70cd4eea137bf0f87cfd
 Artifact 13 frozen: Yes, included in Final Freeze Package Commit
 Artifact 14 authoring: Complete
-Implementation authorization: Paused pending W1-CD-01 re-freeze
+Implementation authorization: Yes — resume from Stage 4
 Later-wave implementation authorization: No
 Artifacts 14 through 21: Approved, pinned, and included in Final Freeze Package Commit
 ```
@@ -367,10 +367,10 @@ If any condition becomes false after freeze, change control under `PD-001` appli
 ## 8. Current Declaration
 
 ```text
-Current verdict: Ready to Re-Freeze
-Current freeze status: Change Control Approved — Awaiting Package Merge
+Current verdict: Ready to Build
+Current freeze status: Frozen — Ready to Build
 Final Freeze Package Commit: 47265cd42138a9daca762a2c7cf6175065d5328b
-Current Change Package Commit: Pending
-Wave 1 implementation authorization: Paused pending W1-CD-01 re-freeze
+Current Change Package Commit: 8b6c9d9f459d25af090d1bb726766f9aaf8a3cf4
+Wave 1 implementation authorization: Yes — resume from Stage 4
 Later-wave implementation authorization: No
 ```

@@ -9,8 +9,8 @@
 | Date | `2026-07-16` |
 | Approval commit | `9d4911d2c8c55cfc02ad1ddfe891e8e9833fc1cf` |
 | Pin metadata commit | `3cbb134219ddc892d8f977be2b870e300f08e67c` |
-| Change-package merge | Pending |
-| Verdict | Ready to Re-Freeze |
+| Change-package merge | `8b6c9d9f459d25af090d1bb726766f9aaf8a3cf4` |
+| Verdict | Ready to Build |
 
 ## Recheck
 
@@ -27,7 +27,7 @@
 | Traceability gaps | 0 |
 | Deferred scope integrity | Preserved |
 | Documentation-only change | Yes |
-| Implementation authorization | Paused until change-package merge and final pin |
+| Implementation authorization | Yes — resume from Stage 4 after final pin merge |
 
 ## Contract Closure
 
@@ -43,6 +43,7 @@ High unresolved issues: 0
 Product Owner decisions required: 0
 Substantive contradictions: 0
 Traceability gaps: 0
-Implementation authorization: Paused until merge and final pin
-Readiness verdict: Ready to Re-Freeze
+Change-package merge: 8b6c9d9f459d25af090d1bb726766f9aaf8a3cf4
+Implementation authorization: Yes — resume from Stage 4 after final pin merge
+Readiness verdict: Ready to Build
 ```
