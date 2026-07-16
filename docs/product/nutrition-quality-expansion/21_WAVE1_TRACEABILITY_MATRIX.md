@@ -12,7 +12,7 @@
 | Approval date | `2026-07-16` |
 | Review | `21A_WAVE1_TRACEABILITY_REVIEW.md` |
 | Critical / High / Product decisions / gaps | `0 / 0 / 0 / 0` |
-| Pinned revision | Pending |
+| Pinned revision | `da507c16e1d233238885e631d4daeed5d635aca5` |
 | Implementation authorization | `No` |
 
 ## 1. Artifact Version and Pin Register
@@ -27,7 +27,7 @@
 | `W1-GOLDEN-18` | 1.0 | Engineering and QA | `e714b4c374166a27a8aa1b40ab4b851ce0b92a9d` |
 | `W1-UI-19` | 1.0 | BA, UX, Accessibility | `6a392d11c747c784e37f42c9fd6bfb15cc010d5a` |
 | `W1-VERIFY-20` | 1.0 | QA, Security, Engineering | `02d1abed01aeb5681b3f84245b692516235da60b` |
-| `W1-TRACE-21` | 1.0 | BA, QA, Governance | Pending until approval commit |
+| `W1-TRACE-21` | 1.0 | BA, QA, Governance | `da507c16e1d233238885e631d4daeed5d635aca5` |
 
 Pinned revision identifies the approval content commit; subsequent pin metadata commits do not change the approved substantive contract.
 
