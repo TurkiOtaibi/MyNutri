@@ -12,7 +12,7 @@
 | Approval date | `2026-07-16` |
 | Review evidence | `16A_WAVE1_MIGRATION_ROLLBACK_REVIEW.md` |
 | Critical / High / Product decisions | `0 / 0 / 0` |
-| Pinned revision | Pending |
+| Pinned revision | `ead5de21fe1153126f6c19c9f7aeba6a732ace89` |
 | Implementation authorization | `No` |
 
 ## 1. Baseline and Authority
