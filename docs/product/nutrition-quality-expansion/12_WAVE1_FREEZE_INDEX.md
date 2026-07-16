@@ -13,7 +13,7 @@
 | Document ID | `W1-FREEZE-INDEX-12` |
 | Document title | Wave 1 Freeze Index |
 | Version | Pending |
-| Status | `Draft — Not Frozen` |
+| Status | `Draft — Awaiting Package Merge` |
 | Created date | 2026-07-15 |
 | Last updated date | 2026-07-16 |
 | Implemented Baseline Code Commit | `d6caf0a124e5ffec63cabd1972ed742b3e7fc8bd` |
@@ -21,16 +21,16 @@
 | Governance Decision Direction Commit | `b9869dfe0a1dc26190aaa6478f2114da82a0793e` |
 | Final Freeze Package Commit | Pending |
 | Wave | Wave 1 - Nutrition & Data Foundation |
-| Readiness verdict | `Not Ready to Build` |
-| Critical issue count | 2 |
-| High unresolved issue count | 11 |
-| Product Owner approval | Pending |
-| Architecture approval | Pending |
-| Security approval | Pending |
-| Engineering/Data approval | Pending |
-| API approval | Pending |
-| BA/UX approval | Pending |
-| QA approval | Pending |
+| Readiness verdict | `Ready to Build` pending package merge and final pin |
+| Critical issue count | 0 |
+| High unresolved issue count | 0 |
+| Product Owner approval | Approved through artifact authorities |
+| Architecture approval | Approved |
+| Security approval | Approved |
+| Engineering/Data approval | Approved |
+| API approval | Approved |
+| BA/UX approval | Approved |
+| QA approval | Approved |
 
 The approved C02 Product Owner decision selects this linked modular package structure. That approval does not approve this draft index, its missing artifacts, or implementation.
 
@@ -78,19 +78,19 @@ Numeric artifact identifiers `13` through `21` are reserved for the formal modul
 
 ## 4. Required Freeze Artifacts
 
-Artifact 13 is formally approved as Architecture and Security direction but remains unpinned until its pull request is merged. It is not Frozen and is not yet approved freeze-package evidence. Artifact 14 authoring may begin only after the Artifact 13 merge revision is recorded. Artifacts 14-21 do not exist and remain `Not Created`.
+Artifact 13 is formally approved as Architecture and Security direction and pinned to PR #3 merge revision `c7c48746715d24238acd70cd4eea137bf0f87cfd`. It is not Frozen. Artifact 14 documentation authoring may begin. Artifacts 14-21 do not exist and remain `Not Created`.
 
 | Artifact ID | Exact path | Purpose | Status | Owner | Approver | Approval date | Version | Pinned commit/revision | Dependencies | Supersedes | Blocking issues | Required for implementation start | Required for Wave 1 sign-off |
 |---|---|---|---|---|---|---|---|---|---|---|---|---:|---:|
-| `W1-ADR-13` | `docs/product/nutrition-quality-expansion/13_WAVE1_ARCHITECTURE_SECURITY_ADRS.md` | Architecture, security, Principal ownership, rule authority, and system-boundary ADRs | Approved | Architecture / Security | Product Owner / Architecture / Security | `2026-07-16` | `1.0` | Pending until PR merge | `DEC-C01-10`, `DEC-C02-11`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`, `DEC-H11` | None | Product Owner decisions: 0; Critical review findings: 0; High review findings: 0; approved but not yet pinned; review evidence: `docs/product/nutrition-quality-expansion/13A_WAVE1_ARCHITECTURE_SECURITY_REVIEW.md` | Yes | Yes |
-| `W1-DATA-14` | `docs/product/nutrition-quality-expansion/14_WAVE1_PHYSICAL_DATA_MODEL.md` | Exact tables, fields, types, constraints, ownership, versions, and legacy semantics | Not Created | Pending | Pending | Pending | Pending | Pending | `W1-ADR-13`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`; governing decisions | None | C01; H01-H10 | Yes | Yes |
-| `W1-API-15` | `docs/product/nutrition-quality-expansion/15_WAVE1_API_CONTRACTS.md` | Requests, responses, errors, nulls, idempotency, ownership, and compatibility | Not Created | Pending | Pending | Pending | Pending | Pending | `W1-ADR-13`, `W1-DATA-14`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`, `DEC-H11` | None | C01; H01-H11 | Yes | Yes |
-| `W1-MIG-16` | `docs/product/nutrition-quality-expansion/16_WAVE1_MIGRATION_ROLLBACK_PLAN.md` | Expand-Migrate-Contract, rollback, realistic rehearsal, and legacy protection | Not Created | Pending | Pending | Pending | Pending | Pending | `W1-ADR-13`, `W1-DATA-14`, `W1-API-15`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10` | None | C01; H01-H10 | Yes | Yes |
-| `W1-BAQA-17` | `docs/product/nutrition-quality-expansion/17_WAVE1_USER_STORIES_ACCEPTANCE_CRITERIA.md` | Testable user stories and positive/negative acceptance criteria | Not Created | Pending | Pending | Pending | Pending | Pending | `PDR-V1.1`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`, `DEC-H11`, `W1-ADR-13` through `W1-MIG-16` | None | C01; C02; H01-H11 | Yes | Yes |
-| `W1-GOLDEN-18` | `docs/product/nutrition-quality-expansion/18_WAVE1_GOLDEN_CALCULATIONS.md` | Fixed calculation, target, boundary, warning, rejection, null, and legacy scenarios | Not Created | Pending | Pending | Pending | Pending | Pending | `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H10`, `DEC-H11`, `W1-API-15`, `W1-BAQA-17` | None | H01-H08; H10-H11 | Yes | Yes |
-| `W1-UI-19` | `docs/product/nutrition-quality-expansion/19_WAVE1_UI_STATE_MATRIX.md` | Loading, empty, partial, unknown, legacy, error, keyboard, RTL, responsive, and accessibility states | Not Created | Pending | Pending | Pending | Pending | Pending | `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`, `DEC-H11`, `W1-API-15`, `W1-BAQA-17` | None | H01-H11 | Yes | Yes |
-| `W1-VERIFY-20` | `docs/product/nutrition-quality-expansion/20_WAVE1_VERIFICATION_REGRESSION_PLAN.md` | Focused, migration, security, compatibility, baseline regression, and release evidence | Not Created | Pending | Pending | Pending | Pending | Pending | `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`, `DEC-H11`, `W1-ADR-13` through `W1-UI-19` | None | C01; C02; H01-H11 | Yes | Yes |
-| `W1-TRACE-21` | `docs/product/nutrition-quality-expansion/21_WAVE1_TRACEABILITY_MATRIX.md` | Decision-to-contract-to-story-to-test-to-closure traceability | Not Created | Pending | Pending | Pending | Pending | Pending | `PDR-V1.1`, `DEC-C01-10`, `DEC-C02-11`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`, `DEC-H11`, `W1-ADR-13` through `W1-VERIFY-20` | None | C01; C02; H01-H11 | Yes | Yes |
+| `W1-ADR-13` | `docs/product/nutrition-quality-expansion/13_WAVE1_ARCHITECTURE_SECURITY_ADRS.md` | Architecture, security, Principal ownership, rule authority, and system-boundary ADRs | Approved | Architecture / Security | Product Owner / Architecture / Security | `2026-07-16` | `1.0` | `c7c48746715d24238acd70cd4eea137bf0f87cfd` | `DEC-C01-10`, `DEC-C02-11`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`, `DEC-H11` | None | Product Owner decisions: 0; Critical review findings: 0; High review findings: 0; approved and pinned; review evidence: `docs/product/nutrition-quality-expansion/13A_WAVE1_ARCHITECTURE_SECURITY_REVIEW.md` | Yes | Yes |
+| `W1-DATA-14` | `docs/product/nutrition-quality-expansion/14_WAVE1_PHYSICAL_DATA_MODEL.md` | Exact tables, fields, types, constraints, ownership, versions, and legacy semantics | Approved | Engineering / Data | Engineering / Data | `2026-07-16` | `1.0` | `afa3a9bb220a7798920d7edc1b0949da15f2d7fe` | `W1-ADR-13`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`; governing decisions | None | Critical 0; High 0; Product decisions 0; review `14A_WAVE1_PHYSICAL_DATA_MODEL_REVIEW.md` | Yes | Yes |
+| `W1-API-15` | `docs/product/nutrition-quality-expansion/15_WAVE1_API_CONTRACTS.md` | Requests, responses, errors, nulls, idempotency, ownership, and compatibility | Approved | API / Architecture | API / Architecture | `2026-07-16` | `1.0` | `400366b39abb73bb2e2d2ba82c79c1cd524d6e67` | `W1-ADR-13`, `W1-DATA-14`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`, `DEC-H11` | None | Critical 0; High 0; Product decisions 0; review `15A_WAVE1_API_CONTRACTS_REVIEW.md` | Yes | Yes |
+| `W1-MIG-16` | `docs/product/nutrition-quality-expansion/16_WAVE1_MIGRATION_ROLLBACK_PLAN.md` | Expand-Migrate-Contract, rollback, realistic rehearsal, and legacy protection | Approved | Engineering / Data / Operations | Engineering / Data / Operations | `2026-07-16` | `1.0` | `ead5de21fe1153126f6c19c9f7aeba6a732ace89` | `W1-ADR-13`, `W1-DATA-14`, `W1-API-15`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10` | None | Critical 0; High 0; Product decisions 0; review `16A_WAVE1_MIGRATION_ROLLBACK_REVIEW.md` | Yes | Yes |
+| `W1-BAQA-17` | `docs/product/nutrition-quality-expansion/17_WAVE1_USER_STORIES_ACCEPTANCE_CRITERIA.md` | Testable user stories and positive/negative acceptance criteria | Approved | Product / BA / UX | Product / BA / UX | `2026-07-16` | `1.0` | `ffde6f597750b18e85d861c36d3dfad105d36f0e` | `PDR-V1.1`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`, `DEC-H11`, `W1-ADR-13` through `W1-MIG-16` | None | Critical 0; High 0; Product decisions 0; review `17A_WAVE1_USER_STORIES_ACCEPTANCE_REVIEW.md` | Yes | Yes |
+| `W1-GOLDEN-18` | `docs/product/nutrition-quality-expansion/18_WAVE1_GOLDEN_CALCULATIONS.md` | Fixed calculation, target, boundary, warning, rejection, null, and legacy scenarios | Approved | Engineering / QA | Engineering / QA | `2026-07-16` | `1.0` | `e714b4c374166a27a8aa1b40ab4b851ce0b92a9d` | `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H10`, `DEC-H11`, `W1-API-15`, `W1-BAQA-17` | None | Critical 0; High 0; Product decisions 0; review `18A_WAVE1_GOLDEN_CALCULATIONS_REVIEW.md` | Yes | Yes |
+| `W1-UI-19` | `docs/product/nutrition-quality-expansion/19_WAVE1_UI_STATE_MATRIX.md` | Loading, empty, partial, unknown, legacy, error, keyboard, RTL, responsive, and accessibility states | Approved | BA / UX / Accessibility | BA / UX / Accessibility | `2026-07-16` | `1.0` | `6a392d11c747c784e37f42c9fd6bfb15cc010d5a` | `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`, `DEC-H11`, `W1-API-15`, `W1-BAQA-17` | None | Critical 0; High 0; Product decisions 0; review `19A_WAVE1_UI_STATE_MATRIX_REVIEW.md` | Yes | Yes |
+| `W1-VERIFY-20` | `docs/product/nutrition-quality-expansion/20_WAVE1_VERIFICATION_REGRESSION_PLAN.md` | Focused, migration, security, compatibility, baseline regression, and release evidence | Approved | QA / Security / Engineering | QA / Security / Engineering | `2026-07-16` | `1.0` | `02d1abed01aeb5681b3f84245b692516235da60b` | `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`, `DEC-H11`, `W1-ADR-13` through `W1-UI-19` | None | Critical 0; High 0; Product decisions 0; review `20A_WAVE1_VERIFICATION_REGRESSION_REVIEW.md` | Yes | Yes |
+| `W1-TRACE-21` | `docs/product/nutrition-quality-expansion/21_WAVE1_TRACEABILITY_MATRIX.md` | Decision-to-contract-to-story-to-test-to-closure traceability | Approved | BA / QA / Governance | BA / QA / Governance | `2026-07-16` | `1.0` | `da507c16e1d233238885e631d4daeed5d635aca5` | `PDR-V1.1`, `DEC-C01-10`, `DEC-C02-11`, `DEC-H01`, `DEC-H02`, `DEC-H03`, `DEC-H04`, `DEC-H05`, `DEC-H06`, `DEC-H07`, `DEC-H08`, `ADR-DIR-H09`, `ADR-DIR-H10`, `DEC-H11`, `W1-ADR-13` through `W1-VERIFY-20` | None | Critical 0; High 0; Product decisions 0; gaps 0; review `21A_WAVE1_TRACEABILITY_REVIEW.md` | Yes | Yes |
 
 ### Artifact 13 Blocking-Decision State
 
@@ -107,10 +107,9 @@ Approval date: 2026-07-16
 Review evidence: docs/product/nutrition-quality-expansion/13A_WAVE1_ARCHITECTURE_SECURITY_REVIEW.md
 Critical review findings: 0
 High review findings: 0
-Pinned commit/revision: Pending until PR merge
+Pinned commit/revision: c7c48746715d24238acd70cd4eea137bf0f87cfd
 Artifact 13 frozen: No
-Artifact 14 authoring before Artifact 13 merge and pin: No
-Artifact 14 authoring after Artifact 13 merge and pin: Yes, documentation drafting only
+Artifact 14 authoring: Yes, documentation drafting only
 Implementation authorization: No
 Artifacts 14 through 21: Not Created
 ```
@@ -358,7 +357,7 @@ If any condition becomes false after freeze, change control under `PD-001` appli
 ## 8. Current Declaration
 
 ```text
-Current verdict: Not Ready to Build
-Current freeze status: Draft — Not Frozen
+Current verdict: Ready to Build pending package merge and final pin
+Current freeze status: Draft — Awaiting Package Merge
 Implementation authorization: No
 ```

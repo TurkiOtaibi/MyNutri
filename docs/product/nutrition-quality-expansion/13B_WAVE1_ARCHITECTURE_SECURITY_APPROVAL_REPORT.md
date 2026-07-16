@@ -63,7 +63,7 @@ Product Owner decisions remaining for Artifact 13: `0`.
 
 - Version: `1.0`.
 - Status: `Approved — Architecture and Security`.
-- Pinned revision: Pending until PR merge.
+- Pinned revision: `c7c48746715d24238acd70cd4eea137bf0f87cfd`.
 - Frozen: No.
 
 Approval accepts the architecture and security direction. It does not make Artifact 13 final freeze-package evidence until the merge revision is pinned.
@@ -124,7 +124,7 @@ Artifact 13 approval: Approved — Architecture and Security
 Critical findings: 0
 High findings: 0
 Product Owner decisions remaining: 0
-Pinned revision: Pending until merge
+Pinned revision: c7c48746715d24238acd70cd4eea137bf0f87cfd
 Artifact 14 authoring before merge: No
 Artifact 14 authoring after merge: Yes
 Product implementation authorized: No
