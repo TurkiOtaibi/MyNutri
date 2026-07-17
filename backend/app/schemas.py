@@ -652,12 +652,16 @@ class NutritionSnapshot(BaseModel):
     iron_mg: float | None = None
     magnesium_mg: float | None = None
     zinc_mg: float | None = None
+    selenium_mcg: float | None = None
     vitamin_d_mcg: float | None = None
     vitamin_b12_mcg: float | None = None
+    vitamin_a_rae_mcg: float | None = None
     vitamin_c_mg: float | None = None
     vitamin_a_mcg: float | None = None
     folate_mcg: float | None = None
+    folate_dfe_mcg: float | None = None
     vitamin_k_mcg: float | None = None
+    iodine_mcg: float | None = None
     notes: str | None = None
     data_source: str | None = None
     log_mode: str | None = None
@@ -685,12 +689,16 @@ class NutritionTotals(BaseModel):
     iron_mg: float | None = None
     magnesium_mg: float | None = None
     zinc_mg: float | None = None
+    selenium_mcg: float | None = None
     vitamin_d_mcg: float | None = None
     vitamin_b12_mcg: float | None = None
+    vitamin_a_rae_mcg: float | None = None
     vitamin_c_mg: float | None = None
     vitamin_a_mcg: float | None = None
     folate_mcg: float | None = None
+    folate_dfe_mcg: float | None = None
     vitamin_k_mcg: float | None = None
+    iodine_mcg: float | None = None
     total_sugars_g: float | None = None
     net_carbs_g: float = 0
 
@@ -707,7 +715,9 @@ class DiaryEntryCreate(BaseModel):
     @field_validator("entry_date")
     @classmethod
     def prevent_future_entry_date(cls, value: date) -> date:
-        if value > date.today():
+        from app.core.calendar import current_diary_date
+
+        if value > current_diary_date():
             raise ValueError("لا يمكن تسجيل يوميات بتاريخ مستقبلي.")
         return value
 
@@ -715,14 +725,23 @@ class DiaryEntryCreate(BaseModel):
 class DiaryEntryUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    quantity: float = Field(gt=0, le=50)
+    quantity: float | None = Field(default=None, gt=0, le=50)
     meal_type: MealType | None = None
+
+    @model_validator(mode="after")
+    def require_one_change(self):
+        if self.quantity is None and self.meal_type is None:
+            raise ValueError("يجب إرسال الكمية أو قسم الوجبة.")
+        return self
 
 
 class DiaryEntryResponse(BaseModel):
     id: UUID
     entry_date: date
     food_id: UUID | None
+    target_plan_id: UUID | None
+    target_provenance: Literal["versioned_plan", "legacy_unversioned", "no_target_source"]
+    snapshot_schema_version: int | None
     quantity: float
     meal_type: MealType
     nutrition_snapshot: NutritionSnapshot

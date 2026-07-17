@@ -66,6 +66,7 @@ def principal_client():
             "rotated-token-a": PRINCIPAL_A,
             "token-b": PRINCIPAL_B,
         },
+        snapshot_v2_writer_enabled=True,
     )
 
     def override_session():
@@ -168,6 +169,10 @@ def test_cross_owner_mutations_and_diary_binding_are_non_enumerating(
         headers=_headers("token-a"),
     )
     assert own_diary.status_code == 201
+    assert own_diary.json()["snapshot_schema_version"] == 2
+    assert own_diary.json()["target_plan_id"] is None
+    assert own_diary.json()["target_provenance"] == "no_target_source"
+    assert "schema_version" not in own_diary.json()["nutrition_snapshot"]
     entry_id = own_diary.json()["id"]
     missing_entry = principal_client.get(f"/diary/{uuid4()}", headers=_headers("token-b"))
     cross_entry = principal_client.get(f"/diary/{entry_id}", headers=_headers("token-b"))
@@ -177,6 +182,22 @@ def test_cross_owner_mutations_and_diary_binding_are_non_enumerating(
     week = principal_client.get("/diary/week?start=2026-01-01", headers=_headers("token-b"))
     assert week.status_code == 200
     assert week.json()["weekly_totals"]["calories"] == 0
+
+    injected = principal_client.post(
+        "/diary/entries",
+        json={
+            "food_id": food_id,
+            "entry_date": "2026-01-01",
+            "quantity": 1,
+            "nutrition_snapshot": {"schema_version": 2},
+            "target_plan_id": str(uuid4()),
+        },
+        headers=_headers("token-a"),
+    )
+    assert injected.status_code == 422
+    assert {
+        item["code"] for item in injected.json()["detail"]
+    } == {"NON_AUTHORITATIVE_FIELD"}
 
 
 def test_token_rotation_preserves_principal_ownership(principal_client: TestClient) -> None:

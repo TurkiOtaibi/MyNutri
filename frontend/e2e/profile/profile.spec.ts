@@ -118,12 +118,20 @@ test.describe("@profile Profile and targets redesign", () => {
     else await expect(page.getByText("تغييرات غير محفوظة")).toBeVisible();
   });
 
-  test("@p0 dirty state normalizes values, validates fields, and blocks invalid saves", async ({ page }) => {
+  test("@p0 dirty state normalizes values, validates fields, and blocks invalid saves", async ({ page, originalProfile }) => {
+    const profileResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/profile" &&
+      response.request().method() === "GET" &&
+      response.request().resourceType() === "fetch"
+    );
     await page.goto("/profile");
+    expect((await profileResponse).status()).toBe(200);
     const weight = page.getByLabel("الوزن");
+    await expect(page.locator(".profile-card-skeleton")).toHaveCount(0);
+    await expect(weight).toHaveValue(String(originalProfile.weight_kg));
     const original = await weight.inputValue();
     await weight.fill(`${Number(original).toFixed(1)}`);
-    expect(await page.locator(".profile-save-bar").count()).toBe(0);
+    await expect(page.locator(".profile-save-bar")).toHaveCount(0);
     await weight.fill("0");
     await expect(page.locator(".profile-save-bar")).toBeVisible();
     let activations = 0;
@@ -210,18 +218,31 @@ test.describe("@profile Profile and targets redesign", () => {
   });
 
   test("@p1 initial loading and load failure never expose a fabricated editable form", async ({ page }) => {
-    const profileApiPattern = new RegExp(`^${API_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/profile$`);
+    const profileApiPattern = (url: URL) => url.pathname === "/profile";
+    let releaseProfileResponse: () => void = () => undefined;
+    const profileResponseBlocked = new Promise<void>((resolve) => {
+      releaseProfileResponse = resolve;
+    });
     await page.route(profileApiPattern, async (route) => {
-      if (route.request().method() !== "GET") return route.continue();
+      if (
+        route.request().method() !== "GET" ||
+        route.request().resourceType() !== "fetch"
+      ) return route.continue();
       const response = await route.fetch();
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      await profileResponseBlocked;
       return route.fulfill({ response });
     });
-    await page.goto("/profile");
+    const navigation = page.goto("/profile");
     await expect(page.locator(".profile-card-skeleton").first()).toBeVisible();
+    releaseProfileResponse();
+    await navigation;
     await expect(page.getByLabel("الوزن")).toBeVisible();
     await page.unroute(profileApiPattern);
-    await page.route(profileApiPattern, (route) => route.request().method() === "GET" ? route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "unavailable" }) }) : route.continue());
+    await page.route(profileApiPattern, (route) =>
+      route.request().method() === "GET" && route.request().resourceType() === "fetch"
+        ? route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "unavailable" }) })
+        : route.continue()
+    );
     await page.goto("/profile?load-error=1");
     await expect(page.getByText("تعذر تحميل بياناتك")).toBeVisible();
     await expect(page.getByRole("button", { name: "إعادة المحاولة" })).toBeVisible();

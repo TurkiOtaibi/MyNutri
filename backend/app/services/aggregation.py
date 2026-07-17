@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 from app.core.auth import PrincipalContext
 from app.models import DiaryEntry
 from app.schemas import DaySummary, WeekSummary
-from app.services.diary import add_totals, empty_totals, totals_from_snapshot
+from app.services.diary import add_totals, empty_totals, totals_for_entry
 from app.services.profile import get_profile, to_target_response
 
 
@@ -36,7 +36,7 @@ def weekly_summary(session: Session, principal: PrincipalContext, start: date) -
         totals = empty_totals()
         for entry in entries:
             if entry.entry_date == current:
-                totals = add_totals(totals, totals_from_snapshot(entry.nutrition_snapshot, entry.quantity))
+                totals = add_totals(totals, totals_for_entry(entry))
         weekly_totals = add_totals(weekly_totals, totals)
         days.append(DaySummary(date=current, totals=totals, targets=targets))
 
