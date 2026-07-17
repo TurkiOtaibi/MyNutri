@@ -17,6 +17,16 @@ async function selectDate(page: import("@playwright/test").Page, value: string) 
   await expect(page.locator(".diary-entry-skeleton")).toHaveCount(0);
 }
 
+async function targetsForDate(request: import("@playwright/test").APIRequestContext, value: string) {
+  const response = await request.get(`${API_URL}/target-plans/current?date=${value}`, {
+    headers: { Authorization: `Bearer ${API_TOKEN}` }
+  });
+  expect(response.status()).toBe(200);
+  const body = await response.json() as { targets: { protein_g: number; carb_g: number; fat_g: number } | null };
+  expect(body.targets).not.toBeNull();
+  return body.targets!;
+}
+
 test.describe("@diary @final-polish compact visual refinements", () => {
   test("@p0 date controls stay symmetric and the title stays centered with and without Today", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
@@ -71,9 +81,8 @@ test.describe("@diary @final-polish compact visual refinements", () => {
   });
 
   test("@p0 macro copy is RTL-safe and progress widths represent 1%, 9%, and 22%", async ({ page, request, foodsApi }) => {
-    const date = localDate(-302);
-    const profile = await request.get(`${API_URL}/profile`, { headers: { Authorization: `Bearer ${API_TOKEN}` } });
-    const targets = (await profile.json()).targets as { protein_g: number; carb_g: number; fat_g: number };
+    const date = localDate();
+    const targets = await targetsForDate(request, date);
     const food = await foodsApi.create({
       name: uniqueName("Macro polish"),
       calories: 100,
@@ -103,15 +112,14 @@ test.describe("@diary @final-polish compact visual refinements", () => {
   });
 
   test("@p1 macro progress handles 0%, 100%, and over-target truthfully", async ({ page, request, foodsApi }) => {
-    const zeroDate = localDate(-303);
+    const zeroDate = localDate();
     await page.goto("/diary");
     await selectDate(page, zeroDate);
     const zeroBars = page.locator(".macro-progress-track > span");
     for (const bar of await zeroBars.all()) expect((await bar.boundingBox())!.width).toBe(0);
 
-    const profile = await request.get(`${API_URL}/profile`, { headers: { Authorization: `Bearer ${API_TOKEN}` } });
-    const targets = (await profile.json()).targets as { protein_g: number; carb_g: number; fat_g: number };
-    const date = localDate(-304);
+    const date = zeroDate;
+    const targets = await targetsForDate(request, date);
     const food = await foodsApi.create({
       name: uniqueName("Macro bounds"), calories: 100,
       protein_g: targets.protein_g,
@@ -119,6 +127,7 @@ test.describe("@diary @final-polish compact visual refinements", () => {
       fat_g: targets.fat_g
     });
     await foodsApi.createDiary(food.id, date, 1, "breakfast");
+    await page.reload();
     await selectDate(page, date);
     const rows = page.locator(".macro-progress-row");
     await expect(rows.nth(0).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "100");

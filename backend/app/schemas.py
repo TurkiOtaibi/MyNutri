@@ -755,6 +755,35 @@ class DaySummary(BaseModel):
     date: date
     totals: NutritionTotals
     targets: TargetResponse | None = None
+    target_provenance: Literal["versioned_plan", "legacy_unversioned", "no_target_source"]
+    nutrient_aggregates: list["DiaryNutrientAggregate"]
+    overall_nutrient_coverage_percent: float | None
+
+
+class DiaryNutrientTarget(BaseModel):
+    type: Literal[
+        "minimum", "maximum", "adequate", "recommended", "range", "monitor_only", "minimize"
+    ]
+    value: float | None = None
+    lower: float | None = None
+    upper: float | None = None
+    unit: str
+    source: Literal["versioned_plan", "legacy_unversioned"]
+
+
+class DiaryNutrientAggregate(BaseModel):
+    key: str
+    amount: float | None
+    known_entry_count: int
+    total_entry_count: int
+    coverage_percent: float | None
+    coverage_state: Literal["no_entries", "all_unknown", "partial", "complete"]
+    amount_qualifier: Literal["unavailable", "at_least", "exact"]
+    target: DiaryNutrientTarget | None = None
+    evaluation: str | None = None
+    progress_percent: float | None = None
+    remaining: float | None = None
+    available: float | None = None
 
 
 class WeekSummary(BaseModel):

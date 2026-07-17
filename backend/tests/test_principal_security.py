@@ -182,6 +182,12 @@ def test_cross_owner_mutations_and_diary_binding_are_non_enumerating(
     week = principal_client.get("/diary/week?start=2026-01-01", headers=_headers("token-b"))
     assert week.status_code == 200
     assert week.json()["weekly_totals"]["calories"] == 0
+    assert all(
+        aggregate["total_entry_count"] == 0
+        and aggregate["coverage_state"] == "no_entries"
+        for day in week.json()["days"]
+        for aggregate in day["nutrient_aggregates"]
+    )
 
     injected = principal_client.post(
         "/diary/entries",

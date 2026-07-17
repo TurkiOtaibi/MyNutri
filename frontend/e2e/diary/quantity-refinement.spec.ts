@@ -124,18 +124,18 @@ test.describe("@diary quantity and UX refinement", () => {
 
   test("@p0 summary copy and macro expressions use consumed, target, remaining RTL order", async ({ page, request, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Summary Order"), calories: 210, protein_g: 5.8, carb_g: 28, fat_g: 8.6 });
-    const isolatedDate = (() => {
-      const date = new Date();
-      date.setDate(date.getDate() - 30);
-      return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-    })();
+    const isolatedDate = localDate();
     await foodsApi.createDiary(food.id, isolatedDate, 1);
     await page.goto("/diary");
     await page.getByLabel("اختيار تاريخ اليوميات").fill(isolatedDate);
     const summary = page.getByLabel("ملخص تقدم اليوم");
-    const profileResponse = await request.get(`${API_URL}/profile`, { headers: { Authorization: `Bearer ${API_TOKEN}` } });
-    const profileBody = await profileResponse.json() as { targets: { target_calories: number } };
-    await expect(summary.getByLabel(new RegExp(`من ${profileBody.targets.target_calories} سعرة`))).toBeVisible();
+    const targetsResponse = await request.get(`${API_URL}/target-plans/current?date=${isolatedDate}`, {
+      headers: { Authorization: `Bearer ${API_TOKEN}` }
+    });
+    expect(targetsResponse.status()).toBe(200);
+    const targetsBody = await targetsResponse.json() as { targets: { target_calories: number } | null };
+    expect(targetsBody.targets).not.toBeNull();
+    await expect(summary.getByLabel(new RegExp(`من ${targetsBody.targets!.target_calories} سعرة`))).toBeVisible();
     await expect(summary.getByText(/المتبقي \d+/)).toBeVisible();
     await expect(summary.getByLabel(/البروتين:/)).toBeVisible();
     await expect(summary.getByLabel(/الكارب:/)).toBeVisible();
