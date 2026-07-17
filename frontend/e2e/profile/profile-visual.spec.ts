@@ -8,9 +8,8 @@ import { API_TOKEN, API_URL } from "../foods/helpers";
 
 const output = resolve("..", "docs", "ui-ux", "screenshots", "profile-targets-redesign");
 const headers = { Authorization: `Bearer ${API_TOKEN}` };
-const escapedApiUrl = API_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const profileApiPattern = new RegExp(`^${escapedApiUrl}/profile$`);
-const targetPlanApiPattern = new RegExp(`^${escapedApiUrl}/target-plans/`);
+const profileApiPattern = "**/profile";
+const targetPlanApiPattern = "**/target-plans/**";
 
 function inputFrom(profile: ProfileResponse): ProfileInput {
   return {
@@ -104,6 +103,7 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
     const loadingPage = await page.context().newPage();
     await loadingPage.setViewportSize({ width: 390, height: 844 });
     await loadingPage.route(profileApiPattern, async (route) => {
+      if (route.request().resourceType() === "document") return route.continue();
       const response = await route.fetch();
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 900));
       return route.fulfill({ response });
@@ -116,7 +116,9 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
 
     const errorPage = await page.context().newPage();
     await errorPage.setViewportSize({ width: 390, height: 844 });
-    await errorPage.route(profileApiPattern, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "unavailable" }) }));
+    await errorPage.route(profileApiPattern, (route) => route.request().resourceType() === "document"
+      ? route.continue()
+      : route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "unavailable" }) }));
     await errorPage.goto("/profile");
     await expect(errorPage.getByText("تعذر تحميل بياناتك")).toBeVisible();
     await errorPage.screenshot({ path: resolve(output, "17-initial-load-error-390.png"), fullPage: true });

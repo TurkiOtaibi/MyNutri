@@ -28,8 +28,8 @@ test("@diary @visual capture final Diary polish states", async ({ page, request,
     name: uniqueName("توست Mixed Arabic English طويل للاختبار"), calories: 78,
     protein_g: 4, carb_g: 12, fat_g: 2, default_unit_type: "slice", unit_amount: 30
   });
-  await foodsApi.createDiary(first.id, localDate(), 1, "breakfast");
-  await foodsApi.createDiary(second.id, localDate(), 1, "breakfast");
+  const firstEntry = await foodsApi.createDiary(first.id, localDate(), 1, "breakfast");
+  const secondEntry = await foodsApi.createDiary(second.id, localDate(), 1, "breakfast");
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/diary");
@@ -41,7 +41,9 @@ test("@diary @visual capture final Diary polish states", async ({ page, request,
 
   const profile = await request.get(`${API_URL}/profile`, { headers: { Authorization: `Bearer ${API_TOKEN}` } });
   const targets = (await profile.json()).targets as { protein_g: number; carb_g: number; fat_g: number };
-  const comparisonDate = localDate(-339);
+  await request.delete(`${API_URL}/diary/${firstEntry.id}`, { headers: { Authorization: `Bearer ${API_TOKEN}` } });
+  await request.delete(`${API_URL}/diary/${secondEntry.id}`, { headers: { Authorization: `Bearer ${API_TOKEN}` } });
+  const comparisonDate = localDate();
   const comparison = await foodsApi.create({
     name: uniqueName("Macro comparison"), calories: 100,
     protein_g: targets.protein_g * 0.09,
@@ -49,23 +51,35 @@ test("@diary @visual capture final Diary polish states", async ({ page, request,
     fat_g: targets.fat_g * 0.22
   });
   await foodsApi.createDiary(comparison.id, comparisonDate, 1, "breakfast");
-  await selectDate(page, comparisonDate);
+  const refreshedWeek = page.waitForResponse((response) => response.url().includes("/diary/week?") && response.ok());
+  await page.reload();
+  await refreshedWeek;
+  await expect(page.getByRole("heading", { name: comparison.name })).toBeVisible();
   await expect(page.locator(".macro-progress-row").nth(0)).toContainText("9%");
   await expect(page.locator(".macro-progress-row").nth(1)).toContainText("1%");
   await expect(page.locator(".macro-progress-row").nth(2)).toContainText("22%");
   await page.locator(".diary-summary").screenshot({ path: resolve(output, "03-summary-macros-9-1-22-390.png") });
+  const comparisonEntries = await foodsApi.listDiary(comparisonDate);
+  const comparisonEntry = comparisonEntries.find((entry) => entry.nutrition_snapshot.name === comparison.name);
+  expect(comparisonEntry).toBeDefined();
+  await request.delete(`${API_URL}/diary/${comparisonEntry!.id}`, { headers: { Authorization: `Bearer ${API_TOKEN}` } });
 
   const emptyDate = localDate(-340);
   await selectDate(page, emptyDate);
   await page.screenshot({ path: resolve(output, "06-other-date-today-visible-empty-390.png"), fullPage: true });
   await page.locator(".diary-summary").screenshot({ path: resolve(output, "07-summary-macros-zero-390.png") });
 
-  const overDate = localDate(-341);
+  const overDate = localDate();
   const over = await foodsApi.create({ name: uniqueName("Macro full over"), calories: 1800, protein_g: 160, carb_g: 172.3, fat_g: 60 });
   await foodsApi.createDiary(over.id, overDate, 1, "breakfast");
-  await selectDate(page, overDate);
+  const refreshedOverWeek = page.waitForResponse((response) => response.url().includes("/diary/week?") && response.ok());
+  await page.reload();
+  await refreshedOverWeek;
+  await expect(page.getByRole("heading", { name: over.name })).toBeVisible();
   await page.locator(".diary-summary").screenshot({ path: resolve(output, "08-summary-macros-100-over-390.png") });
 
+  await foodsApi.createDiary(first.id, localDate(), 1, "breakfast");
+  await foodsApi.createDiary(second.id, localDate(), 1, "breakfast");
   for (const width of [320, 430]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/diary");
