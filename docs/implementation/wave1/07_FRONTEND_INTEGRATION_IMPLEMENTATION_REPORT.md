@@ -69,12 +69,15 @@
 | Diary provenance label | Passed |
 | Diary integrity-error suppression | Passed |
 | Food Registry incompatibility | Passed |
+| CI-isolated Diary visual regression | 1/1 passed after deterministic target-source and refresh correction |
 | PostgreSQL disposable environment | Fresh upgrade through `0011`; UTF-8 database |
 | `git diff --check` | Passed |
 
 The first affected Playwright attempt used a local Next development server that stopped responding during `page.goto`; no assertion ran. The process was stopped, the production build passed, and the affected suite passed against the production server. This was an environment-process failure, not a Product test failure.
 
 The complete repository suites are intentionally reserved for GitHub CI and Stage 08 in accordance with the resumed workflow. No previously passing unchanged Stage 6 suite was rerun.
+
+The first GitHub full-suite run exposed one legacy visual-test isolation defect: the above-target scenario selected a historical date whose target source legitimately becomes unavailable after earlier lifecycle tests establish a legacy transition. The fixture now uses the authoritative current Diary date and waits for a successful refreshed week response after its out-of-page API write. It verifies that the new entry is rendered before preserving the above-target assertion. Product target resolution was not changed.
 
 ## 8. Files changed
 
@@ -87,6 +90,7 @@ The complete repository suites are intentionally reserved for GitHub CI and Stag
 - `frontend/app/globals.css`
 - `frontend/e2e/profile/profile.spec.ts`
 - `frontend/e2e/nutrition-quality.spec.ts`
+- `frontend/e2e/diary/diary-page-visual.spec.ts`
 - `frontend/e2e/global-setup.ts`
 - `frontend/playwright.config.ts`
 - `.github/workflows/ci.yml`
