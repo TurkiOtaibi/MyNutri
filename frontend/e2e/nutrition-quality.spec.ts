@@ -1,9 +1,21 @@
+import type { Page } from "@playwright/test";
+
 import { API_TOKEN, API_URL, expect, test, uniqueName } from "./foods/helpers";
 
 function localDate(days = 0): string {
   const date = new Date();
   date.setDate(date.getDate() + days);
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+}
+
+async function selectDiaryDate(page: Page, value: string) {
+  await page.waitForFunction(() => {
+    const picker = document.querySelector('input[aria-label="اختيار تاريخ اليوميات"]');
+    return picker != null && Object.keys(picker).some((key) => key.startsWith("__reactProps$"));
+  });
+  const picker = page.getByLabel("اختيار تاريخ اليوميات");
+  await picker.fill(value);
+  await expect(picker).toHaveValue(value);
 }
 
 test.describe("@nutrition-quality", () => {
@@ -27,11 +39,7 @@ test.describe("@nutrition-quality", () => {
     const food = await foodsApi.create({ name: uniqueName("Nutrition quality"), calories: 156, protein_g: 12.6, carb_g: 1.2, fat_g: 10.6, fiber_g: 0, sodium_mg: null, potassium_mg: 410 });
     await foodsApi.createDiary(food.id, date, 1, "breakfast");
     await page.goto("/diary");
-    await page.waitForFunction(() => {
-      const picker = document.querySelector('input[aria-label="اختيار تاريخ اليوميات"]');
-      return picker != null && Object.keys(picker).some((key) => key.startsWith("__reactProps$"));
-    });
-    await page.getByLabel("اختيار تاريخ اليوميات").fill(date);
+    await selectDiaryDate(page, date);
     const breakfast = page.locator("#meal-section-breakfast");
     await expect(breakfast).toContainText("بروتين 12.6 جم");
     await expect(breakfast).toContainText("كارب 1.2 جم");
@@ -41,8 +49,32 @@ test.describe("@nutrition-quality", () => {
     await expect(sheet).toContainText("الألياف");
     await expect(sheet).toContainText("0 جم");
     await expect(sheet).toContainText("تغطية البيانات 100%");
-    await expect(sheet).toContainText("الصوديوم");
-    await expect(sheet).toContainText("على الأقل");
+    const sodium = sheet.locator(".daily-nutrient-row").filter({ hasText: "الصوديوم" });
+    await expect(sodium).toContainText("غير متوفر");
+    await expect(sodium).toContainText("تغطية البيانات 0%");
+    await expect(sodium).not.toContainText("على الأقل");
+  });
+
+  test("Diary partial coverage renders the Backend confirmed minimum without a remaining allowance", async ({ page, foodsApi }) => {
+    const date = localDate();
+    const known = await foodsApi.create({ name: uniqueName("Known fiber"), fiber_g: 5, sodium_mg: 0 });
+    const unknown = await foodsApi.create({ name: uniqueName("Unknown fiber"), fiber_g: null, sodium_mg: null });
+    await foodsApi.createDiary(known.id, date, 1, "breakfast");
+    await foodsApi.createDiary(unknown.id, date, 1, "lunch");
+
+    await page.goto("/diary");
+    await selectDiaryDate(page, date);
+    await expect(page.locator("#meal-section-breakfast")).toContainText(known.name);
+    await expect(page.locator("#meal-section-lunch")).toContainText(unknown.name);
+    await page.getByRole("button", { name: "عرض التفاصيل الغذائية" }).click();
+
+    const sheet = page.getByRole("dialog", { name: "التفاصيل الغذائية لليوم" });
+    const fiber = sheet.locator(".daily-nutrient-row").filter({ hasText: "الألياف" });
+    await expect(fiber).toContainText("5 جم");
+    await expect(fiber).toContainText("على الأقل");
+    await expect(fiber).toContainText("تغطية البيانات 50%");
+    await expect(fiber).toContainText("لا يمكن تحديد الحالة مع التغطية الجزئية");
+    await expect(fiber).not.toContainText("المتبقي");
   });
 
   test("Food Details distinguishes explicit zero from missing values and limits completeness to Details", async ({ page, foodsApi }) => {

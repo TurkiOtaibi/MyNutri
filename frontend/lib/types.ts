@@ -332,6 +332,31 @@ export interface DaySummary {
   date: string;
   totals: NutritionTotals;
   targets: TargetResponse | null;
+  target_provenance: "versioned_plan" | "legacy_unversioned" | "no_target_source";
+  nutrient_aggregates: DiaryNutrientAggregate[];
+  overall_nutrient_coverage_percent: number | null;
+}
+
+export interface DiaryNutrientAggregate {
+  key: string;
+  amount: number | null;
+  known_entry_count: number;
+  total_entry_count: number;
+  coverage_percent: number | null;
+  coverage_state: "no_entries" | "all_unknown" | "partial" | "complete";
+  amount_qualifier: "unavailable" | "at_least" | "exact";
+  target: {
+    type: NutrientTargetType;
+    value: number | null;
+    lower: number | null;
+    upper: number | null;
+    unit: string;
+    source: "versioned_plan" | "legacy_unversioned";
+  } | null;
+  evaluation: string | null;
+  progress_percent: number | null;
+  remaining: number | null;
+  available: number | null;
 }
 
 export interface WeekSummary {

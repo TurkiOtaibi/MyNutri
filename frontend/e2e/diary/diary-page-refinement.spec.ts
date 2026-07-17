@@ -14,6 +14,16 @@ async function selectDate(page: import("@playwright/test").Page, value: string) 
   await expect(picker).toHaveValue(value);
 }
 
+async function targetsForDate(request: import("@playwright/test").APIRequestContext, value: string) {
+  const response = await request.get(`${API_URL}/target-plans/current?date=${value}`, {
+    headers: { Authorization: `Bearer ${API_TOKEN}` }
+  });
+  expect(response.status()).toBe(200);
+  const body = await response.json() as { targets: { target_calories: number; protein_g: number; carb_g: number; fat_g: number } | null };
+  expect(body.targets).not.toBeNull();
+  return body.targets!;
+}
+
 test.describe("@diary @page-refinement compact Diary page", () => {
   test("@p0 removes the repeated visible page title and keeps the compact current-date card first", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
@@ -47,19 +57,21 @@ test.describe("@diary @page-refinement compact Diary page", () => {
   });
 
   test("@p0 exact and above-target summaries use non-negative, clamped, accessible states", async ({ page, request, foodsApi }) => {
-    const exactDate = localDate(-210);
-    const overDate = localDate(-211);
-    const profileResponse = await request.get(`${API_URL}/profile`, { headers: { Authorization: `Bearer ${API_TOKEN}` } });
-    const targets = (await profileResponse.json()).targets as { target_calories: number; protein_g: number; carb_g: number; fat_g: number };
-    const exact = await foodsApi.create({ name: uniqueName("Exact target"), calories: targets.target_calories, protein_g: targets.protein_g, carb_g: targets.carb_g, fat_g: targets.fat_g });
-    const over = await foodsApi.create({ name: uniqueName("Over target"), calories: Math.min(3000, targets.target_calories + 300), protein_g: Math.min(300, targets.protein_g + 50), carb_g: Math.min(500, targets.carb_g + 50), fat_g: Math.min(300, targets.fat_g + 20) });
-    await foodsApi.createDiary(exact.id, exactDate, 1, "breakfast");
-    await foodsApi.createDiary(over.id, overDate, 1, "lunch");
+    const exactDate = localDate();
+    const overDate = exactDate;
+    const exactTargets = await targetsForDate(request, exactDate);
+    const overTargets = await targetsForDate(request, overDate);
+    const exact = await foodsApi.create({ name: uniqueName("Exact target"), calories: exactTargets.target_calories, protein_g: exactTargets.protein_g, carb_g: exactTargets.carb_g, fat_g: exactTargets.fat_g });
+    const over = await foodsApi.create({ name: uniqueName("Over target"), calories: Math.min(3000, overTargets.target_calories + 300), protein_g: Math.min(300, overTargets.protein_g + 50), carb_g: Math.min(500, overTargets.carb_g + 50), fat_g: Math.min(300, overTargets.fat_g + 20) });
+    const exactEntry = await foodsApi.createDiary(exact.id, exactDate, 1, "breakfast");
     await page.goto("/diary");
     await selectDate(page, exactDate);
     const summary = page.getByLabel("ملخص تقدم اليوم");
     await expect(summary.getByText("تم الوصول إلى الهدف")).toBeVisible();
     await expect(summary.getByRole("progressbar", { name: /100% من هدف السعرات/ })).toHaveAttribute("aria-valuenow", "100");
+    await request.delete(`${API_URL}/diary/${exactEntry.id}`, { headers: { Authorization: `Bearer ${API_TOKEN}` } });
+    await foodsApi.createDiary(over.id, overDate, 1, "lunch");
+    await page.reload();
     await selectDate(page, overDate);
     await expect(summary.getByText(/\+\d+ فوق الهدف/)).toBeVisible();
     await expect(summary.getByText(/المتبقي -/)).toHaveCount(0);

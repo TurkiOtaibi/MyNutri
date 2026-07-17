@@ -26,7 +26,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createDiaryEntry,
   deleteDiaryEntry,
-  getProfile,
+  getNutritionRegistry,
   getWeekSummary,
   listDiaryEntries,
   listDiaryHistory,
@@ -36,20 +36,22 @@ import {
 import { addDays, formatDayNumber, formatLongArabicDate, formatShortDate, todayInputValue, weekStartSunday } from "@/lib/dates";
 import { calculateServingNutrition, defaultUnitLabels, defaultServingText, formatServingMacro, unitBasisLabels } from "@/lib/food";
 import { weekdays } from "@/lib/labels";
-import { definitionsForTargets, formatNutrientValue, nutrientValue, targetTypeLabels, type NutrientDefinition } from "@/lib/nutrients";
+import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels, type NutrientDefinition } from "@/lib/nutrients";
 import type {
+  DaySummary,
+  DiaryNutrientAggregate,
   DiaryEntryInput,
   DiaryEntryResponse,
   FoodResponse,
   MealType,
   NutritionSnapshot,
+  NutritionRegistryResponse,
   NutritionTotals,
   TargetResponse,
   WeekSummary
 } from "@/lib/types";
 
 
-const PROFILE_READ_ERROR = "تعذر تحميل الملف الشخصي. تحقق من الاتصال وحاول مرة أخرى.";
 const FOODS_READ_ERROR = "تعذر تحميل قائمة الأطعمة. تحقق من الاتصال وحاول مرة أخرى.";
 const DIARY_DAY_READ_ERROR = "تعذر تحميل بيانات هذا اليوم";
 const WEEK_READ_ERROR = "تعذر تحميل ملخص الأسبوع. تحقق من الاتصال وحاول مرة أخرى.";
@@ -90,13 +92,14 @@ export function DiaryPage() {
   const addTriggerKindRef = useRef("desktop");
   const weekStart = useMemo(() => weekStartSunday(selectedDate), [selectedDate]);
 
-  const profileQuery = useQuery({ queryKey: ["profile"], queryFn: getProfile });
+  const registryQuery = useQuery({ queryKey: ["nutrition-registry"], queryFn: getNutritionRegistry });
   const weekQuery = useQuery({ queryKey: ["week", weekStart], queryFn: () => getWeekSummary(weekStart) });
   const entriesQuery = useQuery({ queryKey: ["entries", selectedDate], queryFn: () => listDiaryEntries(selectedDate) });
 
-  const targets = profileQuery.data?.targets ?? weekQuery.data?.targets ?? null;
+  const selectedDay = weekQuery.data?.days.find((day) => day.date === selectedDate);
+  const targets = selectedDay?.targets ?? null;
   const entries = entriesQuery.data ?? [];
-  const totals = useMemo(() => sumEntries(entries, definitionsForTargets(targets)), [entries, targets]);
+  const totals = selectedDay?.totals ?? emptyNutritionTotals();
 
   useEffect(() => {
     if (!statusMessage) return;
@@ -219,17 +222,17 @@ export function DiaryPage() {
         </main>
 
         <aside className="diary-summary-column" aria-label="ملخص تقدم اليوم">
-          {profileQuery.isError ? (
-            <RetryState message={PROFILE_READ_ERROR} onRetry={() => profileQuery.refetch()} compact />
+          {weekQuery.isError ? (
+            <RetryState message={WEEK_READ_ERROR} onRetry={() => weekQuery.refetch()} compact />
           ) : (
-            <DailyProgressSummary totals={totals} targets={targets} pending={profileQuery.isPending || entriesQuery.isPending} failed={entriesQuery.isError} onOpenNutrition={() => setNutritionDetailsOpen(true)} />
+            <DailyProgressSummary totals={totals} targets={targets} pending={weekQuery.isPending || entriesQuery.isPending} failed={entriesQuery.isError} onOpenNutrition={() => setNutritionDetailsOpen(true)} />
           )}
         </aside>
       </div>
 
       {statusMessage ? <div className="diary-status" role="status" aria-live="polite">{statusMessage}</div> : null}
 
-      {nutritionDetailsOpen ? <DailyNutritionDetails entries={entries} targets={targets} onClose={() => setNutritionDetailsOpen(false)} /> : null}
+      {nutritionDetailsOpen ? <DailyNutritionDetails day={selectedDay} registry={registryQuery.data} registryPending={registryQuery.isPending} registryFailed={registryQuery.isError} onRetryRegistry={() => registryQuery.refetch()} onClose={() => setNutritionDetailsOpen(false)} /> : null}
 
       {addOpen ? (
         <AddEntrySheet
@@ -354,7 +357,13 @@ function CompactWeekNavigator({
 function DailyProgressSummary({ totals, targets, pending, failed, onOpenNutrition }: { totals: NutritionTotals; targets: TargetResponse | null; pending: boolean; failed: boolean; onOpenNutrition: () => void }) {
   if (pending) return <div className="diary-summary diary-summary-loading" aria-label="جارٍ تحميل ملخص اليوم" />;
   if (failed) return <section className="diary-summary diary-summary-unavailable" aria-label="ملخص اليوم غير متاح">تعذر تحميل ملخص هذا اليوم</section>;
-  if (!targets) return <div className="diary-summary state-note">أكمل بيانات الملف الشخصي لعرض أهداف اليوم.</div>;
+  if (!targets) return (
+    <section className="diary-summary state-note" aria-label="ملخص اليوم دون مصدر هدف">
+      <h2>ملخص اليوم</h2>
+      <p>لا يوجد مصدر هدف محفوظ لهذا اليوم.</p>
+      <button className="diary-nutrition-details-action" type="button" onClick={onOpenNutrition}>عرض التفاصيل الغذائية</button>
+    </section>
+  );
 
   const remaining = Math.max(targets.target_calories - totals.calories, 0);
   const exceeded = totals.calories > targets.target_calories;
@@ -532,35 +541,19 @@ function DiaryEntryRow({
   );
 }
 
-type DailyNutrientAggregate = { definition: NutrientDefinition; amount: number; known: number; total: number; coverage: number | null };
-
-function aggregateDailyNutrients(entries: DiaryEntryResponse[], targets: TargetResponse | null): DailyNutrientAggregate[] {
-  return definitionsForTargets(targets).filter((item) => item.diaryDetails).map((definition) => {
-    let amount = 0;
-    let known = 0;
-    for (const entry of entries) {
-      const value = nutrientValue(entry.totals, definition.key);
-      if (value === null) continue;
-      known += 1;
-      amount += value;
-    }
-    return { definition, amount, known, total: entries.length, coverage: entries.length ? Math.round(known / entries.length * 100) : null };
-  });
-}
-
-function DailyNutritionDetails({ entries, targets, onClose }: { entries: DiaryEntryResponse[]; targets: TargetResponse | null; onClose: () => void }) {
-  const aggregates = aggregateDailyNutrients(entries, targets);
-  const covered = aggregates.filter((item) => item.coverage !== null);
-  const overallCoverage = covered.length ? Math.round(covered.reduce((sum, item) => sum + (item.coverage ?? 0), 0) / covered.length) : null;
+function DailyNutritionDetails({ day, registry, registryPending, registryFailed, onRetryRegistry, onClose }: { day: DaySummary | undefined; registry: NutritionRegistryResponse | undefined; registryPending: boolean; registryFailed: boolean; onRetryRegistry: () => void; onClose: () => void }) {
+  const definitions = new Map((registry ? definitionsFromRegistry(registry) : []).map((item) => [item.key, item]));
+  const overallCoverage = day?.overall_nutrient_coverage_percent ?? null;
+  const empty = day?.nutrient_aggregates.every((item) => item.coverage_state === "no_entries") ?? false;
   return (
     <ModalFrame labelledBy="daily-nutrition-details-title" onClose={onClose} pending={false} className="nutrition-details-modal">
       <div className="daily-nutrition-sheet">
         <div className="add-sheet-handle" aria-hidden="true" />
         <header><h2 id="daily-nutrition-details-title">التفاصيل الغذائية لليوم</h2><button type="button" onClick={onClose} aria-label="إغلاق التفاصيل الغذائية"><X size={20} /></button></header>
         <div className="daily-nutrition-sheet-content">
-          {entries.length === 0 ? <div className="daily-nutrition-empty">لا تتوفر بيانات مغذيات إضافية لهذا اليوم</div> : <>
+          {registryPending ? <div className="daily-nutrition-empty" role="status">جارٍ تحميل سجل المغذيات</div> : registryFailed || !registry ? <div className="daily-nutrition-empty" role="alert">تعذر تحميل سجل المغذيات<button className="btn" type="button" onClick={onRetryRegistry}>إعادة المحاولة</button></div> : !day ? <div className="daily-nutrition-empty">تعذر تحميل ملخص المغذيات لهذا اليوم.</div> : empty ? <div className="daily-nutrition-empty">لا توجد أطعمة مسجلة لهذا اليوم</div> : <>
             <section className="nutrition-coverage-notice" aria-label={`تغطية بيانات المغذيات الإضافية: ${overallCoverage}%`}><strong>تغطية بيانات المغذيات الإضافية: <bdi>{overallCoverage}%</bdi></strong>{overallCoverage !== 100 ? <p>بعض الأطعمة لا تحتوي بيانات كاملة لجميع المغذيات. هذه نسبة توفر البيانات وليست تقييمًا صحيًا، وقد تكون المجاميع المعروضة حدًا أدنى مؤكدًا.</p> : <p>تتوفر بيانات جميع المغذيات المتتبعة للأطعمة المسجلة.</p>}</section>
-            <div className="daily-nutrient-list">{aggregates.map((item) => <DailyNutrientRow key={item.definition.key} aggregate={item} />)}</div>
+            <div className="daily-nutrient-list">{day.nutrient_aggregates.map((item) => <DailyNutrientRow key={item.key} aggregate={item} definition={definitions.get(item.key)} />)}</div>
           </>}
         </div>
       </div>
@@ -568,24 +561,40 @@ function DailyNutritionDetails({ entries, targets, onClose }: { entries: DiaryEn
   );
 }
 
-function DailyNutrientRow({ aggregate }: { aggregate: DailyNutrientAggregate }) {
-  const { definition, amount, coverage } = aggregate;
-  const target = definition.targetValue;
-  const complete = coverage === 100;
-  const amountText = `${formatNutrientValue(amount, definition.precision)} ${definition.unit}`;
-  const percent = target && target > 0 ? Math.round(amount / target * 100) : null;
-  let status = definition.targetType === "monitor_only" ? "متابعة فقط" : target == null ? "لم يُحدد هدف افتراضي بعد" : "";
-  if (target != null && definition.targetType === "minimum") status = amount >= target ? "تم تحقيق الهدف" : `المتبقي ${formatNutrientValue(target - amount, definition.precision)} ${definition.unit}`;
-  if (target != null && definition.targetType === "maximum") status = amount > target ? `فوق الحد بـ ${formatNutrientValue(amount - target, definition.precision)} ${definition.unit}` : amount === target ? "تم الوصول إلى الحد" : `المتاح ${formatNutrientValue(target - amount, definition.precision)} ${definition.unit}`;
-  const overMaximum = target != null && definition.targetType === "maximum" && amount > target;
-  const showProgress = target != null && definition.targetType !== "monitor_only";
+const evaluationLabels: Record<string, string> = {
+  met: "تم تحقيق الهدف",
+  below_target: "أقل من الهدف",
+  within_limit: "ضمن الحد",
+  at_limit: "تم الوصول إلى الحد",
+  exceeded: "تم تجاوز الحد",
+  below_range: "أقل من النطاق",
+  within_range: "ضمن النطاق",
+  above_range: "أعلى من النطاق",
+  met_at_least: "تم تحقيق الهدف بالقيمة المؤكدة",
+  exceeded_at_least: "تم تجاوز الحد بالقيمة المؤكدة",
+  above_range_at_least: "أعلى من النطاق بالقيمة المؤكدة",
+  indeterminate_partial_coverage: "لا يمكن تحديد الحالة مع التغطية الجزئية"
+};
+
+function DailyNutrientRow({ aggregate, definition }: { aggregate: DiaryNutrientAggregate; definition: NutrientDefinition | undefined }) {
+  const precision = definition?.precision ?? 1;
+  const unit = definition?.unit ?? aggregate.target?.unit ?? "";
+  if (!definition) return null;
+  const label = definition.label;
+  const targetType = aggregate.target?.type ?? definition?.targetType ?? "monitor_only";
+  const targetValue = aggregate.target?.value ?? null;
+  const amountText = aggregate.amount === null ? "غير متوفر" : `${formatNutrientValue(aggregate.amount, precision)} ${unit}`;
+  const qualifier = aggregate.amount_qualifier === "at_least" ? "على الأقل" : "";
+  const status = aggregate.evaluation ? evaluationLabels[aggregate.evaluation] ?? aggregate.evaluation : targetType === "monitor_only" ? "متابعة فقط" : aggregate.target ? "" : "لا يوجد مصدر هدف محفوظ";
+  const overMaximum = aggregate.evaluation === "exceeded" || aggregate.evaluation === "exceeded_at_least";
+  const showProgress = aggregate.progress_percent !== null;
   return (
-    <section className={`daily-nutrient-row ${overMaximum ? "over" : ""}`} aria-label={`${definition.label}: ${amountText}${complete ? "" : " على الأقل"}، ${status}${coverage == null ? "" : `، تغطية البيانات ${coverage}%`}`}>
-      <header><strong>{definition.label}</strong><span>{target == null ? targetTypeLabels[definition.targetType] : `${targetTypeLabels[definition.targetType]} ${formatNutrientValue(target, definition.precision)} ${definition.unit}`}</span></header>
-      <div className="daily-nutrient-value"><bdi dir="ltr">{amountText}</bdi>{!complete ? <small>على الأقل</small> : null}</div>
-      {showProgress && percent != null ? <div className="daily-nutrient-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(percent, 100)} aria-valuetext={`${percent}%`}><span style={{ width: `${Math.min(percent, 100)}%` }} /></div> : null}
-      <footer><span>{status}</span>{coverage != null ? <small>تغطية البيانات <bdi>{coverage}%</bdi></small> : null}</footer>
-      {!complete ? <p>بعض الأطعمة المسجلة لا تحتوي قيمة لهذا المغذي.</p> : null}
+    <section className={`daily-nutrient-row ${overMaximum ? "over" : ""}`} aria-label={`${label}: ${qualifier} ${amountText}، ${status}${aggregate.coverage_percent == null ? "" : `، تغطية البيانات ${aggregate.coverage_percent}%`}`}>
+      <header><strong>{label}</strong><span>{targetValue == null ? targetTypeLabels[targetType] : `${targetTypeLabels[targetType]} ${formatNutrientValue(targetValue, precision)} ${unit}`}</span></header>
+      <div className="daily-nutrient-value"><bdi dir={aggregate.amount === null ? "rtl" : "ltr"}>{amountText}</bdi>{qualifier ? <small>{qualifier}</small> : null}</div>
+      {showProgress ? <div className="daily-nutrient-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(aggregate.progress_percent ?? 0, 100)} aria-valuetext={`${aggregate.progress_percent}%`}><span style={{ width: `${Math.min(aggregate.progress_percent ?? 0, 100)}%` }} /></div> : null}
+      <footer><span>{status}</span>{aggregate.coverage_percent != null ? <small>تغطية البيانات <bdi>{aggregate.coverage_percent}%</bdi></small> : null}</footer>
+      {aggregate.coverage_state === "partial" ? <p>بعض الأطعمة المسجلة لا تحتوي قيمة لهذا المغذي.</p> : null}
     </section>
   );
 }
@@ -1043,18 +1052,6 @@ function RetryState({ message, description = "", onRetry, compact = false }: { m
 
 function DiaryEntriesSkeleton() {
   return <div className="diary-entry-list" aria-label="جارٍ تحميل يوميات اليوم">{[1, 2, 3].map((item) => <div className="diary-entry-skeleton" key={item} />)}</div>;
-}
-
-function sumEntries(entries: DiaryEntryResponse[], nutrients: NutrientDefinition[]): NutritionTotals {
-  return entries.reduce((sum, entry) => {
-    const next = { ...sum, calories: sum.calories + entry.totals.calories, protein_g: sum.protein_g + entry.totals.protein_g, carb_g: sum.carb_g + entry.totals.carb_g, fat_g: sum.fat_g + entry.totals.fat_g };
-    const dynamic = next as unknown as Record<string, number | null>;
-    for (const definition of nutrients) {
-      const value = nutrientValue(entry.totals, definition.key);
-      if (value !== null) dynamic[definition.key] = (dynamic[definition.key] ?? 0) + value;
-    }
-    return next;
-  }, emptyNutritionTotals());
 }
 
 function emptyNutritionTotals(): NutritionTotals {
