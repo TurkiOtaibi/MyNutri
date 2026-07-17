@@ -161,6 +161,11 @@ export interface TargetPlanActivationResponse {
   replaced_plan: TargetPlanSummary | null;
 }
 
+export interface TargetPlanHistoryResponse {
+  items: TargetPlanSummary[];
+  next_cursor: string | null;
+}
+
 export interface FoodInput {
   name: string;
   brand: string | null;

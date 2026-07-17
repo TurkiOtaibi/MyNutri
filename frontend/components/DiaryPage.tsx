@@ -24,6 +24,7 @@ import { CSSProperties, FormEvent, MouseEvent as ReactMouseEvent, ReactNode, use
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  ApiError,
   createDiaryEntry,
   deleteDiaryEntry,
   getNutritionRegistry,
@@ -97,6 +98,7 @@ export function DiaryPage() {
   const entriesQuery = useQuery({ queryKey: ["entries", selectedDate], queryFn: () => listDiaryEntries(selectedDate) });
 
   const selectedDay = weekQuery.data?.days.find((day) => day.date === selectedDate);
+  const summaryIntegrityError = weekQuery.error instanceof ApiError && weekQuery.error.code === "DIARY_SUMMARY_DATA_INTEGRITY_ERROR";
   const targets = selectedDay?.targets ?? null;
   const entries = entriesQuery.data ?? [];
   const totals = selectedDay?.totals ?? emptyNutritionTotals();
@@ -223,9 +225,14 @@ export function DiaryPage() {
 
         <aside className="diary-summary-column" aria-label="ملخص تقدم اليوم">
           {weekQuery.isError ? (
-            <RetryState message={WEEK_READ_ERROR} onRetry={() => weekQuery.refetch()} compact />
+            <RetryState
+              message={summaryIntegrityError ? "تعذر حساب الملخص بسبب مشكلة في بيانات يوميات محفوظة" : WEEK_READ_ERROR}
+              description={summaryIntegrityError ? "المجاميع غير متاحة ولن تُعرض كقيم ناقصة. أعد المحاولة أو تواصل مع الدعم." : ""}
+              onRetry={() => weekQuery.refetch()}
+              compact
+            />
           ) : (
-            <DailyProgressSummary totals={totals} targets={targets} pending={weekQuery.isPending || entriesQuery.isPending} failed={entriesQuery.isError} onOpenNutrition={() => setNutritionDetailsOpen(true)} />
+            <DailyProgressSummary totals={totals} targets={targets} targetProvenance={selectedDay?.target_provenance ?? "no_target_source"} pending={weekQuery.isPending || entriesQuery.isPending} failed={entriesQuery.isError} onOpenNutrition={() => setNutritionDetailsOpen(true)} />
           )}
         </aside>
       </div>
@@ -354,12 +361,19 @@ function CompactWeekNavigator({
   );
 }
 
-function DailyProgressSummary({ totals, targets, pending, failed, onOpenNutrition }: { totals: NutritionTotals; targets: TargetResponse | null; pending: boolean; failed: boolean; onOpenNutrition: () => void }) {
+const targetProvenanceLabels: Record<DaySummary["target_provenance"], string> = {
+  versioned_plan: "أهداف خطة محفوظة",
+  legacy_unversioned: "أهداف قديمة غير محدثة",
+  no_target_source: "دون مصدر هدف محفوظ"
+};
+
+function DailyProgressSummary({ totals, targets, targetProvenance, pending, failed, onOpenNutrition }: { totals: NutritionTotals; targets: TargetResponse | null; targetProvenance: DaySummary["target_provenance"]; pending: boolean; failed: boolean; onOpenNutrition: () => void }) {
   if (pending) return <div className="diary-summary diary-summary-loading" aria-label="جارٍ تحميل ملخص اليوم" />;
   if (failed) return <section className="diary-summary diary-summary-unavailable" aria-label="ملخص اليوم غير متاح">تعذر تحميل ملخص هذا اليوم</section>;
   if (!targets) return (
     <section className="diary-summary state-note" aria-label="ملخص اليوم دون مصدر هدف">
       <h2>ملخص اليوم</h2>
+      <span className="target-provenance-label">{targetProvenanceLabels[targetProvenance]}</span>
       <p>لا يوجد مصدر هدف محفوظ لهذا اليوم.</p>
       <button className="diary-nutrition-details-action" type="button" onClick={onOpenNutrition}>عرض التفاصيل الغذائية</button>
     </section>
@@ -373,6 +387,7 @@ function DailyProgressSummary({ totals, targets, pending, failed, onOpenNutritio
     <section className="diary-summary">
       <div className="diary-summary-heading">
         <h2>ملخص اليوم</h2>
+        <span className="target-provenance-label">{targetProvenanceLabels[targetProvenance]}</span>
       </div>
       <div className="calorie-summary-primary">
         <strong aria-label={`${Math.round(totals.calories)} من ${targets.target_calories} سعرة`}>
@@ -551,7 +566,7 @@ function DailyNutritionDetails({ day, registry, registryPending, registryFailed,
         <div className="add-sheet-handle" aria-hidden="true" />
         <header><h2 id="daily-nutrition-details-title">التفاصيل الغذائية لليوم</h2><button type="button" onClick={onClose} aria-label="إغلاق التفاصيل الغذائية"><X size={20} /></button></header>
         <div className="daily-nutrition-sheet-content">
-          {registryPending ? <div className="daily-nutrition-empty" role="status">جارٍ تحميل سجل المغذيات</div> : registryFailed || !registry ? <div className="daily-nutrition-empty" role="alert">تعذر تحميل سجل المغذيات<button className="btn" type="button" onClick={onRetryRegistry}>إعادة المحاولة</button></div> : !day ? <div className="daily-nutrition-empty">تعذر تحميل ملخص المغذيات لهذا اليوم.</div> : empty ? <div className="daily-nutrition-empty">لا توجد أطعمة مسجلة لهذا اليوم</div> : <>
+          {registryPending ? <div className="daily-nutrition-empty" role="status">جارٍ تحميل سجل المغذيات</div> : registryFailed || !registry ? <div className="daily-nutrition-empty" role="alert">تعذر تحميل البيانات الغذائية<button className="btn" type="button" onClick={onRetryRegistry}>إعادة المحاولة</button></div> : registry.registry_schema_version !== 1 ? <div className="daily-nutrition-empty" role="alert">إصدار سجل التغذية غير متوافق. لا يمكن عرض تفاصيل مغذيات غير موثوقة.<button className="btn" type="button" onClick={onRetryRegistry}>إعادة المحاولة</button></div> : !day ? <div className="daily-nutrition-empty">تعذر تحميل ملخص المغذيات لهذا اليوم.</div> : empty ? <div className="daily-nutrition-empty">لا توجد أطعمة مسجلة لهذا اليوم</div> : <>
             <section className="nutrition-coverage-notice" aria-label={`تغطية بيانات المغذيات الإضافية: ${overallCoverage}%`}><strong>تغطية بيانات المغذيات الإضافية: <bdi>{overallCoverage}%</bdi></strong>{overallCoverage !== 100 ? <p>بعض الأطعمة لا تحتوي بيانات كاملة لجميع المغذيات. هذه نسبة توفر البيانات وليست تقييمًا صحيًا، وقد تكون المجاميع المعروضة حدًا أدنى مؤكدًا.</p> : <p>تتوفر بيانات جميع المغذيات المتتبعة للأطعمة المسجلة.</p>}</section>
             <div className="daily-nutrient-list">{day.nutrient_aggregates.map((item) => <DailyNutrientRow key={item.key} aggregate={item} definition={definitions.get(item.key)} />)}</div>
           </>}

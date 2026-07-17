@@ -37,10 +37,13 @@ test("@diary @visual capture compact Diary page production states", async ({ pag
   await page.screenshot({ path: resolve(output, "03-empty-day-390.png"), fullPage: true });
   await page.screenshot({ path: resolve(output, "04-other-date-today-action-390.png") });
 
-  const overDate = localDate(-271);
+  const overDate = localDate();
   const over = await foodsApi.create({ name: uniqueName("Over targets"), calories: 2500, protein_g: 250, carb_g: 300, fat_g: 100 });
   await foodsApi.createDiary(over.id, overDate, 1, "breakfast");
-  await page.getByLabel("اختيار تاريخ اليوميات").fill(overDate);
+  const refreshedWeek = page.waitForResponse((response) => response.url().includes("/diary/week?") && response.ok());
+  await page.reload();
+  await refreshedWeek;
+  await expect(page.getByRole("heading", { name: over.name })).toBeVisible();
   await expect(page.getByText(/فوق الهدف/).first()).toBeVisible();
   await page.screenshot({ path: resolve(output, "05-above-calorie-target-390.png") });
   await page.screenshot({ path: resolve(output, "06-above-macro-target-390.png"), fullPage: true });

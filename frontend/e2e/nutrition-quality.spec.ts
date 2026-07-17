@@ -8,6 +8,12 @@ function localDate(days = 0): string {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 }
 
+function sundayStart(input: string): string {
+  const date = new Date(`${input}T00:00:00`);
+  date.setDate(date.getDate() - date.getDay());
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+}
+
 async function selectDiaryDate(page: Page, value: string) {
   await page.waitForFunction(() => {
     const picker = document.querySelector('input[aria-label="اختيار تاريخ اليوميات"]');
@@ -89,5 +95,52 @@ test.describe("@nutrition-quality", () => {
     await expect(completeness).not.toContainText("الألياف", { useInnerText: true });
     await page.goto("/foods");
     await expect(page.getByText("اكتمال البيانات الغذائية")).toHaveCount(0);
+  });
+
+  test("Diary renders the Backend target provenance as a compact semantic label", async ({ page, request }) => {
+    await page.goto("/diary");
+    const selectedDate = await page.getByLabel("اختيار تاريخ اليوميات").inputValue();
+    const summaryResponse = await request.get(`${API_URL}/diary/week?start=${sundayStart(selectedDate)}`, {
+      headers: { Authorization: `Bearer ${API_TOKEN}` }
+    });
+    expect(summaryResponse.status()).toBe(200);
+    const summary = await summaryResponse.json() as { days: Array<{ date: string; target_provenance: "versioned_plan" | "legacy_unversioned" | "no_target_source" }> };
+    const provenance = summary.days.find((day) => day.date === selectedDate)?.target_provenance ?? "no_target_source";
+    const expected = {
+      versioned_plan: "أهداف خطة محفوظة",
+      legacy_unversioned: "أهداف قديمة غير محدثة",
+      no_target_source: "دون مصدر هدف محفوظ"
+    }[provenance];
+    await expect(page.locator(".target-provenance-label")).toHaveText(expected);
+  });
+
+  test("Diary integrity errors suppress numeric summaries and expose a truthful recovery state", async ({ page }) => {
+    await page.route("**/diary/week?**", (route) => route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: { code: "DIARY_SUMMARY_DATA_INTEGRITY_ERROR", message_ar: "تعذر حساب ملخص اليوم بسبب مشكلة في بيانات يومية محفوظة." } })
+    }));
+    await page.goto("/diary?integrity-error=1");
+    await expect(page.getByRole("alert").filter({ hasText: "تعذر حساب الملخص بسبب مشكلة في بيانات يوميات محفوظة" })).toBeVisible();
+    await expect(page.locator(".calorie-summary-primary")).toHaveCount(0);
+    await expect(page.getByText("المجاميع غير متاحة ولن تُعرض كقيم ناقصة")).toBeVisible();
+  });
+
+  test("Food create and details expose an incompatible Registry without fallback metadata", async ({ page, foodsApi }) => {
+    const food = await foodsApi.create({ name: uniqueName("Registry compatibility") });
+    await page.route("**/nutrition/registry", async (route) => {
+      const response = await route.fetch();
+      const registry = await response.json() as Record<string, unknown>;
+      await route.fulfill({ response, json: { ...registry, registry_schema_version: 99 } });
+    });
+
+    await page.goto("/foods/new");
+    await expect(page.getByRole("alert").filter({ hasText: "إصدار سجل التغذية غير متوافق" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /حفظ/ })).toHaveCount(0);
+
+    await page.goto(`/foods/${food.id}`);
+    await expect(page.getByRole("heading", { name: food.name })).toBeVisible();
+    await expect(page.getByText("إصدار سجل التغذية غير متوافق", { exact: true })).toBeVisible();
+    await expect(page.getByText("غير متاح", { exact: true }).first()).toBeVisible();
   });
 });

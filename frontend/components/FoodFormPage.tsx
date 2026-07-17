@@ -157,10 +157,22 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     return <div className="state-note" role="status">جاري تحميل سجل التغذية.</div>;
   }
 
-  if (registryQuery.isError || registryQuery.data.registry_schema_version !== 1) {
+  if (registryQuery.isError) {
     return (
       <section className="section-panel">
-        <div className="state-note" role="alert">تعذر تحميل سجل التغذية المتوافق. لا يمكن حفظ بيانات طعام دون السجل المعتمد.</div>
+        <div className="state-note" role="alert">تعذر تحميل البيانات الغذائية. لا يمكن حفظ بيانات طعام دون السجل المعتمد.</div>
+        <div className="actions">
+          <button className="btn" type="button" onClick={() => registryQuery.refetch()}>إعادة المحاولة</button>
+          <Link className="btn" href="/foods"><ArrowRight size={18} />رجوع</Link>
+        </div>
+      </section>
+    );
+  }
+
+  if (registryQuery.data.registry_schema_version !== 1) {
+    return (
+      <section className="section-panel">
+        <div className="state-note" role="alert">إصدار سجل التغذية غير متوافق. يلزم تحديث التطبيق أو التواصل مع الدعم قبل حفظ الطعام.</div>
         <div className="actions">
           <button className="btn" type="button" onClick={() => registryQuery.refetch()}>إعادة المحاولة</button>
           <Link className="btn" href="/foods"><ArrowRight size={18} />رجوع</Link>
