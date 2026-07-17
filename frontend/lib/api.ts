@@ -11,6 +11,7 @@ import type {
   NutritionRegistryResponse,
   TargetResponse,
   TargetPlanActivationResponse,
+  TargetPlanHistoryResponse,
   WeekSummary
 } from "./types";
 
@@ -21,7 +22,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
-    public detail?: unknown
+    public detail?: unknown,
+    public code?: string
   ) {
     super(message);
   }
@@ -49,14 +51,19 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   if (!response.ok) {
     let message = `API request failed with ${response.status}`;
     let detail: unknown = undefined;
+    let code: string | undefined;
     try {
-      const body = (await response.json()) as { detail?: string | unknown; error?: { message_ar?: string } };
+      const body = (await response.json()) as { detail?: string | Record<string, unknown>; error?: { code?: string; message_ar?: string } };
       detail = body.detail;
       message = body.error?.message_ar ?? (typeof body.detail === "string" ? body.detail : message);
+      const detailCode = typeof body.detail === "object" && body.detail !== null && typeof body.detail.code === "string"
+        ? body.detail.code
+        : undefined;
+      code = body.error?.code ?? detailCode;
     } catch {
       // Keep the status-based message when the server has no JSON body.
     }
-    throw new ApiError(message, response.status, detail);
+    throw new ApiError(message, response.status, detail, code);
   }
 
   return response.json() as Promise<T>;
@@ -113,6 +120,12 @@ export function replacePendingTargetPlan(
 
 export function getNutritionRegistry(): Promise<NutritionRegistryResponse> {
   return apiFetch<NutritionRegistryResponse>("/nutrition/registry");
+}
+
+export function listTargetPlanHistory(cursor?: string | null, limit = 20): Promise<TargetPlanHistoryResponse> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
+  return apiFetch<TargetPlanHistoryResponse>(`/target-plans?${params.toString()}`);
 }
 
 export function listFoods(query = ""): Promise<FoodResponse[]> {

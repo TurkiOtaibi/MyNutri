@@ -16,7 +16,7 @@ import {
   UserRound,
   X
 } from "lucide-react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
   type FormEvent,
@@ -28,10 +28,10 @@ import {
   useState
 } from "react";
 
-import { ApiError, activateTargetPlan, getProfile, previewProfile, replacePendingTargetPlan } from "@/lib/api";
+import { ApiError, activateTargetPlan, getNutritionRegistry, getProfile, listTargetPlanHistory, previewProfile, replacePendingTargetPlan } from "@/lib/api";
 import { activityLabels, goalLabels, sexLabels } from "@/lib/labels";
-import { definitionsForTargets, formatNutrientValue, targetTypeLabels } from "@/lib/nutrients";
-import type { ActivityLevel, Goal, ProfileInput, ProfileResponse, Sex, TargetResponse } from "@/lib/types";
+import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels } from "@/lib/nutrients";
+import type { ActivityLevel, Goal, NutritionRegistryResponse, ProfileInput, ProfileResponse, Sex, TargetPlanSummary, TargetResponse } from "@/lib/types";
 
 const PROFILE_READ_ERROR = "تعذر تحميل بياناتك";
 const PROFILE_READ_HELP = "تحقق من الاتصال ثم أعد المحاولة";
@@ -191,6 +191,7 @@ export function ProfilePage() {
   const [activationOpen, setActivationOpen] = useState(false);
   const [discardHref, setDiscardHref] = useState<string | null>(null);
   const [saveError, setSaveError] = useState(false);
+  const [activationErrorCode, setActivationErrorCode] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState(false);
   const previewSequence = useRef(0);
   const heightRef = useRef<HTMLInputElement>(null);
@@ -202,6 +203,18 @@ export function ProfilePage() {
   const activationSubmittingRef = useRef(false);
 
   const profileQuery = useQuery({ queryKey: ["profile"], queryFn: getProfile });
+  const registryQuery = useQuery({
+    queryKey: ["nutrition-registry"],
+    queryFn: getNutritionRegistry,
+    staleTime: 300_000
+  });
+  const planHistoryQuery = useInfiniteQuery({
+    queryKey: ["target-plan-history"],
+    queryFn: ({ pageParam }) => listTargetPlanHistory(pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined
+  });
+  const registryReady = registryQuery.data?.registry_schema_version === 1;
 
   useEffect(() => {
     if (profileQuery.data === undefined) return;
@@ -217,7 +230,7 @@ export function ProfilePage() {
   const validation = useMemo(() => validateDraft(draft), [draft]);
 
   const requestPreview = () => {
-    if (!dirty || !validation.payload) {
+    if (!dirty || !validation.payload || !registryReady) {
       setPreview(null);
       setPreviewPending(false);
       setPreviewFailed(false);
@@ -247,7 +260,7 @@ export function ProfilePage() {
     return () => window.clearTimeout(timer);
     // requestPreview intentionally follows the normalized draft and saved baseline.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, normalizeDraft(draft)]);
+  }, [dirty, normalizeDraft(draft), registryReady]);
 
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -289,16 +302,23 @@ export function ProfilePage() {
       setPreviewFailed(false);
       setErrors({});
       setSaveError(false);
+      setActivationErrorCode(null);
       setSavedNotice(true);
       setActivationOpen(false);
       activationKeyRef.current = null;
       activationSubmittingRef.current = false;
+      await queryClient.invalidateQueries({ queryKey: ["target-plan-history"] });
       window.setTimeout(() => setSavedNotice(false), 2800);
     },
     onError: (error) => {
       const mapped = mapProfileApiErrors(error);
       if (Object.keys(mapped).length > 0) setErrors(mapped);
-      else setSaveError(true);
+      else if (error instanceof ApiError && ["PREVIEW_RESULT_CHANGED", "IDEMPOTENCY_KEY_REUSED"].includes(error.code ?? "")) {
+        setActivationErrorCode(error.code ?? null);
+        activationKeyRef.current = null;
+        setPreview(null);
+        requestPreview();
+      } else setSaveError(true);
       setActivationOpen(false);
       activationSubmittingRef.current = false;
     }
@@ -312,6 +332,7 @@ export function ProfilePage() {
       return next;
     });
     setSaveError(false);
+    setActivationErrorCode(null);
     setSavedNotice(false);
   }
 
@@ -327,6 +348,7 @@ export function ProfilePage() {
     });
     setErrors((current) => { const next = { ...current }; delete next.sex; delete next.fat_percent; return next; });
     setSaveError(false);
+    setActivationErrorCode(null);
   }
 
   function submit(event?: FormEvent) {
@@ -334,6 +356,7 @@ export function ProfilePage() {
     const result = validateDraft(draft);
     setErrors(result.errors);
     setSaveError(false);
+    if (!registryReady) return;
     if (!result.payload) {
       const order: Array<[ProfileField, RefObject<HTMLInputElement | null>]> = [
         ["birth_date", birthRef], ["height_cm", heightRef], ["weight_kg", weightRef],
@@ -478,7 +501,16 @@ export function ProfilePage() {
 
         <TargetsCard title="الأهداف اليومية" badge="محسوبة تلقائيًا" targets={savedTargets} />
         {profileQuery.data?.pending_plan ? <ScheduledPlanCard plan={profileQuery.data.pending_plan} /> : null}
-        <AdditionalTargetsCard targets={savedTargets} />
+        {registryQuery.isPending ? <RegistryState kind="loading" /> : registryQuery.isError ? <RegistryState kind="unavailable" onRetry={() => registryQuery.refetch()} /> : !registryReady ? <RegistryState kind="incompatible" onRetry={() => registryQuery.refetch()} /> : <AdditionalTargetsCard targets={savedTargets} registry={registryQuery.data} />}
+        <TargetPlanHistory
+          plans={planHistoryQuery.data?.pages.flatMap((page) => page.items) ?? []}
+          pending={planHistoryQuery.isPending}
+          failed={planHistoryQuery.isError}
+          hasMore={planHistoryQuery.hasNextPage}
+          loadingMore={planHistoryQuery.isFetchingNextPage}
+          onRetry={() => planHistoryQuery.refetch()}
+          onLoadMore={() => planHistoryQuery.fetchNextPage()}
+        />
         <button className="profile-explain-action" type="button" onClick={() => setActiveSheet("calculation")}><Info size={17} /> كيف حُسبت أهدافي؟</button>
 
         {dirty && validation.payload ? (
@@ -489,10 +521,10 @@ export function ProfilePage() {
 
       {dirty ? (
         <div className="profile-save-bar" role="region" aria-label="حفظ تغييرات الملف الشخصي">
-          <span>{Object.keys(errors).length > 0 ? "صحح الحقول المعلّمة للمتابعة" : saveError ? PROFILE_WRITE_ERROR : "تغييرات غير محفوظة"}</span>
+          <span>{Object.keys(errors).length > 0 ? "صحح الحقول المعلّمة للمتابعة" : activationErrorCode ? "تغيّرت المعاينة. راجع الأهداف المحدثة ثم أكد مجددًا" : saveError ? PROFILE_WRITE_ERROR : !registryReady ? "سجل التغذية غير جاهز" : "تغييرات غير محفوظة"}</span>
           {saveError ? <small>تحقق من الاتصال ثم أعد المحاولة</small> : null}
-          <button className="btn primary" type="button" onClick={() => submit()} disabled={mutation.isPending || previewPending || (Boolean(validation.payload) && !preview?.preview_hash)}>
-            {mutation.isPending ? <><LoaderCircle className="spin" size={17} /> جارٍ تفعيل الخطة…</> : saveError ? <><RotateCcw size={17} /> إعادة المحاولة</> : "مراجعة وتأكيد"}
+          <button className="btn primary" type="button" onClick={() => submit()} disabled={!registryReady || mutation.isPending || previewPending || (Boolean(validation.payload) && !preview?.preview_hash)}>
+            {mutation.isPending ? <><LoaderCircle className="spin" size={17} /> جارٍ تفعيل الخطة…</> : activationErrorCode ? "مراجعة المعاينة" : saveError ? <><RotateCcw size={17} /> إعادة المحاولة</> : "مراجعة وتأكيد"}
           </button>
         </div>
       ) : null}
@@ -630,9 +662,12 @@ function TargetValue({ label, value }: { label: string; value: number }) {
   return <div><span>{label}</span><strong><bdi dir="ltr">{formatTargetNumber(value)}</bdi> جم</strong></div>;
 }
 
-function AdditionalTargetsCard({ targets }: { targets: TargetResponse | null }) {
+function AdditionalTargetsCard({ targets, registry }: { targets: TargetResponse | null; registry: NutritionRegistryResponse }) {
   if (!targets) return null;
-  const definitions = definitionsForTargets(targets);
+  const resolvedTargets = new Map((targets.additional_targets ?? []).map((target) => [target.key, target]));
+  const definitions = definitionsFromRegistry(registry)
+    .filter((definition) => resolvedTargets.has(definition.key))
+    .map((definition) => ({ ...definition, targetValue: resolvedTargets.get(definition.key)?.target_value ?? null }));
   return (
     <section className="profile-additional-targets" aria-labelledby="additional-targets-title">
       <h2 id="additional-targets-title">أهداف غذائية إضافية</h2>
@@ -645,6 +680,40 @@ function AdditionalTargetsCard({ targets }: { targets: TargetResponse | null }) 
           </div>
         ))}
       </div>
+    </section>
+  );
+}
+
+function RegistryState({ kind, onRetry }: { kind: "loading" | "unavailable" | "incompatible"; onRetry?: () => void }) {
+  const copy = kind === "loading"
+    ? "جارٍ تحميل البيانات الغذائية"
+    : kind === "unavailable"
+      ? "تعذر تحميل البيانات الغذائية"
+      : "إصدار سجل التغذية غير متوافق. يلزم تحديث التطبيق أو التواصل مع الدعم.";
+  return (
+    <section className="profile-registry-state" role={kind === "loading" ? "status" : "alert"} aria-live="polite">
+      <strong>{copy}</strong>
+      {kind !== "loading" ? <button className="btn" type="button" onClick={onRetry}>إعادة المحاولة</button> : null}
+    </section>
+  );
+}
+
+const planStatusLabels: Record<TargetPlanSummary["status"], string> = {
+  active: "حالية",
+  scheduled: "مجدولة",
+  closed: "سابقة",
+  superseded_before_effective: "استُبدلت قبل أن تبدأ"
+};
+
+function TargetPlanHistory({ plans, pending, failed, hasMore, loadingMore, onRetry, onLoadMore }: { plans: TargetPlanSummary[]; pending: boolean; failed: boolean; hasMore: boolean; loadingMore: boolean; onRetry: () => void; onLoadMore: () => void }) {
+  return (
+    <section className="profile-plan-history" aria-labelledby="target-plan-history-title">
+      <h2 id="target-plan-history-title">سجل الخطط</h2>
+      {pending ? <div className="profile-history-loading" role="status">جارٍ تحميل سجل الخطط</div> : null}
+      {failed ? <div className="profile-history-error" role="alert">تعذر تحميل سجل الخطط<button className="btn" type="button" onClick={onRetry}>إعادة المحاولة</button></div> : null}
+      {!pending && !failed && plans.length === 0 ? <p>لا توجد خطط محفوظة بعد.</p> : null}
+      {!failed && plans.length > 0 ? <ol>{plans.map((plan) => <li key={plan.id}><div><strong>{planStatusLabels[plan.status]}</strong><span>تبدأ <bdi dir="ltr">{plan.effective_from}</bdi>{plan.effective_to ? <> وتنتهي قبل <bdi dir="ltr">{plan.effective_to}</bdi></> : null}</span></div><bdi dir="ltr">{plan.targets.target_calories} kcal</bdi></li>)}</ol> : null}
+      {hasMore ? <button className="profile-text-action" type="button" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? "جارٍ التحميل…" : "عرض خطط أقدم"}</button> : null}
     </section>
   );
 }

@@ -116,15 +116,17 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
   }
 
   const food = foodQuery.data;
+  const registryCompatible = registryQuery.data?.registry_schema_version === 1;
+  const registry = registryCompatible ? registryQuery.data : undefined;
   const servingNutrition = calculateServingNutrition(food);
   const basisNutrition = perBasisNutrition(food);
   const displayedNutrition = mode === "serving" ? servingNutrition : basisNutrition;
   const basisLabel = nutritionBasisLabels[food.nutrition_basis];
-  const registryNutrients = registryQuery.data ? definitionsFromRegistry(registryQuery.data) : null;
-  const primaryCategoryLabel = registryQuery.data?.primary_category_definitions.find((item) => item.key === food.primary_category_key)?.label_ar;
-  const reliabilityLabel = registryQuery.data?.reliability_levels.find((item) => item.key === food.nutrition_source.reliability)?.label_ar;
-  const groupLabels = new Map(registryQuery.data?.food_group_definitions.map((item) => [item.key, item.label_ar]) ?? []);
-  const traitLabels = new Map(registryQuery.data?.traits.map((item) => [item.key, item.label_ar]) ?? []);
+  const registryNutrients = registry ? definitionsFromRegistry(registry) : null;
+  const primaryCategoryLabel = registry?.primary_category_definitions.find((item) => item.key === food.primary_category_key)?.label_ar;
+  const reliabilityLabel = registry?.reliability_levels.find((item) => item.key === food.nutrition_source.reliability)?.label_ar;
+  const groupLabels = new Map(registry?.food_group_definitions.map((item) => [item.key, item.label_ar]) ?? []);
+  const traitLabels = new Map(registry?.traits.map((item) => [item.key, item.label_ar]) ?? []);
 
   return (
     <>
@@ -177,8 +179,8 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
         <NutritionCompleteness food={food} nutrients={registryNutrients} open={completenessOpen} onToggle={() => setCompletenessOpen((value) => !value)} />
       ) : (
         <section className="catalog-state" role={registryQuery.isError ? "alert" : "status"}>
-          <strong>{registryQuery.isError ? "تعذر تحميل سجل المغذيات" : "جارٍ تحميل سجل المغذيات"}</strong>
-          {registryQuery.isError ? <button className="btn" type="button" onClick={() => registryQuery.refetch()}><RotateCcw size={18} /> إعادة المحاولة</button> : null}
+          <strong>{registryQuery.isError ? "تعذر تحميل البيانات الغذائية" : registryQuery.data && !registryCompatible ? "إصدار سجل التغذية غير متوافق" : "جارٍ تحميل سجل المغذيات"}</strong>
+          {registryQuery.isError || (registryQuery.data && !registryCompatible) ? <button className="btn" type="button" onClick={() => registryQuery.refetch()}><RotateCcw size={18} /> إعادة المحاولة</button> : null}
         </section>
       )}
 
@@ -225,7 +227,7 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
           <MetadataRow label="أساس القيم" value={basisLabel} />
           <MetadataRow label="تعريف الوحدة الافتراضية" value={defaultUnitText(food)} />
           {food.notes ? <MetadataRow label="ملاحظات" value={food.notes} multiline autoDirection /> : null}
-          <MetadataRow label="مصدر البيانات الغذائية" value={food.nutrition_source.name || registryQuery.data?.source_types.find((item) => item.type === food.nutrition_source.type)?.label_ar || "غير معروف"} multiline autoDirection />
+          <MetadataRow label="مصدر البيانات الغذائية" value={food.nutrition_source.name || registry?.source_types.find((item) => item.type === food.nutrition_source.type)?.label_ar || "غير متاح"} multiline autoDirection />
           <MetadataRow label="موثوقية المصدر" value={reliabilityLabel ?? "غير معروفة"} />
           {food.nutrition_source.reference ? <MetadataRow label="مرجع المصدر" value={food.nutrition_source.reference} multiline autoDirection /> : null}
           {food.ingredients.text ? <MetadataRow label="المكونات" value={food.ingredients.text} multiline autoDirection /> : null}

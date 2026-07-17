@@ -249,6 +249,73 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(page.getByLabel("الوزن")).toHaveCount(0);
   });
 
+  test("@p1 Registry unavailable and incompatible states block activation without fabricated metadata", async ({ page, originalProfile }) => {
+    await page.route("**/nutrition/registry", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "unavailable" }) }));
+    await page.goto("/profile?registry-unavailable=1");
+    await expect(page.getByRole("alert").filter({ hasText: "تعذر تحميل البيانات الغذائية" })).toBeVisible();
+    await page.getByLabel("الوزن").fill(String(originalProfile.weight_kg + 1));
+    await expect(page.getByRole("button", { name: "مراجعة وتأكيد" })).toBeDisabled();
+
+    await page.unroute("**/nutrition/registry");
+    await page.route("**/nutrition/registry", async (route) => {
+      const response = await route.fetch();
+      const registry = await response.json() as Record<string, unknown>;
+      await route.fulfill({ response, json: { ...registry, registry_schema_version: 99 } });
+    });
+    await page.goto("/profile?registry-incompatible=1");
+    await expect(page.getByRole("alert").filter({ hasText: "إصدار سجل التغذية غير متوافق" })).toBeVisible();
+    await page.getByLabel("الوزن").fill(String(originalProfile.weight_kg + 1));
+    await expect(page.getByRole("button", { name: "مراجعة وتأكيد" })).toBeDisabled();
+  });
+
+  test("@p1 target plan history exposes lifecycle state without raw plan documents", async ({ page, originalProfile }) => {
+    await page.route("**/target-plans?**", (route) => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [{
+          id: "00000000-0000-0000-0000-000000000901",
+          status: "superseded_before_effective",
+          effective_from: "2026-07-18",
+          effective_to: null,
+          calendar_timezone: "Asia/Riyadh",
+          predecessor_plan_id: null,
+          superseded_by_plan_id: "00000000-0000-0000-0000-000000000902",
+          targets: originalProfile.targets,
+          created_at: "2026-07-17T09:00:00Z",
+          activated_at: null,
+          closed_at: null,
+          superseded_at: "2026-07-17T10:00:00Z"
+        }],
+        next_cursor: null
+      })
+    }));
+    await page.goto("/profile?plan-history=1");
+    const history = page.getByRole("region", { name: "سجل الخطط" });
+    await expect(history).toContainText("استُبدلت قبل أن تبدأ");
+    await expect(history).toContainText("2026-07-18");
+    await expect(history).not.toContainText("preview_hash");
+  });
+
+  test("@p1 stale activation responses require a fresh preview without discarding the draft", async ({ page, originalProfile }) => {
+    await page.route("**/target-plans/**", (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      return route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "PREVIEW_RESULT_CHANGED", message_ar: "تغيّرت نتيجة المعاينة؛ راجعها ثم أكد مجددًا." } })
+      });
+    });
+    await page.goto("/profile?stale-preview=1");
+    const nextWeight = originalProfile.weight_kg + 1;
+    await page.getByLabel("الوزن").fill(String(nextWeight));
+    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+    await expect(page.getByText("تغيّرت المعاينة. راجع الأهداف المحدثة ثم أكد مجددًا")).toBeVisible();
+    await expect(page.getByLabel("الوزن")).toHaveValue(String(nextWeight));
+    await expect(page.getByRole("button", { name: "مراجعة المعاينة" })).toBeEnabled();
+  });
+
   test("@p1 responsive layout, touch targets, alerts, and focus restoration hold", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     for (const width of [320, 360, 390, 430]) {
