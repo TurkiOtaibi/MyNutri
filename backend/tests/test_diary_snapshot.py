@@ -1,12 +1,14 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.core.auth import PrincipalContext
+from app.core.calendar import current_diary_date
 from app.models import DefaultUnitType, DiaryEntry, Food, MealType, NutritionBasis, Principal, UnitBasis
 from app.schemas import DiaryEntryCreate, DiaryEntryUpdate
 from app.services.diary import make_snapshot, to_entry_response, totals_from_snapshot, update_entry
@@ -42,13 +44,42 @@ def test_diary_snapshot_freezes_food_values() -> None:
     assert totals.net_carbs_g == 20.4
 
 
-def test_future_diary_date_is_rejected() -> None:
+def test_future_diary_date_is_rejected(monkeypatch) -> None:
+    fixed_instant = datetime(2026, 7, 16, 21, 0, tzinfo=timezone.utc)
+    authoritative_date = current_diary_date(fixed_instant)
+    monkeypatch.setattr(
+        "app.core.calendar.current_diary_date",
+        lambda: authoritative_date,
+    )
+
+    current_entry = DiaryEntryCreate(
+        entry_date=authoritative_date,
+        food_id="00000000-0000-0000-0000-000000000001",
+        quantity=1,
+    )
+    assert authoritative_date == date(2026, 7, 17)
+    assert current_entry.entry_date == authoritative_date
+
     with pytest.raises(ValidationError, match="لا يمكن تسجيل يوميات بتاريخ مستقبلي"):
         DiaryEntryCreate(
-            entry_date=date.today() + timedelta(days=1),
+            entry_date=authoritative_date + timedelta(days=1),
             food_id="00000000-0000-0000-0000-000000000001",
             quantity=1,
         )
+
+    with pytest.raises(HTTPException) as raised:
+        validate_diary_payload(
+            DiaryEntryCreate,
+            {
+                "entry_date": str(authoritative_date + timedelta(days=1)),
+                "food_id": "00000000-0000-0000-0000-000000000001",
+                "quantity": 1,
+            },
+        )
+
+    assert raised.value.status_code == 422
+    assert raised.value.detail[0]["field"] == "entry_date"
+    assert raised.value.detail[0]["code"] == "invalid_entry_date"
 
 
 def test_quantity_only_update_recalculates_frozen_totals() -> None:

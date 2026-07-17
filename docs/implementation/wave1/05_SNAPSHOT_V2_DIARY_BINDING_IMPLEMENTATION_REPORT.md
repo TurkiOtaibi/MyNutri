@@ -8,8 +8,8 @@
 | Branch | `impl/wave1-05-snapshot-v2-diary-binding` |
 | Worktree | `C:\Users\DELTA\Desktop\MyNutri-wave1-05` |
 | Base SHA | `97cb77894187d90cb8340f2fd1b907b658d7dba6` |
-| Implementation commit | Pending |
-| Pull request | Pending |
+| Implementation commit | `273f7e8716e92816d8cd24b8965b0ebd90212bf1` |
+| Pull request | [#13](https://github.com/TurkiOtaibi/MyNutri/pull/13) |
 
 ## 2. Frozen authority
 
@@ -61,7 +61,7 @@
 | Model/migration drift | No new upgrade operations detected |
 | Frontend typecheck | Passed |
 | Frontend production build | Passed |
-| Full nonvisual Playwright | `243/243 passed` in 11.9 minutes |
+| Full nonvisual Playwright | `243/243 passed` in 8.7 minutes |
 | `git diff --check` | Passed |
 
 The first E2E attempt used an incorrect local CORS origin and omitted the required baseline Profile fixture. It was not reported as a pass. After correcting only the isolated test environment, the seven affected cases passed 7/7 and the complete 243-test suite passed from a clean migrated database with the v2 writer enabled.
@@ -89,6 +89,16 @@ The first E2E attempt used an incorrect local CORS origin and omitted the requir
 - High findings: 0.
 - Corrected during review: immutable quantity updates, exact cursor-independent binding resolution, explicit client-authority errors, hard-delete trigger allowance, reader-before-writer gate, and Riyadh future-date validation.
 - Frozen-contract deviations: 0.
+- CI correction: the first PR run exposed a test-only UTC/Riyadh wall-clock dependency in
+  `test_future_diary_date_is_rejected`. The test now pins the Riyadh calendar boundary and
+  derives both accepted and rejected dates from the authoritative calendar function. Product
+  validation remains unchanged.
+- E2E stability correction: the Profile dirty-state case now waits for the successful Profile
+  API fetch, completed skeleton state, and loaded persisted weight before reading or editing the
+  input. It passed 10/10 consecutive executions without retries or fixed sleeps.
+- The Profile loading/error case now matches the Profile fetch independently of equivalent local
+  hostnames and uses a controlled response-release barrier instead of its former fixed delay.
+  The final complete Playwright run passed 243/243 against the production build.
 
 ## 10. Residual risks
 
