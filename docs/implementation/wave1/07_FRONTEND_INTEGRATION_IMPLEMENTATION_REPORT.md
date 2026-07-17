@@ -87,6 +87,9 @@ The complete repository suites are intentionally reserved for GitHub CI and Stag
 - `frontend/app/globals.css`
 - `frontend/e2e/profile/profile.spec.ts`
 - `frontend/e2e/nutrition-quality.spec.ts`
+- `frontend/e2e/global-setup.ts`
+- `frontend/playwright.config.ts`
+- `.github/workflows/ci.yml`
 - `docs/implementation/wave1/07_FRONTEND_INTEGRATION_IMPLEMENTATION_REPORT.md`
 - `docs/implementation/wave1/WAVE1_IMPLEMENTATION_REGISTER.md`
 
