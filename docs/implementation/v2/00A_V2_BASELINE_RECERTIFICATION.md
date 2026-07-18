@@ -14,4 +14,3 @@ Base: `6096fd2a1f372f8e08aa587274870e8f3929fe23`
 
 The eight PostgreSQL migration tests are not accepted as final skips. They are
 scheduled for disposable PostgreSQL rehearsal after V2 migrations exist.
-

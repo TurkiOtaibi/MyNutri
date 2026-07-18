@@ -40,4 +40,3 @@ Organizations, extra roles, account management beyond the required auth flows,
 admin mutation of another user's private data, private user Foods, social
 features, payments, clinical modes, AI/OCR/barcodes, and later-wave analysis are
 out of scope.
-

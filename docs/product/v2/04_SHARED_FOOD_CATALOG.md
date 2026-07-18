@@ -26,4 +26,3 @@ Duplicate identity is global. A deterministic persisted duplicate key plus a
 unique database constraint protects concurrent writes. Existing normalization
 rules remain unless V2 explicitly removes the legacy category from duplicate
 identity (it was already non-identifying).
-

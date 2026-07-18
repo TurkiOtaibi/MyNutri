@@ -41,4 +41,3 @@ Old whole/refined categories map to `grains_starches` with the corresponding
 `grain_type`. Ambiguous likely baked records are marked review-required and are
 not guessed. A dry-run tool emits deterministic JSON/CSV proposals; only an
 explicit reviewed mapping is applied.
-

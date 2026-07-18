@@ -21,4 +21,3 @@ Branch: `feat/v2-multi-user-admin-food-catalog`
 Existing IDs and snapshots remain stable; private queries remain owner-scoped;
 Food reads become global; writes are admin-only; no role comes from client
 metadata; no shared token enters browser output; no production operation runs.
-

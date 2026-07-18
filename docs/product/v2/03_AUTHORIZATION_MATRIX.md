@@ -22,4 +22,3 @@
 - Food writes require an explicit admin dependency in FastAPI.
 - Cross-owner private lookups are non-enumerating.
 - Authorization is tested with User A, User B, and Admin fixtures.
-

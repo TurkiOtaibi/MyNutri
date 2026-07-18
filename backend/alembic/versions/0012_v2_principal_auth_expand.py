@@ -55,4 +55,3 @@ def downgrade() -> None:
     op.drop_column("principal", "display_name")
     op.drop_column("principal", "email")
     op.drop_column("principal", "auth_user_id")
-

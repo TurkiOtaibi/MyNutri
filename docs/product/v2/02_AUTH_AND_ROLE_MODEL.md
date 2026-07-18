@@ -50,4 +50,3 @@ sets role `admin`, refuses ambiguity, and never prints credentials or links.
 
 The Supabase service-role/secret key is server-side bootstrap input only and is
 never an application runtime or browser variable.
-
