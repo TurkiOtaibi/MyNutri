@@ -1,11 +1,8 @@
 from functools import lru_cache
-from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-DEV_PRINCIPAL_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 
 class Settings(BaseSettings):
@@ -13,27 +10,36 @@ class Settings(BaseSettings):
     environment: str = "dev"
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/mynutri"
     allowed_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
-    single_user_token: str = "dev-token"
-    previous_single_user_tokens: list[str] = Field(default_factory=list)
-    deployment_principal_id: UUID | None = None
-    principal_token_map: dict[str, UUID] = Field(default_factory=dict)
+    supabase_url: str = ""
+    supabase_jwks_url: str = ""
+    supabase_jwt_audience: str = "authenticated"
     calendar_timezone: str = "Asia/Riyadh"
-    snapshot_v2_writer_enabled: bool = False
+    snapshot_v3_writer_enabled: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")
 
-    def credential_map(self) -> dict[str, UUID]:
-        if self.principal_token_map:
-            return dict(self.principal_token_map)
+    @field_validator("allowed_origins")
+    @classmethod
+    def normalize_origins(cls, values: list[str]) -> list[str]:
+        normalized = [value.strip().rstrip("/") for value in values if value.strip()]
+        if "*" in normalized:
+            raise ValueError("Wildcard CORS origins are prohibited.")
+        return list(dict.fromkeys(normalized))
 
-        principal_id = self.deployment_principal_id
-        if principal_id is None and self.environment in {"dev", "test"}:
-            principal_id = DEV_PRINCIPAL_ID
-        if principal_id is None:
-            return {}
+    @property
+    def normalized_supabase_url(self) -> str:
+        return self.supabase_url.strip().rstrip("/")
 
-        tokens = [self.single_user_token, *self.previous_single_user_tokens]
-        return {token: principal_id for token in tokens if token.strip()}
+    @property
+    def expected_supabase_issuer(self) -> str:
+        return f"{self.normalized_supabase_url}/auth/v1"
+
+    @property
+    def effective_supabase_jwks_url(self) -> str:
+        configured = self.supabase_jwks_url.strip()
+        if configured:
+            return configured
+        return f"{self.expected_supabase_issuer}/.well-known/jwks.json"
 
 
 def validate_runtime_configuration(settings: Settings) -> None:
@@ -49,16 +55,12 @@ def validate_runtime_configuration(settings: Settings) -> None:
     if settings.environment != "production":
         return
 
-    if settings.deployment_principal_id is None:
-        raise RuntimeError("DEPLOYMENT_PRINCIPAL_ID is required in production.")
-    if not settings.single_user_token.strip():
-        raise RuntimeError("SINGLE_USER_TOKEN is required in production.")
-    if settings.principal_token_map:
-        raise RuntimeError("PRINCIPAL_TOKEN_MAP is test-only and prohibited in production.")
-
-    mapped_principals = set(settings.credential_map().values())
-    if mapped_principals != {settings.deployment_principal_id}:
-        raise RuntimeError("Production credentials must map to the deployment Principal only.")
+    if not settings.normalized_supabase_url.startswith("https://"):
+        raise RuntimeError("SUPABASE_URL must be an HTTPS URL in production.")
+    if not settings.supabase_jwt_audience.strip():
+        raise RuntimeError("SUPABASE_JWT_AUDIENCE is required in production.")
+    if not settings.effective_supabase_jwks_url.startswith("https://"):
+        raise RuntimeError("SUPABASE_JWKS_URL must be HTTPS in production.")
 
 
 @lru_cache

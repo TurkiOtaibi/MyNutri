@@ -44,7 +44,12 @@ def read_week(
 
 
 @router.post("/entries", response_model=DiaryEntryResponse, status_code=status.HTTP_201_CREATED)
-@router.post("", response_model=DiaryEntryResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
+@router.post(
+    "",
+    response_model=DiaryEntryResponse,
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
+)
 def add_entry(
     payload: dict[str, Any] = Body(...),
     principal: PrincipalContext = Depends(get_principal_context),
@@ -56,7 +61,7 @@ def add_entry(
             session,
             principal,
             validate_diary_payload(DiaryEntryCreate, payload),
-            snapshot_v2_writer_enabled=settings.snapshot_v2_writer_enabled,
+            snapshot_v3_writer_enabled=settings.snapshot_v3_writer_enabled,
         )
     )
 

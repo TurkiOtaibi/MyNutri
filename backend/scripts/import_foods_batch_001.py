@@ -137,13 +137,15 @@ def map_record(record: dict[str, Any]) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "name": record.get("name"),
         "brand": None,
-        "category": None,
+        "food_category_key": "other",
+        "food_kind": "unknown",
         "nutrition_basis": "per_100g",
         "default_unit_type": UNIT_TYPE_MAP[unit_name],
         "unit_amount": record.get("default_unit_amount"),
         "unit_basis": record.get("default_unit_base"),
         "notes": quality_notes(record),
         "data_source": record.get("data_source"),
+        "nutrition_source": {"type": "unknown"},
     }
     for source, target in DIRECT_FIELDS.items():
         payload[target] = record[source] if source in record else None

@@ -6,10 +6,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.models import (
     ActivityLevel,
+    BakedGoodType,
     ContributionDataStatus,
     DefaultUnitType,
     FoodKind,
+    FoodStatus,
     Goal,
+    GrainStarchType,
+    GrainType,
     GroupDataCompleteness,
     GroupDataStatus,
     IngredientsSourceType,
@@ -18,10 +22,12 @@ from app.models import (
     NovaReviewStatus,
     NutritionBasis,
     NutritionSourceType,
+    PrincipalRole,
+    PrincipalStatus,
     Sex,
     UnitBasis,
 )
-from app.nutrition_rules.registry import FOOD_GROUPS, PRIMARY_CATEGORIES, SOURCE_RELIABILITY, TRAITS
+from app.nutrition_rules.registry import FOOD_CATEGORIES, FOOD_GROUPS, SOURCE_RELIABILITY, TRAITS
 from app.services.food_validation_errors import (
     ABOVE_MAX_MESSAGE,
     ADDED_SUGAR_GT_SUGAR_MESSAGE,
@@ -204,7 +210,6 @@ OPTIONAL_NUTRIENT_MAX: dict[str, float] = {
 FOOD_TEXT_MAX: dict[str, int] = {
     "name": 120,
     "brand": 80,
-    "category": 80,
     "notes": 500,
     "data_source": 120,
 }
@@ -313,11 +318,11 @@ class FoodBase(BaseModel):
 
     name: str
     brand: str | None = None
-    category: str | None = None
-    primary_category_key: str | None = None
+    food_category_key: str
+    grain_type: GrainType | None = None
+    baked_good_type: BakedGoodType | None = None
+    grain_starch_type: GrainStarchType | None = None
     food_kind: FoodKind = FoodKind.unknown
-    group_data_status: GroupDataStatus = GroupDataStatus.unknown
-    group_data_completeness: GroupDataCompleteness = GroupDataCompleteness.unknown
     nutrition_basis: NutritionBasis
     default_unit_type: DefaultUnitType
     unit_amount: float = Field(gt=0, le=2000)
@@ -366,7 +371,7 @@ class FoodBase(BaseModel):
             raise ValueError(ABOVE_MAX_MESSAGE)
         return cleaned
 
-    @field_validator("brand", "category", "notes", "data_source", mode="before")
+    @field_validator("brand", "notes", "data_source", mode="before")
     @classmethod
     def clean_optional_text(cls, value: str | None, info) -> str | None:
         cleaned = _clean_optional_text(value)
@@ -428,11 +433,27 @@ class FoodBase(BaseModel):
 
     @model_validator(mode="after")
     def validate_controlled_food_data(self):
-        if (
-            self.primary_category_key is not None
-            and self.primary_category_key not in PRIMARY_CATEGORIES
+        if self.food_category_key not in FOOD_CATEGORIES:
+            raise ValueError("فئة الطعام غير معتمدة.")
+        if self.food_category_key == "baked_goods":
+            if self.baked_good_type is None:
+                raise ValueError("نوع المخبوزات مطلوب لفئة المخبوزات.")
+            if self.grain_type is None:
+                raise ValueError("نوع الحبوب مطلوب لفئة المخبوزات.")
+            if self.grain_starch_type is not None:
+                raise ValueError("نوع الحبوب والنشويات غير متاح لفئة المخبوزات.")
+        elif self.food_category_key == "grains_starches":
+            if self.grain_starch_type is None:
+                raise ValueError("نوع الحبوب أو النشويات مطلوب لهذه الفئة.")
+            if self.grain_type is None:
+                raise ValueError("نوع الحبوب مطلوب لفئة الحبوب والنشويات.")
+            if self.baked_good_type is not None:
+                raise ValueError("نوع المخبوزات غير متاح لفئة الحبوب والنشويات.")
+        elif any(
+            value is not None
+            for value in (self.grain_type, self.baked_good_type, self.grain_starch_type)
         ):
-            raise ValueError("التصنيف الأساسي غير معتمد.")
+            raise ValueError("تفاصيل الحبوب والمخبوزات غير متاحة لفئة الطعام المحددة.")
         groups = [item.group_key for item in self.group_contributions]
         if len(groups) != len(set(groups)):
             raise ValueError("لا يمكن تكرار المجموعة الغذائية للطعام نفسه.")
@@ -442,30 +463,6 @@ class FoodBase(BaseModel):
             raise ValueError("لا يمكن تكرار السمة التحليلية.")
         if any(item not in TRAIT_KEYS for item in self.analytical_traits):
             raise ValueError("سمة تحليلية غير معتمدة.")
-        if self.group_data_status == GroupDataStatus.unknown and self.group_contributions:
-            raise ValueError("الحالة غير المعروفة لا تقبل مساهمات غذائية.")
-        if (
-            self.group_data_completeness == GroupDataCompleteness.unknown
-            and self.group_contributions
-        ):
-            raise ValueError("اكتمال التصنيف غير المعروف لا يقبل مساهمات غذائية.")
-        if (
-            self.group_data_completeness == GroupDataCompleteness.partial
-            and not self.group_contributions
-        ):
-            raise ValueError("التصنيف الجزئي يتطلب مساهمة غذائية واحدة على الأقل.")
-        if self.group_data_status == GroupDataStatus.known and any(
-            item.data_status != ContributionDataStatus.known for item in self.group_contributions
-        ):
-            raise ValueError("الحالة المؤكدة لا تقبل مساهمة تقديرية.")
-        if (
-            self.group_data_status == GroupDataStatus.estimated
-            and not any(
-                item.data_status == ContributionDataStatus.estimated
-                for item in self.group_contributions
-            )
-        ):
-            raise ValueError("الحالة التقديرية تتطلب مساهمة تقديرية واحدة على الأقل.")
         return self
 
 
@@ -478,11 +475,11 @@ class FoodUpdate(BaseModel):
 
     name: str | None = None
     brand: str | None = None
-    category: str | None = None
-    primary_category_key: str | None = None
+    food_category_key: str | None = None
+    grain_type: GrainType | None = None
+    baked_good_type: BakedGoodType | None = None
+    grain_starch_type: GrainStarchType | None = None
     food_kind: FoodKind | None = None
-    group_data_status: GroupDataStatus | None = None
-    group_data_completeness: GroupDataCompleteness | None = None
     nutrition_basis: NutritionBasis | None = None
     default_unit_type: DefaultUnitType | None = None
     unit_amount: float | None = Field(default=None, gt=0, le=2000)
@@ -533,7 +530,7 @@ class FoodUpdate(BaseModel):
             raise ValueError(ABOVE_MAX_MESSAGE)
         return cleaned
 
-    @field_validator("brand", "category", "notes", "data_source", mode="before")
+    @field_validator("brand", "notes", "data_source", mode="before")
     @classmethod
     def clean_optional_text(cls, value: str | None, info) -> str | None:
         cleaned = _clean_optional_text(value)
@@ -602,6 +599,10 @@ class LegacyNutritionResponse(BaseModel):
 
 class FoodResponse(FoodBase):
     id: UUID
+    status: FoodStatus
+    group_data_status: GroupDataStatus
+    group_data_completeness: GroupDataCompleteness
+    taxonomy_review_required: bool
     nutrition_source: NutritionSourceResponse
     nova: NovaResponse
     group_contributions: list[FoodGroupContributionResponse]
@@ -610,6 +611,7 @@ class FoodResponse(FoodBase):
     net_carbs_g: float
     created_at: datetime
     updated_at: datetime
+    archived_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -625,6 +627,47 @@ class FoodListResponse(BaseModel):
     total_pages: int
     categories: list[str]
     uncategorized_count: int
+
+
+class FoodDeleteResponse(BaseModel):
+    disposition: Literal["deleted", "archived"]
+
+
+class AccountResponse(BaseModel):
+    principal_id: UUID
+    auth_user_id: UUID
+    email: str | None
+    display_name: str | None
+    role: PrincipalRole
+    status: PrincipalStatus
+
+
+class AdminUserSummary(BaseModel):
+    principal_id: UUID
+    email: str | None
+    display_name: str | None
+    status: PrincipalStatus
+    role: PrincipalRole
+    created_at: datetime
+    profile_complete: bool
+    current_goal: Goal | None
+    last_activity_at: datetime | None
+
+
+class AdminUserListResponse(BaseModel):
+    items: list[AdminUserSummary]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class AdminUserDetail(BaseModel):
+    account: AdminUserSummary
+    profile: ProfileResponse | None
+    current_target: TargetSourceResponse | None
+    pending_plan: TargetPlanSummary | None
+    plan_history: TargetPlanHistoryResponse
 
 
 class NutritionSnapshot(BaseModel):

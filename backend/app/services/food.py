@@ -13,11 +13,13 @@ from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
 from app.models import (
+    DiaryEntry,
     Food,
     FoodAnalyticalTrait,
     FoodGroupContribution,
     NovaReviewStatus,
     Principal,
+    FoodStatus,
     utcnow,
 )
 from app.nutrition_rules.versions import VERSIONS
@@ -36,11 +38,11 @@ from app.services.food_validation_errors import (
 FOOD_FIELDS = (
     "name",
     "brand",
-    "category",
-    "primary_category_key",
+    "food_category_key",
+    "grain_type",
+    "baked_good_type",
+    "grain_starch_type",
     "food_kind",
-    "group_data_status",
-    "group_data_completeness",
     "nutrition_basis",
     "default_unit_type",
     "unit_amount",
@@ -121,31 +123,21 @@ def _food_data(food: Food) -> dict[str, Any]:
     return data
 
 
-def _group_contributions(
-    session: Session, principal: PrincipalContext, food_id: UUID
-) -> list[FoodGroupContribution]:
+def _group_contributions(session: Session, food_id: UUID) -> list[FoodGroupContribution]:
     return list(
         session.exec(
             select(FoodGroupContribution)
-            .where(
-                FoodGroupContribution.food_id == food_id,
-                FoodGroupContribution.principal_id == principal.principal_id,
-            )
+            .where(FoodGroupContribution.food_id == food_id)
             .order_by(FoodGroupContribution.group_key)
         ).all()
     )
 
 
-def _analytical_traits(
-    session: Session, principal: PrincipalContext, food_id: UUID
-) -> list[FoodAnalyticalTrait]:
+def _analytical_traits(session: Session, food_id: UUID) -> list[FoodAnalyticalTrait]:
     return list(
         session.exec(
             select(FoodAnalyticalTrait)
-            .where(
-                FoodAnalyticalTrait.food_id == food_id,
-                FoodAnalyticalTrait.principal_id == principal.principal_id,
-            )
+            .where(FoodAnalyticalTrait.food_id == food_id)
             .order_by(FoodAnalyticalTrait.trait_key)
         ).all()
     )
@@ -176,20 +168,36 @@ def _food_input_data(session: Session, principal: PrincipalContext, food: Food) 
             "amount_per_100_basis": float(item.amount_per_100_basis),
             "data_status": item.data_status,
         }
-        for item in _group_contributions(session, principal, food.id)
+        for item in _group_contributions(session, food.id)
     ]
-    data["analytical_traits"] = [
-        item.trait_key for item in _analytical_traits(session, principal, food.id)
-    ]
+    data["analytical_traits"] = [item.trait_key for item in _analytical_traits(session, food.id)]
     return data
 
 
 def to_food_response(session: Session, principal: PrincipalContext, food: Food) -> FoodResponse:
-    contributions = _group_contributions(session, principal, food.id)
-    traits = _analytical_traits(session, principal, food.id)
+    contributions = _group_contributions(session, food.id)
+    traits = _analytical_traits(session, food.id)
+    derived_status = (
+        "unknown"
+        if not contributions
+        else "estimated"
+        if any(_enum_value(item.data_status) == "estimated" for item in contributions)
+        else "known"
+    )
+    derived_completeness = (
+        "unknown"
+        if not contributions
+        else "complete"
+        if sum(float(item.amount_per_100_basis) for item in contributions) >= 100
+        else "partial"
+    )
     return FoodResponse(
         id=food.id,
         **_food_data(food),
+        status=food.status,
+        group_data_status=derived_status,
+        group_data_completeness=derived_completeness,
+        taxonomy_review_required=food.taxonomy_review_required,
         nutrition_source={
             "type": food.nutrition_source_type,
             "name": food.nutrition_source_name,
@@ -226,6 +234,7 @@ def to_food_response(session: Session, principal: PrincipalContext, food: Food) 
         net_carbs_g=net_carbs(food),
         created_at=food.created_at,
         updated_at=food.updated_at,
+        archived_at=food.archived_at,
     )
 
 
@@ -248,13 +257,10 @@ def _duplicate_detail() -> list[dict[str, Any]]:
 
 
 def ensure_not_duplicate(
-    session: Session,
-    principal: PrincipalContext,
-    data: dict[str, Any],
-    food_id: UUID | None = None,
+    session: Session, data: dict[str, Any], food_id: UUID | None = None
 ) -> None:
     target_key = duplicate_key(data)
-    foods = session.exec(select(Food).where(Food.principal_id == principal.principal_id)).all()
+    foods = session.exec(select(Food)).all()
     for food in foods:
         if food_id is not None and food.id == food_id:
             continue
@@ -262,12 +268,8 @@ def ensure_not_duplicate(
             raise HTTPException(status_code=422, detail=_duplicate_detail())
 
 
-def _lock_food_namespace(session: Session, principal: PrincipalContext) -> None:
-    session.exec(
-        select(Principal)
-        .where(Principal.id == principal.principal_id)
-        .with_for_update()
-    ).one()
+def _lock_food_namespace(session: Session) -> None:
+    session.exec(select(Principal).order_by(Principal.id).with_for_update()).first()
 
 
 def _validated_update_data(
@@ -303,7 +305,25 @@ def _persistence_data(payload: FoodCreate) -> dict[str, Any]:
         }
     )
     source = payload.nutrition_source
+    contributions = payload.group_contributions
+    derived_status = (
+        "unknown"
+        if not contributions
+        else "estimated"
+        if any(_enum_value(item.data_status) == "estimated" for item in contributions)
+        else "known"
+    )
+    derived_completeness = (
+        "unknown"
+        if not contributions
+        else "complete"
+        if sum(item.amount_per_100_basis for item in contributions) >= 100
+        else "partial"
+    )
     data.update(
+        normalized_name=normalize_text(payload.name),
+        group_data_status=derived_status,
+        group_data_completeness=derived_completeness,
         nutrition_source_type=source.type,
         nutrition_source_name=source.name,
         nutrition_source_reference=source.reference,
@@ -325,20 +345,18 @@ def _replace_classification(
     session.exec(
         delete(FoodGroupContribution).where(
             FoodGroupContribution.food_id == food.id,
-            FoodGroupContribution.principal_id == principal.principal_id,
         )
     )
     session.exec(
         delete(FoodAnalyticalTrait).where(
             FoodAnalyticalTrait.food_id == food.id,
-            FoodAnalyticalTrait.principal_id == principal.principal_id,
         )
     )
     session.flush()
     for item in payload.group_contributions:
         session.add(
             FoodGroupContribution(
-                principal_id=principal.principal_id,
+                created_by_principal_id=principal.principal_id,
                 food_id=food.id,
                 group_key=item.group_key,
                 subtype_key=item.subtype_key,
@@ -350,7 +368,7 @@ def _replace_classification(
     for trait_key in payload.analytical_traits:
         session.add(
             FoodAnalyticalTrait(
-                principal_id=principal.principal_id,
+                created_by_principal_id=principal.principal_id,
                 food_id=food.id,
                 trait_key=trait_key,
                 food_group_rules_version=VERSIONS.food_group_rules_version,
@@ -361,7 +379,7 @@ def _replace_classification(
 def list_foods(
     session: Session, principal: PrincipalContext, query: str | None = None
 ) -> list[Food]:
-    statement = select(Food).where(Food.principal_id == principal.principal_id).order_by(Food.name)
+    statement = select(Food).where(Food.status == FoodStatus.active).order_by(Food.name)
     if query and query.strip():
         pattern = f"%{query.strip()}%"
         statement = statement.where(or_(Food.name.ilike(pattern), Food.brand.ilike(pattern)))
@@ -377,17 +395,16 @@ def list_foods_page(
     sort: FoodSort = "name",
     page: int = 1,
     page_size: int = 20,
+    status: FoodStatus | None = FoodStatus.active,
 ) -> FoodPage:
-    conditions = [Food.principal_id == principal.principal_id]
+    conditions = [Food.status == status] if status is not None else []
     normalized_search = search.strip() if search else ""
     if normalized_search:
         pattern = f"%{normalized_search}%"
         conditions.append(or_(Food.name.ilike(pattern), Food.brand.ilike(pattern)))
 
-    if category == UNCATEGORIZED_CATEGORY:
-        conditions.append((Food.category.is_(None)) | (func.trim(Food.category) == ""))
-    elif category:
-        conditions.append(Food.category == category)
+    if category and category != UNCATEGORIZED_CATEGORY:
+        conditions.append(Food.food_category_key == category)
 
     count_statement = select(func.count()).select_from(Food)
     if conditions:
@@ -411,13 +428,14 @@ def list_foods_page(
     statement = statement.offset((page - 1) * page_size).limit(page_size)
     items = list(session.exec(statement).all())
 
-    category_rows = session.exec(
-        select(Food.category).where(Food.principal_id == principal.principal_id)
-    ).all()
+    category_statement = select(Food.food_category_key)
+    if status is not None:
+        category_statement = category_statement.where(Food.status == status)
+    category_rows = session.exec(category_statement).all()
     categories = sorted(
         {value.strip() for value in category_rows if value and value.strip()}, key=str.casefold
     )
-    uncategorized_count = sum(1 for value in category_rows if value is None or not value.strip())
+    uncategorized_count = 0
 
     return FoodPage(
         items=items,
@@ -430,10 +448,17 @@ def list_foods_page(
     )
 
 
-def get_food(session: Session, principal: PrincipalContext, food_id: UUID) -> Food:
-    food = session.exec(
-        select(Food).where(Food.id == food_id, Food.principal_id == principal.principal_id)
-    ).first()
+def get_food(
+    session: Session,
+    principal: PrincipalContext,
+    food_id: UUID,
+    *,
+    include_archived: bool = False,
+) -> Food:
+    statement = select(Food).where(Food.id == food_id)
+    if not include_archived:
+        statement = statement.where(Food.status == FoodStatus.active)
+    food = session.exec(statement).first()
     if food is None:
         from app.services.errors import resource_not_found
 
@@ -442,16 +467,12 @@ def get_food(session: Session, principal: PrincipalContext, food_id: UUID) -> Fo
 
 
 def create_food(session: Session, principal: PrincipalContext, payload: FoodCreate) -> Food:
-    _lock_food_namespace(session, principal)
+    _lock_food_namespace(session)
     data = _persistence_data(payload)
     if payload.id is not None:
         existing = session.get(Food, payload.id)
         if existing is not None:
-            if existing.principal_id != principal.principal_id:
-                from app.services.errors import resource_not_found
-
-                raise resource_not_found()
-            ensure_not_duplicate(session, principal, data, food_id=existing.id)
+            ensure_not_duplicate(session, data, food_id=existing.id)
             return update_food(
                 session,
                 principal,
@@ -460,8 +481,12 @@ def create_food(session: Session, principal: PrincipalContext, payload: FoodCrea
             )
         data["id"] = payload.id
 
-    ensure_not_duplicate(session, principal, data)
-    food = Food(principal_id=principal.principal_id, **data)
+    ensure_not_duplicate(session, data)
+    food = Food(
+        created_by_principal_id=principal.principal_id,
+        updated_by_principal_id=principal.principal_id,
+        **data,
+    )
     session.add(food)
     session.flush()
     _replace_classification(session, principal, food, payload)
@@ -473,14 +498,15 @@ def create_food(session: Session, principal: PrincipalContext, payload: FoodCrea
 def update_food(
     session: Session, principal: PrincipalContext, food_id: UUID, payload: FoodUpdate
 ) -> Food:
-    _lock_food_namespace(session, principal)
-    food = get_food(session, principal, food_id)
+    _lock_food_namespace(session)
+    food = get_food(session, principal, food_id, include_archived=True)
     validated = _validated_update_data(session, principal, food, payload)
     data = _persistence_data(validated)
-    ensure_not_duplicate(session, principal, data, food_id=food.id)
+    ensure_not_duplicate(session, data, food_id=food.id)
     for key, value in data.items():
         setattr(food, key, value)
     food.updated_at = utcnow()
+    food.updated_by_principal_id = principal.principal_id
     session.add(food)
     session.flush()
     _replace_classification(session, principal, food, validated)
@@ -489,20 +515,47 @@ def update_food(
     return food
 
 
-def delete_food(session: Session, principal: PrincipalContext, food_id: UUID) -> None:
-    _lock_food_namespace(session, principal)
-    food = get_food(session, principal, food_id)
-    session.exec(
-        delete(FoodGroupContribution).where(
-            FoodGroupContribution.food_id == food.id,
-            FoodGroupContribution.principal_id == principal.principal_id,
-        )
-    )
-    session.exec(
-        delete(FoodAnalyticalTrait).where(
-            FoodAnalyticalTrait.food_id == food.id,
-            FoodAnalyticalTrait.principal_id == principal.principal_id,
-        )
-    )
+def archive_food(session: Session, principal: PrincipalContext, food_id: UUID) -> Food:
+    _lock_food_namespace(session)
+    food = get_food(session, principal, food_id, include_archived=True)
+    if _enum_value(food.status) == FoodStatus.archived.value:
+        return food
+    food.status = FoodStatus.archived
+    food.archived_at = utcnow()
+    food.archived_by_principal_id = principal.principal_id
+    food.updated_by_principal_id = principal.principal_id
+    food.updated_at = utcnow()
+    session.add(food)
+    session.commit()
+    session.refresh(food)
+    return food
+
+
+def restore_food(session: Session, principal: PrincipalContext, food_id: UUID) -> Food:
+    _lock_food_namespace(session)
+    food = get_food(session, principal, food_id, include_archived=True)
+    if _enum_value(food.status) == FoodStatus.active.value:
+        return food
+    food.status = FoodStatus.active
+    food.archived_at = None
+    food.archived_by_principal_id = None
+    food.updated_by_principal_id = principal.principal_id
+    food.updated_at = utcnow()
+    session.add(food)
+    session.commit()
+    session.refresh(food)
+    return food
+
+
+def delete_food(session: Session, principal: PrincipalContext, food_id: UUID) -> bool:
+    _lock_food_namespace(session)
+    food = get_food(session, principal, food_id, include_archived=True)
+    used = session.exec(select(DiaryEntry.id).where(DiaryEntry.food_id == food.id).limit(1)).first()
+    if used is not None:
+        archive_food(session, principal, food_id)
+        return False
+    session.exec(delete(FoodGroupContribution).where(FoodGroupContribution.food_id == food.id))
+    session.exec(delete(FoodAnalyticalTrait).where(FoodAnalyticalTrait.food_id == food.id))
     session.delete(food)
     session.commit()
+    return True

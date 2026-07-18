@@ -211,12 +211,12 @@ TARGET_TYPES: tuple[str, ...] = (
     "minimize",
 )
 
-PRIMARY_CATEGORIES: tuple[str, ...] = (
+FOOD_CATEGORIES: tuple[str, ...] = (
     "vegetables",
     "fruits",
     "legumes",
-    "whole_grains",
-    "refined_grains",
+    "grains_starches",
+    "baked_goods",
     "nuts_seeds",
     "seafood",
     "dairy_fortified_alternatives",
@@ -233,15 +233,15 @@ PRIMARY_CATEGORIES: tuple[str, ...] = (
     "other",
 )
 
-PRIMARY_CATEGORY_LABELS_AR: dict[str, str] = dict(
+FOOD_CATEGORY_LABELS_AR: dict[str, str] = dict(
     zip(
-        PRIMARY_CATEGORIES,
+        FOOD_CATEGORIES,
         (
             "الخضروات",
             "الفواكه",
             "البقوليات",
-            "الحبوب الكاملة",
-            "الحبوب المكررة",
+            "الحبوب والنشويات",
+            "المخبوزات",
             "المكسرات والبذور",
             "المأكولات البحرية",
             "الألبان والبدائل المدعمة",
@@ -254,7 +254,7 @@ PRIMARY_CATEGORY_LABELS_AR: dict[str, str] = dict(
             "المشروبات المحلاة بالسكر",
             "المشروبات غير المحلاة",
             "الأعشاب والتوابل",
-            "طبق مركب",
+            "الأطباق المركبة",
             "أخرى",
         ),
         strict=True,
@@ -380,8 +380,54 @@ TRAITS: tuple[dict[str, str], ...] = tuple(
 )
 
 FOOD_GROUP_LABELS_AR: dict[str, str] = {
-    key: PRIMARY_CATEGORY_LABELS_AR[key] for key in (item["key"] for item in FOOD_GROUPS)
+    **{
+        key: FOOD_CATEGORY_LABELS_AR[key]
+        for key in (item["key"] for item in FOOD_GROUPS)
+        if key in FOOD_CATEGORY_LABELS_AR
+    },
+    "whole_grains": "الحبوب الكاملة",
+    "refined_grains": "الحبوب المكررة",
 }
+
+GRAIN_TYPE_DEFINITIONS: tuple[dict[str, str], ...] = tuple(
+    {"key": key, "label_ar": label}
+    for key, label in (
+        ("whole", "حبوب كاملة"),
+        ("refined", "حبوب مكررة"),
+        ("mixed", "خليط من الحبوب الكاملة والمكررة"),
+        ("grain_free", "خالٍ من الحبوب"),
+        ("unknown", "غير معروف"),
+    )
+)
+
+BAKED_GOOD_TYPE_DEFINITIONS: tuple[dict[str, str], ...] = tuple(
+    {"key": key, "label_ar": label}
+    for key, label in (
+        ("arabic_bread", "خبز عربي"),
+        ("toast", "توست"),
+        ("rolls_wraps", "صامولي أو لفائف"),
+        ("burger_bun", "خبز برغر"),
+        ("flatbread", "خبز مسطح"),
+        ("pastries", "معجنات"),
+        ("cake", "كيك"),
+        ("biscuits_cookies", "بسكويت"),
+        ("other", "مخبوزات أخرى"),
+    )
+)
+
+GRAIN_STARCH_TYPE_DEFINITIONS: tuple[dict[str, str], ...] = tuple(
+    {"key": key, "label_ar": label}
+    for key, label in (
+        ("rice", "أرز"),
+        ("pasta", "معكرونة"),
+        ("oats", "شوفان"),
+        ("breakfast_cereal", "حبوب إفطار"),
+        ("bulgur", "برغل"),
+        ("quinoa", "كينوا"),
+        ("flour", "دقيق"),
+        ("other", "حبوب أو نشويات أخرى"),
+    )
+)
 
 FOOD_GROUP_SUBTYPE_LABELS_AR: dict[str, dict[str, str]] = {
     "dairy_fortified_alternatives": {

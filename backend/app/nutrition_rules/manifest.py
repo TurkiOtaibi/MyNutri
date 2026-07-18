@@ -6,15 +6,18 @@ from typing import Any
 
 from app.nutrition_rules.policies import CALCULATION_POLICY
 from app.nutrition_rules.registry import (
+    BAKED_GOOD_TYPE_DEFINITIONS,
     FOOD_GROUPS,
     FOOD_GROUP_LABELS_AR,
     FOOD_GROUP_SUBTYPE_LABELS_AR,
+    GRAIN_STARCH_TYPE_DEFINITIONS,
+    GRAIN_TYPE_DEFINITIONS,
     INGREDIENT_SOURCE_LABELS_AR,
     INGREDIENT_SOURCE_TYPES,
     NOVA,
     NUTRIENTS,
-    PRIMARY_CATEGORIES,
-    PRIMARY_CATEGORY_LABELS_AR,
+    FOOD_CATEGORIES,
+    FOOD_CATEGORY_LABELS_AR,
     RELIABILITY_LEVELS,
     SOURCE_RELIABILITY,
     TARGET_TYPES,
@@ -29,10 +32,13 @@ def rules_manifest() -> dict[str, Any]:
         "calculation_policy": CALCULATION_POLICY,
         "nutrients": [item.as_dict() for item in NUTRIENTS],
         "target_types": list(TARGET_TYPES),
-        "primary_categories": list(PRIMARY_CATEGORIES),
-        "primary_category_definitions": [
-            {"key": key, "label_ar": PRIMARY_CATEGORY_LABELS_AR[key]} for key in PRIMARY_CATEGORIES
+        "food_categories": list(FOOD_CATEGORIES),
+        "food_category_definitions": [
+            {"key": key, "label_ar": FOOD_CATEGORY_LABELS_AR[key]} for key in FOOD_CATEGORIES
         ],
+        "grain_type_definitions": list(GRAIN_TYPE_DEFINITIONS),
+        "baked_good_type_definitions": list(BAKED_GOOD_TYPE_DEFINITIONS),
+        "grain_starch_type_definitions": list(GRAIN_STARCH_TYPE_DEFINITIONS),
         "food_groups": list(FOOD_GROUPS),
         "food_group_definitions": [
             {
@@ -73,8 +79,11 @@ def registry_response() -> dict[str, Any]:
         "calculation_policy": manifest["calculation_policy"],
         "nutrients": manifest["nutrients"],
         "target_types": manifest["target_types"],
-        "primary_categories": manifest["primary_categories"],
-        "primary_category_definitions": manifest["primary_category_definitions"],
+        "food_categories": manifest["food_categories"],
+        "food_category_definitions": manifest["food_category_definitions"],
+        "grain_type_definitions": manifest["grain_type_definitions"],
+        "baked_good_type_definitions": manifest["baked_good_type_definitions"],
+        "grain_starch_type_definitions": manifest["grain_starch_type_definitions"],
         "food_groups": manifest["food_groups"],
         "food_group_definitions": manifest["food_group_definitions"],
         "traits": manifest["traits"],

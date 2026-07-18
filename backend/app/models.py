@@ -160,13 +160,70 @@ class PrincipalStatus(str, Enum):
     disabled = "disabled"
 
 
+class PrincipalRole(str, Enum):
+    user = "user"
+    admin = "admin"
+
+
+class FoodStatus(str, Enum):
+    active = "active"
+    archived = "archived"
+
+
+class GrainType(str, Enum):
+    whole = "whole"
+    refined = "refined"
+    mixed = "mixed"
+    grain_free = "grain_free"
+    unknown = "unknown"
+
+
+class BakedGoodType(str, Enum):
+    arabic_bread = "arabic_bread"
+    toast = "toast"
+    rolls_wraps = "rolls_wraps"
+    burger_bun = "burger_bun"
+    flatbread = "flatbread"
+    pastries = "pastries"
+    cake = "cake"
+    biscuits_cookies = "biscuits_cookies"
+    other = "other"
+
+
+class GrainStarchType(str, Enum):
+    rice = "rice"
+    pasta = "pasta"
+    oats = "oats"
+    breakfast_cereal = "breakfast_cereal"
+    bulgur = "bulgur"
+    quinoa = "quinoa"
+    flour = "flour"
+    other = "other"
+
+
 class Principal(SQLModel, table=True):
     __tablename__ = "principal"
     __table_args__ = (
         CheckConstraint("status IN ('active', 'disabled')", name="ck_principal_status"),
+        CheckConstraint("role IN ('user', 'admin')", name="ck_principal_role"),
+        UniqueConstraint("auth_user_id", name="uq_principal_auth_user_id"),
+        Index(
+            "uq_principal_lower_email",
+            sa_text("lower(email)"),
+            unique=True,
+            postgresql_where=sa_text("email IS NOT NULL"),
+            sqlite_where=sa_text("email IS NOT NULL"),
+        ),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    auth_user_id: uuid.UUID | None = Field(default=None)
+    email: str | None = Field(default=None, sa_column=Column(String(320), nullable=True))
+    display_name: str | None = Field(default=None, sa_column=Column(String(120), nullable=True))
+    role: PrincipalRole = Field(
+        default=PrincipalRole.user,
+        sa_column=Column(Text(), nullable=False, server_default=PrincipalRole.user.value),
+    )
     status: PrincipalStatus = Field(
         default=PrincipalStatus.active,
         sa_column=Column(Text(), nullable=False, server_default=PrincipalStatus.active.value),
@@ -280,9 +337,13 @@ class TargetPlan(SQLModel, table=True):
             "status IN ('active','scheduled','closed','superseded_before_effective')",
             name="ck_target_plan_status",
         ),
-        CheckConstraint("effective_to IS NULL OR effective_to > effective_from", name="ck_target_plan_period"),
+        CheckConstraint(
+            "effective_to IS NULL OR effective_to > effective_from", name="ck_target_plan_period"
+        ),
         CheckConstraint("calendar_timezone = 'Asia/Riyadh'", name="ck_target_plan_timezone"),
-        CheckConstraint("calculation_document_schema_version > 0", name="ck_target_plan_document_version"),
+        CheckConstraint(
+            "calculation_document_schema_version > 0", name="ck_target_plan_document_version"
+        ),
         CheckConstraint(
             "(status IN ('active','closed') AND activated_at IS NOT NULL) OR "
             "(status IN ('scheduled','superseded_before_effective') AND activated_at IS NULL)",
@@ -294,12 +355,16 @@ class TargetPlan(SQLModel, table=True):
             name="ck_target_plan_supersession_state",
         ),
         Index(
-            "uq_target_plan_one_active", "principal_id", unique=True,
+            "uq_target_plan_one_active",
+            "principal_id",
+            unique=True,
             postgresql_where=sa_text("status = 'active' AND effective_to IS NULL"),
             sqlite_where=sa_text("status = 'active' AND effective_to IS NULL"),
         ),
         Index(
-            "uq_target_plan_one_scheduled", "principal_id", unique=True,
+            "uq_target_plan_one_scheduled",
+            "principal_id",
+            unique=True,
             postgresql_where=sa_text("status = 'scheduled'"),
             sqlite_where=sa_text("status = 'scheduled'"),
         ),
@@ -321,10 +386,14 @@ class TargetPlan(SQLModel, table=True):
     calculation_document: dict[str, Any] = Field(
         sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
     )
-    calculation_document_schema_version: int = Field(sa_column=Column(SmallInteger(), nullable=False))
+    calculation_document_schema_version: int = Field(
+        sa_column=Column(SmallInteger(), nullable=False)
+    )
     calculation_engine_version: str = Field(sa_column=Column(String(32), nullable=False))
     nutrition_registry_version: str = Field(sa_column=Column(String(32), nullable=False))
-    created_at: datetime = Field(default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False))
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
     activated_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     closed_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     superseded_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
@@ -333,7 +402,9 @@ class TargetPlan(SQLModel, table=True):
 class IdempotencyRecord(SQLModel, table=True):
     __tablename__ = "idempotency_record"
     __table_args__ = (
-        UniqueConstraint("principal_id", "operation", "idempotency_key", name="uq_idempotency_scope"),
+        UniqueConstraint(
+            "principal_id", "operation", "idempotency_key", name="uq_idempotency_scope"
+        ),
         CheckConstraint("state IN ('in_progress','completed')", name="ck_idempotency_state"),
         CheckConstraint(
             "(state='in_progress' AND response_status IS NULL AND response_document IS NULL AND completed_at IS NULL) OR "
@@ -344,16 +415,22 @@ class IdempotencyRecord(SQLModel, table=True):
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    principal_id: uuid.UUID = Field(sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False))
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
     operation: str = Field(sa_column=Column(String(64), nullable=False))
     idempotency_key: str = Field(sa_column=Column(String(128), nullable=False))
     request_hash: str = Field(sa_column=Column(String(64), nullable=False))
     state: IdempotencyState = Field(sa_column=Column(Text(), nullable=False))
     response_status: int | None = Field(default=None, sa_column=Column(SmallInteger()))
-    response_document: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON().with_variant(JSONB, "postgresql")))
+    response_document: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(JSON().with_variant(JSONB, "postgresql"))
+    )
     resource_type: str | None = Field(default=None, sa_column=Column(String(64)))
     resource_id: uuid.UUID | None = Field(default=None)
-    created_at: datetime = Field(default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False))
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
     completed_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
 
@@ -361,10 +438,33 @@ class IdempotencyRecord(SQLModel, table=True):
 class Food(SQLModel, table=True):
     __tablename__ = "food"
     __table_args__ = (
-        UniqueConstraint("id", "principal_id", name="uq_food_id_principal_id"),
         CheckConstraint(
-            "primary_category_key IS NULL OR primary_category_key IN ('vegetables','fruits','legumes','whole_grains','refined_grains','nuts_seeds','seafood','dairy_fortified_alternatives','eggs','poultry','red_meat','processed_meat','added_oils_fats','sweets','sugar_sweetened_beverages','unsweetened_beverages','herbs_spices','mixed_dish','other')",
-            name="ck_food_primary_category",
+            "food_category_key IN ('vegetables','fruits','legumes','grains_starches','baked_goods','nuts_seeds','seafood','dairy_fortified_alternatives','eggs','poultry','red_meat','processed_meat','added_oils_fats','sweets','sugar_sweetened_beverages','unsweetened_beverages','herbs_spices','mixed_dish','other')",
+            name="ck_food_category_v2",
+        ),
+        CheckConstraint("status IN ('active','archived')", name="ck_food_status"),
+        CheckConstraint(
+            "grain_type IS NULL OR grain_type IN ('whole','refined','mixed','grain_free','unknown')",
+            name="ck_food_grain_type",
+        ),
+        CheckConstraint(
+            "baked_good_type IS NULL OR baked_good_type IN ('arabic_bread','toast','rolls_wraps','burger_bun','flatbread','pastries','cake','biscuits_cookies','other')",
+            name="ck_food_baked_good_type",
+        ),
+        CheckConstraint(
+            "grain_starch_type IS NULL OR grain_starch_type IN ('rice','pasta','oats','breakfast_cereal','bulgur','quinoa','flour','other')",
+            name="ck_food_grain_starch_type",
+        ),
+        CheckConstraint(
+            "(food_category_key='baked_goods' AND baked_good_type IS NOT NULL AND grain_type IS NOT NULL AND grain_starch_type IS NULL) OR "
+            "(food_category_key='grains_starches' AND grain_starch_type IS NOT NULL AND grain_type IS NOT NULL AND baked_good_type IS NULL) OR "
+            "(food_category_key NOT IN ('baked_goods','grains_starches') AND baked_good_type IS NULL AND grain_starch_type IS NULL AND grain_type IS NULL)",
+            name="ck_food_category_details_v2",
+        ),
+        CheckConstraint(
+            "(status='active' AND archived_at IS NULL AND archived_by_principal_id IS NULL) OR "
+            "(status='archived' AND archived_at IS NOT NULL AND archived_by_principal_id IS NOT NULL)",
+            name="ck_food_archive_state",
         ),
         CheckConstraint("food_kind IN ('simple','composite','unknown')", name="ck_food_kind"),
         CheckConstraint(
@@ -400,21 +500,50 @@ class Food(SQLModel, table=True):
             "(CAST(nutrition_basis AS TEXT) = 'per_100g' AND CAST(unit_basis AS TEXT) = 'g') OR (CAST(nutrition_basis AS TEXT) = 'per_100ml' AND CAST(unit_basis AS TEXT) = 'ml')",
             name="ck_food_nutrition_unit_basis",
         ),
-        Index("ix_food_principal_lower_name", "principal_id", sa_text("lower(name)")),
-        Index("ix_food_principal_created_desc", "principal_id", sa_text("created_at DESC")),
-        Index("ix_food_principal_primary_category", "principal_id", "primary_category_key"),
+        Index("ix_food_catalog_lower_name", sa_text("lower(name)")),
+        Index("ix_food_catalog_created_desc", sa_text("created_at DESC")),
+        Index("ix_food_catalog_category_status", "food_category_key", "status"),
+        UniqueConstraint(
+            "normalized_name",
+            "nutrition_basis",
+            "default_unit_type",
+            "unit_amount",
+            "unit_basis",
+            name="uq_food_catalog_duplicate",
+        ),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    principal_id: uuid.UUID = Field(
+    created_by_principal_id: uuid.UUID = Field(
+        alias="principal_id",
         sa_column=Column(
             ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False, index=True
         )
     )
+    updated_by_principal_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=True),
+    )
+    archived_by_principal_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=True),
+    )
     name: str = Field(index=True)
+    normalized_name: str = Field(default="", sa_column=Column(String(512), nullable=False))
     brand: str | None = None
-    category: str | None = None
-    primary_category_key: str | None = Field(default=None, sa_column=Column(Text()))
+    food_category_key: str = Field(default="other", sa_column=Column(Text(), nullable=False))
+    grain_type: GrainType | None = Field(default=None, sa_column=Column(Text(), nullable=True))
+    baked_good_type: BakedGoodType | None = Field(
+        default=None, sa_column=Column(Text(), nullable=True)
+    )
+    grain_starch_type: GrainStarchType | None = Field(
+        default=None, sa_column=Column(Text(), nullable=True)
+    )
+    taxonomy_review_required: bool = Field(default=False, nullable=False)
+    status: FoodStatus = Field(
+        default=FoodStatus.active,
+        sa_column=Column(Text(), nullable=False, server_default=FoodStatus.active.value),
+    )
     food_kind: FoodKind = Field(
         default=FoodKind.unknown,
         sa_column=Column(Text(), nullable=False, server_default=FoodKind.unknown.value),
@@ -495,19 +624,16 @@ class Food(SQLModel, table=True):
         default_factory=utcnow,
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )
+    archived_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
 
 
 class FoodGroupContribution(SQLModel, table=True):
     __tablename__ = "food_group_contribution"
     __table_args__ = (
-        ForeignKeyConstraint(
-            ["food_id", "principal_id"],
-            ["food.id", "food.principal_id"],
-            name="fk_food_group_contribution_food_owner",
-            ondelete="CASCADE",
-        ),
+        ForeignKeyConstraint(["food_id"], ["food.id"], ondelete="CASCADE"),
         UniqueConstraint("food_id", "group_key", name="uq_food_group_contribution_food_group"),
-        UniqueConstraint("id", "principal_id", name="uq_food_group_contribution_id_principal"),
         CheckConstraint(
             "amount_per_100_basis > 0 AND amount_per_100_basis <= 100",
             name="ck_food_group_contribution_amount",
@@ -522,7 +648,8 @@ class FoodGroupContribution(SQLModel, table=True):
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    principal_id: uuid.UUID = Field(
+    created_by_principal_id: uuid.UUID = Field(
+        alias="principal_id",
         sa_column=Column(
             ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False, index=True
         )
@@ -544,14 +671,8 @@ class FoodGroupContribution(SQLModel, table=True):
 class FoodAnalyticalTrait(SQLModel, table=True):
     __tablename__ = "food_analytical_trait"
     __table_args__ = (
-        ForeignKeyConstraint(
-            ["food_id", "principal_id"],
-            ["food.id", "food.principal_id"],
-            name="fk_food_analytical_trait_food_owner",
-            ondelete="CASCADE",
-        ),
+        ForeignKeyConstraint(["food_id"], ["food.id"], ondelete="CASCADE"),
         UniqueConstraint("food_id", "trait_key", name="uq_food_analytical_trait_food_trait"),
-        UniqueConstraint("id", "principal_id", name="uq_food_analytical_trait_id_principal"),
         CheckConstraint(
             "trait_key IN ('sweetened','non_nutritive_sweetened','processed','omega3_rich_seafood','calcium_fortified','unsaturated_fat_source','smoked','salted','fruit_liquid_100_percent','dried_fruit','starchy_root')",
             name="ck_food_analytical_trait_key",
@@ -559,7 +680,8 @@ class FoodAnalyticalTrait(SQLModel, table=True):
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    principal_id: uuid.UUID = Field(
+    created_by_principal_id: uuid.UUID = Field(
+        alias="principal_id",
         sa_column=Column(
             ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False, index=True
         )
@@ -577,11 +699,6 @@ class DiaryEntry(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint("id", "principal_id", name="uq_diary_entry_id_principal_id"),
         ForeignKeyConstraint(
-            ["food_id", "principal_id"],
-            ["food.id", "food.principal_id"],
-            name="fk_diary_entry_food_owner",
-        ),
-        ForeignKeyConstraint(
             ["target_plan_id", "principal_id"],
             ["target_plan.id", "target_plan.principal_id"],
             name="fk_diary_entry_target_plan_owner",
@@ -597,10 +714,16 @@ class DiaryEntry(SQLModel, table=True):
             name="ck_diary_entry_target_binding",
         ),
         CheckConstraint(
-            "snapshot_schema_version IS NULL OR snapshot_schema_version = 2",
+            "snapshot_schema_version IS NULL OR snapshot_schema_version IN (2,3)",
             name="ck_diary_entry_snapshot_version",
         ),
-        Index("ix_diary_entry_principal_date_meal_created", "principal_id", "entry_date", "meal_type", "created_at"),
+        Index(
+            "ix_diary_entry_principal_date_meal_created",
+            "principal_id",
+            "entry_date",
+            "meal_type",
+            "created_at",
+        ),
         Index("ix_diary_entry_principal_target_plan", "principal_id", "target_plan_id"),
     )
 

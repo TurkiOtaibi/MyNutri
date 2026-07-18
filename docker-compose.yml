@@ -25,7 +25,9 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/mynutri
       ENVIRONMENT: dev
-      SINGLE_USER_TOKEN: dev-token
+      SUPABASE_URL: ${SUPABASE_URL:?Set SUPABASE_URL}
+      SUPABASE_JWT_AUDIENCE: ${SUPABASE_JWT_AUDIENCE:-authenticated}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-["http://localhost:3000"]}
     ports:
       - "8000:8000"
     depends_on:
