@@ -3,10 +3,8 @@ import { expect, expectNoHorizontalOverflow, test, uniqueName, validFood } from 
 test("Wave 1 Food API preserves exact values and derives source reliability", async ({ foodsApi }) => {
   const food = await foodsApi.create({
     name: uniqueName("Quality-contract"),
-    primary_category_key: "dairy_fortified_alternatives",
+    food_category_key: "dairy_fortified_alternatives",
     food_kind: "composite",
-    group_data_status: "estimated",
-    group_data_completeness: "partial",
     selenium_mcg: 0,
     iodine_mcg: null,
     folate_dfe_mcg: 425.125,
@@ -50,7 +48,7 @@ test("new Food UI consumes Registry controls and saves controlled fields", async
   await expect(page.getByLabel(/RAE/)).toHaveCount(1);
   await expect(page.getByLabel(/DFE/)).toHaveCount(1);
   await page.getByLabel(/اسم الطعام/).fill(uniqueName("Registry-form"));
-  await page.getByLabel(/التصنيف الأساسي/).selectOption("fruits");
+  await page.getByLabel(/فئة الطعام/).selectOption("fruits");
   await page.getByLabel(/نوع الطعام/).selectOption("simple");
   await page.getByLabel(/السعرات/).fill("80");
   await page.getByLabel(/البروتين g/).fill("1");
@@ -66,7 +64,7 @@ test("new Food UI consumes Registry controls and saves controlled fields", async
   expect((await createResponse).status()).toBe(201);
 
   await expect(page).toHaveURL(/\/foods\/[0-9a-f-]+$/);
-  await expect(page.getByText("الفواكه", { exact: true })).toBeVisible();
+  await expect(page.getByText("الفواكه", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("مرتفعة", { exact: true })).toBeVisible();
 });
 
@@ -87,9 +85,11 @@ test("unknown source is explicit and cannot accept client reliability", async ({
 test("group and trait controls remain usable at 320px in RTL", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 });
   await page.goto("/foods/new");
-  await page.getByRole("button", { name: "إضافة مساهمة" }).click();
+  await page.locator("details", { hasText: "التحليل الغذائي المتقدم" }).locator("summary").click();
+  await page.getByRole("button", { name: "إضافة مجموعة غذائية" }).click();
 
   await expect(page.getByLabel("المجموعة 1")).toBeVisible();
+  await page.getByRole("button", { name: "عرض المزيد" }).click();
   await expect(page.getByLabel("محلى", { exact: true })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });

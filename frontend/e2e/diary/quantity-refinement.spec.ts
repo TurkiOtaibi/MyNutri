@@ -19,7 +19,7 @@ async function openAddAndSelect(page: Page, foodName: string) {
 
 test.describe("@diary quantity and UX refinement", () => {
   test("@p0 stepper appears only after Food selection and selected result is accessible", async ({ page, foodsApi }) => {
-    const food = await foodsApi.create({ name: uniqueName("Stepper Selected"), brand: "علامة الاختبار", category: "وجبات" });
+    const food = await foodsApi.create({ name: uniqueName("Stepper Selected"), brand: "علامة الاختبار", food_category_key: "mixed_dish" });
     await page.goto("/diary");
     await page.getByRole("button", { name: "إضافة طعام إلى فطور" }).click();
     const dialog = page.getByRole("dialog", { name: "إضافة طعام" });

@@ -58,13 +58,13 @@ test.describe("Foods serving-first catalog and details @foods", () => {
 
   test("[SERVING-003] @p0 search and category filter work together", async ({ page, foodsApi }) => {
     const stamp = Date.now();
-    const match = await foodsApi.create({ name: `E2E Filter Oats ${stamp}`, category: `Breakfast ${stamp}` });
-    const wrongCategory = await foodsApi.create({ name: `E2E Filter Oats Other ${stamp}`, category: `Snacks ${stamp}` });
-    const wrongName = await foodsApi.create({ name: `E2E Filter Rice ${stamp}`, category: `Breakfast ${stamp}` });
+    const match = await foodsApi.create({ name: `E2E Filter Oats ${stamp}`, food_category_key: "grains_starches", grain_starch_type: "oats", grain_type: "whole" });
+    const wrongCategory = await foodsApi.create({ name: `E2E Filter Oats Other ${stamp}`, food_category_key: "sweets" });
+    const wrongName = await foodsApi.create({ name: `E2E Filter Rice ${stamp}`, food_category_key: "grains_starches", grain_starch_type: "rice", grain_type: "refined" });
 
     await page.goto("/foods");
     await page.getByLabel("بحث باسم الطعام").fill(`Oats ${stamp}`);
-    await page.getByLabel("تصفية حسب التصنيف").selectOption(`Breakfast ${stamp}`);
+    await page.getByLabel("تصفية حسب التصنيف").selectOption("grains_starches");
 
     await expect(page.getByText(match.name, { exact: true }).first()).toBeVisible();
     await expect(page.getByText(wrongCategory.name, { exact: true })).toHaveCount(0);
@@ -111,7 +111,7 @@ test.describe("Foods serving-first catalog and details @foods", () => {
   test("[SERVING-007] @p0 @mobile card opens details and menu exposes secondary actions", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E Card Menu ${Date.now()}` });
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/foods");
+    await page.goto("/admin/foods");
 
     await page.getByRole("button", { name: `إجراءات ${food.name}` }).click();
     await expect(page.getByRole("menuitem", { name: "تعديل" })).toBeVisible();
@@ -126,7 +126,7 @@ test.describe("Foods serving-first catalog and details @foods", () => {
     const food = await foodsApi.create({
       name: `بسكويت الشوفان بالشوكولاتة الداكنة بدون سكر - Gullón Oaty ${Date.now()}`.slice(0, 120),
       brand: "Gullón Oaty",
-      category: "حلويات وبسكويت"
+      food_category_key: "sweets"
     });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/foods");
@@ -141,7 +141,7 @@ function mockFoods(count: number): FoodRecord[] {
   return Array.from({ length: count }, (_, index) => ({
     ...validFood({
       name: `Mock Food ${String(index + 1).padStart(2, "0")}`,
-      category: index % 2 === 0 ? "Breakfast" : null,
+      food_category_key: index % 2 === 0 ? "fruits" : "other",
       unit_amount: 25,
       calories: 200 + index,
       protein_g: 10 + index / 10
@@ -163,6 +163,10 @@ function mockFoods(count: number): FoodRecord[] {
     group_contributions: [],
     created_at: "2026-07-10T00:00:00Z",
     updated_at: "2026-07-10T00:00:00Z"
+    ,status: "active",
+    archived_at: null,
+    group_data_status: "unknown",
+    group_data_completeness: "unknown"
   }));
 }
 
@@ -182,8 +186,8 @@ async function mockPagedCatalog(page: import("@playwright/test").Page, foods: Fo
         page: current,
         page_size: size,
         total_pages: Math.ceil(foods.length / size),
-        categories: ["Breakfast"],
-        uncategorized_count: foods.filter((food) => !food.category).length
+        categories: ["fruits", "other"],
+        uncategorized_count: 0
       })
     });
   });

@@ -48,9 +48,16 @@ jobs:
         working-directory: backend
         env:
           ENVIRONMENT: production
-          DEPLOYMENT_PRINCIPAL_ID: 00000000-0000-0000-0000-000000000001
-          SINGLE_USER_TOKEN: ci-only-secret
-        run: python -m app.db.preflight
+          SUPABASE_URL: https://ci-fixture.supabase.co
+          PGPASSWORD: postgres
+        run: |
+          alembic upgrade head
+          psql -h 127.0.0.1 -U postgres -d mynutri_test_ci -v ON_ERROR_STOP=1 -c \
+            "INSERT INTO principal (id,auth_user_id,email,display_name,role,status,created_at,updated_at)
+             VALUES ('00000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001',
+             'admin.ci@example.test','CI Admin','admin','active',now(),now()) ON CONFLICT (id) DO UPDATE SET
+             auth_user_id=EXCLUDED.auth_user_id,email=EXCLUDED.email,role='admin',status='active',updated_at=now();"
+          python -m app.db.preflight
       - name: Check migration SQL
         working-directory: backend
         run: alembic upgrade head --sql
@@ -95,14 +102,16 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_e2e_ci
-      SINGLE_USER_TOKEN: dev-token
+      SUPABASE_URL: http://127.0.0.1:8765
+      SUPABASE_JWT_AUDIENCE: authenticated
       CALENDAR_TIMEZONE: Asia/Riyadh
-      SNAPSHOT_V2_WRITER_ENABLED: "true"
+      SNAPSHOT_V3_WRITER_ENABLED: "true"
       NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
-      NEXT_PUBLIC_API_TOKEN: dev-token
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:8765
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: e2e-public-key
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
       PLAYWRIGHT_API_URL: http://127.0.0.1:8000
-      PLAYWRIGHT_API_TOKEN: dev-token
+      PLAYWRIGHT_SUPABASE_URL: http://127.0.0.1:8765
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -128,16 +137,21 @@ jobs:
           PGPASSWORD: postgres
         run: >-
           psql -h 127.0.0.1 -U postgres -d mynutri_e2e_ci -v ON_ERROR_STOP=1
-          -c "INSERT INTO principal (id,status,created_at,updated_at) VALUES
-          ('00000000-0000-0000-0000-000000000001','active',now(),now());"
+          -c "INSERT INTO principal
+          (id,auth_user_id,email,display_name,role,status,created_at,updated_at) VALUES
+          ('00000000-0000-0000-0000-000000000001',
+          '10000000-0000-0000-0000-000000000001','admin.e2e@example.test',
+          'مشرف الاختبار','admin','active',now(),now());"
       - name: Start application services
         run: |
+          python backend/scripts/e2e_supabase_auth.py > /tmp/mynutri-auth.log 2>&1 &
           cd backend
           python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/mynutri-api.log 2>&1 &
           cd ../frontend
           npm run build
           npm run start -- --hostname 127.0.0.1 --port 3000 > /tmp/mynutri-web.log 2>&1 &
           for attempt in {1..60}; do
+            curl --fail --silent http://127.0.0.1:8765/health >/dev/null &&
             curl --fail --silent http://127.0.0.1:8000/health >/dev/null &&
             curl --fail --silent http://127.0.0.1:3000/profile >/dev/null && exit 0
             sleep 2

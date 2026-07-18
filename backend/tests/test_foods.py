@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.db.session import get_session
-from app.core.auth import PrincipalContext
+from app.core.auth import PrincipalContext, get_principal_context
 from app.main import app
 from app.models import (
     DefaultUnitType,
@@ -18,12 +18,12 @@ from app.models import (
     FoodGroupContribution,
     NutritionBasis,
     Principal,
+    PrincipalRole,
     UnitBasis,
 )
 from app.schemas import FoodCreate
 from app.services.diary import make_snapshot, to_entry_response
 from app.services.food import (
-    UNCATEGORIZED_CATEGORY,
     create_food,
     delete_food,
     list_foods,
@@ -64,8 +64,7 @@ def food_payload(**overrides):
     payload = {
         "name": "Greek Yogurt",
         "brand": "Local",
-        "category": "Dairy",
-        "primary_category_key": "other",
+        "food_category_key": "other",
         "food_kind": "simple",
         "nutrition_basis": NutritionBasis.per_100g,
         "default_unit_type": DefaultUnitType.serving,
@@ -100,6 +99,9 @@ def api_client():
         yield session
 
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_principal_context] = lambda: PrincipalContext(
+        TEST_PRINCIPAL_ID, role=PrincipalRole.admin
+    )
     client = TestClient(app)
     try:
         yield client
@@ -181,7 +183,6 @@ def test_food_api_returns_arabic_name_and_unit_amount_errors(api_client: TestCli
     [
         ("name", 120),
         ("brand", 80),
-        ("category", 80),
         ("notes", 500),
         ("data_source", 120),
     ],
@@ -325,7 +326,7 @@ def test_deleted_food_does_not_block_duplicate_recreation() -> None:
 def test_food_list_pagination_preserves_legacy_array_response(api_client: TestClient) -> None:
     first = api_client.post(
         "/foods",
-        json=food_json(name="Legacy Food", category="Legacy"),
+        json=food_json(name="Legacy Food", food_category_key="other"),
         headers=auth_headers(),
     )
     assert first.status_code == 201
@@ -341,36 +342,46 @@ def test_food_list_pagination_preserves_legacy_array_response(api_client: TestCl
     assert body["page"] == 1
     assert body["page_size"] == 20
     assert body["total_pages"] == 1
-    assert body["categories"] == ["Legacy"]
+    assert body["categories"] == ["other"]
     assert body["items"][0]["name"] == "Legacy Food"
 
 
-def test_food_page_combines_search_category_and_uncategorized_filters() -> None:
+def test_food_page_combines_search_and_category_filters() -> None:
     with session_fixture() as session:
         create_food(
             session,
             TEST_PRINCIPAL,
-            FoodCreate.model_validate(food_payload(name="Arabic Oats", category="Breakfast")),
+            FoodCreate.model_validate(
+                food_payload(
+                    name="Arabic Oats",
+                    food_category_key="grains_starches",
+                    grain_starch_type="oats",
+                    grain_type="whole",
+                )
+            ),
         )
         create_food(
             session,
             TEST_PRINCIPAL,
-            FoodCreate.model_validate(food_payload(name="Other Oats", category="Snacks")),
+            FoodCreate.model_validate(
+                food_payload(name="Other Oats", food_category_key="sweets")
+            ),
         )
         create_food(
             session,
             TEST_PRINCIPAL,
-            FoodCreate.model_validate(food_payload(name="Plain Oats", category=None)),
+            FoodCreate.model_validate(
+                food_payload(name="Plain Oats", food_category_key="other")
+            ),
         )
 
-        breakfast = list_foods_page(session, TEST_PRINCIPAL, search="oats", category="Breakfast")
-        assert [food.name for food in breakfast.items] == ["Arabic Oats"]
-        assert breakfast.total == 1
-        assert breakfast.categories == ["Breakfast", "Snacks"]
-        assert breakfast.uncategorized_count == 1
-
-        uncategorized = list_foods_page(session, TEST_PRINCIPAL, category=UNCATEGORIZED_CATEGORY)
-        assert [food.name for food in uncategorized.items] == ["Plain Oats"]
+        grains = list_foods_page(
+            session, TEST_PRINCIPAL, search="oats", category="grains_starches"
+        )
+        assert [food.name for food in grains.items] == ["Arabic Oats"]
+        assert grains.total == 1
+        assert grains.categories == ["grains_starches", "other", "sweets"]
+        assert grains.uncategorized_count == 0
 
 
 def test_food_search_matches_brand_for_diary_picker() -> None:
@@ -488,7 +499,7 @@ def test_wave1_food_contract_preserves_exact_null_zero_and_legacy_values(
     }
 
 
-@pytest.mark.parametrize("missing_field", ("primary_category_key", "food_kind", "nutrition_source"))
+@pytest.mark.parametrize("missing_field", ("food_category_key", "food_kind", "nutrition_source"))
 def test_wave1_new_food_requires_controlled_classification_and_source(
     api_client: TestClient, missing_field: str
 ) -> None:
@@ -563,8 +574,6 @@ def test_wave1_food_update_rejects_client_authoritative_reliability(
     [
         (
             {
-                "group_data_status": "known",
-                "group_data_completeness": "complete",
                 "group_contributions": [
                     {
                         "group_key": "fruits",
@@ -582,8 +591,6 @@ def test_wave1_food_update_rejects_client_authoritative_reliability(
         ),
         (
             {
-                "group_data_status": "known",
-                "group_data_completeness": "complete",
                 "group_contributions": [
                     {
                         "group_key": "fruits",
@@ -601,8 +608,6 @@ def test_wave1_food_update_rejects_client_authoritative_reliability(
         ),
         (
             {
-                "group_data_status": "known",
-                "group_data_completeness": "complete",
                 "group_contributions": [
                     {
                         "group_key": "dairy_fortified_alternatives",
@@ -612,14 +617,6 @@ def test_wave1_food_update_rejects_client_authoritative_reliability(
                 ],
             },
             "invalid_food_group_subtype",
-        ),
-        (
-            {
-                "group_data_status": "estimated",
-                "group_data_completeness": "complete",
-                "group_contributions": [],
-            },
-            "estimated_group_data_requires_estimate",
         ),
     ],
 )
@@ -641,10 +638,8 @@ def test_wave1_food_update_atomically_replaces_groups_and_traits(
 ) -> None:
     payload = food_json(
         name="Composite food",
-        primary_category_key="mixed_dish",
+        food_category_key="mixed_dish",
         food_kind="composite",
-        group_data_status="estimated",
-        group_data_completeness="partial",
         group_contributions=[
             {
                 "group_key": "whole_grains",
@@ -660,8 +655,6 @@ def test_wave1_food_update_atomically_replaces_groups_and_traits(
     replaced = api_client.put(
         f"/foods/{created.json()['id']}",
         json={
-            "group_data_status": "known",
-            "group_data_completeness": "complete",
             "group_contributions": [
                 {
                     "group_key": "refined_grains",
@@ -689,8 +682,6 @@ def test_wave1_food_hard_delete_cascades_classification_children() -> None:
             FoodCreate.model_validate(
                 food_payload(
                     name="Delete classification",
-                    group_data_status="known",
-                    group_data_completeness="complete",
                     group_contributions=[
                         {
                             "group_key": "seafood",
@@ -723,3 +714,73 @@ def test_wave1_food_hard_delete_cascades_classification_children() -> None:
             ).first()
             is None
         )
+
+
+def test_group_status_and_completeness_are_derived_and_not_client_authoritative(
+    api_client: TestClient,
+) -> None:
+    rejected = api_client.post(
+        "/foods",
+        json=food_json(name="Client status", group_data_status="known"),
+        headers=auth_headers(),
+    )
+    assert rejected.status_code == 422
+
+    created = api_client.post(
+        "/foods",
+        json=food_json(
+            name="Derived status",
+            group_contributions=[
+                {
+                    "group_key": "fruits",
+                    "amount_per_100_basis": 60,
+                    "data_status": "estimated",
+                }
+            ],
+        ),
+        headers=auth_headers(),
+    )
+    assert created.status_code == 201
+    assert created.json()["group_data_status"] == "estimated"
+    assert created.json()["group_data_completeness"] == "partial"
+
+
+@pytest.mark.parametrize(
+    ("category", "details"),
+    [
+        ("baked_goods", {"baked_good_type": "arabic_bread", "grain_type": "whole"}),
+        ("grains_starches", {"grain_starch_type": "rice", "grain_type": "refined"}),
+    ],
+)
+def test_food_taxonomy_v2_requires_structured_category_details(
+    api_client: TestClient, category: str, details: dict
+) -> None:
+    missing = api_client.post(
+        "/foods",
+        json=food_json(name=f"Missing {category}", food_category_key=category),
+        headers=auth_headers(),
+    )
+    assert missing.status_code == 422
+
+    valid = api_client.post(
+        "/foods",
+        json=food_json(name=f"Valid {category}", food_category_key=category, **details),
+        headers=auth_headers(),
+    )
+    assert valid.status_code == 201, valid.text
+    for key, value in details.items():
+        assert valid.json()[key] == value
+
+    unrelated = api_client.post(
+        "/foods",
+        json=food_json(name=f"Unrelated {category}", food_category_key="fruits", **details),
+        headers=auth_headers(),
+    )
+    assert unrelated.status_code == 422
+
+
+def test_legacy_category_is_not_part_of_v2_food_contract(api_client: TestClient) -> None:
+    payload = food_json(name="Legacy category rejected")
+    payload["category"] = "Legacy"
+    response = api_client.post("/foods", json=payload, headers=auth_headers())
+    assert response.status_code == 422

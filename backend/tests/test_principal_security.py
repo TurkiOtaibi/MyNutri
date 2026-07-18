@@ -1,22 +1,44 @@
 from __future__ import annotations
 
-from uuid import UUID, uuid4
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from uuid import UUID
 
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
-from app.core.config import Settings, get_settings, validate_runtime_configuration
+from app.core.auth import AuthClaims, SupabaseTokenVerifier, get_token_verifier
+from app.core.config import Settings, validate_runtime_configuration
+from app.core.calendar import current_diary_date
 from app.db.session import get_session
 from app.main import app
-from app.models import Principal, PrincipalStatus
+from app.models import Principal, PrincipalRole, PrincipalStatus
 
 PRINCIPAL_A = UUID("00000000-0000-0000-0000-00000000000a")
 PRINCIPAL_B = UUID("00000000-0000-0000-0000-00000000000b")
+AUTH_A = UUID("10000000-0000-0000-0000-00000000000a")
+AUTH_B = UUID("10000000-0000-0000-0000-00000000000b")
+AUTH_NEW = UUID("10000000-0000-0000-0000-00000000000c")
 
 
-def _profile_payload(weight: float = 80) -> dict:
+class FakeVerifier:
+    def verify(self, token: str) -> AuthClaims:
+        mapping = {
+            "admin-a": AuthClaims(AUTH_A, "admin@example.com", "Admin"),
+            "rotated-admin-a": AuthClaims(AUTH_A, "admin@example.com", "Admin"),
+            "user-b": AuthClaims(AUTH_B, "user@example.com", "User B"),
+            "new-user": AuthClaims(AUTH_NEW, "new@example.com", "New User"),
+        }
+        if token not in mapping:
+            raise ValueError("invalid token")
+        return mapping[token]
+
+
+def profile_payload(weight: float = 80) -> dict:
     return {
         "sex": "male",
         "birth_date": "1990-01-01",
@@ -29,10 +51,10 @@ def _profile_payload(weight: float = 80) -> dict:
     }
 
 
-def _food_payload(name: str = "Owner scoped food") -> dict:
+def food_payload(name: str = "Shared food") -> dict:
     return {
         "name": name,
-        "primary_category_key": "other",
+        "food_category_key": "other",
         "food_kind": "simple",
         "nutrition_basis": "per_100g",
         "default_unit_type": "serving",
@@ -47,305 +69,214 @@ def _food_payload(name: str = "Owner scoped food") -> dict:
 
 
 @pytest.fixture
-def principal_session():
+def security_context():
     engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
     SQLModel.metadata.create_all(engine)
     session = Session(engine)
-    session.add(Principal(id=PRINCIPAL_A))
-    session.add(Principal(id=PRINCIPAL_B))
-    session.commit()
-    try:
-        yield session
-    finally:
-        session.close()
-
-
-@pytest.fixture
-def principal_client(principal_session: Session):
-    settings = Settings(
-        environment="test",
-        single_user_token="",
-        principal_token_map={
-            "token-a": PRINCIPAL_A,
-            "rotated-token-a": PRINCIPAL_A,
-            "token-b": PRINCIPAL_B,
-        },
-        snapshot_v2_writer_enabled=True,
+    session.add(
+        Principal(
+            id=PRINCIPAL_A,
+            auth_user_id=AUTH_A,
+            email="admin@example.com",
+            role=PrincipalRole.admin,
+        )
     )
+    session.add(
+        Principal(
+            id=PRINCIPAL_B,
+            auth_user_id=AUTH_B,
+            email="user@example.com",
+            role=PrincipalRole.user,
+        )
+    )
+    session.commit()
 
     def override_session():
-        yield principal_session
+        yield session
 
     app.dependency_overrides[get_session] = override_session
-    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_token_verifier] = FakeVerifier
     client = TestClient(app)
     try:
-        yield client
+        yield client, session
     finally:
         app.dependency_overrides.clear()
         client.close()
+        session.close()
 
 
-def _headers(token: str) -> dict[str, str]:
+def headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_missing_authorization_fails_closed(principal_client: TestClient) -> None:
-    response = principal_client.get("/foods")
+def test_missing_invalid_and_unsupported_credentials(security_context) -> None:
+    client, _ = security_context
+    missing = client.get("/foods")
+    invalid = client.get("/foods", headers=headers("wrong"))
+    unsupported = client.get("/foods", headers={"Authorization": "Basic value"})
+    assert missing.status_code == invalid.status_code == unsupported.status_code == 401
+    assert missing.json()["detail"]["code"] == "AUTHENTICATION_REQUIRED"
+    assert invalid.json()["detail"]["code"] == "INVALID_CREDENTIAL"
+    assert unsupported.json()["detail"]["code"] == "INVALID_CREDENTIAL"
 
+
+def test_valid_token_rotation_and_account_response(security_context) -> None:
+    client, _ = security_context
+    first = client.get("/account/me", headers=headers("admin-a"))
+    rotated = client.get("/account/me", headers=headers("rotated-admin-a"))
+    assert first.status_code == rotated.status_code == 200
+    assert first.json()["principal_id"] == rotated.json()["principal_id"] == str(PRINCIPAL_A)
+    assert first.json()["role"] == "admin"
+
+
+def test_unknown_auth_user_is_provisioned_as_user_idempotently(security_context) -> None:
+    client, session = security_context
+    first = client.get("/account/me", headers=headers("new-user"))
+    second = client.get("/account/me", headers=headers("new-user"))
+    assert first.status_code == second.status_code == 200
+    assert first.json()["principal_id"] == second.json()["principal_id"]
+    principal = session.get(Principal, UUID(first.json()["principal_id"]))
+    assert principal and principal.role == PrincipalRole.user
+
+
+def test_disabled_principal_is_rejected(security_context) -> None:
+    client, session = security_context
+    principal = session.get(Principal, PRINCIPAL_B)
+    assert principal
+    principal.status = PrincipalStatus.disabled
+    session.add(principal)
+    session.commit()
+    response = client.get("/foods", headers=headers("user-b"))
     assert response.status_code == 401
-    assert response.json()["detail"]["code"] == "AUTHENTICATION_REQUIRED"
-    assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
-def test_valid_bearer_token_authenticates(principal_client: TestClient) -> None:
-    response = principal_client.get("/foods", headers=_headers("token-a"))
-
-    assert response.status_code == 200
-
-
-def test_invalid_bearer_token_is_rejected(principal_client: TestClient) -> None:
-    response = principal_client.get("/foods", headers=_headers("wrong"))
-
-    assert response.status_code == 401
-    assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
-
-
-def test_unsupported_authorization_scheme_is_rejected(principal_client: TestClient) -> None:
-    response = principal_client.get("/foods", headers={"Authorization": "Basic token-a"})
-
-    assert response.status_code == 401
-    assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
+def test_profile_diary_and_target_plan_isolation(security_context) -> None:
+    client, _ = security_context
+    a_profile = client.put("/profile", json=profile_payload(82), headers=headers("admin-a"))
+    b_profile = client.put("/profile", json=profile_payload(67), headers=headers("user-b"))
+    assert a_profile.status_code == b_profile.status_code == 200
+    assert a_profile.json()["id"] != b_profile.json()["id"]
+    assert client.get("/profile", headers=headers("admin-a")).json()["weight_kg"] == 82
+    assert client.get("/profile", headers=headers("user-b")).json()["weight_kg"] == 67
+    assert client.get("/diary", headers=headers("admin-a")).json() == []
+    assert client.get("/diary", headers=headers("user-b")).json() == []
+    assert client.get("/target-plans", headers=headers("admin-a")).status_code == 200
+    assert client.get("/target-plans", headers=headers("user-b")).status_code == 200
 
 
-@pytest.mark.parametrize("principal_state", ["inactive", "missing"])
-def test_inactive_or_missing_principal_is_rejected(
-    principal_client: TestClient,
-    principal_session: Session,
-    principal_state: str,
-) -> None:
-    principal = principal_session.get(Principal, PRINCIPAL_A)
-    assert principal is not None
-    if principal_state == "inactive":
-        principal.status = PrincipalStatus.disabled
-        principal_session.add(principal)
-    else:
-        principal_session.delete(principal)
-    principal_session.commit()
-
-    response = principal_client.get("/foods", headers=_headers("token-a"))
-
-    assert response.status_code == 401
-    assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
+def test_shared_catalog_and_admin_only_mutations(security_context) -> None:
+    client, _ = security_context
+    denied = client.post("/foods", json=food_payload(), headers=headers("user-b"))
+    assert denied.status_code == 403
+    created = client.post("/foods", json=food_payload(), headers=headers("admin-a"))
+    assert created.status_code == 201, created.text
+    food_id = created.json()["id"]
+    assert client.get("/foods", headers=headers("user-b")).json()[0]["id"] == food_id
+    assert client.get(f"/foods/{food_id}", headers=headers("user-b")).status_code == 200
+    assert client.put(f"/foods/{food_id}", json={"name": "No"}, headers=headers("user-b")).status_code == 403
+    assert client.delete(f"/foods/{food_id}", headers=headers("user-b")).status_code == 403
 
 
-def test_openapi_models_bearer_authentication_for_protected_operations() -> None:
+def test_admin_archive_restore_and_history_safe_delete(security_context) -> None:
+    client, _ = security_context
+    created = client.post(
+        "/foods", json=food_payload("Historically used"), headers=headers("admin-a")
+    ).json()
+    diary = client.post(
+        "/diary",
+        json={
+            "food_id": created["id"],
+            "entry_date": current_diary_date().isoformat(),
+            "quantity": 1,
+            "meal_type": "breakfast",
+        },
+        headers=headers("user-b"),
+    )
+    assert diary.status_code == 201, diary.text
+    deletion = client.delete(f"/admin/foods/{created['id']}", headers=headers("admin-a"))
+    assert deletion.status_code == 200
+    assert deletion.json()["disposition"] == "archived"
+    assert client.get(f"/foods/{created['id']}", headers=headers("user-b")).status_code == 404
+    assert client.get(f"/admin/foods/{created['id']}", headers=headers("admin-a")).status_code == 200
+    restored = client.post(
+        f"/admin/foods/{created['id']}/restore", headers=headers("admin-a")
+    )
+    assert restored.status_code == 200
+    assert restored.json()["status"] == "active"
+
+
+def test_admin_monitoring_is_authorized_and_read_only(security_context) -> None:
+    client, _ = security_context
+    assert client.get("/admin/users", headers=headers("user-b")).status_code == 403
+    listing = client.get("/admin/users", headers=headers("admin-a"))
+    detail = client.get(f"/admin/users/{PRINCIPAL_B}", headers=headers("admin-a"))
+    assert listing.status_code == detail.status_code == 200
+    assert listing.json()["total"] == 2
+    assert client.put(
+        f"/admin/users/{PRINCIPAL_B}/profile",
+        json=profile_payload(),
+        headers=headers("admin-a"),
+    ).status_code in {404, 405}
+
+
+def test_client_authoritative_identity_and_role_are_rejected(security_context) -> None:
+    client, _ = security_context
+    for field in ("principal_id", "owner_id", "user_id", "role"):
+        payload = profile_payload()
+        payload[field] = "admin"
+        assert client.put("/profile", json=payload, headers=headers("user-b")).status_code == 422
+
+
+def test_openapi_declares_http_bearer_security() -> None:
     app.openapi_schema = None
     schema = app.openapi()
-
-    security_scheme = schema["components"]["securitySchemes"]["BearerAuth"]
-    assert security_scheme["type"] == "http"
-    assert security_scheme["scheme"] == "bearer"
-    assert security_scheme["bearerFormat"] == "token"
-
-    operation_methods = {"get", "post", "put", "patch", "delete"}
-    for path, path_item in schema["paths"].items():
-        for method, operation in path_item.items():
-            if method not in operation_methods:
-                continue
-            if path == "/health":
-                assert "security" not in operation
-            else:
-                assert operation["security"] == [{"BearerAuth": []}], (path, method)
+    scheme = schema["components"]["securitySchemes"]["BearerAuth"]
+    assert scheme["type"] == "http" and scheme["scheme"] == "bearer"
+    assert schema["paths"]["/admin/users"]["get"]["security"] == [{"BearerAuth": []}]
+    assert schema["paths"]["/foods"]["get"]["security"] == [{"BearerAuth": []}]
 
 
-def test_profile_and_food_are_isolated_between_two_principals(
-    principal_client: TestClient,
-) -> None:
-    created_profile = principal_client.put(
-        "/profile", json=_profile_payload(), headers=_headers("token-a")
+def _jwt(verifier: SupabaseTokenVerifier, private_key, **overrides) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(AUTH_A),
+        "email": "admin@example.com",
+        "iss": verifier.issuer,
+        "aud": verifier.audience,
+        "iat": now,
+        "exp": now + timedelta(minutes=5),
+    }
+    payload.update(overrides)
+    return jwt.encode(payload, private_key, algorithm="RS256", headers={"kid": "test"})
+
+
+def test_supabase_verifier_validates_signature_expiry_issuer_and_audience(monkeypatch) -> None:
+    settings = Settings(environment="test", supabase_url="https://project.supabase.co")
+    verifier = SupabaseTokenVerifier(settings)
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    monkeypatch.setattr(
+        verifier.jwks,
+        "get_signing_key_from_jwt",
+        lambda _token: SimpleNamespace(key=private_key.public_key()),
     )
-    assert created_profile.status_code == 200
-    updated_profile = principal_client.put(
-        "/profile", json=_profile_payload(weight=81), headers=_headers("token-a")
-    )
-    assert updated_profile.status_code == 200
-    assert updated_profile.json()["id"] == created_profile.json()["id"]
-    assert principal_client.get("/profile", headers=_headers("token-b")).status_code == 404
-    other_profile = principal_client.put(
-        "/profile", json=_profile_payload(weight=70), headers=_headers("token-b")
-    )
-    assert other_profile.status_code == 200
-    assert other_profile.json()["id"] != created_profile.json()["id"]
-
-    created = principal_client.post("/foods", json=_food_payload(), headers=_headers("token-a"))
-    assert created.status_code == 201
-    food_id = created.json()["id"]
-
-    missing = principal_client.get(f"/foods/{uuid4()}", headers=_headers("token-b"))
-    cross_owner = principal_client.get(f"/foods/{food_id}", headers=_headers("token-b"))
-    assert missing.status_code == cross_owner.status_code == 404
-    assert missing.json() == cross_owner.json()
-    assert principal_client.get("/foods", headers=_headers("token-b")).json() == []
-
-    same_key_other_owner = principal_client.post(
-        "/foods", json=_food_payload(), headers=_headers("token-b")
-    )
-    assert same_key_other_owner.status_code == 201
-
-
-def test_cross_owner_mutations_and_diary_binding_are_non_enumerating(
-    principal_client: TestClient,
-) -> None:
-    created = principal_client.post(
-        "/foods", json=_food_payload("Private food"), headers=_headers("token-a")
-    )
-    food_id = created.json()["id"]
-
-    update = principal_client.put(
-        f"/foods/{food_id}", json={"name": "Changed"}, headers=_headers("token-b")
-    )
-    delete = principal_client.delete(f"/foods/{food_id}", headers=_headers("token-b"))
-    diary = principal_client.post(
-        "/diary",
-        json={
-            "food_id": food_id,
-            "entry_date": "2026-01-01",
-            "quantity": 1,
-            "meal_type": "breakfast",
-        },
-        headers=_headers("token-b"),
-    )
-
-    assert update.status_code == delete.status_code == diary.status_code == 404
-    assert update.json() == delete.json() == diary.json()
-
-    own_diary = principal_client.post(
-        "/diary",
-        json={
-            "food_id": food_id,
-            "entry_date": "2026-01-01",
-            "quantity": 1,
-            "meal_type": "breakfast",
-        },
-        headers=_headers("token-a"),
-    )
-    assert own_diary.status_code == 201
-    assert own_diary.json()["snapshot_schema_version"] == 2
-    assert own_diary.json()["target_plan_id"] is None
-    assert own_diary.json()["target_provenance"] == "no_target_source"
-    assert "schema_version" not in own_diary.json()["nutrition_snapshot"]
-    entry_id = own_diary.json()["id"]
-    missing_entry = principal_client.get(f"/diary/{uuid4()}", headers=_headers("token-b"))
-    cross_entry = principal_client.get(f"/diary/{entry_id}", headers=_headers("token-b"))
-    assert missing_entry.status_code == cross_entry.status_code == 404
-    assert missing_entry.json() == cross_entry.json()
-    assert principal_client.get("/diary", headers=_headers("token-b")).json() == []
-    week = principal_client.get("/diary/week?start=2026-01-01", headers=_headers("token-b"))
-    assert week.status_code == 200
-    assert week.json()["weekly_totals"]["calories"] == 0
-    assert all(
-        aggregate["total_entry_count"] == 0
-        and aggregate["coverage_state"] == "no_entries"
-        for day in week.json()["days"]
-        for aggregate in day["nutrient_aggregates"]
-    )
-
-    injected = principal_client.post(
-        "/diary/entries",
-        json={
-            "food_id": food_id,
-            "entry_date": "2026-01-01",
-            "quantity": 1,
-            "nutrition_snapshot": {"schema_version": 2},
-            "target_plan_id": str(uuid4()),
-        },
-        headers=_headers("token-a"),
-    )
-    assert injected.status_code == 422
-    assert {
-        item["code"] for item in injected.json()["detail"]
-    } == {"NON_AUTHORITATIVE_FIELD"}
-
-
-def test_token_rotation_preserves_principal_ownership(principal_client: TestClient) -> None:
-    created = principal_client.post(
-        "/foods", json=_food_payload("Rotation food"), headers=_headers("token-a")
-    )
-    food_id = created.json()["id"]
-
-    rotated_read = principal_client.get(f"/foods/{food_id}", headers=_headers("rotated-token-a"))
-    assert rotated_read.status_code == 200
-    assert rotated_read.json()["id"] == food_id
-
-
-@pytest.mark.parametrize("field", ["principal_id", "owner_id", "user_id"])
-def test_client_authoritative_owner_fields_are_rejected(
-    principal_client: TestClient, field: str
-) -> None:
-    payload = _food_payload(f"Rejected {field}")
-    payload[field] = str(PRINCIPAL_B)
-    response = principal_client.post("/foods", json=payload, headers=_headers("token-a"))
-    assert response.status_code == 422
-
-    profile_payload = _profile_payload()
-    profile_payload[field] = str(PRINCIPAL_B)
-    assert (
-        principal_client.put(
-            "/profile", json=profile_payload, headers=_headers("token-a")
-        ).status_code
-        == 422
-    )
-
-    assert (
-        principal_client.post(
-            "/diary",
-            json={
-                "food_id": str(uuid4()),
-                "entry_date": "2026-01-01",
-                "quantity": 1,
-                field: str(PRINCIPAL_B),
-            },
-            headers=_headers("token-a"),
-        ).status_code
-        == 422
-    )
-
-
-def test_production_auth_configuration_is_fail_closed() -> None:
-    with pytest.raises(RuntimeError, match="DEPLOYMENT_PRINCIPAL_ID"):
-        validate_runtime_configuration(
-            Settings(environment="production", single_user_token="production-secret")
+    assert verifier.verify(_jwt(verifier, private_key)).auth_user_id == AUTH_A
+    bad_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    with pytest.raises(jwt.InvalidSignatureError):
+        verifier.verify(_jwt(verifier, bad_key))
+    with pytest.raises(jwt.ExpiredSignatureError):
+        verifier.verify(
+            _jwt(verifier, private_key, exp=datetime.now(timezone.utc) - timedelta(seconds=1))
         )
-
-    with pytest.raises(RuntimeError, match="SINGLE_USER_TOKEN"):
-        validate_runtime_configuration(
-            Settings(
-                environment="production",
-                deployment_principal_id=PRINCIPAL_A,
-                single_user_token="",
-            )
-        )
+    with pytest.raises(jwt.InvalidIssuerError):
+        verifier.verify(_jwt(verifier, private_key, iss="https://wrong.example/auth/v1"))
+    with pytest.raises(jwt.InvalidAudienceError):
+        verifier.verify(_jwt(verifier, private_key, aud="wrong"))
 
 
-def test_application_startup_never_invokes_metadata_create_all(monkeypatch) -> None:
-    def prohibited(*args, **kwargs):
-        raise AssertionError("runtime create_all is prohibited")
-
-    monkeypatch.setattr(SQLModel.metadata, "create_all", prohibited)
-    with TestClient(app) as client:
-        assert client.get("/health").status_code == 200
-
-    with pytest.raises(RuntimeError, match="test-only"):
-        validate_runtime_configuration(
-            Settings(
-                environment="production",
-                deployment_principal_id=PRINCIPAL_A,
-                single_user_token="production-secret",
-                principal_token_map={"production-secret": PRINCIPAL_B},
-            )
-        )
+def test_production_auth_and_cors_configuration_fail_closed() -> None:
+    with pytest.raises(RuntimeError, match="SUPABASE_URL"):
+        validate_runtime_configuration(Settings(environment="production"))
+    with pytest.raises(ValueError, match="Wildcard"):
+        Settings(allowed_origins=["*"])

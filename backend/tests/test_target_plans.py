@@ -3,10 +3,12 @@ from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
+from fastapi import Request
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.core.config import Settings, get_settings
+from app.core.auth import PrincipalContext, get_principal_context
 from app.core.calendar import current_diary_date
 from app.db.session import get_session
 from app.main import app
@@ -61,6 +63,11 @@ def target_plan_context(monkeypatch):
 
     app.dependency_overrides[get_session] = override_session
     app.dependency_overrides[get_settings] = lambda: settings
+    def override_principal(request: Request) -> PrincipalContext:
+        token = request.headers.get("Authorization", "").removeprefix("Bearer ")
+        return PrincipalContext(PRINCIPAL_B if token == "token-b" else PRINCIPAL_A)
+
+    app.dependency_overrides[get_principal_context] = override_principal
     monkeypatch.setattr("app.services.target_plans.current_diary_date", lambda: TODAY)
     monkeypatch.setattr("app.services.target_plans.next_diary_date", lambda: TOMORROW)
     client = TestClient(app)

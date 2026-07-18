@@ -1,7 +1,12 @@
 import { expect, test as base, type APIRequestContext, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 export const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
-export const API_TOKEN = process.env.PLAYWRIGHT_API_TOKEN ?? "dev-token";
+const TOKEN_FILE = path.join(process.cwd(), "e2e", ".auth", "access-token.txt");
+export const API_TOKEN = {
+  toString: () => readFileSync(TOKEN_FILE, "utf8").trim()
+};
 
 const apiHost = new URL(API_URL).hostname;
 if (apiHost !== "127.0.0.1" && apiHost !== "localhost") {
@@ -11,11 +16,11 @@ if (apiHost !== "127.0.0.1" && apiHost !== "localhost") {
 export type FoodPayload = {
   name: string;
   brand: string | null;
-  category: string | null;
-  primary_category_key: string | null;
+  food_category_key: string;
+  grain_type: "whole" | "refined" | "mixed" | "grain_free" | "unknown" | null;
+  baked_good_type: "arabic_bread" | "toast" | "rolls_wraps" | "burger_bun" | "flatbread" | "pastries" | "cake" | "biscuits_cookies" | "other" | null;
+  grain_starch_type: "rice" | "pasta" | "oats" | "breakfast_cereal" | "bulgur" | "quinoa" | "flour" | "other" | null;
   food_kind: "simple" | "composite" | "unknown";
-  group_data_status: "known" | "estimated" | "unknown";
-  group_data_completeness: "complete" | "partial" | "unknown";
   nutrition_basis: "per_100g" | "per_100ml";
   default_unit_type: "g" | "ml" | "cup" | "slice" | "piece" | "scoop" | "serving" | "tablespoon" | "teaspoon";
   unit_amount: number;
@@ -60,6 +65,10 @@ export type FoodRecord = Omit<FoodPayload, "nutrition_source" | "nova" | "group_
   net_carbs_g: number;
   created_at: string;
   updated_at: string;
+  status: "active" | "archived";
+  archived_at: string | null;
+  group_data_status: "known" | "estimated" | "unknown";
+  group_data_completeness: "complete" | "partial" | "unknown";
   nutrition_source: FoodPayload["nutrition_source"] & { reliability: string; reliability_rules_version: string };
   nova: { classification: "1" | "2" | "3" | "4" | "unknown"; review_status: "unreviewed" | "reviewed"; rules_version: string };
   group_contributions: Array<FoodPayload["group_contributions"][number] & { food_group_rules_version: string }>;
@@ -73,11 +82,11 @@ export function validFood(overrides: Partial<FoodPayload> = {}): FoodPayload {
   return {
     name: uniqueName("Food"),
     brand: "E2E Brand",
-    category: "E2E Category",
-    primary_category_key: "other",
+    food_category_key: "other",
+    grain_type: null,
+    baked_good_type: null,
+    grain_starch_type: null,
     food_kind: "simple",
-    group_data_status: "unknown",
-    group_data_completeness: "unknown",
     nutrition_basis: "per_100g",
     default_unit_type: "serving",
     unit_amount: 100,
@@ -126,7 +135,7 @@ export class FoodsApi {
   constructor(private readonly request: APIRequestContext) {}
 
   private headers() {
-    return { Authorization: `Bearer ${API_TOKEN}` };
+    return { Authorization: `Bearer ${readFileSync(TOKEN_FILE, "utf8").trim()}` };
   }
 
   async create(payload: Partial<FoodPayload> = {}): Promise<FoodRecord> {
@@ -230,8 +239,15 @@ export async function fillRequiredFoodForm(page: Page, payload: Partial<FoodPayl
   const food = validFood(payload);
   await page.getByLabel(/اسم الطعام/).fill(food.name);
   if (food.brand != null) await page.getByLabel("العلامة التجارية").fill(food.brand);
-  if (food.category != null) await page.getByLabel("الفئة القديمة (للتوافق)").fill(food.category);
-  await page.getByLabel(/التصنيف الأساسي/).selectOption(food.primary_category_key ?? "other");
+  await page.getByLabel(/فئة الطعام/).selectOption(food.food_category_key);
+  if (food.food_category_key === "baked_goods") {
+    await page.getByLabel(/نوع المخبوز/).selectOption(food.baked_good_type ?? "other");
+    await page.getByLabel(/نوع الحبوب/).selectOption(food.grain_type ?? "unknown");
+  }
+  if (food.food_category_key === "grains_starches") {
+    await page.getByLabel(/نوع الحبوب أو النشويات/).selectOption(food.grain_starch_type ?? "other");
+    await page.getByLabel(/نوع الحبوب/).selectOption(food.grain_type ?? "unknown");
+  }
   await page.getByLabel(/نوع الطعام/).selectOption(food.food_kind);
   await page.getByLabel(/أساس القيم/).selectOption(food.nutrition_basis);
   await page.getByLabel(/السعرات/).fill(String(food.calories));

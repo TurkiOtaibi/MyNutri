@@ -14,7 +14,7 @@ test.describe("Foods mobile, RTL, and accessibility @foods", () => {
 
   test("[FOOD-TC-136] @p1 @a11y icon actions have contextual accessible names", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E-Accessible-Actions-${Date.now()}` });
-    await page.goto("/foods");
+    await page.goto("/admin/foods");
     await expect(page.getByRole("link", { name: `عرض تفاصيل ${food.name}` }).first()).toBeVisible();
     const actions = page.getByRole("button", { name: `إجراءات ${food.name}` });
     await expect(actions).toBeVisible();

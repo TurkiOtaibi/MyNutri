@@ -52,7 +52,9 @@ def _food() -> Food:
         principal_id=PRINCIPAL_ID,
         name="Captured food",
         brand="Brand",
-        primary_category_key="whole_grains",
+        food_category_key="grains_starches",
+        grain_type="whole",
+        grain_starch_type="oats",
         food_kind=FoodKind.simple,
         group_data_status=GroupDataStatus.known,
         group_data_completeness=GroupDataCompleteness.partial,
@@ -107,12 +109,12 @@ def test_v2_captures_one_unit_and_quantity_never_mutates_snapshot(snapshot_sessi
             quantity=3,
             meal_type=MealType.breakfast,
         ),
-        snapshot_v2_writer_enabled=True,
+        snapshot_v3_writer_enabled=True,
     )
     original = deepcopy(entry.nutrition_snapshot)
     response = to_entry_response(entry)
 
-    assert entry.snapshot_schema_version == 2
+    assert entry.snapshot_schema_version == 3
     assert entry.target_provenance == TargetProvenance.no_target_source
     assert entry.target_plan_id is None
     assert original["nutrition"]["fiber_g"] == 2.5
@@ -166,8 +168,8 @@ def test_snapshot_readers_reject_unknown_or_malformed_data() -> None:
         principal_id=PRINCIPAL_ID,
         entry_date=date(2026, 7, 16),
         quantity=1,
-        nutrition_snapshot={"schema_version": 3},
-        snapshot_schema_version=3,
+        nutrition_snapshot={"schema_version": 4},
+        snapshot_schema_version=4,
     )
     with pytest.raises(HTTPException) as unsupported_error:
         to_entry_response(unsupported)

@@ -21,7 +21,7 @@ test.describe("Add Food form stability @foods @stability", () => {
     await fillRequiredFoodForm(page, {
       name: "E2E Stable Draft",
       brand: "Stable Brand",
-      category: "Stable Category",
+      food_category_key: "other",
       calories: 321,
       protein_g: 12,
       carb_g: 34,
@@ -48,7 +48,8 @@ test.describe("Add Food form stability @foods @stability", () => {
     await expect(page).toHaveURL(/\/foods\/new$/);
     await expect(page.getByLabel(/اسم الطعام/)).toHaveValue("E2E Stable Draft");
     await expect(page.getByLabel("العلامة التجارية")).toHaveValue("Stable Brand Continued");
-    await expect(page.getByLabel("الفئة القديمة (للتوافق)")).toHaveValue("Stable Category");
+    await expect(page.getByLabel(/فئة الطعام/)).toHaveValue("other");
+    await expect(page.getByText("الفئة القديمة (للتوافق)")).toHaveCount(0);
     await expect(page.getByLabel(/السعرات/)).toHaveValue("321");
     await expect(page.getByLabel("ألياف g")).toHaveValue("3.5");
     await expect(page.locator("details.food-optional-section")).toHaveAttribute("open", "");
@@ -95,9 +96,9 @@ test.describe("Add Food form stability @foods @stability", () => {
     await page.goto("/foods/new");
     const form = page.locator("form.food-form-layout");
     await expect(form.locator('button[type="submit"]')).toHaveCount(1);
-    const commandButtons = form.locator('button:not([type="submit"])');
-    await expect(commandButtons).toHaveCount(1);
-    await expect(commandButtons).toHaveAccessibleName("إضافة مساهمة");
+    await form.locator("details", { hasText: "التحليل الغذائي المتقدم" }).locator("summary").click();
+    await expect(form.getByRole("button", { name: "إضافة مجموعة غذائية" })).toHaveAttribute("type", "button");
+    await expect(form.getByRole("button", { name: "عرض المزيد" })).toHaveAttribute("type", "button");
     await expect(page.getByRole("link", { name: "رجوع" })).toHaveAttribute("href", "/foods");
     await expect(page.getByRole("link", { name: "إلغاء" })).toHaveAttribute("href", "/foods");
   });
