@@ -117,11 +117,11 @@ export const defaultUnitOptions: DefaultUnitType[] = [
 export const emptyFoodForm: FoodFormValues = {
   name: "",
   brand: null,
-  category: null,
-  primary_category_key: "other",
+  food_category_key: "other",
+  grain_type: null,
+  baked_good_type: null,
+  grain_starch_type: null,
   food_kind: "simple",
-  group_data_status: "unknown",
-  group_data_completeness: "unknown",
   nutrition_basis: "per_100g",
   default_unit_type: "serving",
   unit_amount: 100,
@@ -169,7 +169,6 @@ const ABOVE_MAX_MESSAGE = "القيمة أعلى من الحد المسموح.";
 export const foodTextMax = {
   name: 120,
   brand: 80,
-  category: 80,
   notes: 500,
   data_source: 120
 } as const satisfies Partial<Record<keyof FoodFormValues, number>>;
@@ -205,6 +204,11 @@ export function foodToForm(food: FoodResponse): FoodFormValues {
     net_carbs_g: _netCarbs,
     created_at: _createdAt,
     updated_at: _updatedAt,
+    status: _status,
+    group_data_status: _groupStatus,
+    group_data_completeness: _groupCompleteness,
+    taxonomy_review_required: _taxonomyReview,
+    archived_at: _archivedAt,
     legacy_nutrition: _legacyNutrition,
     ...editable
   } = food;
@@ -232,7 +236,6 @@ export function normalizeFoodForm(values: FoodFormValues): FoodInput {
     ...values,
     name: values.name.trim().replace(/\s+/g, " "),
     brand: cleanOptionalText(values.brand),
-    category: cleanOptionalText(values.category),
     notes: cleanOptionalText(values.notes),
     data_source: cleanOptionalText(values.data_source),
     nutrition_source: {
@@ -284,14 +287,21 @@ export function validateFoodForm(values: FoodFormValues): FoodFormErrors {
   if (!normalizedName) errors.name = REQUIRED_MESSAGE;
   else if (normalizedName.length > foodTextMax.name) errors.name = ABOVE_MAX_MESSAGE;
 
-  for (const field of ["brand", "category", "notes", "data_source"] as const) {
+  for (const field of ["brand", "notes", "data_source"] as const) {
     const value = cleanOptionalText(values[field]);
     if (value != null && value.length > foodTextMax[field]) errors[field] = ABOVE_MAX_MESSAGE;
   }
   if (!values.nutrition_basis) errors.nutrition_basis = REQUIRED_MESSAGE;
   if (!values.default_unit_type) errors.default_unit_type = REQUIRED_MESSAGE;
   if (!values.unit_basis) errors.unit_basis = REQUIRED_MESSAGE;
-  if (!values.primary_category_key) errors.primary_category_key = REQUIRED_MESSAGE;
+  if (!values.food_category_key) errors.food_category_key = REQUIRED_MESSAGE;
+  if (values.food_category_key === "baked_goods") {
+    if (!values.baked_good_type) errors.baked_good_type = REQUIRED_MESSAGE;
+    if (!values.grain_type) errors.grain_type = REQUIRED_MESSAGE;
+  } else if (values.food_category_key === "grains_starches") {
+    if (!values.grain_starch_type) errors.grain_starch_type = REQUIRED_MESSAGE;
+    if (!values.grain_type) errors.grain_type = REQUIRED_MESSAGE;
+  }
   if (!values.food_kind || values.food_kind === "unknown") errors.food_kind = REQUIRED_MESSAGE;
   if (values.nutrition_source.type !== "unknown" && !cleanOptionalText(values.nutrition_source.name)) {
     errors.nutrition_source = "اسم مصدر البيانات الغذائية مطلوب لنوع المصدر المحدد.";

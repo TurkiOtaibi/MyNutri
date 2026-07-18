@@ -1,8 +1,9 @@
 "use client";
 
-import { CalendarDays, Salad, UserRound, Utensils } from "lucide-react";
+import { CalendarDays, LogOut, Salad, Shield, UserRound, Utensils } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAuth } from "./AuthProvider";
 
 const links = [
   { href: "/diary", label: "اليوميات", icon: CalendarDays },
@@ -12,6 +13,11 @@ const links = [
 
 export function AppNav() {
   const pathname = usePathname();
+  const { account, loading, signOut } = useAuth();
+  if (pathname.startsWith("/auth/")) return null;
+  const visibleLinks = account?.role === "admin"
+    ? [...links, { href: "/admin", label: "الإدارة", icon: Shield }]
+    : links;
 
   return (
     <header className="top-nav">
@@ -23,7 +29,7 @@ export function AppNav() {
           <span>myNutri</span>
         </Link>
         <nav className="nav-links" aria-label="التنقل الرئيسي">
-          {links.map((link) => {
+          {visibleLinks.map((link) => {
             const Icon = link.icon;
             const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
             return (
@@ -38,6 +44,12 @@ export function AppNav() {
               </Link>
             );
           })}
+          {!loading ? (
+            <button className="nav-link nav-signout" type="button" onClick={() => void signOut()} title="تسجيل الخروج">
+              <LogOut size={18} />
+              <span className="sr-only">تسجيل الخروج</span>
+            </button>
+          ) : null}
         </nav>
       </div>
     </header>
