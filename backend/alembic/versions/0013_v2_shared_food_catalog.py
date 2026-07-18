@@ -136,12 +136,12 @@ def upgrade() -> None:
         "ix_food_created_by_principal_id", "food", ["created_by_principal_id"]
     )
     op.create_index(
-        "ix_food_group_contribution_created_by",
+        "ix_food_group_contribution_created_by_principal_id",
         "food_group_contribution",
         ["created_by_principal_id"],
     )
     op.create_index(
-        "ix_food_analytical_trait_created_by",
+        "ix_food_analytical_trait_created_by_principal_id",
         "food_analytical_trait",
         ["created_by_principal_id"],
     )
@@ -171,8 +171,14 @@ def downgrade() -> None:
         "THEN RAISE EXCEPTION 'Lossy shared catalog downgrade prohibited.'; END IF; END $$;"
     )
     op.drop_constraint("uq_food_catalog_duplicate", "food", type_="unique")
-    op.drop_index("ix_food_analytical_trait_created_by", table_name="food_analytical_trait")
-    op.drop_index("ix_food_group_contribution_created_by", table_name="food_group_contribution")
+    op.drop_index(
+        "ix_food_analytical_trait_created_by_principal_id",
+        table_name="food_analytical_trait",
+    )
+    op.drop_index(
+        "ix_food_group_contribution_created_by_principal_id",
+        table_name="food_group_contribution",
+    )
     op.drop_index("ix_food_created_by_principal_id", table_name="food")
     op.drop_index("ix_food_catalog_created_desc", table_name="food")
     op.drop_index("ix_food_catalog_lower_name", table_name="food")

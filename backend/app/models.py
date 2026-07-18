@@ -629,6 +629,26 @@ class Food(SQLModel, table=True):
     )
 
 
+class FoodTaxonomyV2MigrationAudit(SQLModel, table=True):
+    __tablename__ = "food_taxonomy_v2_migration_audit"
+
+    food_id: uuid.UUID = Field(
+        sa_column=Column(
+            ForeignKey("food.id", ondelete="CASCADE"), primary_key=True, nullable=False
+        )
+    )
+    legacy_category: str | None = Field(default=None, sa_column=Column(Text(), nullable=True))
+    legacy_primary_category_key: str | None = Field(
+        default=None, sa_column=Column(Text(), nullable=True)
+    )
+    recorded_at: datetime = Field(
+        default_factory=utcnow,
+        sa_column=Column(
+            DateTime(timezone=True), nullable=False, server_default=sa_text("now()")
+        ),
+    )
+
+
 class FoodGroupContribution(SQLModel, table=True):
     __tablename__ = "food_group_contribution"
     __table_args__ = (
