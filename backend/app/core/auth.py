@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, HTTPException, Request, Security, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlmodel import Session
 
 from app.core.config import Settings, get_settings
@@ -16,6 +17,14 @@ class PrincipalContext:
     principal_id: UUID
 
 
+bearer_auth = HTTPBearer(
+    auto_error=False,
+    bearerFormat="token",
+    scheme_name="BearerAuth",
+    description="Enter the bearer token only. Swagger UI adds the Bearer scheme.",
+)
+
+
 def _authentication_error(code: str, message_ar: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -24,21 +33,29 @@ def _authentication_error(code: str, message_ar: str) -> HTTPException:
     )
 
 
-def _credential_from_header(authorization: str | None) -> str:
-    if authorization is None:
+def _credential_from_security(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+) -> str:
+    if credentials is None:
+        if request.headers.get("Authorization") is not None:
+            raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
         raise _authentication_error("AUTHENTICATION_REQUIRED", "يلزم تسجيل الدخول للمتابعة.")
-    scheme, separator, credential = authorization.partition(" ")
-    if not separator or scheme.lower() != "bearer" or not credential:
+    if credentials.scheme.lower() != "bearer" or not credentials.credentials:
         raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
-    return credential
+    return credentials.credentials
 
 
 def get_principal_context(
-    authorization: Annotated[str | None, Header()] = None,
+    request: Request,
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(bearer_auth),
+    ],
     settings: Settings = Depends(get_settings),
     session: Session = Depends(get_session),
 ) -> PrincipalContext:
-    credential = _credential_from_header(authorization)
+    credential = _credential_from_security(request, credentials)
     principal_id = next(
         (
             candidate_id
