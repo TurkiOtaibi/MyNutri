@@ -20,17 +20,29 @@ const labels: Record<string, string> = {
   meal_type: "الوجبة", quantity: "الكمية"
 };
 
-function displayValue(value: unknown): string {
+const semanticLabels: Record<string, string> = {
+  active: "نشط", disabled: "معطل", user: "مستخدم", admin: "مشرف",
+  cut: "خفض الوزن", maintain: "المحافظة على الوزن", bulk: "زيادة الوزن",
+  sedentary: "خامل", light: "خفيف", moderate: "متوسط", active_activity: "نشط", very_active: "نشط جدًا"
+};
+
+function displayValue(key: string, value: unknown): string {
   if (value == null || value === "") return "غير متوفر";
   if (typeof value === "boolean") return value ? "نعم" : "لا";
   if (typeof value === "object") return "متوفر ضمن السجل";
+  if (["created_at", "effective_from", "effective_to", "entry_date"].includes(key)) {
+    const parsed = new Date(String(value));
+    if (!Number.isNaN(parsed.getTime())) return parsed.toLocaleDateString("ar-SA");
+  }
+  if (key === "activity_level" && value === "active") return semanticLabels.active_activity;
+  if (semanticLabels[String(value)]) return semanticLabels[String(value)];
   return String(value);
 }
 
 function ReadOnlyFields({ data, keys }: { data: Record<string, unknown> | null; keys: string[] }) {
   if (!data) return <p className="state-note">غير متوفر.</p>;
   return <dl className="admin-readonly-grid">{keys.map((key) => (
-    <div key={key}><dt>{labels[key] ?? key}</dt><dd dir={key === "email" ? "ltr" : "auto"}>{displayValue(data[key])}</dd></div>
+    <div key={key}><dt>{labels[key] ?? key}</dt><dd dir={key === "email" ? "ltr" : "auto"}>{displayValue(key, data[key])}</dd></div>
   ))}</dl>;
 }
 

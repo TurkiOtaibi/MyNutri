@@ -10,5 +10,5 @@
 | 5 Frontend auth | Implemented | Pending | Typecheck and build passed |
 | 6 Admin UI | Implemented | Pending | Typecheck and build passed |
 | 7 Food UX | Implemented | Pending | Typecheck and build passed |
-| 8 Certification | In progress | Pending | PostgreSQL/Playwright pending CI |
-| 9 PR | Pending | Pending | Pending |
+| 8 Certification | Complete | `0d912d4` plus pending acceptance commit | Local PostgreSQL, Backend, Frontend, and 266 Playwright tests passed |
+| 9 PR | Draft; pre-merge NO-GO | PR #19 | Real non-production Supabase and current populated-database clone gates remain blocked |

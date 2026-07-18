@@ -26,7 +26,7 @@ No production command is executed as part of repository implementation.
 Backend values:
 
 ```text
-DATABASE_URL=<Render PostgreSQL URL>
+DATABASE_URL=<Supabase PostgreSQL pooler connection URL used by this project>
 ENVIRONMENT=production
 SUPABASE_URL=https://<project-ref>.supabase.co
 SUPABASE_JWT_AUDIENCE=authenticated

@@ -914,6 +914,20 @@ a {
   box-shadow: var(--shadow);
 }
 
+@media (max-width: 360px) {
+  .form-actions-sticky {
+    gap: 8px;
+    padding-inline: 8px;
+  }
+
+  .form-actions-sticky .btn {
+    flex-shrink: 0;
+    min-width: max-content;
+    padding-inline: 10px;
+    white-space: nowrap;
+  }
+}
+
 .advanced-analysis > summary {
   display: flex;
   justify-content: space-between;
