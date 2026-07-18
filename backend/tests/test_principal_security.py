@@ -10,7 +10,7 @@ from sqlmodel import Session, SQLModel, create_engine
 from app.core.config import Settings, get_settings, validate_runtime_configuration
 from app.db.session import get_session
 from app.main import app
-from app.models import Principal
+from app.models import Principal, PrincipalStatus
 
 PRINCIPAL_A = UUID("00000000-0000-0000-0000-00000000000a")
 PRINCIPAL_B = UUID("00000000-0000-0000-0000-00000000000b")
@@ -47,7 +47,7 @@ def _food_payload(name: str = "Owner scoped food") -> dict:
 
 
 @pytest.fixture
-def principal_client():
+def principal_session():
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -58,6 +58,14 @@ def principal_client():
     session.add(Principal(id=PRINCIPAL_A))
     session.add(Principal(id=PRINCIPAL_B))
     session.commit()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+@pytest.fixture
+def principal_client(principal_session: Session):
     settings = Settings(
         environment="test",
         single_user_token="",
@@ -70,7 +78,7 @@ def principal_client():
     )
 
     def override_session():
-        yield session
+        yield principal_session
 
     app.dependency_overrides[get_session] = override_session
     app.dependency_overrides[get_settings] = lambda: settings
@@ -80,21 +88,79 @@ def principal_client():
     finally:
         app.dependency_overrides.clear()
         client.close()
-        session.close()
 
 
 def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_missing_and_invalid_credentials_fail_closed(principal_client: TestClient) -> None:
-    missing = principal_client.get("/foods")
-    invalid = principal_client.get("/foods", headers=_headers("wrong"))
+def test_missing_authorization_fails_closed(principal_client: TestClient) -> None:
+    response = principal_client.get("/foods")
 
-    assert missing.status_code == invalid.status_code == 401
-    assert missing.json()["detail"]["code"] == "AUTHENTICATION_REQUIRED"
-    assert invalid.json()["detail"]["code"] == "INVALID_CREDENTIAL"
-    assert "WWW-Authenticate" in missing.headers
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "AUTHENTICATION_REQUIRED"
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_valid_bearer_token_authenticates(principal_client: TestClient) -> None:
+    response = principal_client.get("/foods", headers=_headers("token-a"))
+
+    assert response.status_code == 200
+
+
+def test_invalid_bearer_token_is_rejected(principal_client: TestClient) -> None:
+    response = principal_client.get("/foods", headers=_headers("wrong"))
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
+
+
+def test_unsupported_authorization_scheme_is_rejected(principal_client: TestClient) -> None:
+    response = principal_client.get("/foods", headers={"Authorization": "Basic token-a"})
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
+
+
+@pytest.mark.parametrize("principal_state", ["inactive", "missing"])
+def test_inactive_or_missing_principal_is_rejected(
+    principal_client: TestClient,
+    principal_session: Session,
+    principal_state: str,
+) -> None:
+    principal = principal_session.get(Principal, PRINCIPAL_A)
+    assert principal is not None
+    if principal_state == "inactive":
+        principal.status = PrincipalStatus.disabled
+        principal_session.add(principal)
+    else:
+        principal_session.delete(principal)
+    principal_session.commit()
+
+    response = principal_client.get("/foods", headers=_headers("token-a"))
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
+
+
+def test_openapi_models_bearer_authentication_for_protected_operations() -> None:
+    app.openapi_schema = None
+    schema = app.openapi()
+
+    security_scheme = schema["components"]["securitySchemes"]["BearerAuth"]
+    assert security_scheme["type"] == "http"
+    assert security_scheme["scheme"] == "bearer"
+    assert security_scheme["bearerFormat"] == "token"
+
+    operation_methods = {"get", "post", "put", "patch", "delete"}
+    for path, path_item in schema["paths"].items():
+        for method, operation in path_item.items():
+            if method not in operation_methods:
+                continue
+            if path == "/health":
+                assert "security" not in operation
+            else:
+                assert operation["security"] == [{"BearerAuth": []}], (path, method)
 
 
 def test_profile_and_food_are_isolated_between_two_principals(
