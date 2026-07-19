@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Plus, Save, Trash2, X } from "lucide-react";
+import { ArrowRight, ChevronDown, Plus, Save, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Dispatch, FormEvent, MouseEvent, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
@@ -136,6 +136,25 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     });
   }
 
+  function updateFoodCategory(value: string) {
+    setForm((current) => ({
+      ...current,
+      food_category_key: value,
+      grain_type: ["baked_goods", "grains_starches"].includes(value) ? current.grain_type ?? "unknown" : null,
+      baked_good_type: value === "baked_goods" ? current.baked_good_type : null,
+      grain_starch_type: value === "grains_starches" ? current.grain_starch_type : null
+    }));
+    setErrors((current) => {
+      const next = { ...current };
+      delete next.food_category_key;
+      delete next.baked_good_type;
+      delete next.grain_starch_type;
+      delete next.grain_type;
+      delete next.form;
+      return next;
+    });
+  }
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saveMutation.isPending || !registryQuery.data || registryQuery.data.registry_schema_version !== 2) return;
@@ -245,20 +264,14 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
             value={form.food_category_key}
             required
             error={errors.food_category_key}
-            onChange={(value) => setForm((current) => ({
-              ...current,
-              food_category_key: value,
-              grain_type: ["baked_goods", "grains_starches"].includes(value) ? current.grain_type ?? "unknown" : null,
-              baked_good_type: value === "baked_goods" ? current.baked_good_type : null,
-              grain_starch_type: value === "grains_starches" ? current.grain_starch_type : null
-            }))}
+            onChange={updateFoodCategory}
             options={registry.food_category_definitions.map((item) => [item.key, item.label_ar])}
           />
           {form.food_category_key === "baked_goods" ? (
-            <SelectField label="نوع المخبوزات" value={form.baked_good_type ?? ""} required error={errors.baked_good_type} onChange={(value) => update("baked_good_type", value as FoodFormValues["baked_good_type"])} options={registry.baked_good_type_definitions.map((item) => [item.key, item.label_ar])} />
+            <SelectField label="نوع المخبوزات" value={form.baked_good_type ?? ""} placeholder="اختر نوع المخبوزات" required error={errors.baked_good_type} onChange={(value) => update("baked_good_type", value as FoodFormValues["baked_good_type"])} options={registry.baked_good_type_definitions.map((item) => [item.key, item.label_ar])} />
           ) : null}
           {form.food_category_key === "grains_starches" ? (
-            <SelectField label="نوع الحبوب أو النشويات" value={form.grain_starch_type ?? ""} required error={errors.grain_starch_type} onChange={(value) => update("grain_starch_type", value as FoodFormValues["grain_starch_type"])} options={registry.grain_starch_type_definitions.map((item) => [item.key, item.label_ar])} />
+            <SelectField label="نوع الحبوب أو النشويات" value={form.grain_starch_type ?? ""} placeholder="اختر نوع الحبوب أو النشويات" required error={errors.grain_starch_type} onChange={(value) => update("grain_starch_type", value as FoodFormValues["grain_starch_type"])} options={registry.grain_starch_type_definitions.map((item) => [item.key, item.label_ar])} />
           ) : null}
           {["baked_goods", "grains_starches"].includes(form.food_category_key) ? (
             <SelectField label="نوع الحبوب" value={form.grain_type ?? "unknown"} required error={errors.grain_type} onChange={(value) => update("grain_type", value as FoodFormValues["grain_type"])} options={registry.grain_type_definitions.map((item) => [item.key, item.label_ar])} />
@@ -375,7 +388,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
           />
         </FormSection>
 
-        <FoodGroupFields form={form} setForm={setForm} registry={registry} error={errors.group_contributions} />
+        <FoodGroupFields form={form} setForm={setForm} registry={registry} error={errors.group_contributions ?? errors.analytical_traits} />
 
         <FormSection title="ملاحظات ومصدر البيانات">
           <TextAreaField label="ملاحظات" value={form.notes ?? ""} maxLength={foodTextMax.notes} error={errors.notes} onChange={(value) => update("notes", value)} />
@@ -454,7 +467,12 @@ function FoodGroupFields({
   error?: string;
 }) {
   const [showAllTraits, setShowAllTraits] = useState(false);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
   const suggestedGroup = suggestedGroupKey(form);
+
+  useEffect(() => {
+    if (error && detailsRef.current) detailsRef.current.open = true;
+  }, [error]);
   const addContribution = () => {
     const definition = registry.food_group_definitions.find(
       (item) => !form.group_contributions.some((entry) => entry.group_key === item.key)
@@ -496,10 +514,27 @@ function FoodGroupFields({
   ]);
 
   return (
-    <details className="form-panel food-form-section advanced-analysis" aria-labelledby="food-groups-title">
-      <summary className="panel-title" id="food-groups-title">
-        <span>التحليل الغذائي المتقدم</span>
-        <small>{form.group_contributions.length} مجموعة غذائية • {form.analytical_traits.length} سمات</small>
+    <details
+      ref={detailsRef}
+      className="form-panel food-form-section advanced-analysis"
+      aria-labelledby="food-groups-title"
+      onToggle={(event) => {
+        if (error && !event.currentTarget.open) event.currentTarget.open = true;
+      }}
+    >
+      <summary className="advanced-analysis-summary" id="food-groups-title">
+        <span className="advanced-analysis-heading">
+          <span className="panel-title">التحليل الغذائي المتقدم</span>
+          <span className="advanced-analysis-optional">اختياري</span>
+        </span>
+        <span className="advanced-analysis-disclosure">
+          <small>{form.group_contributions.length} مجموعة غذائية • {form.analytical_traits.length} سمات</small>
+          <span className="advanced-analysis-action">
+            <span className="advanced-analysis-action-open">فتح وإدارة التحليل</span>
+            <span className="advanced-analysis-action-close">إغلاق التحليل</span>
+          </span>
+          <ChevronDown className="advanced-analysis-chevron" size={20} aria-hidden="true" />
+        </span>
       </summary>
       {error ? <div className="field-error" role="alert">{error}</div> : null}
       <h3>المجموعات الغذائية</h3>
@@ -686,6 +721,7 @@ function SelectField({
   value,
   onChange,
   options,
+  placeholder,
   error,
   required = false
 }: {
@@ -693,6 +729,7 @@ function SelectField({
   value: string;
   onChange: (value: string) => void;
   options: [string, string][];
+  placeholder?: string;
   error?: string;
   required?: boolean;
 }) {
@@ -710,6 +747,7 @@ function SelectField({
         aria-invalid={Boolean(error)}
         aria-describedby={error ? `${id}-error` : undefined}
       >
+        {placeholder ? <option value="" disabled>{placeholder}</option> : null}
         {options.map(([optionValue, labelText]) => (
           <option key={optionValue} value={optionValue}>
             {labelText}

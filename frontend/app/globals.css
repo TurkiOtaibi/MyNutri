@@ -928,15 +928,31 @@ a {
   }
 }
 
-.advanced-analysis > summary {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+.advanced-analysis-summary {
+  display: grid;
+  gap: 10px;
   cursor: pointer;
-  list-style-position: inside;
+  list-style: none;
+  border-radius: 7px;
+  margin: -6px;
+  padding: 6px;
+  transition: background-color 160ms ease, color 160ms ease;
 }
-.advanced-analysis > summary small { color: var(--muted); font-weight: 500; }
-.advanced-analysis[open] > summary { margin-bottom: 16px; }
+.advanced-analysis-summary::-webkit-details-marker { display: none; }
+.advanced-analysis-summary:hover { background: #f2f8f5; }
+.advanced-analysis-summary:focus-visible { outline: 3px solid rgba(15, 118, 110, .25); outline-offset: 2px; }
+.advanced-analysis-heading, .advanced-analysis-disclosure { display: flex; align-items: center; gap: 10px; }
+.advanced-analysis-heading { justify-content: space-between; }
+.advanced-analysis-optional { border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .75rem; font-weight: 700; padding: 3px 8px; }
+.advanced-analysis-disclosure { color: var(--muted); flex-wrap: wrap; }
+.advanced-analysis-disclosure small { font-weight: 500; }
+.advanced-analysis-action { color: var(--accent); font-size: .85rem; font-weight: 800; margin-inline-start: auto; }
+.advanced-analysis-action-close { display: none; }
+.advanced-analysis-chevron { color: var(--accent); flex: 0 0 auto; transition: transform 160ms ease; }
+.advanced-analysis[open] > .advanced-analysis-summary { background: #f2f8f5; margin-bottom: 16px; }
+.advanced-analysis[open] .advanced-analysis-action-open { display: none; }
+.advanced-analysis[open] .advanced-analysis-action-close { display: inline; }
+.advanced-analysis[open] .advanced-analysis-chevron { transform: rotate(180deg); }
 .contribution-card { background: #f8faf8; }
 .trait-chips { display: flex; flex-wrap: wrap; }
 .trait-chip { position: relative; }
@@ -979,7 +995,9 @@ a {
 @media (max-width: 520px) {
   .admin-user-row { grid-template-columns: 1fr; }
   .admin-user-row > div:last-child { text-align: start; }
-  .advanced-analysis > summary { display: grid; }
+  .advanced-analysis-disclosure { align-items: flex-start; display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+  .advanced-analysis-action { margin-inline-start: 0; }
+  .advanced-analysis-chevron { grid-column: 2; grid-row: 1 / span 2; }
 }
 
 .field-error {
