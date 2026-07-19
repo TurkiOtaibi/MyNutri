@@ -3,10 +3,10 @@ import { test, expect, expectNoHorizontalOverflow } from "./helpers";
 test.describe("Foods navigation and standalone pages @foods", () => {
   test("[FOOD-TC-001] @p0 navigates list, add, details, and edit routes", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: "E2E Navigation Rice" });
-    await page.goto("/foods");
+    await page.goto("/admin/foods");
     await page.getByRole("link", { name: "إضافة طعام" }).click();
     await expect(page).toHaveURL(/\/foods\/new$/);
-    await page.goto("/foods");
+    await page.goto("/admin/foods");
     await page.getByRole("link", { name: `عرض تفاصيل ${food.name}` }).first().click();
     await expect(page).toHaveURL(new RegExp(`/foods/${food.id}$`));
     await page.getByRole("link", { name: "تعديل" }).click();
@@ -24,7 +24,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
   test("[FOOD-TC-003] @p0 list page does not contain the Add Food form", async ({ page }) => {
     await page.goto("/foods");
     await expect(page.getByRole("heading", { name: "الأطعمة" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "إضافة طعام" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "إضافة طعام" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "حفظ الطعام" })).toHaveCount(0);
     await expect(page.locator("form.food-form-layout")).toHaveCount(0);
   });
@@ -53,6 +53,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     const draft = `E2E-Draft-${Date.now()}`;
     await page.goto("/foods/new");
     await page.getByLabel(/اسم الطعام/).fill(draft);
+    page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("link", { name: "إلغاء" }).click();
     await expect(page).toHaveURL(/\/foods$/);
     expect((await foodsApi.list()).some((food) => food.name === draft)).toBeFalsy();

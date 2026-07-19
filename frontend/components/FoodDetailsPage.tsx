@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { ApiError, getFood, getNutritionRegistry } from "@/lib/api";
+import { ApiError, getAdminFood, getFood, getNutritionRegistry } from "@/lib/api";
 import {
   calculateServingNutrition,
   defaultServingText,
@@ -23,6 +23,7 @@ import { definitionsFromRegistry, nutrientValue, type NutrientDefinition } from 
 
 import { FoodDeleteDialog } from "./FoodDeleteDialog";
 import { useFoodDelete } from "./useFoodDelete";
+import { useAuth } from "./AuthProvider";
 
 const FOOD_READ_ERROR = "تعذر تحميل تفاصيل الطعام. تحقق من الاتصال وحاول مرة أخرى.";
 
@@ -76,9 +77,11 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
   const [deleteTarget, setDeleteTarget] = useState<FoodResponse | null>(null);
   const [note, setNote] = useState("");
   const [completenessOpen, setCompletenessOpen] = useState(false);
+  const { account } = useAuth();
   const foodQuery = useQuery({
     queryKey: ["food", foodId],
-    queryFn: () => getFood(foodId)
+    queryFn: () => account?.role === "admin" ? getAdminFood(foodId) : getFood(foodId),
+    enabled: account !== null
   });
   const registryQuery = useQuery({
     queryKey: ["nutrition-registry"],
@@ -116,14 +119,17 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
   }
 
   const food = foodQuery.data;
-  const registryCompatible = registryQuery.data?.registry_schema_version === 1;
+  const registryCompatible = registryQuery.data?.registry_schema_version === 2;
   const registry = registryCompatible ? registryQuery.data : undefined;
   const servingNutrition = calculateServingNutrition(food);
   const basisNutrition = perBasisNutrition(food);
   const displayedNutrition = mode === "serving" ? servingNutrition : basisNutrition;
   const basisLabel = nutritionBasisLabels[food.nutrition_basis];
   const registryNutrients = registry ? definitionsFromRegistry(registry) : null;
-  const primaryCategoryLabel = registry?.primary_category_definitions.find((item) => item.key === food.primary_category_key)?.label_ar;
+  const categoryLabel = registry?.food_category_definitions.find((item) => item.key === food.food_category_key)?.label_ar;
+  const grainTypeLabel = registry?.grain_type_definitions.find((item) => item.key === food.grain_type)?.label_ar;
+  const bakedGoodLabel = registry?.baked_good_type_definitions.find((item) => item.key === food.baked_good_type)?.label_ar;
+  const grainStarchLabel = registry?.grain_starch_type_definitions.find((item) => item.key === food.grain_starch_type)?.label_ar;
   const reliabilityLabel = registry?.reliability_levels.find((item) => item.key === food.nutrition_source.reliability)?.label_ar;
   const groupLabels = new Map(registry?.food_group_definitions.map((item) => [item.key, item.label_ar]) ?? []);
   const traitLabels = new Map(registry?.traits.map((item) => [item.key, item.label_ar]) ?? []);
@@ -137,11 +143,11 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
         <div className="food-detail-identity">
           <h1 className="food-detail-name" dir="auto">{food.name}</h1>
           <p className="food-detail-secondary" dir="auto">
-            {[food.brand, food.category || "غير مصنف"].filter(Boolean).join(" · ")}
+            {[food.brand, categoryLabel || food.food_category_key].filter(Boolean).join(" · ")}
           </p>
           <span className="serving-badge detail-serving-badge">{defaultServingText(food)}</span>
         </div>
-        <div className="food-detail-actions">
+        {account?.role === "admin" ? <div className="food-detail-actions">
           <Link className="btn primary" href={`/foods/${food.id}/edit`}>
             <Pencil size={18} aria-hidden="true" />
             تعديل
@@ -150,7 +156,7 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
             <Trash2 size={18} aria-hidden="true" />
             حذف
           </button>
-        </div>
+        </div> : null}
       </header>
 
       {note ? <div className="catalog-notice" role="alert">{note}</div> : null}
@@ -221,8 +227,10 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
         </div>
         <dl className="metadata-rows">
           {food.brand ? <MetadataRow label="العلامة التجارية" value={food.brand} autoDirection /> : null}
-          {food.category ? <MetadataRow label="التصنيف" value={food.category} autoDirection /> : null}
-          <MetadataRow label="التصنيف الأساسي" value={primaryCategoryLabel ?? "غير مصنف"} />
+          <MetadataRow label="فئة الطعام" value={categoryLabel ?? food.food_category_key} />
+          {bakedGoodLabel ? <MetadataRow label="نوع المخبوزات" value={bakedGoodLabel} /> : null}
+          {grainStarchLabel ? <MetadataRow label="نوع الحبوب أو النشويات" value={grainStarchLabel} /> : null}
+          {grainTypeLabel ? <MetadataRow label="نوع الحبوب" value={grainTypeLabel} /> : null}
           <MetadataRow label="نوع الطعام" value={food.food_kind === "simple" ? "بسيط" : food.food_kind === "composite" ? "مركب" : "قديم غير مراجع"} />
           <MetadataRow label="أساس القيم" value={basisLabel} />
           <MetadataRow label="تعريف الوحدة الافتراضية" value={defaultUnitText(food)} />
@@ -243,12 +251,12 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
         </dl>
       </section>
 
-      <FoodDeleteDialog
+      {account?.role === "admin" ? <FoodDeleteDialog
         food={deleteTarget}
         pending={deleteMutation.isPending}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
-      />
+      /> : null}
     </>
   );
 }

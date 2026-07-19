@@ -6,6 +6,8 @@ requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.16.0",
   "fastapi>=0.116.0",
+  "httpx>=0.28.0",
+  "PyJWT[crypto]>=2.10.1",
   "psycopg[binary]>=3.2.0",
   "pydantic-settings>=2.10.0",
   "python-dotenv>=1.1.0",
@@ -15,7 +17,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "httpx>=0.28.0",
   "pytest>=8.4.0",
   "ruff>=0.12.0"
 ]

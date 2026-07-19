@@ -1,20 +1,97 @@
-import secrets
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Annotated
 from uuid import UUID
 
+import jwt
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jwt import PyJWKClient
+from jwt.exceptions import PyJWTError
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
+from sqlmodel import select
 
 from app.core.config import Settings, get_settings
 from app.db.session import get_session
-from app.models import Principal, PrincipalStatus
+from app.models import Principal, PrincipalRole, PrincipalStatus
 
 
 @dataclass(frozen=True, slots=True)
 class PrincipalContext:
     principal_id: UUID
+    auth_user_id: UUID | None = None
+    role: PrincipalRole = PrincipalRole.user
+    email: str | None = None
+    display_name: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AuthClaims:
+    auth_user_id: UUID
+    email: str | None
+    display_name: str | None
+
+
+class SupabaseTokenVerifier:
+    def __init__(self, settings: Settings) -> None:
+        if not settings.normalized_supabase_url:
+            raise RuntimeError("SUPABASE_URL is required for authentication.")
+        self.issuer = settings.expected_supabase_issuer
+        self.audience = settings.supabase_jwt_audience
+        self.jwks = PyJWKClient(
+            settings.effective_supabase_jwks_url,
+            cache_keys=True,
+            lifespan=600,
+        )
+
+    def verify(self, token: str) -> AuthClaims:
+        signing_key = self.jwks.get_signing_key_from_jwt(token)
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["ES256", "RS256"],
+            audience=self.audience,
+            issuer=self.issuer,
+            options={"require": ["exp", "iss", "aud", "sub"]},
+        )
+        auth_user_id = UUID(str(payload["sub"]))
+        email_value = payload.get("email")
+        email = str(email_value).strip().lower()[:320] if email_value else None
+        metadata = payload.get("user_metadata")
+        display_name = None
+        if isinstance(metadata, dict):
+            candidate = next(
+                (
+                    metadata.get(key)
+                    for key in ("display_name", "full_name", "name")
+                    if metadata.get(key)
+                ),
+                None,
+            )
+            if candidate:
+                display_name = " ".join(str(candidate).strip().split())[:120] or None
+        return AuthClaims(auth_user_id, email, display_name)
+
+
+@lru_cache(maxsize=8)
+def _cached_verifier(url: str, jwks_url: str, audience: str) -> SupabaseTokenVerifier:
+    return SupabaseTokenVerifier(
+        Settings(
+            environment="test",
+            supabase_url=url,
+            supabase_jwks_url=jwks_url,
+            supabase_jwt_audience=audience,
+        )
+    )
+
+
+def get_token_verifier(settings: Settings = Depends(get_settings)) -> SupabaseTokenVerifier:
+    return _cached_verifier(
+        settings.normalized_supabase_url,
+        settings.effective_supabase_jwks_url,
+        settings.supabase_jwt_audience,
+    )
 
 
 bearer_auth = HTTPBearer(
@@ -52,26 +129,50 @@ def get_principal_context(
         HTTPAuthorizationCredentials | None,
         Security(bearer_auth),
     ],
-    settings: Settings = Depends(get_settings),
+    verifier: SupabaseTokenVerifier = Depends(get_token_verifier),
     session: Session = Depends(get_session),
 ) -> PrincipalContext:
     credential = _credential_from_security(request, credentials)
-    principal_id = next(
-        (
-            candidate_id
-            for candidate, candidate_id in settings.credential_map().items()
-            if secrets.compare_digest(credential, candidate)
-        ),
-        None,
-    )
-    if principal_id is None:
+    try:
+        claims = verifier.verify(credential)
+    except (PyJWTError, ValueError, RuntimeError):
         raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
-
-    principal = session.get(Principal, principal_id)
+    principal = session.exec(
+        select(Principal).where(Principal.auth_user_id == claims.auth_user_id)
+    ).one_or_none()
+    if principal is None:
+        principal = Principal(
+            auth_user_id=claims.auth_user_id,
+            email=claims.email,
+            display_name=claims.display_name,
+            role=PrincipalRole.user,
+        )
+        session.add(principal)
+        try:
+            session.commit()
+            session.refresh(principal)
+        except IntegrityError:
+            session.rollback()
+            principal = session.exec(
+                select(Principal).where(Principal.auth_user_id == claims.auth_user_id)
+            ).one_or_none()
     if principal is None or principal.status != PrincipalStatus.active:
         raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
-    return PrincipalContext(principal_id=principal.id)
+    return PrincipalContext(
+        principal_id=principal.id,
+        auth_user_id=claims.auth_user_id,
+        role=principal.role,
+        email=principal.email,
+        display_name=principal.display_name,
+    )
 
 
-# Compatibility alias for imports outside the route layer. It now establishes identity.
-require_single_user = get_principal_context
+def require_admin(
+    principal: PrincipalContext = Depends(get_principal_context),
+) -> PrincipalContext:
+    if principal.role != PrincipalRole.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "FORBIDDEN", "message_ar": "ليس لديك صلاحية لتنفيذ هذا الإجراء."},
+        )
+    return principal

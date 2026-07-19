@@ -1,5 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { networkInterfaces } from "node:os";
+import path from "node:path";
 
 const frontendUrl = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
 const backendUrl = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
@@ -37,7 +38,7 @@ export default defineConfig({
   use: {
     baseURL: frontendUrl,
     serviceWorkers: "block",
-    extraHTTPHeaders: { Authorization: `Bearer ${process.env.PLAYWRIGHT_API_TOKEN ?? "dev-token"}` },
+    storageState: path.join(process.cwd(), "e2e", ".auth", "admin.json"),
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",

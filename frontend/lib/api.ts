@@ -14,9 +14,18 @@ import type {
   TargetPlanHistoryResponse,
   WeekSummary
 } from "./types";
+import { createClient } from "./supabase/client";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN ?? "dev-token";
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/+$/, "");
+
+export interface CurrentAccount {
+  principal_id: string;
+  auth_user_id: string;
+  email: string | null;
+  display_name: string | null;
+  role: "user" | "admin";
+  status: "active" | "disabled";
+}
 
 export class ApiError extends Error {
   constructor(
@@ -34,8 +43,11 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (API_TOKEN && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${API_TOKEN}`);
+  if (!headers.has("Authorization")) {
+    const { data } = await createClient().auth.getSession();
+    if (data.session?.access_token) {
+      headers.set("Authorization", `Bearer ${data.session.access_token}`);
+    }
   }
 
   const response = await fetch(`${API_BASE}${path}`, {
@@ -67,6 +79,10 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   }
 
   return response.json() as Promise<T>;
+}
+
+export function getCurrentAccount(): Promise<CurrentAccount> {
+  return apiFetch<CurrentAccount>("/account/me");
 }
 
 export async function getProfile(): Promise<ProfileResponse | null> {
@@ -139,6 +155,19 @@ export interface FoodListOptions {
   sort?: FoodSort;
   page?: number;
   pageSize?: number;
+  status?: "active" | "archived";
+}
+
+export async function listAdminFoodsPage(options: FoodListOptions = {}): Promise<FoodListResponse> {
+  const params = new URLSearchParams({
+    page: String(options.page ?? 1),
+    page_size: String(options.pageSize ?? 20),
+    sort: options.sort ?? "name"
+  });
+  if (options.search?.trim()) params.set("search", options.search.trim());
+  if (options.category) params.set("category", options.category);
+  if (options.status) params.set("status", options.status);
+  return apiFetch<FoodListResponse>(`/admin/foods?${params.toString()}`);
 }
 
 export async function listFoodsPage(options: FoodListOptions = {}): Promise<FoodListResponse> {
@@ -155,7 +184,7 @@ export async function listFoodsPage(options: FoodListOptions = {}): Promise<Food
   const page = options.page ?? 1;
   const pageSize = options.pageSize ?? 20;
   const start = (page - 1) * pageSize;
-  const categories = [...new Set(result.map((food) => food.category?.trim()).filter((value): value is string => Boolean(value)))].sort();
+  const categories = [...new Set(result.map((food) => food.food_category_key))].sort();
   return {
     items: result.slice(start, start + pageSize),
     total: result.length,
@@ -163,12 +192,16 @@ export async function listFoodsPage(options: FoodListOptions = {}): Promise<Food
     page_size: pageSize,
     total_pages: result.length ? Math.ceil(result.length / pageSize) : 0,
     categories,
-    uncategorized_count: result.filter((food) => !food.category?.trim()).length
+    uncategorized_count: 0
   };
 }
 
 export function getFood(foodId: string): Promise<FoodResponse> {
   return apiFetch<FoodResponse>(`/foods/${foodId}`);
+}
+
+export function getAdminFood(foodId: string): Promise<FoodResponse> {
+  return apiFetch<FoodResponse>(`/admin/foods/${foodId}`);
 }
 
 export function createFood(payload: FoodInput & { id?: string }): Promise<FoodResponse> {
@@ -185,8 +218,50 @@ export function updateFood(foodId: string, payload: Partial<FoodInput>): Promise
   });
 }
 
-export function deleteFood(foodId: string): Promise<void> {
-  return apiFetch<void>(`/foods/${foodId}`, { method: "DELETE" });
+export function deleteFood(foodId: string): Promise<{ disposition: "deleted" | "archived" }> {
+  return apiFetch<{ disposition: "deleted" | "archived" }>(`/admin/foods/${foodId}`, { method: "DELETE" });
+}
+
+export function archiveFood(foodId: string): Promise<FoodResponse> {
+  return apiFetch<FoodResponse>(`/admin/foods/${foodId}/archive`, { method: "POST" });
+}
+
+export function restoreFood(foodId: string): Promise<FoodResponse> {
+  return apiFetch<FoodResponse>(`/admin/foods/${foodId}/restore`, { method: "POST" });
+}
+
+export interface AdminUserSummary {
+  principal_id: string;
+  email: string | null;
+  display_name: string | null;
+  status: "active" | "disabled";
+  role: "user" | "admin";
+  created_at: string;
+  profile_complete: boolean;
+  current_goal: string | null;
+  last_activity_at: string | null;
+}
+
+export interface AdminUserList {
+  items: AdminUserSummary[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export function listAdminUsers(search = "", page = 1): Promise<AdminUserList> {
+  const params = new URLSearchParams({ page: String(page), page_size: "20" });
+  if (search.trim()) params.set("search", search.trim());
+  return apiFetch<AdminUserList>(`/admin/users?${params}`);
+}
+
+export function getAdminUser(principalId: string): Promise<unknown> {
+  return apiFetch<unknown>(`/admin/users/${principalId}`);
+}
+
+export function getAdminUserDiary(principalId: string): Promise<DiaryEntryResponse[]> {
+  return apiFetch<DiaryEntryResponse[]>(`/admin/users/${principalId}/diary`);
 }
 
 export function listDiaryEntries(entryDate: string): Promise<DiaryEntryResponse[]> {

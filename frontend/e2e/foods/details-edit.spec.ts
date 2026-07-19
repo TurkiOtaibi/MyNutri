@@ -152,7 +152,7 @@ test.describe("Food details and editing @foods", () => {
     const food = await foodsApi.create({
       name: `E2E-Full-Details-${Date.now()}`,
       brand: "Detail Brand",
-      category: "Detail Category",
+      food_category_key: "other",
       fiber_g: 4,
       sugar_g: 8,
       added_sugar_g: 2,
@@ -160,7 +160,7 @@ test.describe("Food details and editing @foods", () => {
       data_source: "USDA"
     });
     await page.goto(`/foods/${food.id}`);
-    for (const value of [food.name, "Detail Brand", "Detail Category", "Detail notes", "USDA", "4 جم", "8 جم", "2 جم"]) {
+    for (const value of [food.name, "Detail Brand", "أخرى", "Detail notes", "USDA", "4 جم", "8 جم", "2 جم"]) {
       await expect(page.getByText(value, { exact: true }).first()).toBeVisible();
     }
   });

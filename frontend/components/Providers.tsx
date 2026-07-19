@@ -5,6 +5,7 @@ import { DirectionProvider } from "@base-ui-components/react/direction-provider"
 import { useEffect, useState } from "react";
 
 import { InstallPrompt } from "./InstallPrompt";
+import { AuthProvider } from "./AuthProvider";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(
@@ -28,8 +29,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <DirectionProvider direction="rtl">
       <QueryClientProvider client={client}>
-        {children}
-        <InstallPrompt />
+        <AuthProvider>
+          {children}
+          <InstallPrompt />
+        </AuthProvider>
       </QueryClientProvider>
     </DirectionProvider>
   );

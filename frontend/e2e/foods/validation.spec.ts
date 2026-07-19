@@ -120,7 +120,6 @@ test.describe("Food field validation @foods @validation", () => {
 
   const optionalTextCases = [
     { id: "FOOD-TC-073", field: "brand", max: 80, values: [null, "نادك", "Acme Foods", "نادك Acme 100%", "Brand & Co."] },
-    { id: "FOOD-TC-074", field: "category", max: 80, values: [null, "ألبان", "Dairy", "ألبان Dairy 2026", "Snacks & Drinks"] },
     { id: "FOOD-TC-149", field: "notes", max: 500, values: ["ملاحظات غذائية", "English notes", "ملاحظات USDA الغذائية"] },
     { id: "FOOD-TC-150", field: "data_source", max: 120, values: ["وزارة الصحة", "USDA", "USDA وزارة الصحة", "https://example.test/source"] }
   ] as const;
@@ -140,7 +139,7 @@ test.describe("Food field validation @foods @validation", () => {
   }
 
   test("[FOOD-TC-075] @p2 blank optional text is allowed and HTML stays inert", async ({ page, foodsApi }) => {
-    const food = await foodsApi.create({ brand: null, category: null, notes: "<b>plain text</b>", data_source: null });
+    const food = await foodsApi.create({ brand: null, notes: "<b>plain text</b>", data_source: null });
     await page.goto(`/foods/${food.id}`);
     await expect(page.getByText("<b>plain text</b>", { exact: true })).toBeVisible();
     await expect(page.locator(".food-detail-grid b", { hasText: "plain text" })).toHaveCount(0);
@@ -170,11 +169,11 @@ test.describe("Food field validation @foods @validation", () => {
     }
   });
 
-  test("[FOOD-TC-148] @p2 category accepts Arabic, English, mixed text, and punctuation", async ({ foodsApi }) => {
-    for (const category of ["Dairy", "ألبان", "ألبان Dairy 2026", "Snacks & Drinks"]) {
-      const food = await foodsApi.create({ category });
-      expect(food.category).toBe(category);
-    }
+  test("[FOOD-TC-148] @p1 Food Category uses stable V2 keys and rejects legacy category", async ({ foodsApi }) => {
+    const food = await foodsApi.create({ food_category_key: "baked_goods", baked_good_type: "arabic_bread", grain_type: "whole" });
+    expect(food.food_category_key).toBe("baked_goods");
+    const legacy = await foodsApi.createRaw({ ...validFood(), category: "مخبوزات" });
+    expect(legacy.status()).toBe(422);
   });
 
   test("[FOOD-TC-153] @p0 whitespace-only Food name is rejected with Arabic error", async ({ page, foodsApi }) => {

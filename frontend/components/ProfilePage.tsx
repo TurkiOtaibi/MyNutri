@@ -214,7 +214,7 @@ export function ProfilePage() {
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined
   });
-  const registryReady = registryQuery.data?.registry_schema_version === 1;
+  const registryReady = registryQuery.data?.registry_schema_version === 2;
 
   useEffect(() => {
     if (profileQuery.data === undefined) return;

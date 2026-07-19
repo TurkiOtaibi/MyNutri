@@ -3,10 +3,10 @@
 import { ArrowRight, Plus, Save, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useState } from "react";
+import { Dispatch, FormEvent, MouseEvent, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { ApiError, createFood, getFood, getNutritionRegistry, updateFood } from "@/lib/api";
+import { ApiError, createFood, getAdminFood, getNutritionRegistry, updateFood } from "@/lib/api";
 import {
   defaultUnitLabels,
   defaultUnitOptions,
@@ -25,6 +25,7 @@ import type { FoodResponse, NutritionRegistryResponse, NovaClassification } from
 
 import { FoodDeleteDialog } from "./FoodDeleteDialog";
 import { useFoodDelete } from "./useFoodDelete";
+import { useAuth } from "./AuthProvider";
 
 const FOOD_READ_ERROR = "تعذر تحميل تفاصيل الطعام. تحقق من الاتصال وحاول مرة أخرى.";
 const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
@@ -61,12 +62,14 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   const [note, setNote] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<FoodResponse | null>(null);
   const [hydratedFoodId, setHydratedFoodId] = useState<string | null>(null);
+  const initialForm = useRef(JSON.stringify(emptyFoodForm));
   const isEdit = mode === "edit";
+  const { account, loading: authLoading } = useAuth();
 
   const foodQuery = useQuery({
     queryKey: ["food", foodId],
-    queryFn: () => getFood(foodId ?? ""),
-    enabled: isEdit && Boolean(foodId)
+    queryFn: () => getAdminFood(foodId ?? ""),
+    enabled: isEdit && Boolean(foodId) && account?.role === "admin"
   });
   const registryQuery = useQuery({
     queryKey: ["nutrition-registry"],
@@ -76,10 +79,23 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
 
   useEffect(() => {
     if (foodQuery.data) {
-      setForm(foodToForm(foodQuery.data));
+      const loaded = foodToForm(foodQuery.data);
+      setForm(loaded);
+      initialForm.current = JSON.stringify(loaded);
       setHydratedFoodId(foodQuery.data.id);
     }
   }, [foodQuery.data]);
+
+  const dirty = JSON.stringify(form) !== initialForm.current;
+  useEffect(() => {
+    const protect = (event: BeforeUnloadEvent) => {
+      if (!dirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", protect);
+    return () => window.removeEventListener("beforeunload", protect);
+  }, [dirty]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -122,15 +138,29 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saveMutation.isPending || !registryQuery.data || registryQuery.data.registry_schema_version !== 1) return;
+    if (saveMutation.isPending || !registryQuery.data || registryQuery.data.registry_schema_version !== 2) return;
     const nextErrors = validateFoodForm(form);
     setErrors(nextErrors);
     if (hasFoodErrors(nextErrors)) {
       setNote(VALIDATION_ERROR);
+      window.requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>("[aria-invalid='true']")?.focus();
+      });
       return;
     }
     setNote("");
     saveMutation.mutate();
+  }
+
+  if (authLoading) return <div className="state-note">جارٍ التحقق من الصلاحية...</div>;
+  if (account?.role !== "admin") {
+    return <div className="state-note" role="alert">إدارة الأطعمة متاحة للمشرف فقط.</div>;
+  }
+
+  function protectUnsaved(event: MouseEvent<HTMLAnchorElement>) {
+    if (dirty && !window.confirm("لديك تغييرات غير محفوظة. هل تريد المغادرة؟")) {
+      event.preventDefault();
+    }
   }
 
   if (isEdit && (foodQuery.isPending || (foodQuery.data && hydratedFoodId !== foodQuery.data.id))) {
@@ -169,7 +199,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     );
   }
 
-  if (registryQuery.data.registry_schema_version !== 1) {
+  if (registryQuery.data.registry_schema_version !== 2) {
     return (
       <section className="section-panel">
         <div className="state-note" role="alert">إصدار سجل التغذية غير متوافق. يلزم تحديث التطبيق أو التواصل مع الدعم قبل حفظ الطعام.</div>
@@ -193,7 +223,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
           <p className="page-kicker">القيم الغذائية تحفظ لكل 100 جم أو 100 مل، والوحدة الافتراضية تستخدم للتسجيل اليومي.</p>
         </div>
         <div className="actions" style={{ marginTop: 0 }}>
-          <Link className="btn" href={isEdit && foodId ? `/foods/${foodId}` : "/foods"}>
+          <Link className="btn" href={isEdit && foodId ? `/foods/${foodId}` : "/foods"} onClick={protectUnsaved}>
             <ArrowRight size={18} />
             رجوع
           </Link>
@@ -210,15 +240,29 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
         <FormSection title="معلومات الطعام الأساسية">
           <TextField label="اسم الطعام" value={form.name} required maxLength={foodTextMax.name} error={errors.name} onChange={(value) => update("name", value)} />
           <TextField label="العلامة التجارية" value={form.brand ?? ""} maxLength={foodTextMax.brand} error={errors.brand} onChange={(value) => update("brand", value)} />
-          <TextField label="الفئة القديمة (للتوافق)" value={form.category ?? ""} maxLength={foodTextMax.category} error={errors.category} onChange={(value) => update("category", value)} />
           <SelectField
-            label="التصنيف الأساسي"
-            value={form.primary_category_key ?? ""}
+            label="فئة الطعام"
+            value={form.food_category_key}
             required
-            error={errors.primary_category_key}
-            onChange={(value) => update("primary_category_key", value)}
-            options={registry.primary_category_definitions.map((item) => [item.key, item.label_ar])}
+            error={errors.food_category_key}
+            onChange={(value) => setForm((current) => ({
+              ...current,
+              food_category_key: value,
+              grain_type: ["baked_goods", "grains_starches"].includes(value) ? current.grain_type ?? "unknown" : null,
+              baked_good_type: value === "baked_goods" ? current.baked_good_type : null,
+              grain_starch_type: value === "grains_starches" ? current.grain_starch_type : null
+            }))}
+            options={registry.food_category_definitions.map((item) => [item.key, item.label_ar])}
           />
+          {form.food_category_key === "baked_goods" ? (
+            <SelectField label="نوع المخبوزات" value={form.baked_good_type ?? ""} required error={errors.baked_good_type} onChange={(value) => update("baked_good_type", value as FoodFormValues["baked_good_type"])} options={registry.baked_good_type_definitions.map((item) => [item.key, item.label_ar])} />
+          ) : null}
+          {form.food_category_key === "grains_starches" ? (
+            <SelectField label="نوع الحبوب أو النشويات" value={form.grain_starch_type ?? ""} required error={errors.grain_starch_type} onChange={(value) => update("grain_starch_type", value as FoodFormValues["grain_starch_type"])} options={registry.grain_starch_type_definitions.map((item) => [item.key, item.label_ar])} />
+          ) : null}
+          {["baked_goods", "grains_starches"].includes(form.food_category_key) ? (
+            <SelectField label="نوع الحبوب" value={form.grain_type ?? "unknown"} required error={errors.grain_type} onChange={(value) => update("grain_type", value as FoodFormValues["grain_type"])} options={registry.grain_type_definitions.map((item) => [item.key, item.label_ar])} />
+          ) : null}
           <SelectField
             label="نوع الطعام"
             value={form.food_kind}
@@ -343,7 +387,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
             <Save size={18} />
             {saveMutation.isPending ? "جاري الحفظ..." : isEdit ? "حفظ التعديل" : "حفظ الطعام"}
           </button>
-          <Link className="btn" href={isEdit && foodId ? `/foods/${foodId}` : "/foods"}>
+          <Link className="btn" href={isEdit && foodId ? `/foods/${foodId}` : "/foods"} onClick={protectUnsaved}>
             <X size={18} />
             إلغاء
           </Link>
@@ -409,6 +453,8 @@ function FoodGroupFields({
   registry: NutritionRegistryResponse;
   error?: string;
 }) {
+  const [showAllTraits, setShowAllTraits] = useState(false);
+  const suggestedGroup = suggestedGroupKey(form);
   const addContribution = () => {
     const definition = registry.food_group_definitions.find(
       (item) => !form.group_contributions.some((entry) => entry.group_key === item.key)
@@ -417,8 +463,6 @@ function FoodGroupFields({
     const subtypes = subtypeKeys(definition);
     setForm((current) => ({
       ...current,
-      group_data_status: current.group_data_status === "unknown" ? "known" : current.group_data_status,
-      group_data_completeness: current.group_data_completeness === "unknown" ? "partial" : current.group_data_completeness,
       group_contributions: [
         ...current.group_contributions,
         {
@@ -430,24 +474,50 @@ function FoodGroupFields({
       ]
     }));
   };
+  const confirmSuggestion = () => {
+    if (!suggestedGroup || form.group_contributions.some((item) => item.group_key === suggestedGroup)) return;
+    const definition = registry.food_group_definitions.find((item) => item.key === suggestedGroup);
+    if (!definition) return;
+    setForm((current) => ({
+      ...current,
+      group_contributions: [...current.group_contributions, {
+        group_key: suggestedGroup,
+        subtype_key: subtypeKeys(definition)[0] ?? null,
+        amount_per_100_basis: 1,
+        data_status: "estimated"
+      }]
+    }));
+  };
+  const relevantTraits = new Set([
+    ...form.analytical_traits,
+    ...relevantTraitKeys(form.food_category_key),
+    "processed",
+    "salted"
+  ]);
 
   return (
-    <section className="form-panel food-form-section" aria-labelledby="food-groups-title">
-      <h2 className="panel-title" id="food-groups-title">المجموعات والسمات التحليلية</h2>
+    <details className="form-panel food-form-section advanced-analysis" aria-labelledby="food-groups-title">
+      <summary className="panel-title" id="food-groups-title">
+        <span>التحليل الغذائي المتقدم</span>
+        <small>{form.group_contributions.length} مجموعة غذائية • {form.analytical_traits.length} سمات</small>
+      </summary>
       {error ? <div className="field-error" role="alert">{error}</div> : null}
-      {form.group_contributions.length > 0 ? <p className="page-kicker">المقادير تتبع أساس الطعام لكل 100 جم أو 100 مل، ولا تُدخل وحدة منفصلة.</p> : null}
-      <div className="form-grid">
-        <SelectField label="حالة بيانات المجموعات" value={form.group_data_status} onChange={(value) => setForm((current) => ({ ...current, group_data_status: value as FoodFormValues["group_data_status"] }))} options={[["known", "مؤكدة"], ["estimated", "تقديرية"], ["unknown", "غير معروفة"]]} />
-        <SelectField label="اكتمال بيانات المجموعات" value={form.group_data_completeness} onChange={(value) => setForm((current) => ({ ...current, group_data_completeness: value as FoodFormValues["group_data_completeness"] }))} options={[["complete", "مكتملة"], ["partial", "جزئية"], ["unknown", "غير معروفة"]]} />
-      </div>
+      <h3>المجموعات الغذائية</h3>
+      <p className="page-kicker">حدد المجموعات التي يساهم فيها هذا الطعام لاستخدامها في التحليل الأسبوعي. المقادير لكل 100 جم أو 100 مل.</p>
+      {suggestedGroup && !form.group_contributions.some((item) => item.group_key === suggestedGroup) ? (
+        <div className="analysis-suggestion">
+          <span>اقتراح حسب فئة الطعام: {registry.food_group_definitions.find((item) => item.key === suggestedGroup)?.label_ar}</span>
+          <button className="btn" type="button" onClick={confirmSuggestion}>تأكيد الاقتراح</button>
+        </div>
+      ) : null}
 
       <div className="food-classification-list">
         {form.group_contributions.map((entry, index) => {
           const definition = registry.food_group_definitions.find((item) => item.key === entry.group_key);
           const subtypes = definition ? subtypeKeys(definition) : [];
           return (
-            <fieldset className="form-grid" key={`${entry.group_key}-${index}`}>
-              <legend>مساهمة {index + 1}</legend>
+            <fieldset className="form-grid contribution-card" key={`${entry.group_key}-${index}`}>
+              <legend>مجموعة غذائية {index + 1}</legend>
               <SelectField
                 label={`المجموعة ${index + 1}`}
                 value={entry.group_key}
@@ -463,22 +533,58 @@ function FoodGroupFields({
             </fieldset>
           );
         })}
-        <button className="btn" type="button" onClick={addContribution} disabled={form.group_contributions.length >= registry.food_group_definitions.length}><Plus size={18} />إضافة مساهمة</button>
+        <button className="btn" type="button" onClick={addContribution} disabled={form.group_contributions.length >= registry.food_group_definitions.length}><Plus size={18} />إضافة مجموعة غذائية</button>
       </div>
 
       <fieldset className="food-traits-fieldset">
         <legend>السمات التحليلية</legend>
-        <div className="food-traits-grid">
-          {registry.traits.map((trait) => (
-            <label key={trait.key} className="checkbox-row">
+        <p className="page-kicker">اختر السمات المثبتة في المصدر فقط. لا تُحفظ الاقتراحات تلقائيًا.</p>
+        {traitGroups.map((group) => {
+          const traits = registry.traits.filter((trait) => group.keys.includes(trait.key) && (showAllTraits || relevantTraits.has(trait.key)));
+          if (!traits.length) return null;
+          return <div className="trait-group" key={group.label}><h4>{group.label}</h4><div className="food-traits-grid trait-chips">{traits.map((trait) => (
+            <label key={trait.key} className="trait-chip" title={traitHelp[trait.key]}>
               <input type="checkbox" checked={form.analytical_traits.includes(trait.key)} onChange={(event) => setForm((current) => ({ ...current, analytical_traits: event.target.checked ? [...current.analytical_traits, trait.key] : current.analytical_traits.filter((item) => item !== trait.key) }))} />
               <span>{trait.label_ar}</span>
             </label>
-          ))}
-        </div>
+          ))}</div></div>;
+        })}
+        <button className="btn" type="button" onClick={() => setShowAllTraits((value) => !value)}>{showAllTraits ? "عرض الأقل" : "عرض المزيد"}</button>
       </fieldset>
-    </section>
+    </details>
   );
+}
+
+const traitGroups = [
+  { label: "المنشأ", keys: ["omega3_rich_seafood", "fruit_liquid_100_percent", "dried_fruit", "starchy_root"] },
+  { label: "المعالجة", keys: ["processed", "smoked", "salted"] },
+  { label: "الخصائص الغذائية", keys: ["sweetened", "non_nutritive_sweetened", "calcium_fortified", "unsaturated_fat_source"] }
+];
+
+const traitHelp: Record<string, string> = {
+  non_nutritive_sweetened: "يحتوي على مُحلٍ لا يضيف سكرًا غذائيًا.",
+  omega3_rich_seafood: "صفة تحليلية للمأكولات البحرية المثبت غناها بأوميغا 3.",
+  fruit_liquid_100_percent: "عصير أو سموذي فواكه كامل دون تخمين من الاسم."
+};
+
+function relevantTraitKeys(category: string): string[] {
+  if (category === "seafood") return ["omega3_rich_seafood"];
+  if (category === "dairy_fortified_alternatives") return ["calcium_fortified"];
+  if (category === "fruits") return ["fruit_liquid_100_percent", "dried_fruit"];
+  if (["nuts_seeds", "added_oils_fats"].includes(category)) return ["unsaturated_fat_source"];
+  if (["sweets", "sugar_sweetened_beverages"].includes(category)) return ["sweetened", "non_nutritive_sweetened"];
+  if (["processed_meat", "red_meat"].includes(category)) return ["processed", "smoked", "salted"];
+  return [];
+}
+
+function suggestedGroupKey(form: FoodFormValues): string | null {
+  if (["baked_goods", "grains_starches"].includes(form.food_category_key)) {
+    if (form.grain_type === "whole") return "whole_grains";
+    if (form.grain_type === "refined") return "refined_grains";
+    return null;
+  }
+  const direct = new Set(["vegetables", "fruits", "legumes", "nuts_seeds", "seafood", "dairy_fortified_alternatives", "eggs", "poultry", "red_meat", "processed_meat", "added_oils_fats", "sweets", "sugar_sweetened_beverages", "unsweetened_beverages", "mixed_dish"]);
+  return direct.has(form.food_category_key) ? form.food_category_key : null;
 }
 
 function subtypeKeys(definition: NutritionRegistryResponse["food_group_definitions"][number] | undefined): string[] {

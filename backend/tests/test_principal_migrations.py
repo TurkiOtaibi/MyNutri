@@ -141,10 +141,10 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "0011_diary_snapshot_v2_expand"
+            "0014_v2_food_taxonomy"
         )
     assert "principal" in inspector.get_table_names()
-    for table in ("profile", "food", "diary_entry"):
+    for table in ("profile", "diary_entry"):
         owner = next(
             column for column in inspector.get_columns(table) if column["name"] == "principal_id"
         )
@@ -154,6 +154,10 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     }
     assert ("principal_id",) in profile_uniques
     food_columns = {column["name"]: column for column in inspector.get_columns("food")}
+    assert "principal_id" not in food_columns
+    assert food_columns["created_by_principal_id"]["nullable"] is False
+    assert "category" not in food_columns
+    assert food_columns["food_category_key"]["nullable"] is False
     for field in ("selenium_mcg", "iodine_mcg", "folate_dfe_mcg", "vitamin_a_rae_mcg"):
         assert food_columns[field]["nullable"] is True
         assert str(food_columns[field]["type"]) == "NUMERIC(10, 3)"
@@ -271,10 +275,15 @@ def test_populated_backfill_fails_closed_then_reconciles_without_history_change(
     _run_alembic(url, "upgrade", "head")
 
     with engine.connect() as connection:
-        for table in ("profile", "food", "diary_entry"):
+        owner_columns = {
+            "profile": "principal_id",
+            "food": "created_by_principal_id",
+            "diary_entry": "principal_id",
+        }
+        for table, owner_column in owner_columns.items():
             assert (
                 connection.execute(
-                    text(f"SELECT count(*) FROM {table} WHERE principal_id = :id"),
+                    text(f"SELECT count(*) FROM {table} WHERE {owner_column} = :id"),
                     {"id": DEPLOYMENT_PRINCIPAL},
                 ).scalar_one()
                 == 1
@@ -295,7 +304,8 @@ def test_populated_backfill_fails_closed_then_reconciles_without_history_change(
         migrated_food = connection.execute(
             text(
                 """
-                SELECT primary_category_key, food_kind, group_data_status,
+                SELECT food_category_key, grain_type, taxonomy_review_required,
+                       food_kind, group_data_status,
                        group_data_completeness, nutrition_source_type,
                        ingredients_text, nova_classification, nova_review_status,
                        selenium_mcg, iodine_mcg, folate_dfe_mcg, vitamin_a_rae_mcg
@@ -305,7 +315,9 @@ def test_populated_backfill_fails_closed_then_reconciles_without_history_change(
             {"id": identifiers["food"]},
         ).one()
         assert tuple(migrated_food) == (
+            "other",
             None,
+            True,
             "unknown",
             "unknown",
             "unknown",
@@ -364,10 +376,11 @@ def test_snapshot_v2_database_shape_is_immutable_and_blocks_lossy_downgrade() ->
             text(
                 """
                 INSERT INTO food
-                  (id,principal_id,name,nutrition_basis,default_unit_type,unit_amount,unit_basis,
+                  (id,created_by_principal_id,name,normalized_name,food_category_key,
+                   nutrition_basis,default_unit_type,unit_amount,unit_basis,
                    calories,protein_g,carb_g,fat_g,created_at,updated_at)
                 VALUES
-                  (:id,:principal,'Snapshot source','per_100g','serving',100,'g',
+                  (:id,:principal,'Snapshot source','snapshot source','other','per_100g','serving',100,'g',
                    100,1,2,3,now(),now())
                 """
             ),
@@ -486,11 +499,13 @@ def test_food_group_total_is_enforced_under_concurrent_transactions() -> None:
             text(
                 """
                 INSERT INTO food
-                  (id, principal_id, name, nutrition_basis, default_unit_type,
+                  (id, created_by_principal_id, name, normalized_name, food_category_key,
+                   nutrition_basis, default_unit_type,
                    unit_amount, unit_basis, calories, protein_g, carb_g, fat_g,
                    group_data_status, group_data_completeness, created_at, updated_at)
                 VALUES
-                  (:id, :principal, 'Concurrent contributions', 'per_100g',
+                  (:id, :principal, 'Concurrent contributions', 'concurrent contributions',
+                   'other', 'per_100g',
                    'serving', 100, 'g', 100, 10, 20, 5, 'known', 'partial', now(), now())
                 """
             ),
@@ -507,7 +522,7 @@ def test_food_group_total_is_enforced_under_concurrent_transactions() -> None:
                 text(
                     """
                     INSERT INTO food_group_contribution
-                      (id, principal_id, food_id, group_key, amount_per_100_basis,
+                      (id, created_by_principal_id, food_id, group_key, amount_per_100_basis,
                        data_status, food_group_rules_version, created_at, updated_at)
                     VALUES
                       (:id, :principal, :food, :group_key, :amount, 'known',

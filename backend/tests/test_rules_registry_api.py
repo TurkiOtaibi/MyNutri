@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.db.session import get_session
+from app.core.auth import PrincipalContext, get_principal_context, get_token_verifier
 from app.main import app
 from app.models import Principal
 from app.nutrition_rules.manifest import canonical_manifest_bytes, rules_manifest_hash
@@ -35,6 +36,7 @@ def client() -> Generator[TestClient, None, None]:
             yield session
 
     app.dependency_overrides[get_session] = session_override
+    app.dependency_overrides[get_principal_context] = lambda: PrincipalContext(PRINCIPAL_ID)
     with TestClient(app, headers={"Authorization": "Bearer dev-token"}) as test_client:
         yield test_client
     app.dependency_overrides.clear()
@@ -59,7 +61,10 @@ def test_registry_exposes_exact_version_bundle_and_authoritative_metadata(
         "label_ar": "مصادر متعددة",
         "reliability": "mixed",
     }
-    assert len(body["primary_category_definitions"]) == 19
+    assert len(body["food_category_definitions"]) == 19
+    assert "baked_goods" in body["food_categories"]
+    assert "whole_grains" not in body["food_categories"]
+    assert "refined_grains" not in body["food_categories"]
     assert len(body["food_group_definitions"]) == 17
     assert len(body["traits"]) == 11
     assert body["nova"] == {
@@ -78,8 +83,14 @@ def test_registry_exposes_exact_version_bundle_and_authoritative_metadata(
 
 
 def test_registry_requires_authenticated_principal(client: TestClient) -> None:
-    response = client.get("/nutrition/registry", headers={"Authorization": ""})
-    assert response.status_code == 401
+    override = app.dependency_overrides.pop(get_principal_context)
+    app.dependency_overrides[get_token_verifier] = lambda: object()
+    try:
+        response = client.get("/nutrition/registry", headers={"Authorization": ""})
+        assert response.status_code == 401
+    finally:
+        app.dependency_overrides.pop(get_token_verifier)
+        app.dependency_overrides[get_principal_context] = override
 
 
 def test_registry_etag_and_manifest_are_deterministic(client: TestClient) -> None:
@@ -122,7 +133,7 @@ def test_profile_preview_exposes_calculation_provenance(client: TestClient) -> N
     assert "وزنك الحالي" in body["protein_calculation"]["explanation_ar"]
     assert body["carb_clamped"] is False
     assert body["calculation_engine_version"] == "2.0.0"
-    assert body["nutrition_registry_version"] == "1.0.0"
+    assert body["nutrition_registry_version"] == "2.0.0"
     assert len(body["additional_targets"]) == 16
 
 

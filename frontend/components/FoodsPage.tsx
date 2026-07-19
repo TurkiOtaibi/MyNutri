@@ -15,7 +15,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { ApiError, deleteFood, listFoodsPage } from "@/lib/api";
+import { ApiError, archiveFood, deleteFood, getNutritionRegistry, listAdminFoodsPage, listFoodsPage, restoreFood } from "@/lib/api";
 import {
   calculateServingNutrition,
   defaultServingText,
@@ -38,7 +38,7 @@ const sortLabels: Record<FoodSort, string> = {
   protein: "البروتين للحصة"
 };
 
-export function FoodsPage() {
+export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
   const queryClient = useQueryClient();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -51,6 +51,7 @@ export function FoodsPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FoodResponse | null>(null);
   const [note, setNote] = useState("");
+  const [status, setStatus] = useState<"active" | "archived">("active");
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -64,9 +65,10 @@ export function FoodsPage() {
   }, [searchInput, search]);
 
   const foodsQuery = useQuery({
-    queryKey: ["foods", "catalog", search, category, sort, page],
-    queryFn: () => listFoodsPage({ search, category, sort, page, pageSize: PAGE_SIZE })
+    queryKey: ["foods", adminMode ? "admin" : "catalog", search, category, sort, page, status],
+    queryFn: () => (adminMode ? listAdminFoodsPage : listFoodsPage)({ search, category, sort, page, pageSize: PAGE_SIZE, status })
   });
+  const registryQuery = useQuery({ queryKey: ["nutrition-registry"], queryFn: getNutritionRegistry });
 
   useEffect(() => {
     const data = foodsQuery.data;
@@ -83,10 +85,10 @@ export function FoodsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: deleteFood,
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       setDeleteTarget(null);
       setOpenMenuId(null);
-      setNote("تم حذف الطعام نهائيًا.");
+      setNote(result.disposition === "deleted" ? "تم حذف الطعام نهائيًا." : "الطعام مستخدم تاريخيًا، لذلك تمت أرشفته بدل حذفه.");
       await queryClient.invalidateQueries({ queryKey: ["foods"] });
     },
     onError: (error) => {
@@ -106,10 +108,17 @@ export function FoodsPage() {
   const categoryOptions = useMemo(
     () => [
       { value: "", label: "الكل" },
-      ...knownCategories.map((value) => ({ value, label: value })),
+      ...knownCategories.map((value) => ({
+        value,
+        label: registryQuery.data?.food_category_definitions.find((item) => item.key === value)?.label_ar ?? value
+      })),
       ...(uncategorizedCount > 0 ? [{ value: UNCATEGORIZED, label: "غير مصنف" }] : [])
     ],
-    [knownCategories, uncategorizedCount]
+    [knownCategories, uncategorizedCount, registryQuery.data]
+  );
+  const categoryLabels = useMemo(
+    () => new Map(registryQuery.data?.food_category_definitions.map((item) => [item.key, item.label_ar]) ?? []),
+    [registryQuery.data]
   );
 
   function resetCollection(next: { category?: string; sort?: FoodSort }) {
@@ -135,10 +144,12 @@ export function FoodsPage() {
           <h1 className="page-title">الأطعمة</h1>
           <p className="page-kicker">ابحث بسرعة واعرض القيم الغذائية حسب الحصة التي تستخدمها يوميًا.</p>
         </div>
-        <Link className="btn primary foods-add-button" href="/foods/new">
-          <Plus size={18} aria-hidden="true" />
-          إضافة طعام
-        </Link>
+        {adminMode ? (
+          <Link className="btn primary foods-add-button" href="/foods/new">
+            <Plus size={18} aria-hidden="true" />
+            إضافة طعام
+          </Link>
+        ) : null}
       </div>
 
       <section className="foods-catalog" aria-label="كتالوج الأطعمة">
@@ -160,6 +171,9 @@ export function FoodsPage() {
           </label>
 
           <div className="foods-desktop-controls">
+            {adminMode ? (
+              <label className="compact-control"><span>الحالة</span><select value={status} onChange={(event) => { setStatus(event.target.value as "active" | "archived"); setPage(1); }}><option value="active">نشط</option><option value="archived">مؤرشف</option></select></label>
+            ) : null}
             <label className="compact-control">
               <span>التصنيف</span>
               <select
@@ -278,6 +292,8 @@ export function FoodsPage() {
                       menuOpen={openMenuId === `table:${food.id}`}
                       onMenuChange={(open) => setOpenMenuId(open ? `table:${food.id}` : null)}
                       onDelete={() => setDeleteTarget(food)}
+                      adminMode={adminMode}
+                      categoryLabel={categoryLabels.get(food.food_category_key) ?? food.food_category_key}
                     />
                   ))}
                 </tbody>
@@ -292,6 +308,8 @@ export function FoodsPage() {
                   menuOpen={openMenuId === `card:${food.id}`}
                   onMenuChange={(open) => setOpenMenuId(open ? `card:${food.id}` : null)}
                   onDelete={() => setDeleteTarget(food)}
+                  adminMode={adminMode}
+                  categoryLabel={categoryLabels.get(food.food_category_key) ?? food.food_category_key}
                 />
               ))}
               {foodsQuery.isPending && page > 1 ? <div className="loading-more" role="status">جاري تحميل المزيد...</div> : null}
@@ -312,7 +330,7 @@ export function FoodsPage() {
         ) : null}
       </section>
 
-      <FoodDeleteDialog
+      {adminMode ? <FoodDeleteDialog
         food={deleteTarget}
         pending={deleteMutation.isPending}
         onCancel={() => {
@@ -320,7 +338,7 @@ export function FoodsPage() {
           setOpenMenuId(null);
         }}
         onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
-      />
+      /> : null}
     </>
   );
 }
@@ -329,12 +347,16 @@ function FoodTableRow({
   food,
   menuOpen,
   onMenuChange,
-  onDelete
+  onDelete,
+  adminMode
+  ,categoryLabel
 }: {
   food: FoodResponse;
   menuOpen: boolean;
   onMenuChange: (open: boolean) => void;
   onDelete: () => void;
+  adminMode: boolean;
+  categoryLabel: string;
 }) {
   const nutrition = calculateServingNutrition(food);
   return (
@@ -345,11 +367,11 @@ function FoodTableRow({
         </Link>
         {food.brand ? <span className="food-table-brand" dir="auto">{food.brand}</span> : null}
       </td>
-      <td>{food.category || "غير مصنف"}</td>
+      <td>{categoryLabel}</td>
       <td><span className="serving-label">{defaultServingText(food)}</span></td>
       <NutritionCells nutrition={nutrition} />
       <td className="table-actions-cell">
-        <FoodActionsMenu food={food} open={menuOpen} onOpenChange={onMenuChange} onDelete={onDelete} />
+        {adminMode ? <FoodActionsMenu food={food} open={menuOpen} onOpenChange={onMenuChange} onDelete={onDelete} /> : null}
       </td>
     </tr>
   );
@@ -373,15 +395,19 @@ function FoodCard({
   food,
   menuOpen,
   onMenuChange,
-  onDelete
+  onDelete,
+  adminMode
+  ,categoryLabel
 }: {
   food: FoodResponse;
   menuOpen: boolean;
   onMenuChange: (open: boolean) => void;
   onDelete: () => void;
+  adminMode: boolean;
+  categoryLabel: string;
 }) {
   const nutrition = calculateServingNutrition(food);
-  const secondary = [food.brand, food.category || "غير مصنف"].filter(Boolean).join(" · ");
+  const secondary = [food.brand, categoryLabel].filter(Boolean).join(" · ");
   return (
     <article className="food-card">
       <Link className="food-card-overlay" href={`/foods/${food.id}`} aria-label={`عرض تفاصيل ${food.name}`} />
@@ -390,7 +416,7 @@ function FoodCard({
           <h2 className="food-card-title" title={food.name} dir="auto">{food.name}</h2>
           <p className="food-card-secondary" dir="auto">{secondary}</p>
         </div>
-        <FoodActionsMenu food={food} open={menuOpen} onOpenChange={onMenuChange} onDelete={onDelete} />
+        {adminMode ? <FoodActionsMenu food={food} open={menuOpen} onOpenChange={onMenuChange} onDelete={onDelete} /> : null}
       </div>
       <span className="serving-badge">{defaultServingText(food)}</span>
       {nutrition ? (
@@ -427,6 +453,14 @@ function FoodActionsMenu({
   onOpenChange: (open: boolean) => void;
   onDelete: () => void;
 }) {
+  const queryClient = useQueryClient();
+  const statusMutation = useMutation({
+    mutationFn: () => food.status === "archived" ? restoreFood(food.id) : archiveFood(food.id),
+    onSuccess: async () => {
+      onOpenChange(false);
+      await queryClient.invalidateQueries({ queryKey: ["foods"] });
+    }
+  });
   const rootRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const firstItemRef = useRef<HTMLAnchorElement | null>(null);
@@ -470,6 +504,15 @@ function FoodActionsMenu({
             <Pencil size={17} aria-hidden="true" />
             تعديل
           </Link>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={statusMutation.isPending}
+            onClick={() => statusMutation.mutate()}
+          >
+            <RotateCcw size={17} aria-hidden="true" />
+            {food.status === "archived" ? "استعادة" : "أرشفة"}
+          </button>
           <button
             type="button"
             role="menuitem"
@@ -553,11 +596,7 @@ function EmptyFoodsState({ hasFilters, onClear }: { hasFilters: boolean; onClear
   return (
     <div className="catalog-state">
       <strong>لا توجد أطعمة بعد.</strong>
-      <span>أضف أول طعام لتبدأ بناء كتالوجك الشخصي.</span>
-      <Link className="btn primary" href="/foods/new">
-        <Plus size={18} aria-hidden="true" />
-        إضافة أول طعام
-      </Link>
+      <span>لا توجد أطعمة نشطة في الكتالوج حاليًا.</span>
     </div>
   );
 }

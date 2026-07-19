@@ -60,7 +60,7 @@ test.describe("Foods list, search, and states @foods", () => {
 
   test("[FOOD-TC-014] @p0 saved Food exposes View, Edit, and Delete actions", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E-Actions-${Date.now()}` });
-    await page.goto("/foods");
+    await page.goto("/admin/foods");
     await expect(page.getByRole("link", { name: `عرض تفاصيل ${food.name}` }).first()).toBeVisible();
     await page.getByRole("button", { name: `إجراءات ${food.name}` }).click();
     await expect(page.getByRole("menuitem", { name: "تعديل" })).toBeVisible();
@@ -174,8 +174,7 @@ test.describe("Foods list, search, and states @foods", () => {
     });
     await page.goto("/foods");
     await expect(page.getByText("لا توجد أطعمة بعد.", { exact: true })).toBeVisible();
-    await page.getByRole("link", { name: "إضافة أول طعام" }).click();
-    await expect(page).toHaveURL(/\/foods\/new$/);
+    await expect(page.getByRole("link", { name: "إضافة أول طعام" })).toHaveCount(0);
   });
 
   test("[FOOD-TC-029] @p1 no-results differs from empty catalog state", async ({ page, foodsApi }) => {

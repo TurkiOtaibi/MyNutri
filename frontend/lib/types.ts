@@ -11,6 +11,10 @@ export type NutritionSourceType = "laboratory_analysis" | "official_food_databas
 export type IngredientsSourceType = "official_product_label" | "manufacturer_website" | "official_food_database" | "official_restaurant" | "calculated_recipe" | "manual_entry" | "multiple_sources" | "unknown";
 export type SourceReliability = "high" | "medium" | "low" | "mixed" | "unknown";
 export type NovaClassification = "1" | "2" | "3" | "4" | "unknown";
+export type FoodStatus = "active" | "archived";
+export type GrainType = "whole" | "refined" | "mixed" | "grain_free" | "unknown";
+export type BakedGoodType = "arabic_bread" | "toast" | "rolls_wraps" | "burger_bun" | "flatbread" | "pastries" | "cake" | "biscuits_cookies" | "other";
+export type GrainStarchType = "rice" | "pasta" | "oats" | "breakfast_cereal" | "bulgur" | "quinoa" | "flour" | "other";
 
 export interface TargetResponse {
   bmr: number;
@@ -83,13 +87,13 @@ export interface ProfileInput {
 }
 
 export interface NutritionRegistryResponse {
-  registry_schema_version: 1;
+  registry_schema_version: 2;
   nutrition_registry_version: string;
   calculation_engine_version: string;
   food_group_rules_version: string;
   source_reliability_rules_version: string;
   nova_rules_version: string;
-  snapshot_schema_version: 2;
+  snapshot_schema_version: 3;
   analysis_rules_version: null;
   analysis_rules_status: "reserved_for_wave_3";
   rules_manifest_hash: string;
@@ -106,7 +110,10 @@ export interface NutritionRegistryResponse {
     completeness_participation: boolean;
     diary_coverage_participation: boolean;
   }>;
-  primary_category_definitions: Array<{ key: string; label_ar: string }>;
+  food_category_definitions: Array<{ key: string; label_ar: string }>;
+  grain_type_definitions: Array<{ key: GrainType; label_ar: string }>;
+  baked_good_type_definitions: Array<{ key: BakedGoodType; label_ar: string }>;
+  grain_starch_type_definitions: Array<{ key: GrainStarchType; label_ar: string }>;
   food_group_definitions: Array<{
     key: string;
     label_ar: string;
@@ -169,11 +176,11 @@ export interface TargetPlanHistoryResponse {
 export interface FoodInput {
   name: string;
   brand: string | null;
-  category: string | null;
-  primary_category_key: string | null;
+  food_category_key: string;
+  grain_type: GrainType | null;
+  baked_good_type: BakedGoodType | null;
+  grain_starch_type: GrainStarchType | null;
   food_kind: FoodKind;
-  group_data_status: GroupDataStatus;
-  group_data_completeness: GroupDataCompleteness;
   nutrition_basis: NutritionBasis;
   default_unit_type: DefaultUnitType;
   unit_amount: number;
@@ -229,9 +236,14 @@ export interface FoodInput {
 
 export interface FoodResponse extends FoodInput {
   id: string;
+  status: FoodStatus;
+  group_data_status: GroupDataStatus;
+  group_data_completeness: GroupDataCompleteness;
+  taxonomy_review_required: boolean;
   net_carbs_g: number;
   created_at: string;
   updated_at: string;
+  archived_at: string | null;
   nutrition_source: FoodInput["nutrition_source"] & {
     reliability: SourceReliability;
     reliability_rules_version: string;

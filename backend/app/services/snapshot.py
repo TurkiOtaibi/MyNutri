@@ -6,7 +6,6 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 from sqlmodel import Session, select
 
-from app.core.auth import PrincipalContext
 from app.models import Food, FoodAnalyticalTrait, FoodGroupContribution
 from app.nutrition_rules.versions import VERSIONS
 from app.schemas import NutritionSnapshot, NutritionTotals, SOURCE_RELIABILITY_MAP
@@ -31,27 +30,68 @@ WAVE1_NUTRIENTS = (
 )
 
 PrimaryCategory = Literal[
-    "vegetables", "fruits", "legumes", "whole_grains", "refined_grains",
-    "nuts_seeds", "seafood", "dairy_fortified_alternatives", "eggs", "poultry",
-    "red_meat", "processed_meat", "added_oils_fats", "sweets",
-    "sugar_sweetened_beverages", "unsweetened_beverages", "herbs_spices",
-    "mixed_dish", "other",
+    "vegetables",
+    "fruits",
+    "legumes",
+    "whole_grains",
+    "refined_grains",
+    "nuts_seeds",
+    "seafood",
+    "dairy_fortified_alternatives",
+    "eggs",
+    "poultry",
+    "red_meat",
+    "processed_meat",
+    "added_oils_fats",
+    "sweets",
+    "sugar_sweetened_beverages",
+    "unsweetened_beverages",
+    "herbs_spices",
+    "mixed_dish",
+    "other",
 ]
 GroupKey = Literal[
-    "vegetables", "fruits", "legumes", "whole_grains", "refined_grains",
-    "nuts_seeds", "seafood", "dairy_fortified_alternatives", "eggs", "poultry",
-    "red_meat", "processed_meat", "added_oils_fats", "sweets",
-    "sugar_sweetened_beverages", "unsweetened_beverages", "herbs_spices",
+    "vegetables",
+    "fruits",
+    "legumes",
+    "whole_grains",
+    "refined_grains",
+    "nuts_seeds",
+    "seafood",
+    "dairy_fortified_alternatives",
+    "eggs",
+    "poultry",
+    "red_meat",
+    "processed_meat",
+    "added_oils_fats",
+    "sweets",
+    "sugar_sweetened_beverages",
+    "unsweetened_beverages",
+    "herbs_spices",
 ]
 TraitKey = Literal[
-    "sweetened", "non_nutritive_sweetened", "processed", "omega3_rich_seafood",
-    "calcium_fortified", "unsaturated_fat_source", "smoked", "salted",
-    "fruit_liquid_100_percent", "dried_fruit", "starchy_root",
+    "sweetened",
+    "non_nutritive_sweetened",
+    "processed",
+    "omega3_rich_seafood",
+    "calcium_fortified",
+    "unsaturated_fat_source",
+    "smoked",
+    "salted",
+    "fruit_liquid_100_percent",
+    "dried_fruit",
+    "starchy_root",
 ]
 SourceType = Literal[
-    "laboratory_analysis", "official_food_database", "official_product_label",
-    "manufacturer_website", "official_restaurant", "calculated_recipe",
-    "manual_estimate", "multiple_sources", "unknown",
+    "laboratory_analysis",
+    "official_food_database",
+    "official_product_label",
+    "manufacturer_website",
+    "official_restaurant",
+    "calculated_recipe",
+    "manual_estimate",
+    "multiple_sources",
+    "unknown",
 ]
 
 
@@ -63,11 +103,22 @@ class _ClosedModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class SnapshotFood(_ClosedModel):
+class SnapshotFoodV2(_ClosedModel):
     food_id: str | None
     name: str
     brand: str | None
     primary_category_key: PrimaryCategory | None
+    food_kind: Literal["simple", "composite", "unknown"]
+
+
+class SnapshotFoodV3(_ClosedModel):
+    food_id: str | None
+    name: str
+    brand: str | None
+    food_category_key: str
+    grain_type: Literal["whole", "refined", "mixed", "grain_free", "unknown"] | None
+    baked_good_type: str | None
+    grain_starch_type: str | None
     food_kind: Literal["simple", "composite", "unknown"]
 
 
@@ -161,7 +212,7 @@ class SnapshotVersions(_ClosedModel):
 
 class SnapshotV2(_ClosedModel):
     schema_version: Literal[2]
-    food: SnapshotFood
+    food: SnapshotFoodV2
     captured_unit: SnapshotUnit
     nutrition: SnapshotNutrition
     completeness: SnapshotCompleteness
@@ -171,15 +222,33 @@ class SnapshotV2(_ClosedModel):
     versions: SnapshotVersions
 
 
+class SnapshotVersionsV3(_ClosedModel):
+    nutrition_registry_version: Literal["2.0.0"]
+    food_group_rules_version: Literal["1.0.0"]
+    source_reliability_rules_version: Literal["1.0.0"]
+    nova_rules_version: Literal["1.0.0"]
+    snapshot_schema_version: Literal[3]
+
+
+class SnapshotV3(_ClosedModel):
+    schema_version: Literal[3]
+    food: SnapshotFoodV3
+    captured_unit: SnapshotUnit
+    nutrition: SnapshotNutrition
+    completeness: SnapshotCompleteness
+    food_groups: SnapshotFoodGroups
+    source: SnapshotSource
+    nova: SnapshotNova
+    versions: SnapshotVersionsV3
+
+
 def _scaled(value: Any, factor: float) -> float | None:
     if value is None:
         return None
     return round(float(value) * factor, 6)
 
 
-def create_snapshot_v2(
-    session: Session, principal: PrincipalContext, food: Food
-) -> dict[str, Any]:
+def create_snapshot_v3(session: Session, food: Food) -> dict[str, Any]:
     factor = float(food.unit_amount) / 100
     nutrition = {
         "calories": _scaled(food.calories, factor),
@@ -192,28 +261,39 @@ def create_snapshot_v2(
     completeness_state = "complete" if known == 16 else "all_unknown" if known == 0 else "partial"
     contributions = session.exec(
         select(FoodGroupContribution)
-        .where(
-            FoodGroupContribution.food_id == food.id,
-            FoodGroupContribution.principal_id == principal.principal_id,
-        )
+        .where(FoodGroupContribution.food_id == food.id)
         .order_by(FoodGroupContribution.group_key)
     ).all()
     traits = session.exec(
         select(FoodAnalyticalTrait)
-        .where(
-            FoodAnalyticalTrait.food_id == food.id,
-            FoodAnalyticalTrait.principal_id == principal.principal_id,
-        )
+        .where(FoodAnalyticalTrait.food_id == food.id)
         .order_by(FoodAnalyticalTrait.trait_key)
     ).all()
     source_type = _value(food.nutrition_source_type)
-    document = SnapshotV2(
-        schema_version=2,
+    group_status = (
+        "unknown"
+        if not contributions
+        else "estimated"
+        if any(_value(item.data_status) == "estimated" for item in contributions)
+        else "known"
+    )
+    group_completeness = (
+        "unknown"
+        if not contributions
+        else "complete"
+        if sum(float(item.amount_per_100_basis) for item in contributions) >= 100
+        else "partial"
+    )
+    document = SnapshotV3(
+        schema_version=3,
         food={
             "food_id": str(food.id),
             "name": food.name,
             "brand": food.brand,
-            "primary_category_key": food.primary_category_key,
+            "food_category_key": food.food_category_key,
+            "grain_type": _value(food.grain_type),
+            "baked_good_type": _value(food.baked_good_type),
+            "grain_starch_type": _value(food.grain_starch_type),
             "food_kind": _value(food.food_kind),
         },
         captured_unit={
@@ -229,8 +309,8 @@ def create_snapshot_v2(
             "state": completeness_state,
         },
         food_groups={
-            "status": _value(food.group_data_status),
-            "completeness": _value(food.group_data_completeness),
+            "status": group_status,
+            "completeness": group_completeness,
             "contributions": [
                 {
                     "group_key": item.group_key,
@@ -266,6 +346,37 @@ def create_snapshot_v2(
     return document.model_dump(mode="json")
 
 
+def create_snapshot_v2(
+    session: Session, principal: Any, food: Food
+) -> dict[str, Any]:
+    """Build the released V2 shape for compatibility fixtures only.
+
+    Runtime writers use V3. This helper remains so historical fixtures can
+    continue proving that the immutable V2 reader is supported.
+    """
+    v3 = create_snapshot_v3(session, food)
+    category = food.food_category_key
+    if category not in {"whole_grains", "refined_grains"}:
+        category = "other" if category in {"grains_starches", "baked_goods"} else category
+    v2 = {
+        **v3,
+        "schema_version": 2,
+        "food": {
+            "food_id": v3["food"]["food_id"],
+            "name": v3["food"]["name"],
+            "brand": v3["food"]["brand"],
+            "primary_category_key": category,
+            "food_kind": v3["food"]["food_kind"],
+        },
+        "versions": {
+            **v3["versions"],
+            "nutrition_registry_version": "1.0.0",
+            "snapshot_schema_version": 2,
+        },
+    }
+    return SnapshotV2.model_validate(v2).model_dump(mode="json")
+
+
 def _integrity_error(code: str) -> HTTPException:
     return HTTPException(
         status_code=409,
@@ -283,6 +394,13 @@ def read_snapshot_v2(document: dict[str, Any]) -> SnapshotV2:
         raise _integrity_error("INVALID_DIARY_SNAPSHOT_DATA") from error
 
 
+def read_snapshot_v3(document: dict[str, Any]) -> SnapshotV3:
+    try:
+        return SnapshotV3.model_validate(document)
+    except ValidationError as error:
+        raise _integrity_error("INVALID_DIARY_SNAPSHOT_DATA") from error
+
+
 def read_snapshot_v1(document: dict[str, Any]) -> NutritionSnapshot:
     if "schema_version" in document:
         raise _integrity_error("UNSUPPORTED_DIARY_SNAPSHOT_VERSION")
@@ -295,20 +413,23 @@ def read_snapshot_v1(document: dict[str, Any]) -> NutritionSnapshot:
         raise _integrity_error("INVALID_DIARY_SNAPSHOT_DATA") from error
 
 
-def normalized_snapshot(
-    document: dict[str, Any], schema_version: int | None
-) -> NutritionSnapshot:
+def normalized_snapshot(document: dict[str, Any], schema_version: int | None) -> NutritionSnapshot:
     if schema_version is None:
         return read_snapshot_v1(document)
-    if schema_version != 2:
+    if schema_version not in {2, 3}:
         raise _integrity_error("UNSUPPORTED_DIARY_SNAPSHOT_VERSION")
-    snapshot = read_snapshot_v2(document)
+    snapshot = read_snapshot_v2(document) if schema_version == 2 else read_snapshot_v3(document)
     nutrition = snapshot.nutrition.model_dump()
+    category = (
+        snapshot.food.primary_category_key
+        if isinstance(snapshot, SnapshotV2)
+        else snapshot.food.food_category_key
+    )
     return NutritionSnapshot(
         food_id=snapshot.food.food_id,
         name=snapshot.food.name,
         brand=snapshot.food.brand,
-        category=snapshot.food.primary_category_key,
+        category=category,
         nutrition_basis=snapshot.captured_unit.nutrition_basis,
         default_unit_type=snapshot.captured_unit.default_unit_type,
         unit_amount=snapshot.captured_unit.unit_amount,
@@ -319,6 +440,34 @@ def normalized_snapshot(
 
 def totals_from_v2(document: dict[str, Any], quantity: float) -> NutritionTotals:
     snapshot = read_snapshot_v2(document)
+    values = snapshot.nutrition.model_dump()
+    totals = {
+        field: None if value is None else round(float(value) * quantity, 2)
+        for field, value in values.items()
+    }
+    fiber = totals.get("fiber_g")
+    totals.update(
+        {
+            "sugar_g": None,
+            "total_sugars_g": None,
+            "net_carbs_g": round(max(float(totals["carb_g"]) - float(fiber or 0), 0), 2),
+        }
+    )
+    return NutritionTotals.model_validate(totals)
+
+
+def totals_from_versioned(
+    document: dict[str, Any], schema_version: int, quantity: float
+) -> NutritionTotals:
+    snapshot = (
+        read_snapshot_v2(document)
+        if schema_version == 2
+        else read_snapshot_v3(document)
+        if schema_version == 3
+        else None
+    )
+    if snapshot is None:
+        raise _integrity_error("UNSUPPORTED_DIARY_SNAPSHOT_VERSION")
     values = snapshot.nutrition.model_dump()
     totals = {
         field: None if value is None else round(float(value) * quantity, 2)

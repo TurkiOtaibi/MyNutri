@@ -36,6 +36,7 @@ REQUIRED_FOOD_FIELDS = {
     "protein_g",
     "carb_g",
     "fat_g",
+    "food_category_key",
 }
 
 NUMERIC_FOOD_FIELDS = {
@@ -73,8 +74,10 @@ SELECT_FOOD_FIELDS = {
     "default_unit_type",
     "unit_basis",
     "food_kind",
-    "group_data_status",
-    "group_data_completeness",
+    "food_category_key",
+    "grain_type",
+    "baked_good_type",
+    "grain_starch_type",
     "type",
     "source_type",
     "classification",
@@ -99,7 +102,14 @@ CUSTOM_MESSAGE_CODES = {
     "مجموعة غذائية غير معتمدة.": "invalid_food_group",
     "النوع الفرعي مطلوب وغير متوافق مع المجموعة الغذائية.": "invalid_food_group_subtype",
     "هذه المجموعة لا تقبل نوعًا فرعيًا.": "food_group_subtype_not_allowed",
-    "التصنيف الأساسي غير معتمد.": "invalid_primary_category",
+    "فئة الطعام غير معتمدة.": "invalid_food_category",
+    "نوع المخبوزات مطلوب لفئة المخبوزات.": "required_category_detail",
+    "نوع الحبوب مطلوب لفئة المخبوزات.": "required_category_detail",
+    "نوع الحبوب والنشويات غير متاح لفئة المخبوزات.": "unrelated_category_detail",
+    "نوع الحبوب أو النشويات مطلوب لهذه الفئة.": "required_category_detail",
+    "نوع الحبوب مطلوب لفئة الحبوب والنشويات.": "required_category_detail",
+    "نوع المخبوزات غير متاح لفئة الحبوب والنشويات.": "unrelated_category_detail",
+    "تفاصيل الحبوب والمخبوزات غير متاحة لفئة الطعام المحددة.": "unrelated_category_detail",
     "لا يمكن تكرار المجموعة الغذائية للطعام نفسه.": "duplicate_food_group",
     "مجموع مساهمات المجموعات الغذائية لا يمكن أن يتجاوز 100.": "food_group_total_exceeded",
     "لا يمكن تكرار السمة التحليلية.": "duplicate_analytical_trait",
@@ -109,6 +119,16 @@ CUSTOM_MESSAGE_CODES = {
     "التصنيف الجزئي يتطلب مساهمة غذائية واحدة على الأقل.": "partial_group_data_requires_contribution",
     "الحالة المؤكدة لا تقبل مساهمة تقديرية.": "known_group_data_contains_estimate",
     "الحالة التقديرية تتطلب مساهمة تقديرية واحدة على الأقل.": "estimated_group_data_requires_estimate",
+}
+
+CATEGORY_DETAIL_ERROR_FIELDS = {
+    "نوع المخبوزات مطلوب لفئة المخبوزات.": "baked_good_type",
+    "نوع الحبوب مطلوب لفئة المخبوزات.": "grain_type",
+    "نوع الحبوب والنشويات غير متاح لفئة المخبوزات.": "grain_starch_type",
+    "نوع الحبوب أو النشويات مطلوب لهذه الفئة.": "grain_starch_type",
+    "نوع الحبوب مطلوب لفئة الحبوب والنشويات.": "grain_type",
+    "نوع المخبوزات غير متاح لفئة الحبوب والنشويات.": "baked_good_type",
+    "تفاصيل الحبوب والمخبوزات غير متاحة لفئة الطعام المحددة.": "food_category_key",
 }
 
 
@@ -149,7 +169,7 @@ def validate_food_payload(schema: type[ModelT], payload: dict[str, Any]) -> Mode
     except ValidationError as error:
         raise food_validation_http_exception(error) from error
     if schema.__name__ == "FoodCreate":
-        for field in ("primary_category_key", "food_kind", "nutrition_source"):
+        for field in ("food_category_key", "food_kind", "nutrition_source"):
             if field not in payload or payload[field] is None:
                 raise HTTPException(
                     status_code=422,
@@ -207,6 +227,7 @@ def _format_error(item: dict[str, Any]) -> dict[str, Any]:
 
     custom_code = CUSTOM_MESSAGE_CODES.get(raw_message)
     if custom_code is not None:
+        field = field or CATEGORY_DETAIL_ERROR_FIELDS.get(raw_message)
         return food_error_detail(field, custom_code, raw_message, error_type)
 
     if field:

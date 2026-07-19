@@ -14,9 +14,9 @@ from app.schemas import (
 )
 from app.services.food import get_food
 from app.services.snapshot import (
-    create_snapshot_v2,
+    create_snapshot_v3,
     normalized_snapshot,
-    totals_from_v2,
+    totals_from_versioned,
 )
 from app.services.target_plans import resolve_target_binding
 
@@ -47,7 +47,7 @@ def make_snapshot(food: Food, quantity: float | None = None) -> dict[str, Any]:
         "food_id": str(food.id),
         "name": food.name,
         "brand": food.brand,
-        "category": food.category,
+        "category": food.food_category_key,
         "nutrition_basis": food.nutrition_basis.value,
         "default_unit_type": food.default_unit_type.value,
         "unit_amount": float(food.unit_amount),
@@ -72,7 +72,11 @@ def make_snapshot(food: Food, quantity: float | None = None) -> dict[str, Any]:
 def totals_from_snapshot(snapshot: dict[str, Any], quantity: float) -> NutritionTotals:
     calculated = snapshot.get("calculated_totals")
     logged_quantity = snapshot.get("logged_quantity")
-    if calculated is not None and logged_quantity is not None and float(logged_quantity) == float(quantity):
+    if (
+        calculated is not None
+        and logged_quantity is not None
+        and float(logged_quantity) == float(quantity)
+    ):
         return NutritionTotals.model_validate(calculated)
 
     if snapshot.get("nutrition_basis") in {"per_100g", "per_100ml"}:
@@ -92,7 +96,9 @@ def totals_from_snapshot(snapshot: dict[str, Any], quantity: float) -> Nutrition
         "protein_g": round(float(snapshot.get("protein_g") or 0) * multiplier, 2),
         "carb_g": round(carb_g, 2),
         "fat_g": round(float(snapshot.get("fat_g") or 0) * multiplier, 2),
-        "net_carbs_g": round(max(float(snapshot.get("carb_g") or 0) - float(fiber_g or 0), 0) * multiplier, 2),
+        "net_carbs_g": round(
+            max(float(snapshot.get("carb_g") or 0) - float(fiber_g or 0), 0) * multiplier, 2
+        ),
         "total_sugars_g": None if sugar_g is None else round(float(sugar_g) * multiplier, 2),
         "sugar_g": None if sugar_g is None else round(float(sugar_g) * multiplier, 2),
     }
@@ -123,8 +129,12 @@ def totals_for_entry(entry: DiaryEntry) -> NutritionTotals:
     if entry.snapshot_schema_version is None:
         normalized_snapshot(entry.nutrition_snapshot, None)
         return totals_from_snapshot(entry.nutrition_snapshot, float(entry.quantity))
-    if entry.snapshot_schema_version == 2:
-        return totals_from_v2(entry.nutrition_snapshot, float(entry.quantity))
+    if entry.snapshot_schema_version in {2, 3}:
+        return totals_from_versioned(
+            entry.nutrition_snapshot,
+            entry.snapshot_schema_version,
+            float(entry.quantity),
+        )
     normalized_snapshot(entry.nutrition_snapshot, entry.snapshot_schema_version)
     raise AssertionError("unreachable")
 
@@ -161,7 +171,7 @@ def create_entry(
     principal: PrincipalContext,
     payload: DiaryEntryCreate,
     *,
-    snapshot_v2_writer_enabled: bool = False,
+    snapshot_v3_writer_enabled: bool = True,
 ) -> DiaryEntry:
     food = get_food(session, principal, payload.food_id)
     binding = resolve_target_binding(session, principal, payload.entry_date)
@@ -185,7 +195,10 @@ def create_entry(
             session.rollback()
             raise HTTPException(
                 status_code=409,
-                detail={"code": "DIARY_ENTRY_ID_CONFLICT", "message_ar": "معرف اليومية مستخدم لمدخل مختلف."},
+                detail={
+                    "code": "DIARY_ENTRY_ID_CONFLICT",
+                    "message_ar": "معرف اليومية مستخدم لمدخل مختلف.",
+                },
             )
 
     entry_data = {
@@ -196,10 +209,10 @@ def create_entry(
         "meal_type": payload.meal_type,
         "target_plan_id": binding.plan.id if binding.plan else None,
         "target_provenance": binding.provenance,
-        "snapshot_schema_version": 2 if snapshot_v2_writer_enabled else None,
+        "snapshot_schema_version": 3 if snapshot_v3_writer_enabled else None,
         "nutrition_snapshot": (
-            create_snapshot_v2(session, principal, food)
-            if snapshot_v2_writer_enabled
+            create_snapshot_v3(session, food)
+            if snapshot_v3_writer_enabled
             else make_snapshot(food, payload.quantity)
         ),
     }
