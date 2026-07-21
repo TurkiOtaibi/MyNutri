@@ -1,7 +1,7 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Fragment, useEffect, useMemo } from "react";
+import { useEffect, useState } from "react";
 
 import { useAuth } from "./AuthProvider";
 
@@ -19,7 +19,11 @@ function createQueryClient() {
 export function SessionQueryProvider({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
   const subjectKey = session?.user.id ?? "anonymous";
-  const client = useMemo(() => createQueryClient(), [subjectKey]);
+  return <SubjectQueryBoundary key={subjectKey}>{children}</SubjectQueryBoundary>;
+}
+
+function SubjectQueryBoundary({ children }: { children: React.ReactNode }) {
+  const [client] = useState(createQueryClient);
 
   useEffect(() => {
     return () => {
@@ -27,9 +31,5 @@ export function SessionQueryProvider({ children }: { children: React.ReactNode }
     };
   }, [client]);
 
-  return (
-    <QueryClientProvider client={client}>
-      <Fragment key={subjectKey}>{children}</Fragment>
-    </QueryClientProvider>
-  );
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }

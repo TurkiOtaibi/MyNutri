@@ -54,7 +54,12 @@ function reducer(state: AuthState, action: AuthAction): AuthState {
           initialized: true
         };
       }
-      return { ...state, session: action.session, initialized: true, signingOutSubjectId: null };
+      return {
+        ...state,
+        session: action.session,
+        initialized: true,
+        signingOutSubjectId: state.signingOutSubjectId === nextSubject ? state.signingOutSubjectId : null
+      };
     }
     case "ACCOUNT_REQUEST":
       return state.session?.user.id === action.subjectId && state.signingOutSubjectId !== action.subjectId
@@ -141,7 +146,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (controller.signal.aborted || !isCurrent()) return;
         if (error instanceof ApiError && error.status === 401) {
           const subjectBeforeSignOut = subjectRef.current;
-          await createClient().auth.signOut();
+          dispatch({ type: "SIGNING_OUT", subjectId });
+          let signOutError: unknown = null;
+          try {
+            signOutError = (await createClient().auth.signOut()).error;
+          } catch (signOutFailure) {
+            signOutError = signOutFailure;
+          }
+          if (signOutError) {
+            const { data } = await createClient().auth.getSession();
+            if (data.session?.user.id === subjectBeforeSignOut && subjectRef.current === subjectBeforeSignOut) {
+              dispatch({ type: "RESTORE_AFTER_SIGNOUT_FAILURE", subjectId: subjectBeforeSignOut });
+            }
+            return;
+          }
           if (subjectRef.current === null || subjectRef.current === subjectBeforeSignOut) {
             router.replace(`/auth/login?next=${encodeURIComponent(pathnameRef.current)}`);
           }
@@ -170,15 +188,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       requestGeneration.current += 1;
       dispatch({ type: "SIGNING_OUT", subjectId: currentSubject });
+      let signOutError: unknown = null;
       try {
-        await createClient().auth.signOut();
+        signOutError = (await createClient().auth.signOut()).error;
+      } catch (signOutFailure) {
+        signOutError = signOutFailure;
+      }
+      if (!signOutError) {
         router.replace("/auth/login");
-      } catch (error) {
-        const { data } = await createClient().auth.getSession();
-        if (data.session?.user.id === currentSubject && subjectRef.current === currentSubject) {
-          dispatch({ type: "RESTORE_AFTER_SIGNOUT_FAILURE", subjectId: currentSubject });
-        }
-        throw error;
+        return;
+      }
+      const { data } = await createClient().auth.getSession();
+      if (data.session?.user.id === currentSubject && subjectRef.current === currentSubject) {
+        dispatch({ type: "RESTORE_AFTER_SIGNOUT_FAILURE", subjectId: currentSubject });
       }
     }
   }), [exposedAccount, loading, router, state.session]);
