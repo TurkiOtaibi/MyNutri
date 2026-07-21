@@ -86,6 +86,37 @@ async function leakRecords(page: Page) {
   });
 }
 
+type SessionInspectionWindow = Window & {
+  __mynutriE2ESessionSignalAborted?: () => boolean;
+  __mynutriE2ERetainedSessionSignalAborted?: () => boolean;
+};
+
+async function sessionSignalAborted(page: Page) {
+  return page.evaluate(() => {
+    const inspect = (window as SessionInspectionWindow).__mynutriE2ESessionSignalAborted;
+    if (!inspect) throw new Error("E2E session signal inspection hook is unavailable.");
+    return inspect();
+  });
+}
+
+async function retainSessionSignalInspector(page: Page) {
+  await page.evaluate(() => {
+    const testWindow = window as SessionInspectionWindow;
+    if (!testWindow.__mynutriE2ESessionSignalAborted) {
+      throw new Error("E2E session signal inspection hook is unavailable.");
+    }
+    testWindow.__mynutriE2ERetainedSessionSignalAborted = testWindow.__mynutriE2ESessionSignalAborted;
+  });
+}
+
+async function retainedSessionSignalAborted(page: Page) {
+  return page.evaluate(() => {
+    const inspect = (window as SessionInspectionWindow).__mynutriE2ERetainedSessionSignalAborted;
+    if (!inspect) throw new Error("Retained E2E session signal inspection hook is unavailable.");
+    return inspect();
+  });
+}
+
 async function e2eAuthAction(page: Page, action: "refresh" | "signOut" | "signIn" | "duplicate", credentials?: { email: string; password: string }) {
   const result = await page.evaluate(async ({ operation, login }) => {
     const testWindow = window as Window & {
@@ -109,6 +140,19 @@ async function e2eAuthAction(page: Page, action: "refresh" | "signOut" | "signIn
   }, { operation: action, login: credentials });
   expect(result.error).toBeNull();
 }
+
+test("development effect replay keeps the anonymous session boundary signal live", async ({ browser }) => {
+  const context = await browser.newContext({ storageState: undefined });
+  const page = await context.newPage();
+  await page.goto("/auth/login");
+  await expect(page.locator('input[type="email"]')).toBeVisible();
+  await page.waitForFunction(() =>
+    typeof (window as SessionInspectionWindow).__mynutriE2ESessionSignalAborted === "function"
+  );
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  expect(await sessionSignalAborted(page)).toBe(false);
+  await context.close();
+});
 
 test("same browser context isolates cached profile and diary data across A to B to A", async ({ browser, request }) => {
   const suffix = Date.now();
@@ -329,6 +373,8 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
 
   await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/foods/new");
   await expect(page.locator("form.food-form-layout")).toBeVisible();
+  expect(await sessionSignalAborted(page)).toBe(false);
+  await retainSessionSignalInspector(page);
   expect(adminAccountAuthorization).toMatch(/^Bearer /);
   await fillRequiredFoodForm(page, { name: marker });
   const originalUrl = page.url();
@@ -375,6 +421,8 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
   expect(bAccount.email).toBe(emailB);
   expect(bAccount.role).toBe("user");
   const bAccountAuthorization = bResponse.request().headers()["authorization"];
+  expect(await retainedSessionSignalAborted(page)).toBe(true);
+  expect(await sessionSignalAborted(page)).toBe(false);
 
   await expect(page).toHaveURL(originalUrl);
   await expect(page.locator(".nav-signout")).toBeVisible();
