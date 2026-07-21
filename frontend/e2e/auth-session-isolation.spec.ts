@@ -336,10 +336,18 @@ test("a stale User A 401 cannot clear User B's same-page session", async ({ brow
 });
 
 test("a current account 401 clears the matching session before showing login", async ({ browser }) => {
+  const emailB = `current-401-b-${Date.now()}@example.test`;
+  await token(emailB);
+  let aRequest = true;
   const context = await browser.newContext({ storageState: undefined });
   const page = await context.newPage();
   await page.route(`${API_URL}/account/me`, async (route) => {
-    await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ detail: "expired" }) });
+    if (aRequest) {
+      aRequest = false;
+      await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ detail: "expired" }) });
+      return;
+    }
+    await route.continue();
   });
   await page.goto("/auth/login?next=%2Fprofile");
   const accountResponse = page.waitForResponse((response) => response.url() === `${API_URL}/account/me`);
@@ -350,6 +358,10 @@ test("a current account 401 clears the matching session before showing login", a
   await expect(page.locator('input[type="email"]')).toBeVisible();
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
   expect(await page.evaluate(() => document.cookie.includes("mynutri-auth-invalid-token"))).toBe(true);
+  await submitLogin(page, emailB, PASSWORD, "/profile", false);
+  await expect(page.locator(".nav-signout")).toBeVisible();
+  await expect(page).not.toHaveURL(/\/auth\/login/);
+  await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
   await context.close();
 });
 
