@@ -34,8 +34,23 @@ function profile(weight: number) {
   };
 }
 
+function riyadhToday() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Riyadh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
 async function signIn(page: Page, email: string, password: string, next: string) {
   await page.goto(`/auth/login?next=${encodeURIComponent(next)}`);
+  await submitLogin(page, email, password, next);
+}
+
+async function submitLogin(page: Page, email: string, password: string, next: string) {
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.locator('button[type="submit"]').click();
@@ -62,20 +77,30 @@ async function installLeakObserver(page: Page, markers: string[]) {
 }
 
 async function leakRecords(page: Page) {
-  return page.evaluate(() => (window as Window & { __sessionLeakRecords?: string[] }).__sessionLeakRecords ?? []);
+  return page.evaluate(() => {
+    const records = (window as Window & { __sessionLeakRecords?: string[] }).__sessionLeakRecords;
+    if (!records) throw new Error("Session leak observer is missing.");
+    return records;
+  });
 }
 
-async function e2eAuthAction(page: Page, action: "refresh" | "signOut" | "signIn", credentials?: { email: string; password: string }) {
+async function e2eAuthAction(page: Page, action: "refresh" | "signOut" | "signIn" | "duplicate", credentials?: { email: string; password: string }) {
   const result = await page.evaluate(async ({ operation, login }) => {
     const testWindow = window as Window & {
       __mynutriE2ERefreshSession?: () => Promise<{ error: { message: string } | null }>;
       __mynutriE2ESignOut?: () => Promise<{ error: { message: string } | null }>;
       __mynutriE2ESignInWithPassword?: (email: string, password: string) => Promise<{ error: { message: string } | null }>;
+      __mynutriE2EDuplicateSession?: () => Promise<void>;
     };
     const call = operation === "refresh" ? testWindow.__mynutriE2ERefreshSession : testWindow.__mynutriE2ESignOut;
     if (operation === "signIn") {
       if (!testWindow.__mynutriE2ESignInWithPassword || !login) throw new Error("Local E2E auth control is unavailable.");
       return testWindow.__mynutriE2ESignInWithPassword(login.email, login.password);
+    }
+    if (operation === "duplicate") {
+      if (!testWindow.__mynutriE2EDuplicateSession) throw new Error("Local E2E auth control is unavailable.");
+      await testWindow.__mynutriE2EDuplicateSession();
+      return { error: null };
     }
     if (!call) throw new Error("Local E2E auth control is unavailable.");
     return call();
@@ -120,7 +145,7 @@ test("same browser context isolates cached profile and diary data across A to B 
   const diaryResponse = await request.post(`${API_URL}/diary`, {
     headers: headers(tokenA),
     data: {
-      entry_date: new Date().toISOString().slice(0, 10),
+      entry_date: riyadhToday(),
       food_id: food.id,
       quantity: 1,
       meal_type: "breakfast"
@@ -169,7 +194,7 @@ test("same browser context isolates cached profile and diary data across A to B 
     await profileBBlocked;
     await route.continue();
   });
-  await signIn(page, emailB, PASSWORD, "/profile");
+  await submitLogin(page, emailB, PASSWORD, "/profile");
   await expect.poll(() => profileBWasBlocked).toBe(true);
   await expect.poll(() => historyBWasBlocked).toBe(true);
   await expect.poll(() => page.locator('input[aria-label="الوزن"]').count()).toBe(0);
@@ -179,6 +204,19 @@ test("same browser context isolates cached profile and diary data across A to B 
   releaseProfileB();
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("89");
   expect(await leakRecords(page)).toEqual([]);
+  let releaseDiaryB!: () => void;
+  let diaryBWasBlocked = false;
+  const diaryBBlocked = new Promise<void>((resolve) => { releaseDiaryB = resolve; });
+  await page.route(`${API_URL}/diary*`, async (route) => {
+    diaryBWasBlocked = true;
+    await diaryBBlocked;
+    await route.continue();
+  });
+  await page.locator('a[href="/diary"]').click();
+  await expect.poll(() => diaryBWasBlocked).toBe(true);
+  await expect(page.getByText(diaryNameA, { exact: true })).toHaveCount(0);
+  expect(await leakRecords(page)).toEqual([]);
+  releaseDiaryB();
 
   await page.locator(".nav-signout").click();
   await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
@@ -239,6 +277,55 @@ test("a delivered delayed Admin account response cannot restore Admin identity a
   await context.close();
 });
 
+test("a stale User A 401 cannot clear User B's same-page session", async ({ browser }) => {
+  const emailB = `401-race-b-${Date.now()}@example.test`;
+  await token(emailB);
+  let releaseA401!: () => void;
+  let aRequestWasBlocked = false;
+  let bRequestWasSeen = false;
+  let aRequest: Request | null = null;
+  const a401Blocked = new Promise<void>((resolve) => { releaseA401 = resolve; });
+  const context = await browser.newContext({ storageState: undefined });
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof Request ? input.url : input.href;
+      if (new URL(url, window.location.href).pathname === "/account/me" && init?.signal) {
+        const { signal: _signal, ...withoutSignal } = init;
+        return originalFetch(input, withoutSignal);
+      }
+      return originalFetch(input, init);
+    };
+  });
+  await page.route(`${API_URL}/account/me`, async (route) => {
+    if (!aRequestWasBlocked) {
+      aRequestWasBlocked = true;
+      aRequest = route.request();
+      await a401Blocked;
+      await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ detail: "expired" }) });
+      return;
+    }
+    bRequestWasSeen = true;
+    await route.continue();
+  });
+  await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/profile");
+  await expect.poll(() => aRequestWasBlocked).toBe(true);
+  const staleResponse = page.waitForResponse((response) => response.request() === aRequest);
+  await installLeakObserver(page, [ADMIN_EMAIL, "الإدارة"]);
+  await e2eAuthAction(page, "signOut");
+  await e2eAuthAction(page, "signIn", { email: emailB, password: PASSWORD });
+  await expect.poll(() => bRequestWasSeen).toBe(true);
+  await expect(page.locator(".nav-signout")).toBeVisible();
+  releaseA401();
+  expect((await staleResponse).status()).toBe(401);
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page).not.toHaveURL(/\/auth\/login/);
+  await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+  expect(await leakRecords(page)).toEqual([]);
+  await context.close();
+});
+
 test("Admin private list and detail caches disappear when the same browser context becomes User B", async ({ browser, request }) => {
   const suffix = Date.now();
   const emailB = `admin-cache-b-${suffix}@example.test`;
@@ -271,7 +358,7 @@ test("Admin private list and detail caches disappear when the same browser conte
     await profileBBlocked;
     await route.continue();
   });
-  await signIn(page, emailB, PASSWORD, "/profile");
+  await submitLogin(page, emailB, PASSWORD, "/profile");
   await expect.poll(() => profileBWasBlocked).toBe(true);
   await expect(page.locator(".selected-user-banner")).toHaveCount(0);
   await expect(page.locator(".admin-user-row")).toHaveCount(0);
@@ -300,7 +387,18 @@ test("a refresh-token session update keeps User A's query client and does not re
     if (requestEvent.url() === `${API_URL}/profile`) profileRequestsAfterRefresh += 1;
   });
 
+  let releaseAccountRefresh!: () => void;
+  let accountRefreshWasBlocked = false;
+  const accountRefreshBlocked = new Promise<void>((resolve) => { releaseAccountRefresh = resolve; });
+  await page.route(`${API_URL}/account/me`, async (route) => {
+    accountRefreshWasBlocked = true;
+    await accountRefreshBlocked;
+    await route.continue();
+  });
   await e2eAuthAction(page, "refresh");
+  await expect.poll(() => accountRefreshWasBlocked).toBe(true);
+  await e2eAuthAction(page, "duplicate");
+  releaseAccountRefresh();
   await expect.poll(() => accountRequestsAfterRefresh).toBeGreaterThanOrEqual(1);
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("74");
   expect(profileRequestsAfterRefresh).toBe(0);

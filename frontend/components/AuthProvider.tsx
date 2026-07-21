@@ -95,6 +95,7 @@ type E2eWindow = Window & {
   __mynutriE2ERefreshSession?: () => ReturnType<ReturnType<typeof createClient>["auth"]["refreshSession"]>;
   __mynutriE2ESignOut?: () => ReturnType<ReturnType<typeof createClient>["auth"]["signOut"]>;
   __mynutriE2ESignInWithPassword?: (email: string, password: string) => ReturnType<ReturnType<typeof createClient>["auth"]["signInWithPassword"]>;
+  __mynutriE2EDuplicateSession?: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextState | null>(null);
@@ -106,6 +107,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathnameRef = useRef(pathname);
   const mountedRef = useRef(true);
   const subjectRef = useRef<string | null>(null);
+  const acceptedSessionSubjectRef = useRef<string | null>(null);
+  const acceptedAccessTokenRef = useRef<string | null>(null);
+  const hasAcceptedSessionRef = useRef(false);
   const requestGeneration = useRef(0);
 
   useEffect(() => {
@@ -121,7 +125,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let active = true;
     mountedRef.current = true;
     const acceptSession = (nextSession: Session | null) => {
-      subjectRef.current = nextSession?.user.id ?? null;
+      const nextSubject = nextSession?.user.id ?? null;
+      const nextAccessToken = nextSession?.access_token ?? null;
+      if (
+        hasAcceptedSessionRef.current &&
+        acceptedSessionSubjectRef.current === nextSubject &&
+        acceptedAccessTokenRef.current === nextAccessToken
+      ) return;
+      hasAcceptedSessionRef.current = true;
+      acceptedSessionSubjectRef.current = nextSubject;
+      acceptedAccessTokenRef.current = nextAccessToken;
+      subjectRef.current = nextSubject;
       requestGeneration.current += 1;
       dispatch({ type: "AUTH_CHANGED", session: nextSession });
     };
@@ -134,6 +148,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       e2eWindow.__mynutriE2ERefreshSession = () => supabase.auth.refreshSession();
       e2eWindow.__mynutriE2ESignOut = () => supabase.auth.signOut();
       e2eWindow.__mynutriE2ESignInWithPassword = (email, password) => supabase.auth.signInWithPassword({ email, password });
+      e2eWindow.__mynutriE2EDuplicateSession = async () => {
+        const { data } = await supabase.auth.getSession();
+        acceptSession(data.session);
+      };
     }
     return () => {
       active = false;
@@ -144,6 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         delete e2eWindow.__mynutriE2ERefreshSession;
         delete e2eWindow.__mynutriE2ESignOut;
         delete e2eWindow.__mynutriE2ESignInWithPassword;
+        delete e2eWindow.__mynutriE2EDuplicateSession;
       }
     };
   }, []);
@@ -165,23 +184,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .catch(async (error: unknown) => {
         if (controller.signal.aborted || !isCurrent()) return;
         if (error instanceof ApiError && error.status === 401) {
-          const subjectBeforeSignOut = subjectRef.current;
           requestGeneration.current += 1;
           dispatch({ type: "SIGNING_OUT", subjectId });
-          let signOutError: unknown = null;
-          try {
-            signOutError = (await createClient().auth.signOut()).error;
-          } catch (signOutFailure) {
-            signOutError = signOutFailure;
-          }
-          if (signOutError) {
-            const { data } = await createClient().auth.getSession();
-            if (data.session?.user.id === subjectBeforeSignOut && subjectRef.current === subjectBeforeSignOut) {
-              dispatch({ type: "RESTORE_AFTER_SIGNOUT_FAILURE", subjectId: subjectBeforeSignOut });
-            }
-            return;
-          }
-          if (subjectRef.current === null || subjectRef.current === subjectBeforeSignOut) {
+          // A global Supabase sign-out cannot compare-and-clear a captured A session.
+          // Keep the failed subject hidden and let only a verified user action replace it.
+          if (subjectRef.current === subjectId) {
             router.replace(`/auth/login?next=${encodeURIComponent(pathnameRef.current)}`);
           }
         }
@@ -222,6 +229,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data } = await createClient().auth.getSession();
       if (data.session?.user.id === currentSubject && subjectRef.current === currentSubject) {
         dispatch({ type: "RESTORE_AFTER_SIGNOUT_FAILURE", subjectId: currentSubject });
+      } else if (!data.session) {
+        router.replace("/auth/login");
       }
     }
   }), [exposedAccount, loading, router, state.session]);
