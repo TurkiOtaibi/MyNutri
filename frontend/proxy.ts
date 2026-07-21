@@ -5,10 +5,6 @@ const PUBLIC_AUTH_PATHS = ["/auth/login", "/auth/sign-up", "/auth/forgot-passwor
 const INVALID_TOKEN_COOKIE = "mynutri-auth-invalid-token";
 const TOKEN_FINGERPRINT = /^[0-9a-f]{64}$/;
 
-function clearInvalidToken(response: NextResponse) {
-  response.cookies.set(INVALID_TOKEN_COOKIE, "", { path: "/", maxAge: 0, sameSite: "lax" });
-}
-
 function redirectWithCookies(url: URL, response: NextResponse) {
   const redirect = NextResponse.redirect(url);
   response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
@@ -46,9 +42,6 @@ export async function proxy(request: NextRequest) {
     const { data: sessionData } = await supabase.auth.getSession();
     const currentToken = sessionData.session?.access_token;
     if (currentToken && marker === await fingerprint(currentToken)) authenticated = false;
-    clearInvalidToken(response);
-  } else if (marker) {
-    clearInvalidToken(response);
   }
   const path = request.nextUrl.pathname;
   const publicAuth = PUBLIC_AUTH_PATHS.includes(path);

@@ -173,10 +173,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!subjectId || !accessToken || state.signingOutSubjectId === subjectId) return;
     const generation = ++requestGeneration.current;
     const controller = new AbortController();
-    dispatch({ type: "ACCOUNT_REQUEST", subjectId });
     const isCurrent = () => !controller.signal.aborted && mountedRef.current && requestGeneration.current === generation && subjectRef.current === subjectId;
-    void getCurrentAccount({ accessToken, signal: controller.signal })
+    void (async () => {
+      const marker = document.cookie.split("; ").find((value) => value.startsWith("mynutri-auth-invalid-token="))?.split("=")[1];
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(accessToken));
+      const fingerprint = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      if (!isCurrent()) return;
+      if (marker === fingerprint) {
+        dispatch({ type: "SIGNING_OUT", subjectId });
+        return;
+      }
+      dispatch({ type: "ACCOUNT_REQUEST", subjectId });
+      return getCurrentAccount({ accessToken, signal: controller.signal });
+    })()
       .then((account) => {
+        if (!account) return;
         if (!isCurrent()) return;
         if (account.auth_user_id !== subjectId) throw new ApiError("Account identity mismatch", 401);
         dispatch({ type: "ACCOUNT_RECEIVED", subjectId, account });

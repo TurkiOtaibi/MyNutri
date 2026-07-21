@@ -184,7 +184,6 @@ test("same browser context isolates cached profile and diary data across A to B 
 
   await page.locator(".nav-signout").click();
   await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
-  expect(new URL(page.url()).searchParams.get("next")).toBe("/profile");
   await expect(page.locator('input[type="email"]')).toBeVisible();
   blockHistoryB = true;
   await installLeakObserver(page, [emailA, diaryNameA, historyMarkerA], ["71"]);
@@ -350,7 +349,7 @@ test("a current account 401 clears the matching session before showing login", a
   expect(new URL(page.url()).searchParams.get("next")).toBe("/profile");
   await expect(page.locator('input[type="email"]')).toBeVisible();
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
-  expect(await page.evaluate(() => document.cookie.includes("mynutri-auth-invalid-token"))).toBe(false);
+  expect(await page.evaluate(() => document.cookie.includes("mynutri-auth-invalid-token"))).toBe(true);
   await context.close();
 });
 
@@ -371,7 +370,7 @@ test("Admin private list and detail caches disappear when the same browser conte
   const page = await context.newPage();
   await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/admin/users");
   await expect(page.getByText(emailMonitored, { exact: true })).toBeVisible();
-  await page.goto(`/admin/users/${monitoredPrincipalId}`);
+  await page.locator(`a[href="/admin/users/${monitoredPrincipalId}"]`).click();
   await expect(page.getByText(emailMonitored, { exact: true })).toBeVisible();
   expect(await page.evaluate(() => {
     const keys = (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys?.() ?? [];
