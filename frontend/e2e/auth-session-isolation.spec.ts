@@ -358,6 +358,12 @@ test("a current account 401 clears the matching session before showing login", a
   await expect(page.locator('input[type="email"]')).toBeVisible();
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
   expect(await page.evaluate(() => document.cookie.includes("mynutri-auth-invalid-token"))).toBe(true);
+  await submitLogin(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/profile", false);
+  await expect(page.locator(".nav-signout")).toBeVisible();
+  await expect(page.locator('a[href="/admin"]')).toBeVisible();
+  await expect(page).not.toHaveURL(/\/auth\/login/);
+  await page.locator(".nav-signout").click();
+  await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
   await submitLogin(page, emailB, PASSWORD, "/profile", false);
   await expect(page.locator(".nav-signout")).toBeVisible();
   await expect(page).not.toHaveURL(/\/auth\/login/);

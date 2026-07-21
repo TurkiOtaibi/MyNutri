@@ -42,7 +42,20 @@ function reducer(state: AuthState, action: AuthAction): AuthState {
     case "AUTH_CHANGED": {
       const previousSubject = state.session?.user.id ?? null;
       const nextSubject = action.session?.user.id ?? null;
+      const tokenChanged = state.session?.access_token !== action.session?.access_token;
       if (previousSubject !== nextSubject) {
+        return {
+          ...state,
+          session: action.session,
+          account: null,
+          accountSubjectId: null,
+          accountLoadingSubjectId: nextSubject,
+          accountSettledSubjectId: null,
+          signingOutSubjectId: null,
+          initialized: true
+        };
+      }
+      if (tokenChanged && state.signingOutSubjectId === nextSubject) {
         return {
           ...state,
           session: action.session,
