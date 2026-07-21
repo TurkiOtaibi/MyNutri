@@ -149,7 +149,8 @@ jobs:
           python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/mynutri-api.log 2>&1 &
           cd ../frontend
           npm run build
-          npm run start -- --hostname 127.0.0.1 --port 3000 > /tmp/mynutri-web.log 2>&1 &
+          setsid npm run start -- --hostname 127.0.0.1 --port 3000 > /tmp/mynutri-web.log 2>&1 &
+          echo "$!" > /tmp/mynutri-web.pgid
           for attempt in {1..60}; do
             curl --fail --silent http://127.0.0.1:8765/health >/dev/null &&
             curl --fail --silent http://127.0.0.1:8000/health >/dev/null &&
@@ -161,3 +162,84 @@ jobs:
       - name: Run complete Playwright suite
         working-directory: frontend
         run: npm run test:e2e
+      - name: Run development StrictMode signal smoke
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+          PLAYWRIGHT_SKIP_GLOBAL_SETUP: "1"
+        run: |
+          set -euo pipefail
+
+          if [[ ! -s /tmp/mynutri-web.pgid ]]; then
+            echo "Production frontend process-group file is missing."
+            exit 1
+          fi
+          production_pgid="$(cat /tmp/mynutri-web.pgid)"
+          if [[ ! "$production_pgid" =~ ^[0-9]+$ ]]; then
+            echo "Invalid production frontend process group: $production_pgid"
+            exit 1
+          fi
+
+          kill -TERM -- "-${production_pgid}" 2>/dev/null || true
+          for attempt in {1..30}; do
+            if ! kill -0 -- "-${production_pgid}" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if kill -0 -- "-${production_pgid}" 2>/dev/null; then
+            kill -KILL -- "-${production_pgid}" 2>/dev/null || true
+          fi
+          rm -f /tmp/mynutri-web.pgid
+
+          production_stopped=0
+          for attempt in {1..30}; do
+            if ! curl --silent --output /dev/null --max-time 1 http://127.0.0.1:3000/auth/login; then
+              production_stopped=1
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$production_stopped" -ne 1 ]]; then
+            echo "Production frontend still owns port 3000."
+            cat /tmp/mynutri-web.log
+            exit 1
+          fi
+
+          setsid npm run dev -- --hostname 127.0.0.1 --port 3000 > /tmp/mynutri-web-dev.log 2>&1 &
+          dev_pgid="$!"
+          if [[ ! "$dev_pgid" =~ ^[0-9]+$ ]]; then
+            echo "Invalid development frontend process group: $dev_pgid"
+            exit 1
+          fi
+          cleanup_dev() {
+            kill -TERM -- "-${dev_pgid}" 2>/dev/null || true
+            for attempt in {1..15}; do
+              if ! kill -0 -- "-${dev_pgid}" 2>/dev/null; then
+                return
+              fi
+              sleep 1
+            done
+            kill -KILL -- "-${dev_pgid}" 2>/dev/null || true
+          }
+          trap cleanup_dev EXIT
+
+          dev_ready=0
+          for attempt in {1..60}; do
+            if curl --fail --silent --max-time 2 http://127.0.0.1:3000/auth/login >/dev/null; then
+              dev_ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$dev_ready" -ne 1 ]]; then
+            cat /tmp/mynutri-web-dev.log
+            exit 1
+          fi
+
+          if ! npx playwright test e2e/auth-session-isolation.spec.ts \
+            --project=foods-chromium \
+            --grep "development StrictMode replay keeps the anonymous session boundary signal live"; then
+            cat /tmp/mynutri-web-dev.log
+            exit 1
+          fi

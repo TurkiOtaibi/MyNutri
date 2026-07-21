@@ -58,14 +58,19 @@ async function submitLogin(page: Page, email: string, password: string, next: st
   if (waitForDestination) await page.waitForURL(new RegExp(`${next.replace("/", "\\/")}$`));
 }
 
-async function installLeakObserver(page: Page, textMarkers: string[], exactInputValues: string[] = []) {
-  await page.evaluate(({ observedTextMarkers, observedInputValues }) => {
+async function installLeakObserver(page: Page, textMarkers: string[], exactInputValues: string[] = [], recordAfterClear = false) {
+  await page.evaluate(({ observedTextMarkers, observedInputValues, waitForClear }) => {
     const records: string[] = [];
+    let readyToRecord = !waitForClear;
     const snapshot = () => {
       const inputValues = Array.from(document.querySelectorAll("input")).map((input) => input.value);
       const hasLeakedText = observedTextMarkers.some((marker) => document.body.innerText.includes(marker));
       const hasLeakedInput = observedInputValues.some((value) => inputValues.includes(value));
-      if (hasLeakedText || hasLeakedInput) records.push(document.body.innerText);
+      if (!hasLeakedText && !hasLeakedInput) {
+        if (waitForClear) readyToRecord = true;
+        return;
+      }
+      if (readyToRecord) records.push(document.body.innerText);
     };
     new MutationObserver(snapshot).observe(document.documentElement, {
       childList: true,
@@ -75,7 +80,7 @@ async function installLeakObserver(page: Page, textMarkers: string[], exactInput
     });
     snapshot();
     (window as Window & { __sessionLeakRecords?: string[] }).__sessionLeakRecords = records;
-  }, { observedTextMarkers: textMarkers, observedInputValues: exactInputValues });
+  }, { observedTextMarkers: textMarkers, observedInputValues: exactInputValues, waitForClear: recordAfterClear });
 }
 
 async function leakRecords(page: Page) {
@@ -86,9 +91,19 @@ async function leakRecords(page: Page) {
   });
 }
 
+type SessionBoundaryRotation = {
+  sequence: number;
+  fromSubjectKey: string;
+  toSubjectKey: string;
+  previousAbortedBefore: boolean;
+  previousAbortedAfter: boolean;
+};
+
 type SessionInspectionWindow = Window & {
   __mynutriE2ESessionSignalAborted?: () => boolean;
   __mynutriE2ERetainedSessionSignalAborted?: () => boolean;
+  __mynutriE2ESessionSubjectKey?: () => string;
+  __mynutriE2ESessionBoundaryRotations?: () => SessionBoundaryRotation[];
 };
 
 async function sessionSignalAborted(page: Page) {
@@ -117,6 +132,22 @@ async function retainedSessionSignalAborted(page: Page) {
   });
 }
 
+async function sessionSubjectKey(page: Page) {
+  return page.evaluate(() => {
+    const inspect = (window as SessionInspectionWindow).__mynutriE2ESessionSubjectKey;
+    if (!inspect) throw new Error("E2E session subject inspection hook is unavailable.");
+    return inspect();
+  });
+}
+
+async function sessionBoundaryRotations(page: Page) {
+  return page.evaluate(() => {
+    const inspect = (window as SessionInspectionWindow).__mynutriE2ESessionBoundaryRotations;
+    if (!inspect) throw new Error("E2E session boundary rotation hook is unavailable.");
+    return inspect();
+  });
+}
+
 async function e2eAuthAction(page: Page, action: "refresh" | "signOut" | "signIn" | "duplicate", credentials?: { email: string; password: string }) {
   const result = await page.evaluate(async ({ operation, login }) => {
     const testWindow = window as Window & {
@@ -141,7 +172,7 @@ async function e2eAuthAction(page: Page, action: "refresh" | "signOut" | "signIn
   expect(result.error).toBeNull();
 }
 
-test("development effect replay keeps the anonymous session boundary signal live", async ({ browser }) => {
+test("development StrictMode replay keeps the anonymous session boundary signal live", async ({ browser }) => {
   const context = await browser.newContext({ storageState: undefined });
   const page = await context.newPage();
   await page.goto("/auth/login");
@@ -151,6 +182,7 @@ test("development effect replay keeps the anonymous session boundary signal live
   );
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   expect(await sessionSignalAborted(page)).toBe(false);
+  expect(await sessionBoundaryRotations(page)).toEqual([]);
   await context.close();
 });
 
@@ -374,6 +406,7 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
   await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/foods/new");
   await expect(page.locator("form.food-form-layout")).toBeVisible();
   expect(await sessionSignalAborted(page)).toBe(false);
+  const adminSubjectKey = await sessionSubjectKey(page);
   await retainSessionSignalInspector(page);
   expect(adminAccountAuthorization).toMatch(/^Bearer /);
   await fillRequiredFoodForm(page, { name: marker });
@@ -409,18 +442,30 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
   await submitFoodForm(page);
   await expect.poll(() => createWasBlocked).toBe(true);
 
-  await e2eAuthAction(page, "signOut");
+  await installLeakObserver(page, [marker], [marker], true);
   const bAccountResponse = page.waitForResponse((response) =>
     response.url() === `${API_URL}/account/me` &&
     response.request().headers()["authorization"] !== adminAccountAuthorization
   );
   await e2eAuthAction(page, "signIn", { email: emailB, password: PASSWORD });
-  const bResponse = await bAccountResponse;
+  releaseCreate();
+  const [bResponse, response] = await Promise.all([bAccountResponse, delayedCreateResponse]);
   expect(bResponse.status()).toBe(200);
+  expect(response.status()).toBe(201);
+  expect(await response.finished()).toBeNull();
   const bAccount = await bResponse.json() as { email: string | null; role: "user" | "admin" };
   expect(bAccount.email).toBe(emailB);
   expect(bAccount.role).toBe("user");
   const bAccountAuthorization = bResponse.request().headers()["authorization"];
+  const bSubjectKey = await sessionSubjectKey(page);
+  const rotations = await sessionBoundaryRotations(page);
+  const subjectRotation = [...rotations].reverse().find((rotation) =>
+    rotation.fromSubjectKey === adminSubjectKey && rotation.toSubjectKey === bSubjectKey
+  );
+  if (!subjectRotation) throw new Error("Expected direct Admin-to-User boundary rotation record was not captured.");
+  expect(subjectRotation.sequence).toBeGreaterThan(0);
+  expect(subjectRotation.previousAbortedBefore).toBe(false);
+  expect(subjectRotation.previousAbortedAfter).toBe(true);
   expect(await retainedSessionSignalAborted(page)).toBe(true);
   expect(await sessionSignalAborted(page)).toBe(false);
 
@@ -429,12 +474,6 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
   await expect(page.locator("form.food-form-layout")).toHaveCount(0);
   await expect(page.locator('.state-note[role="alert"]')).toHaveText("إدارة الأطعمة متاحة للمشرف فقط.");
-  await installLeakObserver(page, [marker], [marker]);
-
-  releaseCreate();
-  const response = await delayedCreateResponse;
-  expect(response.status()).toBe(201);
-  expect(await response.finished()).toBeNull();
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await page.waitForTimeout(100);
 
