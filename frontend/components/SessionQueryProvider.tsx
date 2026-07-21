@@ -1,9 +1,17 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 
 import { useAuth } from "./AuthProvider";
+
+const SessionAbortContext = createContext<AbortSignal | null>(null);
+
+export function useSessionAbortSignal() {
+  const signal = useContext(SessionAbortContext);
+  if (!signal) throw new Error("useSessionAbortSignal must be used within SessionQueryProvider.");
+  return signal;
+}
 
 function createQueryClient() {
   return new QueryClient({
@@ -24,6 +32,7 @@ export function SessionQueryProvider({ children }: { children: React.ReactNode }
 
 function SubjectQueryBoundary({ children }: { children: React.ReactNode }) {
   const [client] = useState(createQueryClient);
+  const [controller] = useState(() => new AbortController());
 
   useEffect(() => {
     const allowE2eInspection =
@@ -34,10 +43,11 @@ function SubjectQueryBoundary({ children }: { children: React.ReactNode }) {
       e2eWindow.__mynutriE2EQueryKeys = () => client.getQueryCache().getAll().map((query) => JSON.stringify(query.queryKey));
     }
     return () => {
+      controller.abort();
       if (allowE2eInspection) delete e2eWindow.__mynutriE2EQueryKeys;
       void client.cancelQueries().catch(() => undefined).finally(() => client.clear());
     };
-  }, [client]);
+  }, [client, controller]);
 
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return <SessionAbortContext.Provider value={controller.signal}><QueryClientProvider client={client}>{children}</QueryClientProvider></SessionAbortContext.Provider>;
 }

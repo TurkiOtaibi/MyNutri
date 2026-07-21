@@ -389,10 +389,14 @@ test("Admin private list and detail caches disappear when the same browser conte
   await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/admin/users");
   await expect(page.getByText(emailMonitored, { exact: true })).toBeVisible();
   await page.locator(`a[href="/admin/users/${monitoredPrincipalId}"]`).click();
+  await page.waitForURL(new RegExp(`/admin/users/${monitoredPrincipalId}$`));
+  await expect(page.locator(".selected-user-banner")).toBeVisible();
   await expect(page.getByText(emailMonitored, { exact: true })).toBeVisible();
   expect(await page.evaluate(() => {
-    const keys = (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys?.() ?? [];
-    return keys.some((key) => key.includes("admin-users")) && keys.some((key) => key.includes("admin-user"));
+    const inspect = (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys;
+    if (!inspect) throw new Error("E2E query inspection hook is unavailable.");
+    const roots = inspect().map((key) => JSON.parse(key)[0]);
+    return roots.includes("admin-users") && roots.includes("admin-user");
   })).toBe(true);
 
   await page.locator(".nav-signout").click();
@@ -416,8 +420,10 @@ test("Admin private list and detail caches disappear when the same browser conte
   await expect(page.locator(".admin-user-row")).toHaveCount(0);
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
   expect(await page.evaluate(() => {
-    const keys = (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys?.() ?? [];
-    return keys.some((key) => key.includes("admin-users") || key.includes("admin-user"));
+    const inspect = (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys;
+    if (!inspect) throw new Error("E2E query inspection hook is unavailable.");
+    const roots = inspect().map((key) => JSON.parse(key)[0]);
+    return roots.includes("admin-users") || roots.includes("admin-user");
   })).toBe(false);
   expect(await leakRecords(page)).toEqual([]);
   releaseProfileB();

@@ -26,6 +26,7 @@ import type { FoodResponse, NutritionRegistryResponse, NovaClassification } from
 import { FoodDeleteDialog } from "./FoodDeleteDialog";
 import { useFoodDelete } from "./useFoodDelete";
 import { useAuth } from "./AuthProvider";
+import { useSessionAbortSignal } from "./SessionQueryProvider";
 
 const FOOD_READ_ERROR = "تعذر تحميل تفاصيل الطعام. تحقق من الاتصال وحاول مرة أخرى.";
 const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
@@ -66,6 +67,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   const isEdit = mode === "edit";
   const { account, session, loading: authLoading } = useAuth();
   const accessToken = session?.access_token;
+  const sessionSignal = useSessionAbortSignal();
 
   const foodQuery = useQuery({
     queryKey: ["food", foodId],
@@ -105,11 +107,14 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
       return createFood(payload, accessToken);
     },
     onSuccess: async (food) => {
+      if (sessionSignal.aborted) return;
       await queryClient.invalidateQueries({ queryKey: ["foods"] });
+      if (sessionSignal.aborted) return;
       await queryClient.invalidateQueries({ queryKey: ["food", food.id] });
       router.push(`/foods/${food.id}`);
     },
     onError: (error) => {
+      if (sessionSignal.aborted) return;
       const apiErrors = mapFoodApiError(error);
       if (hasFoodErrors(apiErrors)) {
         setErrors(apiErrors);
