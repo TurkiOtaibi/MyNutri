@@ -194,7 +194,10 @@ test("same browser context isolates cached profile and diary data across A to B 
     await profileBBlocked;
     await route.continue();
   });
-  await submitLogin(page, emailB, PASSWORD, "/profile");
+  await submitLogin(page, emailB, PASSWORD, "/profile", false);
+  await expect(page.locator('a[href="/profile"]')).toBeVisible();
+  await page.locator('a[href="/profile"]').click();
+  await page.waitForURL(/\/profile$/);
   await expect.poll(() => profileBWasBlocked).toBe(true);
   await expect.poll(() => historyBWasBlocked).toBe(true);
   await expect.poll(() => page.locator('input[aria-label="الوزن"]').count()).toBe(0);
@@ -381,7 +384,10 @@ test("Admin private list and detail caches disappear when the same browser conte
     await profileBBlocked;
     await route.continue();
   });
-  await submitLogin(page, emailB, PASSWORD, "/profile");
+  await submitLogin(page, emailB, PASSWORD, "/profile", false);
+  await expect(page.locator('a[href="/profile"]')).toBeVisible();
+  await page.locator('a[href="/profile"]').click();
+  await page.waitForURL(/\/profile$/);
   await expect.poll(() => profileBWasBlocked).toBe(true);
   await expect(page.locator(".selected-user-banner")).toHaveCount(0);
   await expect(page.locator(".admin-user-row")).toHaveCount(0);
