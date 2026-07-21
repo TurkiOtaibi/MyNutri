@@ -160,6 +160,7 @@ test.describe("@diary quantity and UX refinement", () => {
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto("/diary");
     const selected = page.locator(".compact-week-day.selected");
+    await expect(selected).toBeVisible();
     const box = await selected.boundingBox();
     expect(box && box.x >= 0 && box.x + box.width <= 360).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);

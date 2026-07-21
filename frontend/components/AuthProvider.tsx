@@ -94,6 +94,7 @@ type AuthContextState = {
 type E2eWindow = Window & {
   __mynutriE2ERefreshSession?: () => ReturnType<ReturnType<typeof createClient>["auth"]["refreshSession"]>;
   __mynutriE2ESignOut?: () => ReturnType<ReturnType<typeof createClient>["auth"]["signOut"]>;
+  __mynutriE2ESignInWithPassword?: (email: string, password: string) => ReturnType<ReturnType<typeof createClient>["auth"]["signInWithPassword"]>;
 };
 
 const AuthContext = createContext<AuthContextState | null>(null);
@@ -132,6 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (allowE2eAuthControl) {
       e2eWindow.__mynutriE2ERefreshSession = () => supabase.auth.refreshSession();
       e2eWindow.__mynutriE2ESignOut = () => supabase.auth.signOut();
+      e2eWindow.__mynutriE2ESignInWithPassword = (email, password) => supabase.auth.signInWithPassword({ email, password });
     }
     return () => {
       active = false;
@@ -141,6 +143,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (allowE2eAuthControl) {
         delete e2eWindow.__mynutriE2ERefreshSession;
         delete e2eWindow.__mynutriE2ESignOut;
+        delete e2eWindow.__mynutriE2ESignInWithPassword;
       }
     };
   }, []);

@@ -159,6 +159,7 @@ test.describe("@diary @final-polish compact visual refinements", () => {
       await page.setViewportSize({ width, height: 844 });
       await page.goto("/diary");
       const selectedNumber = page.locator(".compact-week-day.selected strong");
+      await expect(selectedNumber).toBeVisible();
       const box = await selectedNumber.boundingBox();
       expect(box!.width).toBeGreaterThanOrEqual(36);
       expect(box!.width).toBeLessThanOrEqual(40);

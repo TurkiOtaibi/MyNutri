@@ -65,16 +65,21 @@ async function leakRecords(page: Page) {
   return page.evaluate(() => (window as Window & { __sessionLeakRecords?: string[] }).__sessionLeakRecords ?? []);
 }
 
-async function e2eAuthAction(page: Page, action: "refresh" | "signOut") {
-  const result = await page.evaluate(async (operation) => {
+async function e2eAuthAction(page: Page, action: "refresh" | "signOut" | "signIn", credentials?: { email: string; password: string }) {
+  const result = await page.evaluate(async ({ operation, login }) => {
     const testWindow = window as Window & {
       __mynutriE2ERefreshSession?: () => Promise<{ error: { message: string } | null }>;
       __mynutriE2ESignOut?: () => Promise<{ error: { message: string } | null }>;
+      __mynutriE2ESignInWithPassword?: (email: string, password: string) => Promise<{ error: { message: string } | null }>;
     };
     const call = operation === "refresh" ? testWindow.__mynutriE2ERefreshSession : testWindow.__mynutriE2ESignOut;
+    if (operation === "signIn") {
+      if (!testWindow.__mynutriE2ESignInWithPassword || !login) throw new Error("Local E2E auth control is unavailable.");
+      return testWindow.__mynutriE2ESignInWithPassword(login.email, login.password);
+    }
     if (!call) throw new Error("Local E2E auth control is unavailable.");
     return call();
-  }, action);
+  }, { operation: action, login: credentials });
   expect(result.error).toBeNull();
 }
 
@@ -220,8 +225,7 @@ test("a delivered delayed Admin account response cannot restore Admin identity a
   const delayedAdminResponse = adminPage.waitForResponse((response) => response.request() === delayedAdminRequest);
   await installLeakObserver(adminPage, [ADMIN_EMAIL, "الإدارة"]);
   await e2eAuthAction(adminPage, "signOut");
-  await adminPage.goto("/auth/login?next=%2Fprofile");
-  await signIn(adminPage, emailB, PASSWORD, "/profile");
+  await e2eAuthAction(adminPage, "signIn", { email: emailB, password: PASSWORD });
   await expect.poll(() => bAccountRequestedOnAdminPage).toBe(true);
   await expect(adminPage.locator(".nav-signout")).toBeVisible();
   await expect(adminPage.locator('a[href="/admin"]')).toHaveCount(0);
