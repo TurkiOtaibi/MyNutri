@@ -26,6 +26,7 @@ import type { FoodResponse, FoodSort } from "@/lib/types";
 
 import { FoodDeleteDialog } from "./FoodDeleteDialog";
 import { useAuth } from "./AuthProvider";
+import { useSessionAbortSignal } from "./SessionQueryProvider";
 
 const FOODS_READ_ERROR = "تعذر تحميل قائمة الأطعمة. تحقق من الاتصال وحاول مرة أخرى.";
 const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
@@ -42,6 +43,7 @@ const sortLabels: Record<FoodSort, string> = {
 export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
+  const sessionSignal = useSessionAbortSignal();
   const queryClient = useQueryClient();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -87,14 +89,17 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
   }, [foodsQuery.dataUpdatedAt]);
 
   const deleteMutation = useMutation({
-    mutationFn: (foodId: string) => deleteFood(foodId, accessToken),
+    mutationFn: (foodId: string) => deleteFood(foodId, accessToken, sessionSignal),
     onSuccess: async (result) => {
+      if (sessionSignal.aborted) return;
       setDeleteTarget(null);
       setOpenMenuId(null);
       setNote(result.disposition === "deleted" ? "تم حذف الطعام نهائيًا." : "الطعام مستخدم تاريخيًا، لذلك تمت أرشفته بدل حذفه.");
       await queryClient.invalidateQueries({ queryKey: ["foods"] });
+      if (sessionSignal.aborted) return;
     },
     onError: (error) => {
+      if (sessionSignal.aborted) return;
       if (error instanceof ApiError && error.status === 404) {
         setNote("لم يتم العثور على الطعام. حدّث القائمة وحاول مرة أخرى.");
       } else {
@@ -458,12 +463,17 @@ function FoodActionsMenu({
 }) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
+  const sessionSignal = useSessionAbortSignal();
   const queryClient = useQueryClient();
   const statusMutation = useMutation({
-    mutationFn: () => food.status === "archived" ? restoreFood(food.id, accessToken) : archiveFood(food.id, accessToken),
+    mutationFn: () => food.status === "archived"
+      ? restoreFood(food.id, accessToken, sessionSignal)
+      : archiveFood(food.id, accessToken, sessionSignal),
     onSuccess: async () => {
+      if (sessionSignal.aborted) return;
       onOpenChange(false);
       await queryClient.invalidateQueries({ queryKey: ["foods"] });
+      if (sessionSignal.aborted) return;
     }
   });
   const rootRef = useRef<HTMLDivElement | null>(null);

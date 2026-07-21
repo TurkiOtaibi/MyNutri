@@ -103,14 +103,15 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   const saveMutation = useMutation({
     mutationFn: async () => {
       const payload = normalizeFoodForm(form);
-      if (isEdit && foodId) return updateFood(foodId, payload, accessToken);
-      return createFood(payload, accessToken);
+      if (isEdit && foodId) return updateFood(foodId, payload, accessToken, sessionSignal);
+      return createFood(payload, accessToken, sessionSignal);
     },
     onSuccess: async (food) => {
       if (sessionSignal.aborted) return;
       await queryClient.invalidateQueries({ queryKey: ["foods"] });
       if (sessionSignal.aborted) return;
       await queryClient.invalidateQueries({ queryKey: ["food", food.id] });
+      if (sessionSignal.aborted) return;
       router.push(`/foods/${food.id}`);
     },
     onError: (error) => {
@@ -126,8 +127,12 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   });
 
   const deleteMutation = useFoodDelete({
-    onDeleted: () => router.push("/foods"),
-    onError: (message) => setNote(message)
+    onDeleted: () => {
+      if (!sessionSignal.aborted) router.push("/foods");
+    },
+    onError: (message) => {
+      if (!sessionSignal.aborted) setNote(message);
+    }
   });
 
   const optionalHasErrors = useMemo(() => optionalFields.some((field) => errors[field]), [errors]);

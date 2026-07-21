@@ -88,9 +88,13 @@ export function getCurrentAccount(options: { accessToken: string; signal?: Abort
   });
 }
 
-function authorizedInit(accessToken: string | null | undefined, init: RequestInit = {}): RequestInit {
+function authorizedInit(
+  accessToken: string | null | undefined,
+  signal: AbortSignal | undefined,
+  init: RequestInit = {}
+): RequestInit {
   if (!accessToken) throw new ApiError("Authentication required", 401);
-  return { ...init, headers: { ...init.headers, Authorization: `Bearer ${accessToken}` } };
+  return { ...init, signal, headers: { ...init.headers, Authorization: `Bearer ${accessToken}` } };
 }
 
 export async function getProfile(): Promise<ProfileResponse | null> {
@@ -104,15 +108,15 @@ export async function getProfile(): Promise<ProfileResponse | null> {
   }
 }
 
-export function saveProfile(payload: ProfileInput, accessToken: string | null | undefined): Promise<ProfileResponse> {
-  return apiFetch<ProfileResponse>("/profile", authorizedInit(accessToken, {
+export function saveProfile(payload: ProfileInput, accessToken: string | null | undefined, signal?: AbortSignal): Promise<ProfileResponse> {
+  return apiFetch<ProfileResponse>("/profile", authorizedInit(accessToken, signal, {
     method: "PUT",
     body: JSON.stringify(payload)
   }));
 }
 
-export function previewProfile(payload: ProfileInput, accessToken: string | null | undefined): Promise<TargetResponse> {
-  return apiFetch<TargetResponse>("/profile/preview", authorizedInit(accessToken, {
+export function previewProfile(payload: ProfileInput, accessToken: string | null | undefined, signal?: AbortSignal): Promise<TargetResponse> {
+  return apiFetch<TargetResponse>("/profile/preview", authorizedInit(accessToken, signal, {
     method: "POST",
     body: JSON.stringify(payload)
   }));
@@ -121,9 +125,11 @@ export function previewProfile(payload: ProfileInput, accessToken: string | null
 export function activateTargetPlan(
   payload: ProfileInput,
   expectedPreviewHash: string,
-  idempotencyKey: string, accessToken: string | null | undefined
+  idempotencyKey: string,
+  accessToken: string | null | undefined,
+  signal?: AbortSignal
 ): Promise<TargetPlanActivationResponse> {
-  return apiFetch<TargetPlanActivationResponse>("/target-plans/activate", authorizedInit(accessToken, {
+  return apiFetch<TargetPlanActivationResponse>("/target-plans/activate", authorizedInit(accessToken, signal, {
     method: "POST",
     headers: { "Idempotency-Key": idempotencyKey },
     body: JSON.stringify({ ...payload, confirmed: true, expected_preview_hash: expectedPreviewHash })
@@ -133,9 +139,11 @@ export function activateTargetPlan(
 export function replacePendingTargetPlan(
   payload: ProfileInput,
   expectedPreviewHash: string,
-  idempotencyKey: string, accessToken: string | null | undefined
+  idempotencyKey: string,
+  accessToken: string | null | undefined,
+  signal?: AbortSignal
 ): Promise<TargetPlanActivationResponse> {
-  return apiFetch<TargetPlanActivationResponse>("/target-plans/pending/replace", authorizedInit(accessToken, {
+  return apiFetch<TargetPlanActivationResponse>("/target-plans/pending/replace", authorizedInit(accessToken, signal, {
     method: "POST",
     headers: { "Idempotency-Key": idempotencyKey },
     body: JSON.stringify({ ...payload, replace_confirmed: true, expected_preview_hash: expectedPreviewHash })
@@ -212,30 +220,30 @@ export function getAdminFood(foodId: string): Promise<FoodResponse> {
   return apiFetch<FoodResponse>(`/admin/foods/${foodId}`);
 }
 
-export function createFood(payload: FoodInput & { id?: string }, accessToken: string | null | undefined): Promise<FoodResponse> {
-  return apiFetch<FoodResponse>("/foods", authorizedInit(accessToken, {
+export function createFood(payload: FoodInput & { id?: string }, accessToken: string | null | undefined, signal?: AbortSignal): Promise<FoodResponse> {
+  return apiFetch<FoodResponse>("/foods", authorizedInit(accessToken, signal, {
     method: "POST",
     body: JSON.stringify(payload)
   }));
 }
 
-export function updateFood(foodId: string, payload: Partial<FoodInput>, accessToken: string | null | undefined): Promise<FoodResponse> {
-  return apiFetch<FoodResponse>(`/foods/${foodId}`, authorizedInit(accessToken, {
+export function updateFood(foodId: string, payload: Partial<FoodInput>, accessToken: string | null | undefined, signal?: AbortSignal): Promise<FoodResponse> {
+  return apiFetch<FoodResponse>(`/foods/${foodId}`, authorizedInit(accessToken, signal, {
     method: "PUT",
     body: JSON.stringify(payload)
   }));
 }
 
-export function deleteFood(foodId: string, accessToken: string | null | undefined): Promise<{ disposition: "deleted" | "archived" }> {
-  return apiFetch<{ disposition: "deleted" | "archived" }>(`/admin/foods/${foodId}`, authorizedInit(accessToken, { method: "DELETE" }));
+export function deleteFood(foodId: string, accessToken: string | null | undefined, signal?: AbortSignal): Promise<{ disposition: "deleted" | "archived" }> {
+  return apiFetch<{ disposition: "deleted" | "archived" }>(`/admin/foods/${foodId}`, authorizedInit(accessToken, signal, { method: "DELETE" }));
 }
 
-export function archiveFood(foodId: string, accessToken: string | null | undefined): Promise<FoodResponse> {
-  return apiFetch<FoodResponse>(`/admin/foods/${foodId}/archive`, authorizedInit(accessToken, { method: "POST" }));
+export function archiveFood(foodId: string, accessToken: string | null | undefined, signal?: AbortSignal): Promise<FoodResponse> {
+  return apiFetch<FoodResponse>(`/admin/foods/${foodId}/archive`, authorizedInit(accessToken, signal, { method: "POST" }));
 }
 
-export function restoreFood(foodId: string, accessToken: string | null | undefined): Promise<FoodResponse> {
-  return apiFetch<FoodResponse>(`/admin/foods/${foodId}/restore`, authorizedInit(accessToken, { method: "POST" }));
+export function restoreFood(foodId: string, accessToken: string | null | undefined, signal?: AbortSignal): Promise<FoodResponse> {
+  return apiFetch<FoodResponse>(`/admin/foods/${foodId}/restore`, authorizedInit(accessToken, signal, { method: "POST" }));
 }
 
 export interface AdminUserSummary {
@@ -280,22 +288,22 @@ export function listDiaryHistory(): Promise<DiaryEntryResponse[]> {
   return apiFetch<DiaryEntryResponse[]>("/diary");
 }
 
-export function createDiaryEntry(payload: DiaryEntryInput, accessToken: string | null | undefined): Promise<DiaryEntryResponse> {
-  return apiFetch<DiaryEntryResponse>("/diary", authorizedInit(accessToken, {
+export function createDiaryEntry(payload: DiaryEntryInput, accessToken: string | null | undefined, signal?: AbortSignal): Promise<DiaryEntryResponse> {
+  return apiFetch<DiaryEntryResponse>("/diary", authorizedInit(accessToken, signal, {
     method: "POST",
     body: JSON.stringify(payload)
   }));
 }
 
-export function updateDiaryEntry(entryId: string, quantity: number, mealType: MealType, accessToken: string | null | undefined): Promise<DiaryEntryResponse> {
-  return apiFetch<DiaryEntryResponse>(`/diary/${entryId}`, authorizedInit(accessToken, {
+export function updateDiaryEntry(entryId: string, quantity: number, mealType: MealType, accessToken: string | null | undefined, signal?: AbortSignal): Promise<DiaryEntryResponse> {
+  return apiFetch<DiaryEntryResponse>(`/diary/${entryId}`, authorizedInit(accessToken, signal, {
     method: "PUT",
     body: JSON.stringify({ quantity, meal_type: mealType })
   }));
 }
 
-export function deleteDiaryEntry(entryId: string, accessToken: string | null | undefined): Promise<void> {
-  return apiFetch<void>(`/diary/${entryId}`, authorizedInit(accessToken, { method: "DELETE" }));
+export function deleteDiaryEntry(entryId: string, accessToken: string | null | undefined, signal?: AbortSignal): Promise<void> {
+  return apiFetch<void>(`/diary/${entryId}`, authorizedInit(accessToken, signal, { method: "DELETE" }));
 }
 
 export function getWeekSummary(start: string): Promise<WeekSummary> {

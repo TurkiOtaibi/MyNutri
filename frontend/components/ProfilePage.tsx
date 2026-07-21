@@ -33,6 +33,7 @@ import { activityLabels, goalLabels, sexLabels } from "@/lib/labels";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels } from "@/lib/nutrients";
 import type { ActivityLevel, Goal, NutritionRegistryResponse, ProfileInput, ProfileResponse, Sex, TargetPlanSummary, TargetResponse } from "@/lib/types";
 import { useAuth } from "./AuthProvider";
+import { useSessionAbortSignal } from "./SessionQueryProvider";
 
 const PROFILE_READ_ERROR = "تعذر تحميل بياناتك";
 const PROFILE_READ_HELP = "تحقق من الاتصال ثم أعد المحاولة";
@@ -179,6 +180,7 @@ function validateDraft(draft: DraftProfile): { errors: FieldErrors; payload: Pro
 export function ProfilePage() {
   const { session } = useAuth();
   const accessToken = session?.access_token;
+  const sessionSignal = useSessionAbortSignal();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<DraftProfile>(blankDraft);
@@ -233,6 +235,7 @@ export function ProfilePage() {
   const validation = useMemo(() => validateDraft(draft), [draft]);
 
   const requestPreview = () => {
+    if (sessionSignal.aborted) return;
     if (!dirty || !validation.payload || !registryReady) {
       setPreview(null);
       setPreviewPending(false);
@@ -242,19 +245,19 @@ export function ProfilePage() {
     const sequence = ++previewSequence.current;
     setPreviewPending(true);
     setPreviewFailed(false);
-    previewProfile(validation.payload, accessToken)
+    previewProfile(validation.payload, accessToken, sessionSignal)
       .then((result) => {
-        if (sequence !== previewSequence.current) return;
+        if (sessionSignal.aborted || sequence !== previewSequence.current) return;
         setPreview(result);
         setPreviewFailed(false);
       })
       .catch(() => {
-        if (sequence !== previewSequence.current) return;
+        if (sessionSignal.aborted || sequence !== previewSequence.current) return;
         setPreview(null);
         setPreviewFailed(true);
       })
       .finally(() => {
-        if (sequence === previewSequence.current) setPreviewPending(false);
+        if (!sessionSignal.aborted && sequence === previewSequence.current) setPreviewPending(false);
       });
   };
 
@@ -290,10 +293,12 @@ export function ProfilePage() {
   const mutation = useMutation({
     mutationFn: ({ payload, previewHash, key }: { payload: ProfileInput; previewHash: string; key: string }) =>
       profileQuery.data?.pending_plan
-        ? replacePendingTargetPlan(payload, previewHash, key, accessToken)
-        : activateTargetPlan(payload, previewHash, key, accessToken),
+        ? replacePendingTargetPlan(payload, previewHash, key, accessToken, sessionSignal)
+        : activateTargetPlan(payload, previewHash, key, accessToken, sessionSignal),
     onSuccess: async (activation) => {
+      if (sessionSignal.aborted) return;
       const refreshed = await profileQuery.refetch();
+      if (sessionSignal.aborted) return;
       const profile = refreshed.data;
       if (!profile) return;
       const confirmed = toDraft(profile);
@@ -311,9 +316,13 @@ export function ProfilePage() {
       activationKeyRef.current = null;
       activationSubmittingRef.current = false;
       await queryClient.invalidateQueries({ queryKey: ["target-plan-history"] });
-      window.setTimeout(() => setSavedNotice(false), 2800);
+      if (sessionSignal.aborted) return;
+      window.setTimeout(() => {
+        if (!sessionSignal.aborted) setSavedNotice(false);
+      }, 2800);
     },
     onError: (error) => {
+      if (sessionSignal.aborted) return;
       const mapped = mapProfileApiErrors(error);
       if (Object.keys(mapped).length > 0) setErrors(mapped);
       else if (error instanceof ApiError && ["PREVIEW_RESULT_CHANGED", "IDEMPOTENCY_KEY_REUSED"].includes(error.code ?? "")) {

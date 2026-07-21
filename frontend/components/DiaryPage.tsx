@@ -52,6 +52,7 @@ import type {
   WeekSummary
 } from "@/lib/types";
 import { useAuth } from "./AuthProvider";
+import { useSessionAbortSignal } from "./SessionQueryProvider";
 
 
 const FOODS_READ_ERROR = "تعذر تحميل قائمة الأطعمة. تحقق من الاتصال وحاول مرة أخرى.";
@@ -79,6 +80,7 @@ const mealAddLabels: Record<Exclude<MealType, "unspecified">, string> = {
 export function DiaryPage() {
   const { session } = useAuth();
   const accessToken = session?.access_token;
+  const sessionSignal = useSessionAbortSignal();
   const queryClient = useQueryClient();
   const today = todayInputValue();
   const [selectedDate, setSelectedDate] = useState(today);
@@ -143,13 +145,18 @@ export function DiaryPage() {
   }, [openMenuId]);
 
   const deleteMutation = useMutation({
-    mutationFn: (entryId: string) => deleteDiaryEntry(entryId, accessToken),
+    mutationFn: (entryId: string) => deleteDiaryEntry(entryId, accessToken, sessionSignal),
     onSuccess: async () => {
+      if (sessionSignal.aborted) return;
       setDeleteError("");
       setDeletingEntry(null);
       await invalidateDiary(queryClient);
+      if (sessionSignal.aborted) return;
     },
-    onError: () => setDeleteError("تعذر حذف الطعام")
+    onError: () => {
+      if (sessionSignal.aborted) return;
+      setDeleteError("تعذر حذف الطعام");
+    }
   });
 
   function chooseDate(nextDate: string) {
@@ -250,6 +257,7 @@ export function DiaryPage() {
           initialMeal={addMeal}
           onClose={closeAdd}
           onSaved={async (savedMeal) => {
+            if (sessionSignal.aborted) return;
             setAddOpen(false);
             setExpandedMeals((current) => {
               const next = new Set(current).add(savedMeal);
@@ -257,7 +265,10 @@ export function DiaryPage() {
               return next;
             });
             await invalidateDiary(queryClient);
-            requestAnimationFrame(() => document.getElementById(`meal-section-${savedMeal}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+            if (sessionSignal.aborted) return;
+            requestAnimationFrame(() => {
+              if (!sessionSignal.aborted) document.getElementById(`meal-section-${savedMeal}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+            });
           }}
         />
       ) : null}
@@ -267,6 +278,7 @@ export function DiaryPage() {
           entry={editingEntry}
           onClose={() => setEditingEntry(null)}
           onSaved={async (savedMeal) => {
+            if (sessionSignal.aborted) return;
             setEditingEntry(null);
             setExpandedMeals((current) => {
               const next = new Set(current).add(savedMeal);
@@ -274,6 +286,7 @@ export function DiaryPage() {
               return next;
             });
             await invalidateDiary(queryClient);
+            if (sessionSignal.aborted) return;
           }}
         />
       ) : null}
@@ -627,6 +640,7 @@ function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { select
   const [saveSucceeded, setSaveSucceeded] = useState(false);
   const { session } = useAuth();
   const accessToken = session?.access_token;
+  const sessionSignal = useSessionAbortSignal();
   const searchRef = useRef<HTMLInputElement>(null);
   const dragStartRef = useRef<number | null>(null);
   const submitLockRef = useRef(false);
@@ -644,14 +658,18 @@ function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { select
   });
 
   const mutation = useMutation({
-    mutationFn: (payload: DiaryEntryInput) => createDiaryEntry(payload, accessToken),
+    mutationFn: (payload: DiaryEntryInput) => createDiaryEntry(payload, accessToken, sessionSignal),
     onSuccess: async () => {
+      if (sessionSignal.aborted) return;
       setSaveSucceeded(true);
       setError("");
       await new Promise((resolve) => window.setTimeout(resolve, 320));
+      if (sessionSignal.aborted) return;
       await onSaved(mealType as MealType);
+      if (sessionSignal.aborted) return;
     },
     onError: () => {
+      if (sessionSignal.aborted) return;
       submitLockRef.current = false;
       setError("تعذر إضافة الطعام");
     }
@@ -879,13 +897,21 @@ function SelectedFoodSummary({ food, onChange }: { food: FoodResponse; onChange:
 function EditEntryDialog({ entry, onClose, onSaved }: { entry: DiaryEntryResponse; onClose: () => void; onSaved: (meal: MealType) => Promise<void> }) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
+  const sessionSignal = useSessionAbortSignal();
   const [quantity, setQuantity] = useState(String(entry.quantity));
   const [mealType, setMealType] = useState<MealType>(entry.meal_type ?? "unspecified");
   const [error, setError] = useState("");
   const mutation = useMutation({
-    mutationFn: (amount: number) => updateDiaryEntry(entry.id, amount, mealType, accessToken),
-    onSuccess: () => onSaved(mealType),
-    onError: () => setError(WRITE_ERROR)
+    mutationFn: (amount: number) => updateDiaryEntry(entry.id, amount, mealType, accessToken, sessionSignal),
+    onSuccess: async () => {
+      if (sessionSignal.aborted) return;
+      await onSaved(mealType);
+      if (sessionSignal.aborted) return;
+    },
+    onError: () => {
+      if (sessionSignal.aborted) return;
+      setError(WRITE_ERROR);
+    }
   });
   const amount = parseQuantity(quantity);
   const quantityError = validateQuantity(quantity);

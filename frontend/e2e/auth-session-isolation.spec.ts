@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Request } from "@playwright/test";
+import { fillRequiredFoodForm, submitFoodForm } from "./foods/helpers";
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
 const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
@@ -283,6 +284,122 @@ test("a delivered delayed Admin account response cannot restore Admin identity a
   await adminPage.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   expect(await leakRecords(adminPage)).toEqual([]);
   await expect(adminPage.locator('a[href="/admin"]')).toHaveCount(0);
+  await context.close();
+});
+
+test("a delivered delayed Admin food create cannot navigate or reveal its result after User B takes over", async ({ browser }) => {
+  const suffix = Date.now();
+  const emailB = `food-write-race-b-${suffix}@example.test`;
+  const marker = `Admin stale food marker ${suffix}`;
+  const staleFoodId = "00000000-0000-4000-8000-000000000991";
+  await token(emailB);
+
+  let releaseCreate!: () => void;
+  let createWasBlocked = false;
+  let createAuthorization: string | undefined;
+  let createName: string | undefined;
+  let adminAccountAuthorization: string | undefined;
+  let staleDetailRequested = false;
+  const createBlocked = new Promise<void>((resolve) => { releaseCreate = resolve; });
+  const context = await browser.newContext({ storageState: undefined });
+  const page = await context.newPage();
+
+  // Force delivery after the subject boundary aborts so callback guards are
+  // exercised independently from transport cancellation.
+  await page.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof Request ? input.url : input.href;
+      if (
+        new URL(url, window.location.href).pathname === "/foods" &&
+        init?.method?.toUpperCase() === "POST" &&
+        init.signal
+      ) {
+        const { signal: _signal, ...withoutSignal } = init;
+        return originalFetch(input, withoutSignal);
+      }
+      return originalFetch(input, init);
+    };
+  });
+  page.on("request", (request) => {
+    if (request.url() === `${API_URL}/account/me` && !adminAccountAuthorization) {
+      adminAccountAuthorization = request.headers()["authorization"];
+    }
+  });
+
+  await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/foods/new");
+  await expect(page.locator("form.food-form-layout")).toBeVisible();
+  expect(adminAccountAuthorization).toMatch(/^Bearer /);
+  await fillRequiredFoodForm(page, { name: marker });
+  const originalUrl = page.url();
+
+  await page.route(`${API_URL}/foods`, async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    createAuthorization = route.request().headers()["authorization"];
+    createName = (route.request().postDataJSON() as { name?: string }).name;
+    createWasBlocked = true;
+    await createBlocked;
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ id: staleFoodId, name: marker })
+    });
+  });
+  await page.route(`${API_URL}/foods/${staleFoodId}`, async (route) => {
+    staleDetailRequested = true;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ id: staleFoodId, name: marker })
+    });
+  });
+
+  const delayedCreateResponse = page.waitForResponse((response) =>
+    response.url() === `${API_URL}/foods` && response.request().method() === "POST"
+  );
+  await submitFoodForm(page);
+  await expect.poll(() => createWasBlocked).toBe(true);
+
+  await e2eAuthAction(page, "signOut");
+  const bAccountResponse = page.waitForResponse((response) =>
+    response.url() === `${API_URL}/account/me` &&
+    response.request().headers()["authorization"] !== adminAccountAuthorization
+  );
+  await e2eAuthAction(page, "signIn", { email: emailB, password: PASSWORD });
+  const bResponse = await bAccountResponse;
+  expect(bResponse.status()).toBe(200);
+  const bAccount = await bResponse.json() as { email: string | null; role: "user" | "admin" };
+  expect(bAccount.email).toBe(emailB);
+  expect(bAccount.role).toBe("user");
+  const bAccountAuthorization = bResponse.request().headers()["authorization"];
+
+  await expect(page).toHaveURL(originalUrl);
+  await expect(page.locator(".nav-signout")).toBeVisible();
+  await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+  await expect(page.locator("form.food-form-layout")).toHaveCount(0);
+  await expect(page.locator('.state-note[role="alert"]')).toHaveText("إدارة الأطعمة متاحة للمشرف فقط.");
+  await installLeakObserver(page, [marker], [marker]);
+
+  releaseCreate();
+  const response = await delayedCreateResponse;
+  expect(response.status()).toBe(201);
+  expect(await response.finished()).toBeNull();
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await page.waitForTimeout(100);
+
+  expect(createName).toBe(marker);
+  expect(createAuthorization).toBe(adminAccountAuthorization);
+  expect(createAuthorization).not.toBe(bAccountAuthorization);
+  expect(staleDetailRequested).toBe(false);
+  expect(await leakRecords(page)).toEqual([]);
+  await expect(page).toHaveURL(originalUrl);
+  await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+  await expect(page.locator("form.food-form-layout")).toHaveCount(0);
+  await expect(page.locator('.state-note[role="alert"]')).toHaveText("إدارة الأطعمة متاحة للمشرف فقط.");
+  await expect(page.getByText(marker, { exact: true })).toHaveCount(0);
   await context.close();
 });
 
