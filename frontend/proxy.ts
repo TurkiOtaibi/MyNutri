@@ -2,17 +2,22 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 const PUBLIC_AUTH_PATHS = ["/auth/login", "/auth/sign-up", "/auth/forgot-password"];
-const INVALID_SUBJECT_COOKIE = "mynutri-auth-invalid-subject";
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const INVALID_TOKEN_COOKIE = "mynutri-auth-invalid-token";
+const TOKEN_FINGERPRINT = /^[0-9a-f]{64}$/;
 
-function clearInvalidSubject(response: NextResponse) {
-  response.cookies.set(INVALID_SUBJECT_COOKIE, "", { path: "/", maxAge: 0, sameSite: "lax" });
+function clearInvalidToken(response: NextResponse) {
+  response.cookies.set(INVALID_TOKEN_COOKIE, "", { path: "/", maxAge: 0, sameSite: "lax" });
 }
 
 function redirectWithCookies(url: URL, response: NextResponse) {
   const redirect = NextResponse.redirect(url);
   response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
   return redirect;
+}
+
+async function fingerprint(token: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export async function proxy(request: NextRequest) {
@@ -35,26 +40,23 @@ export async function proxy(request: NextRequest) {
   });
   const { data } = await supabase.auth.getClaims();
   const subject = typeof data?.claims?.sub === "string" ? data.claims.sub : null;
-  const marker = request.cookies.get(INVALID_SUBJECT_COOKIE)?.value;
-  if (marker && UUID.test(marker)) {
-    if (marker === subject) {
-      await supabase.auth.signOut();
-      const redirect = redirectWithCookies(new URL("/auth/login", request.url), response);
-      clearInvalidSubject(redirect);
-      return redirect;
-    }
-    clearInvalidSubject(response);
+  const marker = request.cookies.get(INVALID_TOKEN_COOKIE)?.value;
+  let authenticated = Boolean(subject);
+  if (marker && TOKEN_FINGERPRINT.test(marker)) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const currentToken = sessionData.session?.access_token;
+    if (currentToken && marker === await fingerprint(currentToken)) authenticated = false;
+    clearInvalidToken(response);
   } else if (marker) {
-    clearInvalidSubject(response);
+    clearInvalidToken(response);
   }
-  const authenticated = Boolean(subject);
   const path = request.nextUrl.pathname;
   const publicAuth = PUBLIC_AUTH_PATHS.includes(path);
 
   if (!authenticated && !publicAuth && path !== "/auth/reset-password") {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/auth/login";
-    redirect.searchParams.set("next", path);
+    redirect.searchParams.set("next", `${path}${request.nextUrl.search}`);
     return redirectWithCookies(redirect, response);
   }
   if (authenticated && publicAuth) {

@@ -187,7 +187,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           requestGeneration.current += 1;
           dispatch({ type: "SIGNING_OUT", subjectId });
           if (subjectRef.current === subjectId) {
-            document.cookie = `mynutri-auth-invalid-subject=${encodeURIComponent(subjectId)}; Path=/; Max-Age=60; SameSite=Lax`;
+            const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(accessToken));
+            const fingerprint = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+            if (subjectRef.current !== subjectId) return;
+            document.cookie = `mynutri-auth-invalid-token=${fingerprint}; Path=/; Max-Age=60; SameSite=Lax`;
             window.location.assign(`/auth/login?next=${encodeURIComponent(pathnameRef.current)}`);
           }
         }

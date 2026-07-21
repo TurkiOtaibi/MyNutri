@@ -184,6 +184,7 @@ test("same browser context isolates cached profile and diary data across A to B 
 
   await page.locator(".nav-signout").click();
   await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
+  expect(new URL(page.url()).searchParams.get("next")).toBe("/profile");
   await expect(page.locator('input[type="email"]')).toBeVisible();
   blockHistoryB = true;
   await installLeakObserver(page, [emailA, diaryNameA, historyMarkerA], ["71"]);
@@ -346,9 +347,10 @@ test("a current account 401 clears the matching session before showing login", a
   await submitLogin(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/profile", false);
   expect((await accountResponse).status()).toBe(401);
   await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
+  expect(new URL(page.url()).searchParams.get("next")).toBe("/profile");
   await expect(page.locator('input[type="email"]')).toBeVisible();
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
-  expect(await page.evaluate(() => document.cookie.includes("mynutri-auth-invalid-subject"))).toBe(false);
+  expect(await page.evaluate(() => document.cookie.includes("mynutri-auth-invalid-token"))).toBe(false);
   await context.close();
 });
 
@@ -371,6 +373,10 @@ test("Admin private list and detail caches disappear when the same browser conte
   await expect(page.getByText(emailMonitored, { exact: true })).toBeVisible();
   await page.goto(`/admin/users/${monitoredPrincipalId}`);
   await expect(page.getByText(emailMonitored, { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => {
+    const keys = (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys?.() ?? [];
+    return keys.some((key) => key.includes("admin-users")) && keys.some((key) => key.includes("admin-user"));
+  })).toBe(true);
 
   await page.locator(".nav-signout").click();
   await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
@@ -392,6 +398,10 @@ test("Admin private list and detail caches disappear when the same browser conte
   await expect(page.locator(".selected-user-banner")).toHaveCount(0);
   await expect(page.locator(".admin-user-row")).toHaveCount(0);
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+  expect(await page.evaluate(() => {
+    const keys = (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys?.() ?? [];
+    return keys.some((key) => key.includes("admin-users") || key.includes("admin-user"));
+  })).toBe(false);
   expect(await leakRecords(page)).toEqual([]);
   releaseProfileB();
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("83");
@@ -429,6 +439,7 @@ test("a refresh-token session update keeps User A's query client and does not re
   await e2eAuthAction(page, "duplicate");
   releaseAccountRefresh();
   await expect.poll(() => accountRequestsAfterRefresh).toBeGreaterThanOrEqual(1);
+  await expect(page.locator(".nav-signout")).toBeVisible();
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("74");
   expect(profileRequestsAfterRefresh).toBe(0);
   await context.close();
