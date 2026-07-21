@@ -4615,7 +4615,7 @@ button.profile-setting-row:focus-visible,
 
 .profile-preview-values > * {
   min-width: 0;
-  color: var(--muted);
+  color: #66706c;
   font-size: 11px;
   text-align: center;
   white-space: nowrap;

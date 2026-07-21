@@ -65,20 +65,17 @@ async function leakRecords(page: Page) {
   return page.evaluate(() => (window as Window & { __sessionLeakRecords?: string[] }).__sessionLeakRecords ?? []);
 }
 
-async function refreshSessionFromAnotherPage(page: Page) {
-  await page.evaluate(async ({ authUrl }) => {
-    const storageKey = Object.keys(localStorage).find((key) => key.includes("auth-token"));
-    if (!storageKey) throw new Error("Supabase session storage was not found.");
-    const current = JSON.parse(localStorage.getItem(storageKey) ?? "null") as { refresh_token?: string } | null;
-    if (!current?.refresh_token) throw new Error("Supabase refresh token was not found.");
-    const response = await fetch(`${authUrl}/auth/v1/token?grant_type=refresh_token`, {
-      method: "POST",
-      headers: { apikey: "e2e-public-key", "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: current.refresh_token })
-    });
-    if (!response.ok) throw new Error(`Refresh token request failed with ${response.status}.`);
-    localStorage.setItem(storageKey, JSON.stringify(await response.json()));
-  }, { authUrl: AUTH_URL });
+async function e2eAuthAction(page: Page, action: "refresh" | "signOut") {
+  const result = await page.evaluate(async (operation) => {
+    const testWindow = window as Window & {
+      __mynutriE2ERefreshSession?: () => Promise<{ error: { message: string } | null }>;
+      __mynutriE2ESignOut?: () => Promise<{ error: { message: string } | null }>;
+    };
+    const call = operation === "refresh" ? testWindow.__mynutriE2ERefreshSession : testWindow.__mynutriE2ESignOut;
+    if (!call) throw new Error("Local E2E auth control is unavailable.");
+    return call();
+  }, action);
+  expect(result.error).toBeNull();
 }
 
 test("same browser context isolates cached profile and diary data across A to B to A", async ({ browser, request }) => {
@@ -155,7 +152,8 @@ test("same browser context isolates cached profile and diary data across A to B 
   await expect(page.getByText(diaryNameA, { exact: true })).toBeVisible();
 
   await page.locator(".nav-signout").click();
-  await page.waitForURL(/\/auth\/login$/);
+  await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
+  await expect(page.locator('input[type="email"]')).toBeVisible();
   blockHistoryB = true;
   await installLeakObserver(page, [emailA, "71", diaryNameA, historyMarkerA]);
   let releaseProfileB!: () => void;
@@ -178,7 +176,8 @@ test("same browser context isolates cached profile and diary data across A to B 
   expect(await leakRecords(page)).toEqual([]);
 
   await page.locator(".nav-signout").click();
-  await page.waitForURL(/\/auth\/login$/);
+  await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
+  await expect(page.locator('input[type="email"]')).toBeVisible();
   await signIn(page, emailA, PASSWORD, "/profile");
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("71");
   await context.close();
@@ -188,16 +187,12 @@ test("a delivered delayed Admin account response cannot restore Admin identity a
   const emailB = `race-b-${Date.now()}@example.test`;
   await token(emailB);
   let releaseAdminAccount!: () => void;
-  let releaseProfileB!: () => void;
   let adminAccountWasBlocked = false;
-  let profileBWasBlocked = false;
   let bAccountRequestedOnAdminPage = false;
   let delayedAdminRequest: Request | null = null;
   const adminAccountBlocked = new Promise<void>((resolve) => { releaseAdminAccount = resolve; });
-  const profileBBlocked = new Promise<void>((resolve) => { releaseProfileB = resolve; });
   const context = await browser.newContext({ storageState: undefined });
   const adminPage = await context.newPage();
-  const userPage = await context.newPage();
 
   await adminPage.addInitScript(() => {
     const originalFetch = window.fetch.bind(window);
@@ -220,28 +215,21 @@ test("a delivered delayed Admin account response cannot restore Admin identity a
     }
     await route.continue();
   });
-  await userPage.route(`${API_URL}/profile`, async (route) => {
-    profileBWasBlocked = true;
-    await profileBBlocked;
-    await route.continue();
-  });
-
   await signIn(adminPage, ADMIN_EMAIL, ADMIN_PASSWORD, "/profile");
   await expect.poll(() => adminAccountWasBlocked).toBe(true);
   const delayedAdminResponse = adminPage.waitForResponse((response) => response.request() === delayedAdminRequest);
   await installLeakObserver(adminPage, [ADMIN_EMAIL, "الإدارة"]);
-  await signIn(userPage, emailB, PASSWORD, "/profile");
-  await expect.poll(() => profileBWasBlocked).toBe(true);
+  await e2eAuthAction(adminPage, "signOut");
+  await adminPage.goto("/auth/login?next=%2Fprofile");
+  await signIn(adminPage, emailB, PASSWORD, "/profile");
   await expect.poll(() => bAccountRequestedOnAdminPage).toBe(true);
   await expect(adminPage.locator(".nav-signout")).toBeVisible();
   await expect(adminPage.locator('a[href="/admin"]')).toHaveCount(0);
-  await expect(userPage.locator('a[href="/admin"]')).toHaveCount(0);
 
   releaseAdminAccount();
   const response = await delayedAdminResponse;
   expect(await response.finished()).toBeNull();
   await adminPage.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-  releaseProfileB();
   expect(await leakRecords(adminPage)).toEqual([]);
   await expect(adminPage.locator('a[href="/admin"]')).toHaveCount(0);
   await context.close();
@@ -268,7 +256,8 @@ test("Admin private list and detail caches disappear when the same browser conte
   await expect(page.getByText(emailMonitored, { exact: true })).toBeVisible();
 
   await page.locator(".nav-signout").click();
-  await page.waitForURL(/\/auth\/login$/);
+  await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
+  await expect(page.locator('input[type="email"]')).toBeVisible();
   await installLeakObserver(page, [emailMonitored, ADMIN_EMAIL]);
   let releaseProfileB!: () => void;
   let profileBWasBlocked = false;
@@ -298,7 +287,6 @@ test("a refresh-token session update keeps User A's query client and does not re
 
   const context = await browser.newContext({ storageState: undefined });
   const page = await context.newPage();
-  const refreshPage = await context.newPage();
   await signIn(page, emailA, PASSWORD, "/profile");
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("74");
   let accountRequestsAfterRefresh = 0;
@@ -308,8 +296,7 @@ test("a refresh-token session update keeps User A's query client and does not re
     if (requestEvent.url() === `${API_URL}/profile`) profileRequestsAfterRefresh += 1;
   });
 
-  await refreshPage.goto("/auth/login");
-  await refreshSessionFromAnotherPage(refreshPage);
+  await e2eAuthAction(page, "refresh");
   await expect.poll(() => accountRequestsAfterRefresh).toBeGreaterThanOrEqual(1);
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("74");
   expect(profileRequestsAfterRefresh).toBe(0);

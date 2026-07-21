@@ -91,6 +91,11 @@ type AuthContextState = {
   signOut: () => Promise<void>;
 };
 
+type E2eWindow = Window & {
+  __mynutriE2ERefreshSession?: () => ReturnType<ReturnType<typeof createClient>["auth"]["refreshSession"]>;
+  __mynutriE2ESignOut?: () => ReturnType<ReturnType<typeof createClient>["auth"]["signOut"]>;
+};
+
 const AuthContext = createContext<AuthContextState | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -108,6 +113,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const supabase = createClient();
+    const e2eWindow = window as E2eWindow;
+    const allowE2eAuthControl =
+      (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost") &&
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY === "e2e-public-key";
     let active = true;
     mountedRef.current = true;
     const acceptSession = (nextSession: Session | null) => {
@@ -120,11 +129,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (active && requestGeneration.current === initialGeneration) acceptSession(data.session);
     });
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => acceptSession(nextSession));
+    if (allowE2eAuthControl) {
+      e2eWindow.__mynutriE2ERefreshSession = () => supabase.auth.refreshSession();
+      e2eWindow.__mynutriE2ESignOut = () => supabase.auth.signOut();
+    }
     return () => {
       active = false;
       mountedRef.current = false;
       requestGeneration.current += 1;
       data.subscription.unsubscribe();
+      if (allowE2eAuthControl) {
+        delete e2eWindow.__mynutriE2ERefreshSession;
+        delete e2eWindow.__mynutriE2ESignOut;
+      }
     };
   }, []);
 
