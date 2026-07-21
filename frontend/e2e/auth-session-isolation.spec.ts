@@ -212,11 +212,17 @@ test("same browser context isolates cached profile and diary data across A to B 
     await diaryBBlocked;
     await route.continue();
   });
+  const diaryBResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/diary");
   await page.locator('a[href="/diary"]').click();
   await expect.poll(() => diaryBWasBlocked).toBe(true);
   await expect(page.getByText(diaryNameA, { exact: true })).toHaveCount(0);
   expect(await leakRecords(page)).toEqual([]);
   releaseDiaryB();
+  const response = await diaryBResponse;
+  expect(response.status()).toBe(200);
+  expect(await response.finished()).toBeNull();
+  await expect(page.getByText(diaryNameA, { exact: true })).toHaveCount(0);
+  expect(await leakRecords(page)).toEqual([]);
 
   await page.locator(".nav-signout").click();
   await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
