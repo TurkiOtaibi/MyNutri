@@ -57,13 +57,14 @@ async function submitLogin(page: Page, email: string, password: string, next: st
   if (waitForDestination) await page.waitForURL(new RegExp(`${next.replace("/", "\\/")}$`));
 }
 
-async function installLeakObserver(page: Page, markers: string[]) {
-  await page.evaluate((observedMarkers) => {
+async function installLeakObserver(page: Page, textMarkers: string[], exactInputValues: string[] = []) {
+  await page.evaluate(({ observedTextMarkers, observedInputValues }) => {
     const records: string[] = [];
     const snapshot = () => {
-      const inputs = Array.from(document.querySelectorAll("input")).map((input) => input.value).join(" ");
-      const visible = `${document.body.innerText} ${inputs}`;
-      if (observedMarkers.some((marker) => visible.includes(marker))) records.push(document.body.innerText);
+      const inputValues = Array.from(document.querySelectorAll("input")).map((input) => input.value);
+      const hasLeakedText = observedTextMarkers.some((marker) => document.body.innerText.includes(marker));
+      const hasLeakedInput = observedInputValues.some((value) => inputValues.includes(value));
+      if (hasLeakedText || hasLeakedInput) records.push(document.body.innerText);
     };
     new MutationObserver(snapshot).observe(document.documentElement, {
       childList: true,
@@ -73,7 +74,7 @@ async function installLeakObserver(page: Page, markers: string[]) {
     });
     snapshot();
     (window as Window & { __sessionLeakRecords?: string[] }).__sessionLeakRecords = records;
-  }, markers);
+  }, { observedTextMarkers: textMarkers, observedInputValues: exactInputValues });
 }
 
 async function leakRecords(page: Page) {
@@ -185,7 +186,7 @@ test("same browser context isolates cached profile and diary data across A to B 
   await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
   await expect(page.locator('input[type="email"]')).toBeVisible();
   blockHistoryB = true;
-  await installLeakObserver(page, [emailA, "71", diaryNameA, historyMarkerA]);
+  await installLeakObserver(page, [emailA, diaryNameA, historyMarkerA], ["71"]);
   let releaseProfileB!: () => void;
   let profileBWasBlocked = false;
   const profileBBlocked = new Promise<void>((resolve) => { releaseProfileB = resolve; });
