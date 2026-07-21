@@ -120,6 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathnameRef = useRef(pathname);
   const mountedRef = useRef(true);
   const subjectRef = useRef<string | null>(null);
+  const accessTokenRef = useRef<string | null>(null);
   const acceptedSessionSubjectRef = useRef<string | null>(null);
   const acceptedAccessTokenRef = useRef<string | null>(null);
   const hasAcceptedSessionRef = useRef(false);
@@ -149,6 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       acceptedSessionSubjectRef.current = nextSubject;
       acceptedAccessTokenRef.current = nextAccessToken;
       subjectRef.current = nextSubject;
+      accessTokenRef.current = nextAccessToken;
       requestGeneration.current += 1;
       dispatch({ type: "AUTH_CHANGED", session: nextSession });
     };
@@ -209,11 +211,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (controller.signal.aborted || !isCurrent()) return;
         if (error instanceof ApiError && error.status === 401) {
           requestGeneration.current += 1;
+          const signingOutGeneration = requestGeneration.current;
           dispatch({ type: "SIGNING_OUT", subjectId });
           if (subjectRef.current === subjectId) {
             const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(accessToken));
             const fingerprint = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-            if (subjectRef.current !== subjectId) return;
+            if (
+              !mountedRef.current ||
+              requestGeneration.current !== signingOutGeneration ||
+              subjectRef.current !== subjectId ||
+              accessTokenRef.current !== accessToken
+            ) return;
             document.cookie = `mynutri-auth-invalid-token=${fingerprint}; Path=/; Max-Age=60; SameSite=Lax`;
             window.location.assign(`/auth/login?next=${encodeURIComponent(pathnameRef.current)}`);
           }
