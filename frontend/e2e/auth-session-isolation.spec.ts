@@ -148,6 +148,23 @@ async function sessionBoundaryRotations(page: Page) {
   });
 }
 
+function createReleaseGate() {
+  let resolveGate!: () => void;
+  let released = false;
+  const promise = new Promise<void>((resolve) => { resolveGate = resolve; });
+  return {
+    promise,
+    get released() {
+      return released;
+    },
+    release() {
+      if (released) return;
+      released = true;
+      resolveGate();
+    }
+  };
+}
+
 async function e2eAuthAction(page: Page, action: "refresh" | "signOut" | "signIn" | "duplicate", credentials?: { email: string; password: string }) {
   const result = await page.evaluate(async ({ operation, login }) => {
     const testWindow = window as Window & {
@@ -370,13 +387,16 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
   const staleFoodId = "00000000-0000-4000-8000-000000000991";
   await token(emailB);
 
-  let releaseCreate!: () => void;
   let createWasBlocked = false;
   let createAuthorization: string | undefined;
   let createName: string | undefined;
   let adminAccountAuthorization: string | undefined;
+  let bAccountWasBlocked = false;
+  let bAccountWasSettled = false;
+  let bAccountAuthorization: string | undefined;
   let staleDetailRequested = false;
-  const createBlocked = new Promise<void>((resolve) => { releaseCreate = resolve; });
+  const createGate = createReleaseGate();
+  const bAccountGate = createReleaseGate();
   const context = await browser.newContext({ storageState: undefined });
   const page = await context.newPage();
 
@@ -420,12 +440,23 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
     createAuthorization = route.request().headers()["authorization"];
     createName = (route.request().postDataJSON() as { name?: string }).name;
     createWasBlocked = true;
-    await createBlocked;
+    await createGate.promise;
     await route.fulfill({
       status: 201,
       contentType: "application/json",
       body: JSON.stringify({ id: staleFoodId, name: marker })
     });
+  });
+  await page.route(`${API_URL}/account/me`, async (route) => {
+    const authorization = route.request().headers()["authorization"];
+    if (!authorization || authorization === adminAccountAuthorization) {
+      await route.continue();
+      return;
+    }
+    bAccountAuthorization = authorization;
+    bAccountWasBlocked = true;
+    await bAccountGate.promise;
+    await route.continue();
   });
   await page.route(`${API_URL}/foods/${staleFoodId}`, async (route) => {
     staleDetailRequested = true;
@@ -436,58 +467,75 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
     });
   });
 
-  const delayedCreateResponse = page.waitForResponse((response) =>
-    response.url() === `${API_URL}/foods` && response.request().method() === "POST"
-  );
-  await submitFoodForm(page);
-  await expect.poll(() => createWasBlocked).toBe(true);
+  try {
+    const delayedCreateResponse = page.waitForResponse((response) =>
+      response.url() === `${API_URL}/foods` && response.request().method() === "POST"
+    );
+    void delayedCreateResponse.catch(() => undefined);
+    await submitFoodForm(page);
+    await expect.poll(() => createWasBlocked).toBe(true);
 
-  await installLeakObserver(page, [marker], [marker], true);
-  const bAccountResponse = page.waitForResponse((response) =>
-    response.url() === `${API_URL}/account/me` &&
-    response.request().headers()["authorization"] !== adminAccountAuthorization
-  );
-  await e2eAuthAction(page, "signIn", { email: emailB, password: PASSWORD });
-  releaseCreate();
-  const [bResponse, response] = await Promise.all([bAccountResponse, delayedCreateResponse]);
-  expect(bResponse.status()).toBe(200);
-  expect(response.status()).toBe(201);
-  expect(await response.finished()).toBeNull();
-  const bAccount = await bResponse.json() as { email: string | null; role: "user" | "admin" };
-  expect(bAccount.email).toBe(emailB);
-  expect(bAccount.role).toBe("user");
-  const bAccountAuthorization = bResponse.request().headers()["authorization"];
-  const bSubjectKey = await sessionSubjectKey(page);
-  const rotations = await sessionBoundaryRotations(page);
-  const subjectRotation = [...rotations].reverse().find((rotation) =>
-    rotation.fromSubjectKey === adminSubjectKey && rotation.toSubjectKey === bSubjectKey
-  );
-  if (!subjectRotation) throw new Error("Expected direct Admin-to-User boundary rotation record was not captured.");
-  expect(subjectRotation.sequence).toBeGreaterThan(0);
-  expect(subjectRotation.previousAbortedBefore).toBe(false);
-  expect(subjectRotation.previousAbortedAfter).toBe(true);
-  expect(await retainedSessionSignalAborted(page)).toBe(true);
-  expect(await sessionSignalAborted(page)).toBe(false);
+    await installLeakObserver(page, [marker], [marker], true);
+    const bAccountResponse = page.waitForResponse((response) =>
+      response.url() === `${API_URL}/account/me` &&
+      response.request().headers()["authorization"] !== adminAccountAuthorization
+    ).then((response) => {
+      bAccountWasSettled = true;
+      return response;
+    });
+    void bAccountResponse.catch(() => undefined);
+    await e2eAuthAction(page, "signIn", { email: emailB, password: PASSWORD });
+    await expect.poll(() => bAccountWasBlocked).toBe(true);
 
-  await expect(page).toHaveURL(originalUrl);
-  await expect(page.locator(".nav-signout")).toBeVisible();
-  await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
-  await expect(page.locator("form.food-form-layout")).toHaveCount(0);
-  await expect(page.locator('.state-note[role="alert"]')).toHaveText("إدارة الأطعمة متاحة للمشرف فقط.");
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-  await page.waitForTimeout(100);
+    createGate.release();
+    const response = await delayedCreateResponse;
+    expect(response.status()).toBe(201);
+    expect(await response.finished()).toBeNull();
 
-  expect(createName).toBe(marker);
-  expect(createAuthorization).toBe(adminAccountAuthorization);
-  expect(createAuthorization).not.toBe(bAccountAuthorization);
-  expect(staleDetailRequested).toBe(false);
-  expect(await leakRecords(page)).toEqual([]);
-  await expect(page).toHaveURL(originalUrl);
-  await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
-  await expect(page.locator("form.food-form-layout")).toHaveCount(0);
-  await expect(page.locator('.state-note[role="alert"]')).toHaveText("إدارة الأطعمة متاحة للمشرف فقط.");
-  await expect(page.getByText(marker, { exact: true })).toHaveCount(0);
-  await context.close();
+    const bSubjectKey = await sessionSubjectKey(page);
+    const rotations = await sessionBoundaryRotations(page);
+    const subjectRotation = [...rotations].reverse().find((rotation) =>
+      rotation.fromSubjectKey === adminSubjectKey && rotation.toSubjectKey === bSubjectKey
+    );
+    if (!subjectRotation) throw new Error("Expected direct Admin-to-User boundary rotation record was not captured.");
+    expect(subjectRotation.sequence).toBeGreaterThan(0);
+    expect(subjectRotation.previousAbortedBefore).toBe(false);
+    expect(subjectRotation.previousAbortedAfter).toBe(true);
+    expect(await retainedSessionSignalAborted(page)).toBe(true);
+    expect(await sessionSignalAborted(page)).toBe(false);
+    expect(bAccountGate.released).toBe(false);
+
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await page.waitForTimeout(100);
+    expect(createName).toBe(marker);
+    expect(bAccountAuthorization).toMatch(/^Bearer /);
+    expect(createAuthorization).toBe(adminAccountAuthorization);
+    expect(createAuthorization).not.toBe(bAccountAuthorization);
+    expect(staleDetailRequested).toBe(false);
+    expect(await leakRecords(page)).toEqual([]);
+    await expect(page).toHaveURL(originalUrl);
+    await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+    await expect(page.locator("form.food-form-layout")).toHaveCount(0);
+    await expect(page.getByText(marker, { exact: true })).toHaveCount(0);
+
+    expect(bAccountGate.released).toBe(false);
+    expect(bAccountWasSettled).toBe(false);
+    bAccountGate.release();
+    const bResponse = await bAccountResponse;
+    expect(bAccountWasSettled).toBe(true);
+    expect(bResponse.status()).toBe(200);
+    expect(bResponse.request().headers()["authorization"]).toBe(bAccountAuthorization);
+    const bAccount = await bResponse.json() as { email: string | null; role: "user" | "admin" };
+    expect(bAccount.email).toBe(emailB);
+    expect(bAccount.role).toBe("user");
+    await expect(page.locator(".nav-signout")).toBeVisible();
+    await expect(page.locator('.state-note[role="alert"]')).toHaveText("إدارة الأطعمة متاحة للمشرف فقط.");
+    expect(await leakRecords(page)).toEqual([]);
+  } finally {
+    createGate.release();
+    bAccountGate.release();
+    await context.close().catch(() => undefined);
+  }
 });
 
 test("a stale User A 401 cannot clear User B's same-page session", async ({ browser }) => {
