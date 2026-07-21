@@ -109,6 +109,7 @@ type E2eWindow = Window & {
   __mynutriE2ESignOut?: () => ReturnType<ReturnType<typeof createClient>["auth"]["signOut"]>;
   __mynutriE2ESignInWithPassword?: (email: string, password: string) => ReturnType<ReturnType<typeof createClient>["auth"]["signInWithPassword"]>;
   __mynutriE2EDuplicateSession?: () => Promise<void>;
+  __mynutriE2EHoldFingerprint?: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextState | null>(null);
@@ -214,6 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const signingOutGeneration = requestGeneration.current;
           dispatch({ type: "SIGNING_OUT", subjectId });
           if (subjectRef.current === subjectId) {
+            await (window as E2eWindow).__mynutriE2EHoldFingerprint?.();
             const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(accessToken));
             const fingerprint = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
             if (
