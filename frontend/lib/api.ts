@@ -81,8 +81,11 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   return response.json() as Promise<T>;
 }
 
-export function getCurrentAccount(): Promise<CurrentAccount> {
-  return apiFetch<CurrentAccount>("/account/me");
+export function getCurrentAccount(options: { accessToken: string; signal?: AbortSignal }): Promise<CurrentAccount> {
+  return apiFetch<CurrentAccount>("/account/me", {
+    headers: { Authorization: `Bearer ${options.accessToken}` },
+    signal: options.signal
+  });
 }
 
 export async function getProfile(): Promise<ProfileResponse | null> {
