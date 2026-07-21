@@ -65,6 +65,22 @@ async function leakRecords(page: Page) {
   return page.evaluate(() => (window as Window & { __sessionLeakRecords?: string[] }).__sessionLeakRecords ?? []);
 }
 
+async function refreshSessionFromAnotherPage(page: Page) {
+  await page.evaluate(async ({ authUrl }) => {
+    const storageKey = Object.keys(localStorage).find((key) => key.includes("auth-token"));
+    if (!storageKey) throw new Error("Supabase session storage was not found.");
+    const current = JSON.parse(localStorage.getItem(storageKey) ?? "null") as { refresh_token?: string } | null;
+    if (!current?.refresh_token) throw new Error("Supabase refresh token was not found.");
+    const response = await fetch(`${authUrl}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: { apikey: "e2e-public-key", "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: current.refresh_token })
+    });
+    if (!response.ok) throw new Error(`Refresh token request failed with ${response.status}.`);
+    localStorage.setItem(storageKey, JSON.stringify(await response.json()));
+  }, { authUrl: AUTH_URL });
+}
+
 test("same browser context isolates cached profile and diary data across A to B to A", async ({ browser, request }) => {
   const suffix = Date.now();
   const emailA = `session-a-${suffix}@example.test`;
@@ -112,14 +128,36 @@ test("same browser context isolates cached profile and diary data across A to B 
 
   const context = await browser.newContext({ storageState: undefined });
   const page = await context.newPage();
+  const historyMarkerA = `A target history marker ${suffix}`;
+  let blockHistoryB = false;
+  let historyBWasBlocked = false;
+  let releaseHistoryB!: () => void;
+  const historyBBlocked = new Promise<void>((resolve) => { releaseHistoryB = resolve; });
+  await page.route(`${API_URL}/target-plans*`, async (route) => {
+    if (blockHistoryB) {
+      historyBWasBlocked = true;
+      await historyBBlocked;
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [], next_cursor: null }) });
+      return;
+    }
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [{ id: `plan-${suffix}`, status: "active", effective_from: historyMarkerA, effective_to: null, targets: { target_calories: 2100 } }],
+        next_cursor: null
+      })
+    });
+  });
   await signIn(page, emailA, PASSWORD, "/profile");
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("71");
+  await expect(page.getByText(historyMarkerA, { exact: true })).toBeVisible();
   await page.goto("/diary");
   await expect(page.getByText(diaryNameA, { exact: true })).toBeVisible();
 
   await page.locator(".nav-signout").click();
   await page.waitForURL(/\/auth\/login$/);
-  await installLeakObserver(page, [emailA, "71", diaryNameA]);
+  blockHistoryB = true;
+  await installLeakObserver(page, [emailA, "71", diaryNameA, historyMarkerA]);
   let releaseProfileB!: () => void;
   let profileBWasBlocked = false;
   const profileBBlocked = new Promise<void>((resolve) => { releaseProfileB = resolve; });
@@ -130,9 +168,11 @@ test("same browser context isolates cached profile and diary data across A to B 
   });
   await signIn(page, emailB, PASSWORD, "/profile");
   await expect.poll(() => profileBWasBlocked).toBe(true);
+  await expect.poll(() => historyBWasBlocked).toBe(true);
   await expect.poll(() => page.locator('input[aria-label="الوزن"]').count()).toBe(0);
   expect(await leakRecords(page)).toEqual([]);
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+  releaseHistoryB();
   releaseProfileB();
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("89");
   expect(await leakRecords(page)).toEqual([]);
@@ -204,5 +244,74 @@ test("a delivered delayed Admin account response cannot restore Admin identity a
   releaseProfileB();
   expect(await leakRecords(adminPage)).toEqual([]);
   await expect(adminPage.locator('a[href="/admin"]')).toHaveCount(0);
+  await context.close();
+});
+
+test("Admin private list and detail caches disappear when the same browser context becomes User B", async ({ browser, request }) => {
+  const suffix = Date.now();
+  const emailB = `admin-cache-b-${suffix}@example.test`;
+  const emailMonitored = `admin-cache-monitored-${suffix}@example.test`;
+  const tokenB = await token(emailB);
+  const tokenMonitored = await token(emailMonitored);
+  const adminToken = await token(ADMIN_EMAIL, ADMIN_PASSWORD);
+  expect((await request.put(`${API_URL}/profile`, { headers: headers(tokenB), data: profile(83) })).status()).toBe(200);
+  const monitoredAccount = await request.get(`${API_URL}/account/me`, { headers: headers(tokenMonitored) });
+  expect(monitoredAccount.status()).toBe(200);
+  const monitoredPrincipalId = (await monitoredAccount.json() as { principal_id: string }).principal_id;
+  expect((await request.get(`${API_URL}/account/me`, { headers: headers(adminToken) })).status()).toBe(200);
+
+  const context = await browser.newContext({ storageState: undefined });
+  const page = await context.newPage();
+  await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/admin/users");
+  await expect(page.getByText(emailMonitored, { exact: true })).toBeVisible();
+  await page.goto(`/admin/users/${monitoredPrincipalId}`);
+  await expect(page.getByText(emailMonitored, { exact: true })).toBeVisible();
+
+  await page.locator(".nav-signout").click();
+  await page.waitForURL(/\/auth\/login$/);
+  await installLeakObserver(page, [emailMonitored, ADMIN_EMAIL]);
+  let releaseProfileB!: () => void;
+  let profileBWasBlocked = false;
+  const profileBBlocked = new Promise<void>((resolve) => { releaseProfileB = resolve; });
+  await page.route(`${API_URL}/profile`, async (route) => {
+    profileBWasBlocked = true;
+    await profileBBlocked;
+    await route.continue();
+  });
+  await signIn(page, emailB, PASSWORD, "/profile");
+  await expect.poll(() => profileBWasBlocked).toBe(true);
+  await expect(page.locator(".selected-user-banner")).toHaveCount(0);
+  await expect(page.locator(".admin-user-row")).toHaveCount(0);
+  await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+  expect(await leakRecords(page)).toEqual([]);
+  releaseProfileB();
+  await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("83");
+  expect(await leakRecords(page)).toEqual([]);
+  await context.close();
+});
+
+test("a refresh-token session update keeps User A's query client and does not request another subject's profile", async ({ browser, request }) => {
+  const suffix = Date.now();
+  const emailA = `refresh-a-${suffix}@example.test`;
+  const tokenA = await token(emailA);
+  expect((await request.put(`${API_URL}/profile`, { headers: headers(tokenA), data: profile(74) })).status()).toBe(200);
+
+  const context = await browser.newContext({ storageState: undefined });
+  const page = await context.newPage();
+  const refreshPage = await context.newPage();
+  await signIn(page, emailA, PASSWORD, "/profile");
+  await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("74");
+  let accountRequestsAfterRefresh = 0;
+  let profileRequestsAfterRefresh = 0;
+  page.on("request", (requestEvent) => {
+    if (requestEvent.url() === `${API_URL}/account/me`) accountRequestsAfterRefresh += 1;
+    if (requestEvent.url() === `${API_URL}/profile`) profileRequestsAfterRefresh += 1;
+  });
+
+  await refreshPage.goto("/auth/login");
+  await refreshSessionFromAnotherPage(refreshPage);
+  await expect.poll(() => accountRequestsAfterRefresh).toBeGreaterThanOrEqual(1);
+  await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("74");
+  expect(profileRequestsAfterRefresh).toBe(0);
   await context.close();
 });
