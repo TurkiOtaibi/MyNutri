@@ -32,6 +32,7 @@ import { ApiError, activateTargetPlan, getNutritionRegistry, getProfile, listTar
 import { activityLabels, goalLabels, sexLabels } from "@/lib/labels";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels } from "@/lib/nutrients";
 import type { ActivityLevel, Goal, NutritionRegistryResponse, ProfileInput, ProfileResponse, Sex, TargetPlanSummary, TargetResponse } from "@/lib/types";
+import { useAuth } from "./AuthProvider";
 
 const PROFILE_READ_ERROR = "تعذر تحميل بياناتك";
 const PROFILE_READ_HELP = "تحقق من الاتصال ثم أعد المحاولة";
@@ -176,6 +177,8 @@ function validateDraft(draft: DraftProfile): { errors: FieldErrors; payload: Pro
 }
 
 export function ProfilePage() {
+  const { session } = useAuth();
+  const accessToken = session?.access_token;
   const router = useRouter();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<DraftProfile>(blankDraft);
@@ -239,7 +242,7 @@ export function ProfilePage() {
     const sequence = ++previewSequence.current;
     setPreviewPending(true);
     setPreviewFailed(false);
-    previewProfile(validation.payload)
+    previewProfile(validation.payload, accessToken)
       .then((result) => {
         if (sequence !== previewSequence.current) return;
         setPreview(result);
@@ -287,8 +290,8 @@ export function ProfilePage() {
   const mutation = useMutation({
     mutationFn: ({ payload, previewHash, key }: { payload: ProfileInput; previewHash: string; key: string }) =>
       profileQuery.data?.pending_plan
-        ? replacePendingTargetPlan(payload, previewHash, key)
-        : activateTargetPlan(payload, previewHash, key),
+        ? replacePendingTargetPlan(payload, previewHash, key, accessToken)
+        : activateTargetPlan(payload, previewHash, key, accessToken),
     onSuccess: async (activation) => {
       const refreshed = await profileQuery.refetch();
       const profile = refreshed.data;

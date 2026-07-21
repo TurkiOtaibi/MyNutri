@@ -51,6 +51,7 @@ import type {
   TargetResponse,
   WeekSummary
 } from "@/lib/types";
+import { useAuth } from "./AuthProvider";
 
 
 const FOODS_READ_ERROR = "تعذر تحميل قائمة الأطعمة. تحقق من الاتصال وحاول مرة أخرى.";
@@ -76,6 +77,8 @@ const mealAddLabels: Record<Exclude<MealType, "unspecified">, string> = {
 };
 
 export function DiaryPage() {
+  const { session } = useAuth();
+  const accessToken = session?.access_token;
   const queryClient = useQueryClient();
   const today = todayInputValue();
   const [selectedDate, setSelectedDate] = useState(today);
@@ -140,7 +143,7 @@ export function DiaryPage() {
   }, [openMenuId]);
 
   const deleteMutation = useMutation({
-    mutationFn: deleteDiaryEntry,
+    mutationFn: (entryId: string) => deleteDiaryEntry(entryId, accessToken),
     onSuccess: async () => {
       setDeleteError("");
       setDeletingEntry(null);
@@ -622,6 +625,8 @@ function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { select
   const [error, setError] = useState("");
   const [discardOpen, setDiscardOpen] = useState(false);
   const [saveSucceeded, setSaveSucceeded] = useState(false);
+  const { session } = useAuth();
+  const accessToken = session?.access_token;
   const searchRef = useRef<HTMLInputElement>(null);
   const dragStartRef = useRef<number | null>(null);
   const submitLockRef = useRef(false);
@@ -639,7 +644,7 @@ function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { select
   });
 
   const mutation = useMutation({
-    mutationFn: (payload: DiaryEntryInput) => createDiaryEntry(payload),
+    mutationFn: (payload: DiaryEntryInput) => createDiaryEntry(payload, accessToken),
     onSuccess: async () => {
       setSaveSucceeded(true);
       setError("");
@@ -872,11 +877,13 @@ function SelectedFoodSummary({ food, onChange }: { food: FoodResponse; onChange:
 }
 
 function EditEntryDialog({ entry, onClose, onSaved }: { entry: DiaryEntryResponse; onClose: () => void; onSaved: (meal: MealType) => Promise<void> }) {
+  const { session } = useAuth();
+  const accessToken = session?.access_token;
   const [quantity, setQuantity] = useState(String(entry.quantity));
   const [mealType, setMealType] = useState<MealType>(entry.meal_type ?? "unspecified");
   const [error, setError] = useState("");
   const mutation = useMutation({
-    mutationFn: (amount: number) => updateDiaryEntry(entry.id, amount, mealType),
+    mutationFn: (amount: number) => updateDiaryEntry(entry.id, amount, mealType, accessToken),
     onSuccess: () => onSaved(mealType),
     onError: () => setError(WRITE_ERROR)
   });

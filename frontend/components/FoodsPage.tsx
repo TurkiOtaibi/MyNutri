@@ -25,6 +25,7 @@ import {
 import type { FoodResponse, FoodSort } from "@/lib/types";
 
 import { FoodDeleteDialog } from "./FoodDeleteDialog";
+import { useAuth } from "./AuthProvider";
 
 const FOODS_READ_ERROR = "تعذر تحميل قائمة الأطعمة. تحقق من الاتصال وحاول مرة أخرى.";
 const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
@@ -39,6 +40,8 @@ const sortLabels: Record<FoodSort, string> = {
 };
 
 export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
+  const { session } = useAuth();
+  const accessToken = session?.access_token;
   const queryClient = useQueryClient();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -84,7 +87,7 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
   }, [foodsQuery.dataUpdatedAt]);
 
   const deleteMutation = useMutation({
-    mutationFn: deleteFood,
+    mutationFn: (foodId: string) => deleteFood(foodId, accessToken),
     onSuccess: async (result) => {
       setDeleteTarget(null);
       setOpenMenuId(null);
@@ -453,9 +456,11 @@ function FoodActionsMenu({
   onOpenChange: (open: boolean) => void;
   onDelete: () => void;
 }) {
+  const { session } = useAuth();
+  const accessToken = session?.access_token;
   const queryClient = useQueryClient();
   const statusMutation = useMutation({
-    mutationFn: () => food.status === "archived" ? restoreFood(food.id) : archiveFood(food.id),
+    mutationFn: () => food.status === "archived" ? restoreFood(food.id, accessToken) : archiveFood(food.id, accessToken),
     onSuccess: async () => {
       onOpenChange(false);
       await queryClient.invalidateQueries({ queryKey: ["foods"] });

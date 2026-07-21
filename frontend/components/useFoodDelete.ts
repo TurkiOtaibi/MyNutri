@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, deleteFood } from "@/lib/api";
+import { useAuth } from "./AuthProvider";
 
 const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
 
@@ -13,9 +14,11 @@ export function useFoodDelete({
   onDeleted?: () => void;
   onError?: (message: string) => void;
 }) {
+  const { session } = useAuth();
+  const accessToken = session?.access_token;
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: deleteFood,
+    mutationFn: (foodId: string) => deleteFood(foodId, accessToken),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["foods"] });
       onDeleted?.();

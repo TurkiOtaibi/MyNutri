@@ -64,7 +64,8 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   const [hydratedFoodId, setHydratedFoodId] = useState<string | null>(null);
   const initialForm = useRef(JSON.stringify(emptyFoodForm));
   const isEdit = mode === "edit";
-  const { account, loading: authLoading } = useAuth();
+  const { account, session, loading: authLoading } = useAuth();
+  const accessToken = session?.access_token;
 
   const foodQuery = useQuery({
     queryKey: ["food", foodId],
@@ -100,8 +101,8 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   const saveMutation = useMutation({
     mutationFn: async () => {
       const payload = normalizeFoodForm(form);
-      if (isEdit && foodId) return updateFood(foodId, payload);
-      return createFood(payload);
+      if (isEdit && foodId) return updateFood(foodId, payload, accessToken);
+      return createFood(payload, accessToken);
     },
     onSuccess: async (food) => {
       await queryClient.invalidateQueries({ queryKey: ["foods"] });

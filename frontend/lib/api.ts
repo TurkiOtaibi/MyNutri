@@ -88,6 +88,11 @@ export function getCurrentAccount(options: { accessToken: string; signal?: Abort
   });
 }
 
+function authorizedInit(accessToken: string | null | undefined, init: RequestInit = {}): RequestInit {
+  if (!accessToken) throw new ApiError("Authentication required", 401);
+  return { ...init, headers: { ...init.headers, Authorization: `Bearer ${accessToken}` } };
+}
+
 export async function getProfile(): Promise<ProfileResponse | null> {
   try {
     return await apiFetch<ProfileResponse>("/profile");
@@ -99,42 +104,42 @@ export async function getProfile(): Promise<ProfileResponse | null> {
   }
 }
 
-export function saveProfile(payload: ProfileInput): Promise<ProfileResponse> {
-  return apiFetch<ProfileResponse>("/profile", {
+export function saveProfile(payload: ProfileInput, accessToken: string | null | undefined): Promise<ProfileResponse> {
+  return apiFetch<ProfileResponse>("/profile", authorizedInit(accessToken, {
     method: "PUT",
     body: JSON.stringify(payload)
-  });
+  }));
 }
 
-export function previewProfile(payload: ProfileInput): Promise<TargetResponse> {
-  return apiFetch<TargetResponse>("/profile/preview", {
+export function previewProfile(payload: ProfileInput, accessToken: string | null | undefined): Promise<TargetResponse> {
+  return apiFetch<TargetResponse>("/profile/preview", authorizedInit(accessToken, {
     method: "POST",
     body: JSON.stringify(payload)
-  });
+  }));
 }
 
 export function activateTargetPlan(
   payload: ProfileInput,
   expectedPreviewHash: string,
-  idempotencyKey: string
+  idempotencyKey: string, accessToken: string | null | undefined
 ): Promise<TargetPlanActivationResponse> {
-  return apiFetch<TargetPlanActivationResponse>("/target-plans/activate", {
+  return apiFetch<TargetPlanActivationResponse>("/target-plans/activate", authorizedInit(accessToken, {
     method: "POST",
     headers: { "Idempotency-Key": idempotencyKey },
     body: JSON.stringify({ ...payload, confirmed: true, expected_preview_hash: expectedPreviewHash })
-  });
+  }));
 }
 
 export function replacePendingTargetPlan(
   payload: ProfileInput,
   expectedPreviewHash: string,
-  idempotencyKey: string
+  idempotencyKey: string, accessToken: string | null | undefined
 ): Promise<TargetPlanActivationResponse> {
-  return apiFetch<TargetPlanActivationResponse>("/target-plans/pending/replace", {
+  return apiFetch<TargetPlanActivationResponse>("/target-plans/pending/replace", authorizedInit(accessToken, {
     method: "POST",
     headers: { "Idempotency-Key": idempotencyKey },
     body: JSON.stringify({ ...payload, replace_confirmed: true, expected_preview_hash: expectedPreviewHash })
-  });
+  }));
 }
 
 export function getNutritionRegistry(): Promise<NutritionRegistryResponse> {
@@ -207,30 +212,30 @@ export function getAdminFood(foodId: string): Promise<FoodResponse> {
   return apiFetch<FoodResponse>(`/admin/foods/${foodId}`);
 }
 
-export function createFood(payload: FoodInput & { id?: string }): Promise<FoodResponse> {
-  return apiFetch<FoodResponse>("/foods", {
+export function createFood(payload: FoodInput & { id?: string }, accessToken: string | null | undefined): Promise<FoodResponse> {
+  return apiFetch<FoodResponse>("/foods", authorizedInit(accessToken, {
     method: "POST",
     body: JSON.stringify(payload)
-  });
+  }));
 }
 
-export function updateFood(foodId: string, payload: Partial<FoodInput>): Promise<FoodResponse> {
-  return apiFetch<FoodResponse>(`/foods/${foodId}`, {
+export function updateFood(foodId: string, payload: Partial<FoodInput>, accessToken: string | null | undefined): Promise<FoodResponse> {
+  return apiFetch<FoodResponse>(`/foods/${foodId}`, authorizedInit(accessToken, {
     method: "PUT",
     body: JSON.stringify(payload)
-  });
+  }));
 }
 
-export function deleteFood(foodId: string): Promise<{ disposition: "deleted" | "archived" }> {
-  return apiFetch<{ disposition: "deleted" | "archived" }>(`/admin/foods/${foodId}`, { method: "DELETE" });
+export function deleteFood(foodId: string, accessToken: string | null | undefined): Promise<{ disposition: "deleted" | "archived" }> {
+  return apiFetch<{ disposition: "deleted" | "archived" }>(`/admin/foods/${foodId}`, authorizedInit(accessToken, { method: "DELETE" }));
 }
 
-export function archiveFood(foodId: string): Promise<FoodResponse> {
-  return apiFetch<FoodResponse>(`/admin/foods/${foodId}/archive`, { method: "POST" });
+export function archiveFood(foodId: string, accessToken: string | null | undefined): Promise<FoodResponse> {
+  return apiFetch<FoodResponse>(`/admin/foods/${foodId}/archive`, authorizedInit(accessToken, { method: "POST" }));
 }
 
-export function restoreFood(foodId: string): Promise<FoodResponse> {
-  return apiFetch<FoodResponse>(`/admin/foods/${foodId}/restore`, { method: "POST" });
+export function restoreFood(foodId: string, accessToken: string | null | undefined): Promise<FoodResponse> {
+  return apiFetch<FoodResponse>(`/admin/foods/${foodId}/restore`, authorizedInit(accessToken, { method: "POST" }));
 }
 
 export interface AdminUserSummary {
@@ -275,22 +280,22 @@ export function listDiaryHistory(): Promise<DiaryEntryResponse[]> {
   return apiFetch<DiaryEntryResponse[]>("/diary");
 }
 
-export function createDiaryEntry(payload: DiaryEntryInput): Promise<DiaryEntryResponse> {
-  return apiFetch<DiaryEntryResponse>("/diary", {
+export function createDiaryEntry(payload: DiaryEntryInput, accessToken: string | null | undefined): Promise<DiaryEntryResponse> {
+  return apiFetch<DiaryEntryResponse>("/diary", authorizedInit(accessToken, {
     method: "POST",
     body: JSON.stringify(payload)
-  });
+  }));
 }
 
-export function updateDiaryEntry(entryId: string, quantity: number, mealType: MealType): Promise<DiaryEntryResponse> {
-  return apiFetch<DiaryEntryResponse>(`/diary/${entryId}`, {
+export function updateDiaryEntry(entryId: string, quantity: number, mealType: MealType, accessToken: string | null | undefined): Promise<DiaryEntryResponse> {
+  return apiFetch<DiaryEntryResponse>(`/diary/${entryId}`, authorizedInit(accessToken, {
     method: "PUT",
     body: JSON.stringify({ quantity, meal_type: mealType })
-  });
+  }));
 }
 
-export function deleteDiaryEntry(entryId: string): Promise<void> {
-  return apiFetch<void>(`/diary/${entryId}`, { method: "DELETE" });
+export function deleteDiaryEntry(entryId: string, accessToken: string | null | undefined): Promise<void> {
+  return apiFetch<void>(`/diary/${entryId}`, authorizedInit(accessToken, { method: "DELETE" }));
 }
 
 export function getWeekSummary(start: string): Promise<WeekSummary> {
