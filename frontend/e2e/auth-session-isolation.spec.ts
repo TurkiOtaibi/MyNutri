@@ -194,8 +194,26 @@ test("same browser context isolates cached profile and diary data across A to B 
     await profileBBlocked;
     await route.continue();
   });
+  let releaseDiaryB!: () => void;
+  let diaryBWasBlocked = false;
+  const diaryBBlocked = new Promise<void>((resolve) => { releaseDiaryB = resolve; });
+  await page.route(`${API_URL}/diary*`, async (route) => {
+    diaryBWasBlocked = true;
+    await diaryBBlocked;
+    await route.continue();
+  });
+  const diaryBResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/diary");
   await submitLogin(page, emailB, PASSWORD, "/profile", false);
   await expect(page.locator('a[href="/profile"]')).toBeVisible();
+  await expect.poll(() => diaryBWasBlocked).toBe(true);
+  await expect(page.getByText(diaryNameA, { exact: true })).toHaveCount(0);
+  expect(await leakRecords(page)).toEqual([]);
+  releaseDiaryB();
+  const response = await diaryBResponse;
+  expect(response.status()).toBe(200);
+  expect(await response.finished()).toBeNull();
+  await expect(page.getByText(diaryNameA, { exact: true })).toHaveCount(0);
+  expect(await leakRecords(page)).toEqual([]);
   await page.locator('a[href="/profile"]').click();
   await page.waitForURL(/\/profile$/);
   await expect.poll(() => profileBWasBlocked).toBe(true);
@@ -206,25 +224,6 @@ test("same browser context isolates cached profile and diary data across A to B 
   releaseHistoryB();
   releaseProfileB();
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("89");
-  expect(await leakRecords(page)).toEqual([]);
-  let releaseDiaryB!: () => void;
-  let diaryBWasBlocked = false;
-  const diaryBBlocked = new Promise<void>((resolve) => { releaseDiaryB = resolve; });
-  await page.route(`${API_URL}/diary*`, async (route) => {
-    diaryBWasBlocked = true;
-    await diaryBBlocked;
-    await route.continue();
-  });
-  const diaryBResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/diary");
-  await page.locator('.nav-link[href="/diary"]').click();
-  await expect.poll(() => diaryBWasBlocked).toBe(true);
-  await expect(page.getByText(diaryNameA, { exact: true })).toHaveCount(0);
-  expect(await leakRecords(page)).toEqual([]);
-  releaseDiaryB();
-  const response = await diaryBResponse;
-  expect(response.status()).toBe(200);
-  expect(await response.finished()).toBeNull();
-  await expect(page.getByText(diaryNameA, { exact: true })).toHaveCount(0);
   expect(await leakRecords(page)).toEqual([]);
 
   await page.locator(".nav-signout").click();
