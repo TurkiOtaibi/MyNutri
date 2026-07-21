@@ -135,7 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const generation = ++requestGeneration.current;
     const controller = new AbortController();
     dispatch({ type: "ACCOUNT_REQUEST", subjectId });
-    const isCurrent = () => mountedRef.current && requestGeneration.current === generation && subjectRef.current === subjectId;
+    const isCurrent = () => !controller.signal.aborted && mountedRef.current && requestGeneration.current === generation && subjectRef.current === subjectId;
     void getCurrentAccount({ accessToken, signal: controller.signal })
       .then((account) => {
         if (!isCurrent()) return;
@@ -146,6 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (controller.signal.aborted || !isCurrent()) return;
         if (error instanceof ApiError && error.status === 401) {
           const subjectBeforeSignOut = subjectRef.current;
+          requestGeneration.current += 1;
           dispatch({ type: "SIGNING_OUT", subjectId });
           let signOutError: unknown = null;
           try {
