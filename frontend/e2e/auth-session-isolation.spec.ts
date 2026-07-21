@@ -590,31 +590,66 @@ test("a stale User A 401 cannot clear User B's same-page session", async ({ brow
 test("a same-subject refresh during a held 401 fingerprint stage cannot redirect", async ({ browser }) => {
   const context = await browser.newContext({ storageState: undefined });
   const page = await context.newPage();
-  let firstAccountRequest = true;
-  await page.route(`${API_URL}/account/me`, async (route) => {
-    if (firstAccountRequest) {
-      firstAccountRequest = false;
-      await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ detail: "expired" }) });
-      return;
-    }
-    await route.continue();
-  });
-  await page.goto("/auth/login?next=%2Fprofile");
-  await page.evaluate(() => {
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => { release = resolve; });
-    const testWindow = window as Window & { __mynutriE2EHoldFingerprint?: () => Promise<void>; __releaseFingerprint?: () => void; __fingerprintHeld?: boolean };
-    testWindow.__mynutriE2EHoldFingerprint = () => { testWindow.__fingerprintHeld = true; return held; };
-    testWindow.__releaseFingerprint = release;
-  });
-  await submitLogin(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/profile", false);
-  await expect.poll(() => page.evaluate(() => Boolean((window as Window & { __fingerprintHeld?: boolean }).__fingerprintHeld))).toBe(true);
-  await e2eAuthAction(page, "refresh");
-  await page.evaluate(() => (window as Window & { __releaseFingerprint?: () => void }).__releaseFingerprint?.());
-  await expect(page.locator(".nav-signout")).toBeVisible();
-  await expect(page).not.toHaveURL(/\/auth\/login/);
-  expect(await page.evaluate(() => document.cookie.includes("mynutri-auth-invalid-token"))).toBe(false);
-  await context.close();
+  const owner = `held-fingerprint-${Date.now()}`;
+  try {
+    let firstAccountRequest = true;
+    await page.route(`${API_URL}/account/me`, async (route) => {
+      if (firstAccountRequest) {
+        firstAccountRequest = false;
+        await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ detail: "expired" }) });
+        return;
+      }
+      await route.continue();
+    });
+    await page.goto("/auth/login?next=%2Fprofile");
+    await page.evaluate((hookOwner) => {
+      type OwnedCallback = (() => void) & { __mynutriOwner?: string };
+      type HeldFingerprintHook = (() => Promise<void>) & { __mynutriOwner?: string };
+      const testWindow = window as Window & {
+        __mynutriE2EHoldFingerprint?: HeldFingerprintHook;
+        __releaseFingerprint?: OwnedCallback;
+        __fingerprintHeld?: boolean;
+      };
+      let release!: OwnedCallback;
+      const held = new Promise<void>((resolve) => {
+        release = () => resolve();
+      });
+      release.__mynutriOwner = hookOwner;
+      const holdFingerprint: HeldFingerprintHook = () => {
+        testWindow.__fingerprintHeld = true;
+        return held;
+      };
+      holdFingerprint.__mynutriOwner = hookOwner;
+      testWindow.__mynutriE2EHoldFingerprint = holdFingerprint;
+      testWindow.__releaseFingerprint = release;
+    }, owner);
+    await submitLogin(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/profile", false);
+    await expect.poll(() => page.evaluate(() => Boolean((window as Window & { __fingerprintHeld?: boolean }).__fingerprintHeld))).toBe(true);
+    await e2eAuthAction(page, "refresh");
+    await page.evaluate(() => (window as Window & { __releaseFingerprint?: () => void }).__releaseFingerprint?.());
+    await expect(page.locator(".nav-signout")).toBeVisible();
+    await expect(page).not.toHaveURL(/\/auth\/login/);
+    expect(await page.evaluate(() => document.cookie.includes("mynutri-auth-invalid-token"))).toBe(false);
+  } finally {
+    await page.evaluate((hookOwner) => {
+      type OwnedCallback = (() => void) & { __mynutriOwner?: string };
+      type HeldFingerprintHook = (() => Promise<void>) & { __mynutriOwner?: string };
+      const testWindow = window as Window & {
+        __mynutriE2EHoldFingerprint?: HeldFingerprintHook;
+        __releaseFingerprint?: OwnedCallback;
+        __fingerprintHeld?: boolean;
+      };
+      const ownsHoldFingerprint = testWindow.__mynutriE2EHoldFingerprint?.__mynutriOwner === hookOwner;
+      const ownsReleaseFingerprint = testWindow.__releaseFingerprint?.__mynutriOwner === hookOwner;
+      if (ownsReleaseFingerprint) testWindow.__releaseFingerprint?.();
+      if (ownsHoldFingerprint) {
+        delete testWindow.__mynutriE2EHoldFingerprint;
+        delete testWindow.__fingerprintHeld;
+      }
+      if (ownsReleaseFingerprint) delete testWindow.__releaseFingerprint;
+    }, owner).catch(() => undefined);
+    await context.close();
+  }
 });
 
 test("a current account 401 clears the matching session before showing login", async ({ browser }) => {

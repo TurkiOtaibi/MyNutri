@@ -114,6 +114,11 @@ type E2eWindow = Window & {
 
 const AuthContext = createContext<AuthContextState | null>(null);
 
+function allowE2eAuthControl() {
+  return (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost") &&
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY === "e2e-public-key";
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const router = useRouter();
@@ -134,9 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const supabase = createClient();
     const e2eWindow = window as E2eWindow;
-    const allowE2eAuthControl =
-      (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost") &&
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY === "e2e-public-key";
+    const e2eAuthControlAllowed = allowE2eAuthControl();
     let active = true;
     mountedRef.current = true;
     const acceptSession = (nextSession: Session | null) => {
@@ -160,7 +163,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (active && requestGeneration.current === initialGeneration) acceptSession(data.session);
     });
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => acceptSession(nextSession));
-    if (allowE2eAuthControl) {
+    if (e2eAuthControlAllowed) {
       e2eWindow.__mynutriE2ERefreshSession = () => supabase.auth.refreshSession();
       e2eWindow.__mynutriE2ESignOut = () => supabase.auth.signOut();
       e2eWindow.__mynutriE2ESignInWithPassword = (email, password) => supabase.auth.signInWithPassword({ email, password });
@@ -174,7 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mountedRef.current = false;
       requestGeneration.current += 1;
       data.subscription.unsubscribe();
-      if (allowE2eAuthControl) {
+      if (e2eAuthControlAllowed) {
         delete e2eWindow.__mynutriE2ERefreshSession;
         delete e2eWindow.__mynutriE2ESignOut;
         delete e2eWindow.__mynutriE2ESignInWithPassword;
@@ -215,7 +218,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const signingOutGeneration = requestGeneration.current;
           dispatch({ type: "SIGNING_OUT", subjectId });
           if (subjectRef.current === subjectId) {
-            await (window as E2eWindow).__mynutriE2EHoldFingerprint?.();
+            if (allowE2eAuthControl()) {
+              try {
+                await (window as E2eWindow).__mynutriE2EHoldFingerprint?.();
+              } catch {
+                // Test instrumentation must never alter production 401 recovery.
+              }
+            }
             const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(accessToken));
             const fingerprint = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
             if (
