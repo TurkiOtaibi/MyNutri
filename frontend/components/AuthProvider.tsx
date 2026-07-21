@@ -13,7 +13,6 @@ type AuthState = {
   account: CurrentAccount | null;
   accountLoadingSubjectId: string | null;
   accountSettledSubjectId: string | null;
-  invalidSubjectId: string | null;
   initialized: boolean;
   signingOutSubjectId: string | null;
   reloadNonce: number;
@@ -24,7 +23,6 @@ type AuthAction =
   | { type: "ACCOUNT_REQUEST"; subjectId: string }
   | { type: "ACCOUNT_RECEIVED"; subjectId: string; account: CurrentAccount }
   | { type: "ACCOUNT_COMPLETE"; subjectId: string }
-  | { type: "AUTH_INVALID"; subjectId: string }
   | { type: "SIGNING_OUT"; subjectId: string }
   | { type: "RESTORE_AFTER_SIGNOUT_FAILURE"; subjectId: string };
 
@@ -34,7 +32,6 @@ const initialState: AuthState = {
   account: null,
   accountLoadingSubjectId: null,
   accountSettledSubjectId: null,
-  invalidSubjectId: null,
   initialized: false,
   signingOutSubjectId: null,
   reloadNonce: 0
@@ -45,9 +42,6 @@ function reducer(state: AuthState, action: AuthAction): AuthState {
     case "AUTH_CHANGED": {
       const previousSubject = state.session?.user.id ?? null;
       const nextSubject = action.session?.user.id ?? null;
-      if (state.invalidSubjectId === nextSubject) {
-        return { ...state, initialized: true };
-      }
       if (previousSubject !== nextSubject) {
         return {
           ...state,
@@ -57,7 +51,6 @@ function reducer(state: AuthState, action: AuthAction): AuthState {
           accountLoadingSubjectId: nextSubject,
           accountSettledSubjectId: null,
           signingOutSubjectId: null,
-          invalidSubjectId: null,
           initialized: true
         };
       }
@@ -66,7 +59,6 @@ function reducer(state: AuthState, action: AuthAction): AuthState {
         session: action.session,
         initialized: true,
         signingOutSubjectId: state.signingOutSubjectId === nextSubject ? state.signingOutSubjectId : null,
-        invalidSubjectId: null
       };
     }
     case "ACCOUNT_REQUEST":
@@ -80,19 +72,6 @@ function reducer(state: AuthState, action: AuthAction): AuthState {
     case "ACCOUNT_COMPLETE":
       return state.session?.user.id === action.subjectId
         ? { ...state, accountLoadingSubjectId: null, accountSettledSubjectId: action.subjectId }
-        : state;
-    case "AUTH_INVALID":
-      return state.session?.user.id === action.subjectId
-        ? {
-            ...state,
-            session: null,
-            account: null,
-            accountSubjectId: null,
-            accountLoadingSubjectId: null,
-            accountSettledSubjectId: null,
-            signingOutSubjectId: null,
-            invalidSubjectId: action.subjectId
-          }
         : state;
     case "SIGNING_OUT":
       return state.session?.user.id === action.subjectId
@@ -206,11 +185,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (controller.signal.aborted || !isCurrent()) return;
         if (error instanceof ApiError && error.status === 401) {
           requestGeneration.current += 1;
-          // Supabase has no compare-and-clear API for this captured token. Invalidate only
-          // the failed subject locally; a later, different auth event is the only recovery.
-          dispatch({ type: "AUTH_INVALID", subjectId });
+          dispatch({ type: "SIGNING_OUT", subjectId });
           if (subjectRef.current === subjectId) {
-            router.replace(`/auth/login?next=${encodeURIComponent(pathnameRef.current)}`);
+            document.cookie = `mynutri-auth-invalid-subject=${encodeURIComponent(subjectId)}; Path=/; Max-Age=60; SameSite=Lax`;
+            window.location.assign(`/auth/login?next=${encodeURIComponent(pathnameRef.current)}`);
           }
         }
       })

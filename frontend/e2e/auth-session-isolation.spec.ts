@@ -50,11 +50,11 @@ async function signIn(page: Page, email: string, password: string, next: string)
   await submitLogin(page, email, password, next);
 }
 
-async function submitLogin(page: Page, email: string, password: string, next: string) {
+async function submitLogin(page: Page, email: string, password: string, next: string, waitForDestination = true) {
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.locator('button[type="submit"]').click();
-  await page.waitForURL(new RegExp(`${next.replace("/", "\\/")}$`));
+  if (waitForDestination) await page.waitForURL(new RegExp(`${next.replace("/", "\\/")}$`));
 }
 
 async function installLeakObserver(page: Page, markers: string[]) {
@@ -329,6 +329,23 @@ test("a stale User A 401 cannot clear User B's same-page session", async ({ brow
   await expect(page).not.toHaveURL(/\/auth\/login/);
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
   expect(await leakRecords(page)).toEqual([]);
+  await context.close();
+});
+
+test("a current account 401 clears the matching session before showing login", async ({ browser }) => {
+  const context = await browser.newContext({ storageState: undefined });
+  const page = await context.newPage();
+  await page.route(`${API_URL}/account/me`, async (route) => {
+    await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ detail: "expired" }) });
+  });
+  await page.goto("/auth/login?next=%2Fprofile");
+  const accountResponse = page.waitForResponse((response) => response.url() === `${API_URL}/account/me`);
+  await submitLogin(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/profile", false);
+  expect((await accountResponse).status()).toBe(401);
+  await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
+  await expect(page.locator('input[type="email"]')).toBeVisible();
+  await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+  expect(await page.evaluate(() => document.cookie.includes("mynutri-auth-invalid-subject"))).toBe(false);
   await context.close();
 });
 

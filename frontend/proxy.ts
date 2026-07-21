@@ -2,6 +2,18 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 const PUBLIC_AUTH_PATHS = ["/auth/login", "/auth/sign-up", "/auth/forgot-password"];
+const INVALID_SUBJECT_COOKIE = "mynutri-auth-invalid-subject";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function clearInvalidSubject(response: NextResponse) {
+  response.cookies.set(INVALID_SUBJECT_COOKIE, "", { path: "/", maxAge: 0, sameSite: "lax" });
+}
+
+function redirectWithCookies(url: URL, response: NextResponse) {
+  const redirect = NextResponse.redirect(url);
+  response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+  return redirect;
+}
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -22,7 +34,20 @@ export async function proxy(request: NextRequest) {
     }
   });
   const { data } = await supabase.auth.getClaims();
-  const authenticated = Boolean(data?.claims?.sub);
+  const subject = typeof data?.claims?.sub === "string" ? data.claims.sub : null;
+  const marker = request.cookies.get(INVALID_SUBJECT_COOKIE)?.value;
+  if (marker && UUID.test(marker)) {
+    if (marker === subject) {
+      await supabase.auth.signOut();
+      const redirect = redirectWithCookies(new URL("/auth/login", request.url), response);
+      clearInvalidSubject(redirect);
+      return redirect;
+    }
+    clearInvalidSubject(response);
+  } else if (marker) {
+    clearInvalidSubject(response);
+  }
+  const authenticated = Boolean(subject);
   const path = request.nextUrl.pathname;
   const publicAuth = PUBLIC_AUTH_PATHS.includes(path);
 
@@ -30,10 +55,10 @@ export async function proxy(request: NextRequest) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/auth/login";
     redirect.searchParams.set("next", path);
-    return NextResponse.redirect(redirect);
+    return redirectWithCookies(redirect, response);
   }
   if (authenticated && publicAuth) {
-    return NextResponse.redirect(new URL("/diary", request.url));
+    return redirectWithCookies(new URL("/diary", request.url), response);
   }
   return response;
 }
