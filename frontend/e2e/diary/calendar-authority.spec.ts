@@ -85,9 +85,10 @@ test.describe("@diary @calendar-authority authoritative Diary date", () => {
     const picker = page.locator('input[type="date"]');
     await expect(picker).toHaveValue(BEFORE_ROLLOVER.current_diary_date);
 
+    const requestsBeforeRollover = requestCount();
     authority = AFTER_ROLLOVER;
     await page.clock.fastForward(200);
-    await expect.poll(requestCount).toBeGreaterThanOrEqual(2);
+    await expect.poll(requestCount).toBeGreaterThan(requestsBeforeRollover);
     await expect(picker).toHaveValue(AFTER_ROLLOVER.current_diary_date);
     await expect(page.locator(".week-day-arrow.next")).toBeDisabled();
   });
