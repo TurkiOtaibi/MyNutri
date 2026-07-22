@@ -78,17 +78,36 @@ test.describe("@diary @calendar-authority authoritative Diary date", () => {
   });
 
   test("@p0 refreshes at absolute rollover and advances an open page that was on today", async ({ page }) => {
-    await page.clock.install({ time: new Date("2026-07-22T20:59:59.900Z") });
-    let authority = BEFORE_ROLLOVER;
-    const requestCount = await mockAuthority(page, () => authority);
+    const dueAuthority = {
+      ...BEFORE_ROLLOVER,
+      next_rollover_at: new Date(Date.now() - 1_000).toISOString()
+    };
+    const refreshedAuthority = {
+      ...AFTER_ROLLOVER,
+      next_rollover_at: new Date(Date.now() + 86_400_000).toISOString()
+    };
+    let requestCount = 0;
+    let announceThirdRequest!: () => void;
+    const thirdRequestStarted = new Promise<void>((resolve) => { announceThirdRequest = resolve; });
+    let releaseThirdRequest!: () => void;
+    const thirdRequestRelease = new Promise<void>((resolve) => { releaseThirdRequest = resolve; });
+    await page.route(`${API_URL}/account/calendar`, async (route) => {
+      requestCount += 1;
+      if (requestCount <= 2) {
+        await route.fulfill({ status: 200, contentType: "application/json", json: dueAuthority });
+        return;
+      }
+      announceThirdRequest();
+      await thirdRequestRelease;
+      await route.fulfill({ status: 200, contentType: "application/json", json: refreshedAuthority });
+    });
+
     await page.goto("/diary");
     const picker = page.locator('input[type="date"]');
     await expect(picker).toHaveValue(BEFORE_ROLLOVER.current_diary_date);
 
-    const requestsBeforeRollover = requestCount();
-    authority = AFTER_ROLLOVER;
-    await page.clock.runFor(200);
-    await expect.poll(requestCount).toBeGreaterThan(requestsBeforeRollover);
+    await thirdRequestStarted;
+    releaseThirdRequest();
     await expect(picker).toHaveValue(AFTER_ROLLOVER.current_diary_date);
     await expect(page.locator(".week-day-arrow.next")).toBeDisabled();
   });
