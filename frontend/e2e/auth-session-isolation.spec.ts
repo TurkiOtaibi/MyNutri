@@ -35,15 +35,10 @@ function profile(weight: number) {
   };
 }
 
-function riyadhToday() {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Riyadh",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(new Date());
-  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
-  return `${value("year")}-${value("month")}-${value("day")}`;
+async function authoritativeDiaryDate(accessToken: string): Promise<string> {
+  const response = await fetch(`${API_URL}/account/calendar`, { headers: headers(accessToken) });
+  expect(response.status).toBe(200);
+  return ((await response.json()) as { current_diary_date: string }).current_diary_date;
 }
 
 async function signIn(page: Page, email: string, password: string, next: string) {
@@ -237,10 +232,11 @@ test("same browser context isolates cached profile and diary data across A to B 
   });
   expect(foodResponse.status()).toBe(201);
   const food = await foodResponse.json() as { id: string };
+  const diaryDate = await authoritativeDiaryDate(tokenA);
   const diaryResponse = await request.post(`${API_URL}/diary`, {
     headers: headers(tokenA),
     data: {
-      entry_date: riyadhToday(),
+      entry_date: diaryDate,
       food_id: food.id,
       quantity: 1,
       meal_type: "breakfast"

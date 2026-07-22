@@ -27,6 +27,12 @@ export interface CurrentAccount {
   status: "active" | "disabled";
 }
 
+export interface CalendarAuthority {
+  current_diary_date: string;
+  calendar_timezone: string;
+  next_rollover_at: string;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -83,6 +89,13 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
 export function getCurrentAccount(options: { accessToken: string; signal?: AbortSignal }): Promise<CurrentAccount> {
   return apiFetch<CurrentAccount>("/account/me", {
+    headers: { Authorization: `Bearer ${options.accessToken}` },
+    signal: options.signal
+  });
+}
+
+export function getCalendarAuthority(options: { accessToken: string; signal?: AbortSignal }): Promise<CalendarAuthority> {
+  return apiFetch<CalendarAuthority>("/account/calendar", {
     headers: { Authorization: `Bearer ${options.accessToken}` },
     signal: options.signal
   });
