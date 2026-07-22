@@ -269,7 +269,23 @@ def ensure_not_duplicate(
 
 
 def _lock_food_namespace(session: Session) -> None:
+    """Serialize Food writers before they take an exclusive Food row lock."""
     session.exec(select(Principal).order_by(Principal.id).with_for_update()).first()
+
+
+def lock_food_namespace_for_logging(session: Session) -> None:
+    """Join the Food lock order with a reader-compatible namespace lock.
+
+    Diary capture holds ``FOR KEY SHARE`` on the same namespace sentinel before
+    resolving TargetPlan state or taking ``FOR SHARE`` on Food. Food writers
+    take ``FOR UPDATE`` here first, so neither side can hold Food while waiting
+    for the namespace lock. Concurrent Diary captures remain compatible.
+    """
+    session.exec(
+        select(Principal)
+        .order_by(Principal.id)
+        .with_for_update(read=True, key_share=True)
+    ).first()
 
 
 def _validated_update_data(
