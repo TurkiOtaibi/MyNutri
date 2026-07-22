@@ -248,7 +248,18 @@ def _scaled(value: Any, factor: float) -> float | None:
     return round(float(value) * factor, 6)
 
 
-def create_snapshot_v3(session: Session, food: Food) -> dict[str, Any]:
+def _create_snapshot_v3_from_locked_food(session: Session, food: Food) -> dict[str, Any]:
+    """Serialize Food and classifications while its parent row lock is held.
+
+    Callers must load ``food`` through the Diary shared-lock loader and retain
+    that transaction through the Diary insert. The parent row is the lock
+    protocol's synchronization point for the child queries below.
+    """
+    return _serialize_snapshot_v3(session, food)
+
+
+def _serialize_snapshot_v3(session: Session, food: Food) -> dict[str, Any]:
+    """Serialize V3; runtime callers must use the locked wrapper above."""
     factor = float(food.unit_amount) / 100
     nutrition = {
         "calories": _scaled(food.calories, factor),
@@ -354,7 +365,8 @@ def create_snapshot_v2(
     Runtime writers use V3. This helper remains so historical fixtures can
     continue proving that the immutable V2 reader is supported.
     """
-    v3 = create_snapshot_v3(session, food)
+    # Compatibility fixture construction is not a runtime snapshot writer.
+    v3 = _serialize_snapshot_v3(session, food)
     category = food.food_category_key
     if category not in {"whole_grains", "refined_grains"}:
         category = "other" if category in {"grains_starches", "baked_goods"} else category
