@@ -10,6 +10,7 @@ const majorStates = [
 
 for (const state of majorStates) {
   test(`@certification ${state.name} has no serious or critical axe violations`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(state.path);
     await expect(page.locator("main").first()).toBeVisible();
 

@@ -4,6 +4,7 @@ import path from "node:path";
 
 const frontendUrl = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
 const backendUrl = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
+const skipGlobalSetup = process.env.PLAYWRIGHT_SKIP_GLOBAL_SETUP === "1";
 
 const localHosts = new Set([
   "127.0.0.1",
@@ -22,7 +23,7 @@ for (const value of [frontendUrl, backendUrl]) {
 
 export default defineConfig({
   testDir: "./e2e",
-  globalSetup: "./e2e/global-setup.ts",
+  globalSetup: skipGlobalSetup ? undefined : "./e2e/global-setup.ts",
   outputDir: "./test-results",
   fullyParallel: false,
   workers: 1,

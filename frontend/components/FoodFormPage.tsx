@@ -26,6 +26,7 @@ import type { FoodResponse, NutritionRegistryResponse, NovaClassification } from
 import { FoodDeleteDialog } from "./FoodDeleteDialog";
 import { useFoodDelete } from "./useFoodDelete";
 import { useAuth } from "./AuthProvider";
+import { useSessionAbortSignal } from "./SessionQueryProvider";
 
 const FOOD_READ_ERROR = "تعذر تحميل تفاصيل الطعام. تحقق من الاتصال وحاول مرة أخرى.";
 const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
@@ -64,7 +65,9 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   const [hydratedFoodId, setHydratedFoodId] = useState<string | null>(null);
   const initialForm = useRef(JSON.stringify(emptyFoodForm));
   const isEdit = mode === "edit";
-  const { account, loading: authLoading } = useAuth();
+  const { account, session, loading: authLoading } = useAuth();
+  const accessToken = session?.access_token;
+  const sessionSignal = useSessionAbortSignal();
 
   const foodQuery = useQuery({
     queryKey: ["food", foodId],
@@ -100,15 +103,19 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   const saveMutation = useMutation({
     mutationFn: async () => {
       const payload = normalizeFoodForm(form);
-      if (isEdit && foodId) return updateFood(foodId, payload);
-      return createFood(payload);
+      if (isEdit && foodId) return updateFood(foodId, payload, accessToken, sessionSignal);
+      return createFood(payload, accessToken, sessionSignal);
     },
     onSuccess: async (food) => {
+      if (sessionSignal.aborted) return;
       await queryClient.invalidateQueries({ queryKey: ["foods"] });
+      if (sessionSignal.aborted) return;
       await queryClient.invalidateQueries({ queryKey: ["food", food.id] });
+      if (sessionSignal.aborted) return;
       router.push(`/foods/${food.id}`);
     },
     onError: (error) => {
+      if (sessionSignal.aborted) return;
       const apiErrors = mapFoodApiError(error);
       if (hasFoodErrors(apiErrors)) {
         setErrors(apiErrors);
@@ -120,8 +127,12 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   });
 
   const deleteMutation = useFoodDelete({
-    onDeleted: () => router.push("/foods"),
-    onError: (message) => setNote(message)
+    onDeleted: () => {
+      if (!sessionSignal.aborted) router.push("/foods");
+    },
+    onError: (message) => {
+      if (!sessionSignal.aborted) setNote(message);
+    }
   });
 
   const optionalHasErrors = useMemo(() => optionalFields.some((field) => errors[field]), [errors]);

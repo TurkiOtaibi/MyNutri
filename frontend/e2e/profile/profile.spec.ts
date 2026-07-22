@@ -223,18 +223,33 @@ test.describe("@profile Profile and targets redesign", () => {
     const profileResponseBlocked = new Promise<void>((resolve) => {
       releaseProfileResponse = resolve;
     });
+    let releaseFirstFetch: () => void = () => undefined;
+    const firstProfileFetched = new Promise<void>((resolve) => {
+      releaseFirstFetch = resolve;
+    });
+    let releaseFirstFulfill: () => void = () => undefined;
+    const firstProfileFulfilled = new Promise<void>((resolve) => {
+      releaseFirstFulfill = resolve;
+    });
+    let delayedFirstProfileRequest = false;
     await page.route(profileApiPattern, async (route) => {
       if (
         route.request().method() !== "GET" ||
         route.request().resourceType() !== "fetch"
       ) return route.continue();
+      if (delayedFirstProfileRequest) return route.continue();
+      delayedFirstProfileRequest = true;
       const response = await route.fetch();
+      releaseFirstFetch();
       await profileResponseBlocked;
-      return route.fulfill({ response });
+      await route.fulfill({ response });
+      releaseFirstFulfill();
     });
     const navigation = page.goto("/profile");
     await expect(page.locator(".profile-card-skeleton").first()).toBeVisible();
+    await firstProfileFetched;
     releaseProfileResponse();
+    await firstProfileFulfilled;
     await navigation;
     await expect(page.getByLabel("الوزن")).toBeVisible();
     await page.unroute(profileApiPattern);

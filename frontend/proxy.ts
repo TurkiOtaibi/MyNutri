@@ -2,6 +2,19 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 const PUBLIC_AUTH_PATHS = ["/auth/login", "/auth/sign-up", "/auth/forgot-password"];
+const INVALID_TOKEN_COOKIE = "mynutri-auth-invalid-token";
+const TOKEN_FINGERPRINT = /^[0-9a-f]{64}$/;
+
+function redirectWithCookies(url: URL, response: NextResponse) {
+  const redirect = NextResponse.redirect(url);
+  response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+  return redirect;
+}
+
+async function fingerprint(token: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -22,18 +35,25 @@ export async function proxy(request: NextRequest) {
     }
   });
   const { data } = await supabase.auth.getClaims();
-  const authenticated = Boolean(data?.claims?.sub);
+  const subject = typeof data?.claims?.sub === "string" ? data.claims.sub : null;
+  const marker = request.cookies.get(INVALID_TOKEN_COOKIE)?.value;
+  let authenticated = Boolean(subject);
+  if (marker && TOKEN_FINGERPRINT.test(marker)) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const currentToken = sessionData.session?.access_token;
+    if (currentToken && marker === await fingerprint(currentToken)) authenticated = false;
+  }
   const path = request.nextUrl.pathname;
   const publicAuth = PUBLIC_AUTH_PATHS.includes(path);
 
   if (!authenticated && !publicAuth && path !== "/auth/reset-password") {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/auth/login";
-    redirect.searchParams.set("next", path);
-    return NextResponse.redirect(redirect);
+    redirect.searchParams.set("next", `${path}${request.nextUrl.search}`);
+    return redirectWithCookies(redirect, response);
   }
   if (authenticated && publicAuth) {
-    return NextResponse.redirect(new URL("/diary", request.url));
+    return redirectWithCookies(new URL("/diary", request.url), response);
   }
   return response;
 }
