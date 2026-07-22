@@ -70,6 +70,8 @@ def postgres_food() -> tuple[Engine, UUID]:
     _run_alembic(url, "upgrade", "head")
     with Session(engine) as session:
         principal = Principal(id=PRINCIPAL_ID)
+        session.add(principal)
+        session.flush()
         food = Food(
             principal_id=PRINCIPAL_ID,
             name="Old complete",
@@ -87,7 +89,6 @@ def postgres_food() -> tuple[Engine, UUID]:
             fat_g=5,
             fiber_g=4,
         )
-        session.add(principal)
         session.add(food)
         session.flush()
         session.add(
@@ -329,6 +330,9 @@ def test_archive_race_archive_first_prevents_logging(postgres_food, monkeypatch)
         archived.result(timeout=15)
         _not_found(logged)
 
+    with Session(engine) as session:
+        assert session.exec(select(DiaryEntry)).all() == []
+
 
 @pytest.mark.migration
 def test_delete_race_logger_first_archives_used_food(postgres_food, monkeypatch) -> None:
@@ -384,6 +388,7 @@ def test_delete_race_delete_first_prevents_logging_missing_food(postgres_food, m
 
     with Session(engine) as session:
         assert session.get(Food, food_id) is None
+        assert session.exec(select(DiaryEntry)).all() == []
 
 
 @pytest.mark.migration
@@ -407,3 +412,16 @@ def test_two_concurrent_diary_readers_share_food_lock(postgres_food, monkeypatch
 
     _assert_snapshot(_entry_snapshot(engine, first_id), "old")
     _assert_snapshot(_entry_snapshot(engine, second_id), "old")
+
+    def fail_after_snapshot(session, food):
+        original(session, food)
+        raise RuntimeError("induced failure after snapshot serialization")
+
+    monkeypatch.setattr(
+        diary_service, "_create_snapshot_v3_from_locked_food", fail_after_snapshot
+    )
+    with pytest.raises(RuntimeError, match="induced failure"):
+        _log(engine, food_id, "rollback-after-snapshot")
+    with Session(engine) as session:
+        entries = session.exec(select(DiaryEntry).where(DiaryEntry.food_id == food_id)).all()
+        assert {entry.id for entry in entries} == {first_id, second_id}
