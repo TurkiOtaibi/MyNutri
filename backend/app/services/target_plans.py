@@ -334,10 +334,9 @@ def activate_plan(
         raise
 
 
-def resolve_target_binding(
+def _query_target_binding(
     session: Session, principal: PrincipalContext, requested_date: date
 ) -> TargetBinding:
-    _advance_lifecycle(session, principal.principal_id, current_diary_date())
     plan = session.exec(
         select(TargetPlan)
         .where(
@@ -373,11 +372,16 @@ def resolve_target_binding(
     return TargetBinding(provenance=TargetProvenance.no_target_source)
 
 
-def resolve_targets(
+def resolve_target_binding(
     session: Session, principal: PrincipalContext, requested_date: date
+) -> TargetBinding:
+    _advance_lifecycle(session, principal.principal_id, current_diary_date())
+    return _query_target_binding(session, principal, requested_date)
+
+
+def _target_source_response(
+    binding: TargetBinding, requested_date: date
 ) -> TargetSourceResponse:
-    binding = resolve_target_binding(session, principal, requested_date)
-    session.commit()
     if binding.plan:
         return TargetSourceResponse(
             target_provenance=binding.provenance.value,
@@ -407,6 +411,21 @@ def resolve_targets(
         plan=None,
         targets=None,
     )
+
+
+def resolve_targets(
+    session: Session, principal: PrincipalContext, requested_date: date
+) -> TargetSourceResponse:
+    binding = resolve_target_binding(session, principal, requested_date)
+    session.commit()
+    return _target_source_response(binding, requested_date)
+
+
+def project_targets(
+    session: Session, principal: PrincipalContext, requested_date: date
+) -> TargetSourceResponse:
+    binding = _query_target_binding(session, principal, requested_date)
+    return _target_source_response(binding, requested_date)
 
 
 def pending_plan(session: Session, principal: PrincipalContext) -> TargetPlanSummary | None:
