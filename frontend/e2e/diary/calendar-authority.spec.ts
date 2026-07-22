@@ -89,16 +89,23 @@ test.describe("@diary @calendar-authority authoritative Diary date", () => {
     let requestCount = 0;
     let announceRolloverRequest!: () => void;
     const rolloverRequestStarted = new Promise<void>((resolve) => { announceRolloverRequest = resolve; });
-    let releaseRolloverRequest!: () => void;
-    const rolloverRequestRelease = new Promise<void>((resolve) => { releaseRolloverRequest = resolve; });
+    let announceRolloverRecheck!: () => void;
+    const rolloverRecheckStarted = new Promise<void>((resolve) => { announceRolloverRecheck = resolve; });
+    let releaseRolloverRecheck!: () => void;
+    const rolloverRecheckRelease = new Promise<void>((resolve) => { releaseRolloverRecheck = resolve; });
     await page.route(`${API_URL}/account/calendar`, async (route) => {
       requestCount += 1;
       if (requestCount === 1) {
         await route.fulfill({ status: 200, contentType: "application/json", json: dueAuthority });
         return;
       }
-      announceRolloverRequest();
-      await rolloverRequestRelease;
+      if (requestCount === 2) {
+        announceRolloverRequest();
+        await route.fulfill({ status: 200, contentType: "application/json", json: dueAuthority });
+        return;
+      }
+      announceRolloverRecheck();
+      await rolloverRecheckRelease;
       await route.fulfill({ status: 200, contentType: "application/json", json: refreshedAuthority });
     });
 
@@ -107,7 +114,8 @@ test.describe("@diary @calendar-authority authoritative Diary date", () => {
     await expect(picker).toHaveValue(BEFORE_ROLLOVER.current_diary_date);
 
     await rolloverRequestStarted;
-    releaseRolloverRequest();
+    await rolloverRecheckStarted;
+    releaseRolloverRecheck();
     await expect(picker).toHaveValue(AFTER_ROLLOVER.current_diary_date);
     await expect(page.locator(".week-day-arrow.next")).toBeDisabled();
   });

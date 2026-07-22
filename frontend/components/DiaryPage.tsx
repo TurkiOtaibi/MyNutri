@@ -61,6 +61,8 @@ const DIARY_DAY_READ_ERROR = "تعذر تحميل بيانات هذا اليوم
 const WEEK_READ_ERROR = "تعذر تحميل ملخص الأسبوع. تحقق من الاتصال وحاول مرة أخرى.";
 const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
 const FUTURE_DATE_ERROR = "لا يمكن تسجيل يوميات بتاريخ مستقبلي.";
+const ROLLOVER_RECHECK_DELAY_MS = 1_000;
+const MAX_ROLLOVER_RECHECKS = 5;
 
 const mealLabels: Record<MealType, string> = {
   breakfast: "فطور",
@@ -135,14 +137,43 @@ export function DiaryPage() {
   }, [today]);
 
   useEffect(() => {
+    const currentDiaryDate = authorityQuery.data?.current_diary_date;
     const nextRollover = authorityQuery.data?.next_rollover_at;
-    if (!nextRollover) return;
+    if (!currentDiaryDate || !nextRollover) return;
     const rolloverTime = Date.parse(nextRollover);
     if (!Number.isFinite(rolloverTime)) return;
-    const delay = Math.max(0, Math.min(rolloverTime - Date.now(), 2_147_483_647));
-    const timer = window.setTimeout(() => { void authorityQuery.refetch(); }, delay);
-    return () => window.clearTimeout(timer);
-  }, [authorityQuery.data?.next_rollover_at, authorityQuery.refetch]);
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const schedule = (delay: number, rechecks: number) => {
+      timer = window.setTimeout(async () => {
+        const result = await authorityQuery.refetch();
+        if (cancelled) return;
+        const refreshed = result.data;
+        if (
+          refreshed &&
+          (refreshed.current_diary_date !== currentDiaryDate || refreshed.next_rollover_at !== nextRollover)
+        ) {
+          return;
+        }
+
+        const refreshedRollover = refreshed ? Date.parse(refreshed.next_rollover_at) : Number.NaN;
+        if (Number.isFinite(refreshedRollover) && refreshedRollover > Date.now()) {
+          schedule(Math.min(refreshedRollover - Date.now(), 2_147_483_647), 0);
+          return;
+        }
+        if (rechecks < MAX_ROLLOVER_RECHECKS) {
+          schedule(ROLLOVER_RECHECK_DELAY_MS, rechecks + 1);
+        }
+      }, Math.max(0, Math.min(delay, 2_147_483_647)));
+    };
+
+    schedule(rolloverTime - Date.now(), 0);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [authorityQuery.data?.current_diary_date, authorityQuery.data?.next_rollover_at, authorityQuery.refetch]);
 
   useEffect(() => {
     const refresh = () => { void authorityQuery.refetch(); };
