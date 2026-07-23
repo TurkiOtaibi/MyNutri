@@ -269,7 +269,23 @@ def ensure_not_duplicate(
 
 
 def _lock_food_namespace(session: Session) -> None:
+    """Serialize Food writers before they take an exclusive Food row lock."""
     session.exec(select(Principal).order_by(Principal.id).with_for_update()).first()
+
+
+def lock_food_namespace_for_logging(session: Session) -> None:
+    """Join the Food lock order with a reader-compatible namespace lock.
+
+    Diary capture holds ``FOR KEY SHARE`` on the same namespace sentinel before
+    resolving TargetPlan state or taking ``FOR SHARE`` on Food. Food writers
+    take ``FOR UPDATE`` here first, so neither side can hold Food while waiting
+    for the namespace lock. Concurrent Diary captures remain compatible.
+    """
+    session.exec(
+        select(Principal)
+        .order_by(Principal.id)
+        .with_for_update(read=True, key_share=True)
+    ).first()
 
 
 def _validated_update_data(
@@ -466,11 +482,61 @@ def get_food(
     return food
 
 
+def get_active_food_for_logging(
+    session: Session, principal: PrincipalContext, food_id: UUID
+) -> Food:
+    """Load an active, visible Food while holding a shared row lock.
+
+    The lock is the synchronization point for immutable Diary snapshot capture
+    and must be held until the Diary transaction commits or rolls back.
+    """
+    food = session.exec(
+        select(Food)
+        .where(Food.id == food_id, Food.status == FoodStatus.active)
+        .execution_options(populate_existing=True)
+        .with_for_update(read=True)
+    ).first()
+    if food is None:
+        from app.services.errors import resource_not_found
+
+        raise resource_not_found()
+    return food
+
+
+def get_food_for_update(
+    session: Session,
+    principal: PrincipalContext,
+    food_id: UUID,
+    *,
+    include_archived: bool = False,
+) -> Food:
+    """Load a visible Food while holding its exclusive writer lock."""
+    statement = (
+        select(Food)
+        .where(Food.id == food_id)
+        .execution_options(populate_existing=True)
+        .with_for_update()
+    )
+    if not include_archived:
+        statement = statement.where(Food.status == FoodStatus.active)
+    food = session.exec(statement).first()
+    if food is None:
+        from app.services.errors import resource_not_found
+
+        raise resource_not_found()
+    return food
+
+
 def create_food(session: Session, principal: PrincipalContext, payload: FoodCreate) -> Food:
     _lock_food_namespace(session)
     data = _persistence_data(payload)
     if payload.id is not None:
-        existing = session.get(Food, payload.id)
+        existing = session.exec(
+            select(Food)
+            .where(Food.id == payload.id)
+            .execution_options(populate_existing=True)
+            .with_for_update()
+        ).first()
         if existing is not None:
             ensure_not_duplicate(session, data, food_id=existing.id)
             return update_food(
@@ -499,7 +565,7 @@ def update_food(
     session: Session, principal: PrincipalContext, food_id: UUID, payload: FoodUpdate
 ) -> Food:
     _lock_food_namespace(session)
-    food = get_food(session, principal, food_id, include_archived=True)
+    food = get_food_for_update(session, principal, food_id, include_archived=True)
     validated = _validated_update_data(session, principal, food, payload)
     data = _persistence_data(validated)
     ensure_not_duplicate(session, data, food_id=food.id)
@@ -517,24 +583,33 @@ def update_food(
 
 def archive_food(session: Session, principal: PrincipalContext, food_id: UUID) -> Food:
     _lock_food_namespace(session)
-    food = get_food(session, principal, food_id, include_archived=True)
-    if _enum_value(food.status) == FoodStatus.archived.value:
-        return food
-    food.status = FoodStatus.archived
-    food.archived_at = utcnow()
-    food.archived_by_principal_id = principal.principal_id
-    food.updated_by_principal_id = principal.principal_id
-    food.updated_at = utcnow()
+    food = get_food_for_update(session, principal, food_id, include_archived=True)
+    _archive_locked_food(principal, food)
     session.add(food)
     session.commit()
     session.refresh(food)
     return food
 
 
+def _archive_locked_food(
+    principal: PrincipalContext, food: Food
+) -> None:
+    """Mutate a Food whose exclusive row lock is held; never commit here."""
+    if _enum_value(food.status) == FoodStatus.archived.value:
+        return
+    food.status = FoodStatus.archived
+    food.archived_at = utcnow()
+    food.archived_by_principal_id = principal.principal_id
+    food.updated_by_principal_id = principal.principal_id
+    food.updated_at = utcnow()
+
+
 def restore_food(session: Session, principal: PrincipalContext, food_id: UUID) -> Food:
     _lock_food_namespace(session)
-    food = get_food(session, principal, food_id, include_archived=True)
+    food = get_food_for_update(session, principal, food_id, include_archived=True)
     if _enum_value(food.status) == FoodStatus.active.value:
+        session.commit()
+        session.refresh(food)
         return food
     food.status = FoodStatus.active
     food.archived_at = None
@@ -549,10 +624,13 @@ def restore_food(session: Session, principal: PrincipalContext, food_id: UUID) -
 
 def delete_food(session: Session, principal: PrincipalContext, food_id: UUID) -> bool:
     _lock_food_namespace(session)
-    food = get_food(session, principal, food_id, include_archived=True)
+    food = get_food_for_update(session, principal, food_id, include_archived=True)
     used = session.exec(select(DiaryEntry.id).where(DiaryEntry.food_id == food.id).limit(1)).first()
     if used is not None:
-        archive_food(session, principal, food_id)
+        _archive_locked_food(principal, food)
+        session.add(food)
+        session.commit()
+        session.refresh(food)
         return False
     session.exec(delete(FoodGroupContribution).where(FoodGroupContribution.food_id == food.id))
     session.exec(delete(FoodAnalyticalTrait).where(FoodAnalyticalTrait.food_id == food.id))

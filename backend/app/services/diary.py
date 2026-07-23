@@ -12,9 +12,9 @@ from app.schemas import (
     DiaryEntryUpdate,
     NutritionTotals,
 )
-from app.services.food import get_food
+from app.services.food import get_active_food_for_logging, lock_food_namespace_for_logging
 from app.services.snapshot import (
-    create_snapshot_v3,
+    _create_snapshot_v3_from_locked_food,
     normalized_snapshot,
     totals_from_versioned,
 )
@@ -173,8 +173,9 @@ def create_entry(
     *,
     snapshot_v3_writer_enabled: bool = True,
 ) -> DiaryEntry:
-    food = get_food(session, principal, payload.food_id)
+    lock_food_namespace_for_logging(session)
     binding = resolve_target_binding(session, principal, payload.entry_date)
+    food = get_active_food_for_logging(session, principal, payload.food_id)
     if payload.id is not None:
         existing = session.get(DiaryEntry, payload.id)
         if existing is not None:
@@ -211,7 +212,7 @@ def create_entry(
         "target_provenance": binding.provenance,
         "snapshot_schema_version": 3 if snapshot_v3_writer_enabled else None,
         "nutrition_snapshot": (
-            create_snapshot_v3(session, food)
+            _create_snapshot_v3_from_locked_food(session, food)
             if snapshot_v3_writer_enabled
             else make_snapshot(food, payload.quantity)
         ),
