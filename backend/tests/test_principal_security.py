@@ -224,6 +224,13 @@ def _assert_lifecycle_unchanged(engine, expected: dict) -> None:
     assert actual == expected
 
 
+def _reject_admin_commit(monkeypatch, session: Session) -> None:
+    def fail_commit() -> None:
+        raise AssertionError("admin monitoring committed its transaction")
+
+    monkeypatch.setattr(session, "commit", fail_commit)
+
+
 def test_missing_invalid_and_unsupported_credentials(security_context) -> None:
     client, _ = security_context
     missing = client.get("/foods")
@@ -370,11 +377,7 @@ def test_admin_monitoring_gets_execute_no_dml(
     }
     path = paths[endpoint]
     engine, statements, cleanup = _install_admin_read_guards(monkeypatch, session)
-
-    def fail_commit() -> None:
-        raise AssertionError("admin monitoring committed its transaction")
-
-    monkeypatch.setattr(session, "commit", fail_commit)
+    _reject_admin_commit(monkeypatch, session)
     try:
         response_documents = []
         for _ in range(2):
@@ -428,6 +431,7 @@ def test_admin_week_failure_executes_no_dml(security_context, monkeypatch) -> No
     )
     session.commit()
     engine, statements, cleanup = _install_admin_read_guards(monkeypatch, session)
+    _reject_admin_commit(monkeypatch, session)
     try:
         response = client.get(
             f"/admin/users/{PRINCIPAL_B}/diary/week?start={today.isoformat()}",
