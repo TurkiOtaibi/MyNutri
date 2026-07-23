@@ -1,11 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { API_TOKEN, API_URL, expect, test, uniqueName } from "../foods/helpers";
-
-function localDate(): string {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-}
+import { API_TOKEN, API_URL, diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
 
 async function openAddAndSelect(page: Page, foodName: string) {
   await page.getByRole("button", { name: "إضافة طعام إلى فطور" }).click();

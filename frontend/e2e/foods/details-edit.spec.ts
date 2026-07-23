@@ -1,4 +1,4 @@
-import { test, expect, fillRequiredFoodForm, submitFoodForm, expectNoHorizontalOverflow } from "./helpers";
+import { diaryDate, test, expect, fillRequiredFoodForm, submitFoodForm, expectNoHorizontalOverflow } from "./helpers";
 
 test.describe("Food details and editing @foods", () => {
   test("[FOOD-TC-032][FOOD-TC-131] @p0 detail read failure shows exact Arabic error", async ({ page }) => {
@@ -120,7 +120,7 @@ test.describe("Food details and editing @foods", () => {
 
   test("[FOOD-TC-115] @p0 old Diary snapshot does not change after Food edit", async ({ foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E-Snapshot-Edit-${Date.now()}`, calories: 100 });
-    const date = new Date().toISOString().slice(0, 10);
+    const date = diaryDate();
     const entry = await foodsApi.createDiary(food.id, date, 1);
     const update = await foodsApi.update(food.id, { calories: 300, name: `${food.name}-Updated` });
     expect(update.status()).toBe(200);

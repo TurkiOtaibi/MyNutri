@@ -8,6 +8,41 @@ export const API_TOKEN = {
   toString: () => readFileSync(TOKEN_FILE, "utf8").trim()
 };
 
+export type CalendarAuthority = {
+  current_diary_date: string;
+  calendar_timezone: string;
+  next_rollover_at: string;
+};
+
+export function offsetIsoDate(input: string, days: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input);
+  if (!match) throw new Error(`Invalid authoritative Diary date: ${input}`);
+  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + days))
+    .toISOString()
+    .slice(0, 10);
+}
+
+export async function fetchCalendarAuthority(request: APIRequestContext): Promise<CalendarAuthority> {
+  const response = await request.get(`${API_URL}/account/calendar`, {
+    headers: { Authorization: `Bearer ${API_TOKEN}` }
+  });
+  expect(response.status(), await response.text()).toBe(200);
+  const authority = await response.json() as CalendarAuthority;
+  expect(authority.current_diary_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  expect(authority.calendar_timezone).toBe("Asia/Riyadh");
+  expect(Number.isFinite(Date.parse(authority.next_rollover_at))).toBe(true);
+  return authority;
+}
+
+let activeCalendarAuthority: CalendarAuthority | null = null;
+
+export function diaryDate(days = 0): string {
+  if (!activeCalendarAuthority) {
+    throw new Error("The automatic calendarAuthority fixture must run before diaryDate().");
+  }
+  return offsetIsoDate(activeCalendarAuthority.current_diary_date, days);
+}
+
 const apiHost = new URL(API_URL).hostname;
 if (apiHost !== "127.0.0.1" && apiHost !== "localhost") {
   throw new Error(`Foods test helper refuses non-local API target ${API_URL}`);
@@ -214,9 +249,18 @@ export class FoodsApi {
   }
 }
 
-type Fixtures = { foodsApi: FoodsApi };
+type Fixtures = { foodsApi: FoodsApi; calendarAuthority: CalendarAuthority };
 
 export const test = base.extend<Fixtures>({
+  calendarAuthority: [async ({ request }, use) => {
+    const authority = await fetchCalendarAuthority(request);
+    activeCalendarAuthority = authority;
+    try {
+      await use(authority);
+    } finally {
+      activeCalendarAuthority = null;
+    }
+  }, { auto: true }],
   foodsApi: async ({ request }, use) => {
     const api = new FoodsApi(request);
     await use(api);

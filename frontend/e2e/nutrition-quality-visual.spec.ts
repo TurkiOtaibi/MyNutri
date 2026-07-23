@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { expect, test, uniqueName } from "./foods/helpers";
+import { diaryDate, expect, test, uniqueName } from "./foods/helpers";
 
 const output = resolve(process.cwd(), "..", "docs", "ui-ux", "screenshots", "nutrition-quality");
 
@@ -18,8 +18,7 @@ test("capture Profile targets and additional nutrients", async ({ page }) => {
 
 test("capture Diary meal macros and nutritional details", async ({ page, foodsApi }) => {
   const food = await foodsApi.create({ name: uniqueName("Visual nutrients"), calories: 156, protein_g: 12.6, carb_g: 24, fat_g: 10.6, fiber_g: 18, sodium_mg: 840, saturated_fat_g: 2.5, added_sugar_g: 0, potassium_mg: null, cholesterol_mg: 220 });
-  const date = new Date(); date.setDate(date.getDate() - 360);
-  const input = new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+  const input = diaryDate(-360);
   await foodsApi.createDiary(food.id, input, 1, "breakfast");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/diary");

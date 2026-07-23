@@ -1,10 +1,4 @@
-import { API_TOKEN, API_URL, expect, test, uniqueName } from "../foods/helpers";
-
-function localDate(days = 0): string {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-}
+import { API_TOKEN, API_URL, diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
 
 async function selectDate(page: import("@playwright/test").Page, value: string) {
   const picker = page.getByLabel("اختيار تاريخ اليوميات");

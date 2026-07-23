@@ -642,6 +642,12 @@ class AccountResponse(BaseModel):
     status: PrincipalStatus
 
 
+class CalendarAuthorityResponse(BaseModel):
+    current_diary_date: date
+    calendar_timezone: str
+    next_rollover_at: datetime
+
+
 class AdminUserSummary(BaseModel):
     principal_id: UUID
     email: str | None

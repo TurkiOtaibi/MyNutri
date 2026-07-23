@@ -1,16 +1,9 @@
-import { API_TOKEN, API_URL, expect, test, uniqueName } from "../foods/helpers";
-
-function localDate(days = 0): string {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
-}
+import { API_TOKEN, API_URL, diaryDate as localDate, expect, offsetIsoDate, test, uniqueName } from "../foods/helpers";
 
 function sundayStart(input: string): string {
-  const date = new Date(`${input}T00:00:00`);
-  date.setDate(date.getDate() - date.getDay());
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+  const [year, month, day] = input.split("-").map(Number);
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return offsetIsoDate(input, -weekday);
 }
 
 test.describe("@diary daily-use redesign", () => {
@@ -231,7 +224,5 @@ test.describe("@diary daily-use redesign", () => {
 const DIARY_DAY_ERROR_COPY = "تعذر تحميل يوميات هذا اليوم. تحقق من الاتصال وحاول مرة أخرى.";
 
 function localDateFrom(input: string, days: number): string {
-  const date = new Date(`${input}T00:00:00`);
-  date.setDate(date.getDate() + days);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+  return offsetIsoDate(input, days);
 }

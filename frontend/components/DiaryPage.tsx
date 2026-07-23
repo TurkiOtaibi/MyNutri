@@ -27,6 +27,7 @@ import {
   ApiError,
   createDiaryEntry,
   deleteDiaryEntry,
+  getCalendarAuthority,
   getNutritionRegistry,
   getWeekSummary,
   listDiaryEntries,
@@ -34,7 +35,7 @@ import {
   listFoods,
   updateDiaryEntry
 } from "@/lib/api";
-import { addDays, formatDayNumber, formatLongArabicDate, formatShortDate, todayInputValue, weekStartSunday } from "@/lib/dates";
+import { addDays, formatDayNumber, formatLongArabicDate, formatShortDate, weekStartSunday } from "@/lib/dates";
 import { calculateServingNutrition, defaultUnitLabels, defaultServingText, formatServingMacro, unitBasisLabels } from "@/lib/food";
 import { weekdays } from "@/lib/labels";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels, type NutrientDefinition } from "@/lib/nutrients";
@@ -60,6 +61,8 @@ const DIARY_DAY_READ_ERROR = "تعذر تحميل بيانات هذا اليوم
 const WEEK_READ_ERROR = "تعذر تحميل ملخص الأسبوع. تحقق من الاتصال وحاول مرة أخرى.";
 const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
 const FUTURE_DATE_ERROR = "لا يمكن تسجيل يوميات بتاريخ مستقبلي.";
+const ROLLOVER_RECHECK_DELAY_MS = 1_000;
+const MAX_ROLLOVER_RECHECKS = 5;
 
 const mealLabels: Record<MealType, string> = {
   breakfast: "فطور",
@@ -82,8 +85,7 @@ export function DiaryPage() {
   const accessToken = session?.access_token;
   const sessionSignal = useSessionAbortSignal();
   const queryClient = useQueryClient();
-  const today = todayInputValue();
-  const [selectedDate, setSelectedDate] = useState(today);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dateError, setDateError] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [addMeal, setAddMeal] = useState<MealType | null>(null);
@@ -96,17 +98,95 @@ export function DiaryPage() {
   const [expandedMeals, setExpandedMeals] = useState<Set<MealType>>(new Set());
   const expandedMealsByDateRef = useRef(new Map<string, Set<MealType>>());
   const addTriggerKindRef = useRef("desktop");
-  const weekStart = useMemo(() => weekStartSunday(selectedDate), [selectedDate]);
+  const previousAuthoritativeDateRef = useRef<string | null>(null);
+
+  const authorityQuery = useQuery({
+    queryKey: ["calendar-authority"],
+    queryFn: () => getCalendarAuthority({ accessToken: accessToken!, signal: sessionSignal }),
+    enabled: Boolean(accessToken),
+    refetchOnWindowFocus: false,
+    retry: 1
+  });
+  const today = authorityQuery.data?.current_diary_date ?? null;
+  const activeDate = selectedDate ?? today;
+  const weekStart = useMemo(() => activeDate ? weekStartSunday(activeDate) : null, [activeDate]);
 
   const registryQuery = useQuery({ queryKey: ["nutrition-registry"], queryFn: getNutritionRegistry });
-  const weekQuery = useQuery({ queryKey: ["week", weekStart], queryFn: () => getWeekSummary(weekStart) });
-  const entriesQuery = useQuery({ queryKey: ["entries", selectedDate], queryFn: () => listDiaryEntries(selectedDate) });
+  const weekQuery = useQuery({
+    queryKey: ["week", weekStart],
+    queryFn: () => getWeekSummary(weekStart!),
+    enabled: weekStart !== null && today !== null
+  });
+  const entriesQuery = useQuery({
+    queryKey: ["entries", activeDate],
+    queryFn: () => listDiaryEntries(activeDate!),
+    enabled: activeDate !== null && today !== null
+  });
 
-  const selectedDay = weekQuery.data?.days.find((day) => day.date === selectedDate);
+  const selectedDay = weekQuery.data?.days.find((day) => day.date === activeDate);
   const summaryIntegrityError = weekQuery.error instanceof ApiError && weekQuery.error.code === "DIARY_SUMMARY_DATA_INTEGRITY_ERROR";
   const targets = selectedDay?.targets ?? null;
   const entries = entriesQuery.data ?? [];
   const totals = selectedDay?.totals ?? emptyNutritionTotals();
+
+  useEffect(() => {
+    if (!today) return;
+    const previousToday = previousAuthoritativeDateRef.current;
+    setSelectedDate((current) => current === null || current === previousToday ? today : current);
+    previousAuthoritativeDateRef.current = today;
+  }, [today]);
+
+  useEffect(() => {
+    const currentDiaryDate = authorityQuery.data?.current_diary_date;
+    const nextRollover = authorityQuery.data?.next_rollover_at;
+    if (!currentDiaryDate || !nextRollover) return;
+    const rolloverTime = Date.parse(nextRollover);
+    if (!Number.isFinite(rolloverTime)) return;
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const schedule = (delay: number, rechecks: number) => {
+      timer = window.setTimeout(async () => {
+        const result = await authorityQuery.refetch();
+        if (cancelled) return;
+        const refreshed = result.data;
+        if (
+          refreshed &&
+          (refreshed.current_diary_date !== currentDiaryDate || refreshed.next_rollover_at !== nextRollover)
+        ) {
+          return;
+        }
+
+        const refreshedRollover = refreshed ? Date.parse(refreshed.next_rollover_at) : Number.NaN;
+        if (Number.isFinite(refreshedRollover) && refreshedRollover > Date.now()) {
+          schedule(Math.min(refreshedRollover - Date.now(), 2_147_483_647), 0);
+          return;
+        }
+        if (rechecks < MAX_ROLLOVER_RECHECKS) {
+          schedule(ROLLOVER_RECHECK_DELAY_MS, rechecks + 1);
+        }
+      }, Math.max(0, Math.min(delay, 2_147_483_647)));
+    };
+
+    schedule(rolloverTime - Date.now(), 0);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [authorityQuery.data?.current_diary_date, authorityQuery.data?.next_rollover_at, authorityQuery.refetch]);
+
+  useEffect(() => {
+    const refresh = () => { void authorityQuery.refetch(); };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [authorityQuery.refetch]);
 
   useEffect(() => {
     if (!statusMessage) return;
@@ -116,7 +196,8 @@ export function DiaryPage() {
 
   useEffect(() => {
     if (!entriesQuery.isSuccess || entriesQuery.isFetching) return;
-    const stored = expandedMealsByDateRef.current.get(selectedDate);
+    if (!activeDate) return;
+    const stored = expandedMealsByDateRef.current.get(activeDate);
     if (stored) {
       setExpandedMeals(new Set(stored));
       return;
@@ -124,9 +205,9 @@ export function DiaryPage() {
     const first = standardMeals.find((meal) => entries.some((entry) => entry.meal_type === meal));
     const legacy = entries.some((entry) => (entry.meal_type ?? "unspecified") === "unspecified");
     const initial = new Set<MealType>(first ? [first] : legacy ? ["unspecified"] : []);
-    expandedMealsByDateRef.current.set(selectedDate, initial);
+    expandedMealsByDateRef.current.set(activeDate, initial);
     setExpandedMeals(initial);
-  }, [selectedDate, entries, entriesQuery.isSuccess, entriesQuery.isFetching]);
+  }, [activeDate, entries, entriesQuery.isSuccess, entriesQuery.isFetching]);
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -160,13 +241,19 @@ export function DiaryPage() {
   });
 
   function chooseDate(nextDate: string) {
-    if (nextDate > today) {
+    if (!today || nextDate > today) {
       setDateError(FUTURE_DATE_ERROR);
       return;
     }
     setDateError("");
     setStatusMessage("");
     setSelectedDate(nextDate);
+  }
+
+  if (!today || !activeDate) {
+    return authorityQuery.isError
+      ? <RetryState message="تعذر تحميل تقويم اليوميات" description="تحقق من الاتصال ثم أعد المحاولة" onRetry={() => authorityQuery.refetch()} />
+      : <DiaryEntriesSkeleton />;
   }
 
   function openAdd(event: ReactMouseEvent<HTMLButtonElement>, meal: MealType | null = null) {
@@ -192,7 +279,7 @@ export function DiaryPage() {
         week={weekQuery.data}
         pending={weekQuery.isPending}
         error={weekQuery.isError}
-        selectedDate={selectedDate}
+        selectedDate={activeDate}
         today={today}
         target={targets?.target_calories ?? 0}
         dateError={dateError}
@@ -220,7 +307,7 @@ export function DiaryPage() {
               onToggleMeal={(meal) => setExpandedMeals((current) => {
                 const next = new Set(current);
                 if (next.has(meal)) next.delete(meal); else next.add(meal);
-                expandedMealsByDateRef.current.set(selectedDate, new Set(next));
+                expandedMealsByDateRef.current.set(activeDate, new Set(next));
                 return next;
               })}
               onAdd={(event, meal) => openAdd(event, meal)}
@@ -253,7 +340,7 @@ export function DiaryPage() {
 
       {addOpen ? (
         <AddEntrySheet
-          selectedDate={selectedDate}
+          selectedDate={activeDate}
           initialMeal={addMeal}
           onClose={closeAdd}
           onSaved={async (savedMeal) => {
@@ -261,7 +348,7 @@ export function DiaryPage() {
             setAddOpen(false);
             setExpandedMeals((current) => {
               const next = new Set(current).add(savedMeal);
-              expandedMealsByDateRef.current.set(selectedDate, new Set(next));
+              expandedMealsByDateRef.current.set(activeDate, new Set(next));
               return next;
             });
             await invalidateDiary(queryClient);
@@ -282,7 +369,7 @@ export function DiaryPage() {
             setEditingEntry(null);
             setExpandedMeals((current) => {
               const next = new Set(current).add(savedMeal);
-              expandedMealsByDateRef.current.set(selectedDate, new Set(next));
+              expandedMealsByDateRef.current.set(activeDate, new Set(next));
               return next;
             });
             await invalidateDiary(queryClient);

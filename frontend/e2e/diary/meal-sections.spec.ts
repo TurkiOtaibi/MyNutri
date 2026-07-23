@@ -1,9 +1,4 @@
-import { API_TOKEN, API_URL, expect, test, uniqueName } from "../foods/helpers";
-
-function localDate(): string {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-}
+import { API_TOKEN, API_URL, diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
 
 test.describe("@diary @meals Gregorian meal sections", () => {
   test("@p0 Gregorian date hydrates without server/client mismatch", async ({ page }) => {
@@ -33,9 +28,7 @@ test.describe("@diary @meals Gregorian meal sections", () => {
 
   test("@p0 renders four compact meal sections and legacy only when needed", async ({ page }) => {
     await page.goto("/diary");
-    const past = new Date();
-    past.setDate(past.getDate() - 120);
-    const emptyDate = new Date(past.getTime() - past.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+    const emptyDate = localDate(-120);
     await page.getByLabel("اختيار تاريخ اليوميات").fill(emptyDate);
     for (const meal of ["فطور", "غداء", "عشاء", "سناك"]) {
       await expect(page.getByRole("button", { name: new RegExp(`قسم ${meal}$`) })).toBeVisible();
