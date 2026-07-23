@@ -149,7 +149,8 @@ def _seed_active_and_due_targets(
     ).all()
     active = next(plan for plan in plans if plan.status == TargetPlanStatus.active)
     due = next(plan for plan in plans if plan.status == TargetPlanStatus.scheduled)
-    active.effective_from = today - timedelta(days=1)
+    active.effective_from = today - timedelta(days=2)
+    active.effective_to = today - timedelta(days=1)
     due.effective_from = today
     session.add(active)
     session.add(due)
@@ -348,7 +349,10 @@ def test_admin_monitoring_is_authorized_and_read_only(security_context) -> None:
     ).status_code in {404, 405}
 
 
-@pytest.mark.parametrize("endpoint", ["detail", "week"])
+@pytest.mark.parametrize(
+    "endpoint",
+    ["detail", "week", "diary", "target_history"],
+)
 def test_admin_monitoring_gets_execute_no_dml(
     security_context, monkeypatch, endpoint: str
 ) -> None:
@@ -356,19 +360,31 @@ def test_admin_monitoring_gets_execute_no_dml(
     due_response, lifecycle = _seed_active_and_due_targets(client, session)
     due_plan = due_response["plan"]
     today = current_diary_date()
-    path = (
-        f"/admin/users/{PRINCIPAL_B}"
-        if endpoint == "detail"
-        else f"/admin/users/{PRINCIPAL_B}/diary/week?start={today.isoformat()}"
-    )
+    paths = {
+        "detail": f"/admin/users/{PRINCIPAL_B}",
+        "week": (
+            f"/admin/users/{PRINCIPAL_B}/diary/week?start={today.isoformat()}"
+        ),
+        "diary": f"/admin/users/{PRINCIPAL_B}/diary?entry_date={today.isoformat()}",
+        "target_history": f"/admin/users/{PRINCIPAL_B}/target-plans",
+    }
+    path = paths[endpoint]
     engine, statements, cleanup = _install_admin_read_guards(monkeypatch, session)
+
+    def fail_commit() -> None:
+        raise AssertionError("admin monitoring committed its transaction")
+
+    monkeypatch.setattr(session, "commit", fail_commit)
     try:
+        response_documents = []
         for _ in range(2):
             response = client.get(path, headers=headers("admin-a"))
             assert response.status_code == 200, response.text
+            response_documents.append(response.json())
             if endpoint == "detail":
                 assert response.json()["current_target"]["plan"]["id"] == due_plan["id"]
-            else:
+                assert response.json()["pending_plan"] is None
+            elif endpoint == "week":
                 today_summary = next(
                     day
                     for day in response.json()["days"]
@@ -378,7 +394,12 @@ def test_admin_monitoring_gets_execute_no_dml(
                     today_summary["targets"]["final_target_calories"]
                     == due_plan["targets"]["final_target_calories"]
                 )
+            elif endpoint == "diary":
+                assert response.json() == []
+            else:
+                assert response.json()["items"][0]["id"] == due_plan["id"]
             _assert_lifecycle_unchanged(engine, lifecycle)
+        assert response_documents[0] == response_documents[1]
     finally:
         cleanup()
 

@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 import pytest
@@ -181,6 +181,55 @@ def test_project_targets_selects_due_plan_without_lifecycle_dml(
     )
     assert no_source.target_provenance == "no_target_source"
     assert no_source.targets is None
+
+
+def test_owner_current_get_advances_due_target_lifecycle(
+    target_plan_context, monkeypatch
+) -> None:
+    client, session = target_plan_context
+    active_response = activate(
+        client, profile_payload(weight=80), "owner-active", token="token-b"
+    )
+    assert active_response.status_code == 201, active_response.text
+    scheduled_response = activate(
+        client, profile_payload(weight=82), "owner-scheduled", token="token-b"
+    )
+    assert scheduled_response.status_code == 201, scheduled_response.text
+
+    plans = session.exec(
+        select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_B)
+    ).all()
+    active = next(plan for plan in plans if plan.status == TargetPlanStatus.active)
+    scheduled = next(
+        plan for plan in plans if plan.status == TargetPlanStatus.scheduled
+    )
+    active.effective_from = TODAY - timedelta(days=1)
+    assert active.effective_to is None
+    assert active.closed_at is None
+    assert scheduled.effective_from == TOMORROW
+    assert scheduled.activated_at is None
+    session.add(active)
+    session.commit()
+
+    monkeypatch.setattr(
+        "app.services.target_plans.current_diary_date", lambda: TOMORROW
+    )
+    response = client.get(
+        f"/target-plans/current?date={TOMORROW.isoformat()}",
+        headers=headers("token-b"),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["plan"]["id"] == str(scheduled.id)
+
+    session.refresh(active)
+    session.refresh(scheduled)
+    assert active.status == TargetPlanStatus.closed
+    assert active.effective_to == TOMORROW
+    assert active.closed_at is not None
+    assert scheduled.status == TargetPlanStatus.active
+    assert scheduled.activated_at is not None
+    assert scheduled.closed_at is None
+    assert active.closed_at == scheduled.activated_at
 
 
 def test_existing_legacy_activation_preserves_today_and_updates_profile_atomically(
