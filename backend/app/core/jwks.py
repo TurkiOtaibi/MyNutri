@@ -74,12 +74,14 @@ class RotationSafeJwksClient:
         self._negative_cache: OrderedDict[str, float] = OrderedDict()
 
     def get_signing_key_from_jwt(self, token: str | bytes) -> PyJWK:
-        kid = self._validated_kid(token)
+        kid, algorithm = self._validated_header(token)
 
         while True:
             with self._condition:
                 key = self._unexpired_key(kid, self._clock())
                 if key is not None:
+                    if key.algorithm_name != algorithm:
+                        raise PyJWKClientError(_LOOKUP_FAILURE_MESSAGE)
                     return key
                 now = self._clock()
                 if self._is_negative_cached(kid, now):
@@ -143,17 +145,18 @@ class RotationSafeJwksClient:
             if failure_type is not None:
                 raise failure_type(self._failure_message(failure_type)) from failure_cause
 
-    def _validated_kid(self, token: str | bytes) -> str:
+    def _validated_header(self, token: str | bytes) -> tuple[str, str]:
         try:
             header = jwt.get_unverified_header(token)
         except Exception as error:
             raise PyJWKClientError(_LOOKUP_FAILURE_MESSAGE) from error
         kid = header.get("kid")
-        if header.get("alg") not in _SUPPORTED_SIGNING_ALGORITHMS:
+        algorithm = header.get("alg")
+        if algorithm not in _SUPPORTED_SIGNING_ALGORITHMS:
             raise PyJWKClientError(_LOOKUP_FAILURE_MESSAGE)
         if not isinstance(kid, str) or not kid or len(kid) > self._kid_max_length:
             raise PyJWKClientError(_LOOKUP_FAILURE_MESSAGE)
-        return kid
+        return kid, algorithm
 
     def _build_snapshot(self, document: Any) -> _JwksSnapshot:
         if not isinstance(document, dict):

@@ -11,8 +11,8 @@ from urllib.error import HTTPError
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
-from jwt.algorithms import RSAAlgorithm
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 from jwt.exceptions import PyJWKClientConnectionError, PyJWKClientError
 from pydantic import ValidationError
 
@@ -67,6 +67,7 @@ class BlockingResponse:
 
 PRIVATE_A = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 PRIVATE_B = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+PRIVATE_EC = ec.generate_private_key(ec.SECP256R1())
 
 
 def _jwk(private_key: Any, kid: str, **overrides: Any) -> dict[str, Any]:
@@ -78,6 +79,12 @@ def _jwk(private_key: Any, kid: str, **overrides: Any) -> dict[str, Any]:
 
 KEY_A = _jwk(PRIVATE_A, "a")
 KEY_B = _jwk(PRIVATE_B, "b")
+KEY_EC = {
+    **json.loads(ECAlgorithm.to_jwk(PRIVATE_EC.public_key())),
+    "kid": "e",
+    "use": "sig",
+    "alg": "ES256",
+}
 
 
 def _document(*keys: dict[str, Any]) -> dict[str, Any]:
@@ -202,6 +209,30 @@ def test_header_kid_at_limit_is_accepted_and_jku_is_ignored() -> None:
         _token("12345678", jku="https://attacker.example/jwks")
     )
     assert signing_key.key_id == "12345678"
+    assert fetcher.calls == 1
+
+
+@pytest.mark.parametrize(
+    ("key", "kid", "matching_algorithm", "mismatched_algorithm"),
+    [
+        (KEY_A, "a", "RS256", "ES256"),
+        (KEY_EC, "e", "ES256", "RS256"),
+    ],
+)
+def test_warm_key_algorithm_mismatch_fails_without_refresh(
+    key: dict[str, Any],
+    kid: str,
+    matching_algorithm: str,
+    mismatched_algorithm: str,
+) -> None:
+    fetcher = FakeFetcher(_document(key))
+    client = _client(fetcher, FakeClock())
+    assert (
+        client.get_signing_key_from_jwt(_token(kid, alg=matching_algorithm)).key_id
+        == kid
+    )
+    with pytest.raises(PyJWKClientError, match="Unable to resolve a signing key"):
+        client.get_signing_key_from_jwt(_token(kid, alg=mismatched_algorithm))
     assert fetcher.calls == 1
 
 

@@ -8,7 +8,7 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
-from jwt.exceptions import PyJWKClientConnectionError
+from jwt.exceptions import PyJWKClientConnectionError, PyJWKClientError
 from sqlalchemy import Delete, Insert, Select, Update, event
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -520,12 +520,21 @@ def test_supabase_verifier_rejects_signed_non_uuid_subject(monkeypatch) -> None:
         verifier.verify(_jwt(verifier, private_key, sub="not-a-uuid"))
 
 
-def test_jwks_resolver_failure_keeps_uniform_public_credential_error(security_context) -> None:
+@pytest.mark.parametrize(
+    "resolver_error",
+    [
+        PyJWKClientConnectionError("internal provider response detail"),
+        PyJWKClientError("internal key algorithm mismatch detail"),
+    ],
+)
+def test_jwks_resolver_failure_keeps_uniform_public_credential_error(
+    security_context, resolver_error
+) -> None:
     client, _ = security_context
 
     class FailingVerifier:
         def verify(self, _token: str) -> AuthClaims:
-            raise PyJWKClientConnectionError("internal provider response detail")
+            raise resolver_error
 
     app.dependency_overrides[get_token_verifier] = FailingVerifier
     response = client.get("/foods", headers=headers("unresolvable-jwks"))
