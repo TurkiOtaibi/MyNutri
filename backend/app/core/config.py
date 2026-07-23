@@ -1,7 +1,8 @@
 from functools import lru_cache
+from typing import Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +14,15 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_jwks_url: str = ""
     supabase_jwt_audience: str = "authenticated"
+    supabase_jwks_timeout_seconds: int = Field(default=5, ge=1, le=30)
+    supabase_jwks_cache_lifespan_seconds: int = Field(default=600, ge=60, le=86_400)
+    supabase_jwks_refresh_cooldown_seconds: int = Field(default=30, ge=1, le=300)
+    supabase_jwks_negative_cache_ttl_seconds: int = Field(default=30, ge=1, le=300)
+    supabase_jwks_negative_cache_max_entries: int = Field(
+        default=256, ge=1, le=4_096
+    )
+    supabase_jwks_max_keys: int = Field(default=32, ge=1, le=128)
+    supabase_jwt_kid_max_length: int = Field(default=256, ge=1, le=1_024)
     calendar_timezone: str = "Asia/Riyadh"
     snapshot_v3_writer_enabled: bool = True
 
@@ -25,6 +35,20 @@ class Settings(BaseSettings):
         if "*" in normalized:
             raise ValueError("Wildcard CORS origins are prohibited.")
         return list(dict.fromkeys(normalized))
+
+    @model_validator(mode="after")
+    def validate_jwks_cache_policy(self) -> Self:
+        if self.supabase_jwks_cache_lifespan_seconds < (
+            self.supabase_jwks_refresh_cooldown_seconds
+        ):
+            raise ValueError("JWKS cache lifespan must be greater than or equal to cooldown.")
+        if self.supabase_jwks_cache_lifespan_seconds < (
+            self.supabase_jwks_negative_cache_ttl_seconds
+        ):
+            raise ValueError(
+                "JWKS cache lifespan must be greater than or equal to negative cache TTL."
+            )
+        return self
 
     @property
     def normalized_supabase_url(self) -> str:

@@ -30,6 +30,13 @@ DATABASE_URL=<Supabase PostgreSQL pooler connection URL used by this project>
 ENVIRONMENT=production
 SUPABASE_URL=https://<project-ref>.supabase.co
 SUPABASE_JWT_AUDIENCE=authenticated
+SUPABASE_JWKS_TIMEOUT_SECONDS=5
+SUPABASE_JWKS_CACHE_LIFESPAN_SECONDS=600
+SUPABASE_JWKS_REFRESH_COOLDOWN_SECONDS=30
+SUPABASE_JWKS_NEGATIVE_CACHE_TTL_SECONDS=30
+SUPABASE_JWKS_NEGATIVE_CACHE_MAX_ENTRIES=256
+SUPABASE_JWKS_MAX_KEYS=32
+SUPABASE_JWT_KID_MAX_LENGTH=256
 ALLOWED_ORIGINS=["https://<frontend-host>"]
 CALENDAR_TIMEZONE=Asia/Riyadh
 SNAPSHOT_V3_WRITER_ENABLED=true
@@ -46,6 +53,27 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<public-publishable-key>
 Do not configure `NEXT_PUBLIC_API_TOKEN` or expose
 `SUPABASE_SERVICE_ROLE_KEY` to the Frontend. In Supabase Auth, configure the
 production Site URL and the exact login/reset redirect URLs before deploying.
+
+The JWKS limits above bound refresh work per Backend process, not across the
+whole cluster. `SUPABASE_JWKS_TIMEOUT_SECONDS` bounds both provider calls and
+singleflight waits. `SUPABASE_JWKS_CACHE_LIFESPAN_SECONDS` controls the
+successful snapshot lifetime, while
+`SUPABASE_JWKS_REFRESH_COOLDOWN_SECONDS` limits refresh attempts after misses
+and failures. `SUPABASE_JWKS_NEGATIVE_CACHE_TTL_SECONDS` suppresses repeated
+lookups for an absent `kid` while still allowing rotation recovery after a
+bounded interval. `SUPABASE_JWKS_NEGATIVE_CACHE_MAX_ENTRIES` caps that
+per-process cache at 256 entries by default. `SUPABASE_JWKS_MAX_KEYS` and
+`SUPABASE_JWT_KID_MAX_LENGTH` bound
+provider documents and token key IDs. The defaults are 5, 600, 30, 32, and 256
+respectively for timeout, snapshot lifetime, refresh cooldown, JWKS keys, and
+key-ID length. The negative-cache defaults are 30 seconds and 256 entries.
+A newly published provider key can be rejected until both its negative entry
+and refresh cooldown permit another lookup, at most 30 seconds with the default
+policy.
+
+Before rollout, inspect the real non-production provider JWKS and confirm its
+key count and key-ID lengths fit these bounds. Do not record private tokens or
+authorization headers while performing that check.
 
 ## Smoke Test Order
 
@@ -65,3 +93,8 @@ re-enable a browser shared token, or downgrade schema if doing so loses V2 data.
 For a frontend-only fault, keep Backend/schema and roll back to a V2-compatible
 frontend. For auth-provider outage, fail closed and restore service rather than
 bypass authentication.
+
+Rolling back the JWKS policy removes the application-owned snapshot,
+singleflight, cooldown, and input limits and restores the prior PyJWT client
+behavior. Retain fail-closed authentication during rollback; do not accept
+expired cached keys.

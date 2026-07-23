@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import UUID
@@ -8,6 +10,7 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
+from jwt.exceptions import PyJWKClientConnectionError, PyJWKClientError
 from sqlalchemy import Delete, Insert, Select, Update, event
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -503,6 +506,72 @@ def test_supabase_verifier_validates_signature_expiry_issuer_and_audience(monkey
         verifier.verify(_jwt(verifier, private_key, iss="https://wrong.example/auth/v1"))
     with pytest.raises(jwt.InvalidAudienceError):
         verifier.verify(_jwt(verifier, private_key, aud="wrong"))
+
+
+def test_supabase_verifier_rejects_signed_non_uuid_subject(monkeypatch) -> None:
+    settings = Settings(environment="test", supabase_url="https://project.supabase.co")
+    verifier = SupabaseTokenVerifier(settings)
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    monkeypatch.setattr(
+        verifier.jwks,
+        "get_signing_key_from_jwt",
+        lambda _token: SimpleNamespace(key=private_key.public_key()),
+    )
+
+    with pytest.raises(ValueError):
+        verifier.verify(_jwt(verifier, private_key, sub="not-a-uuid"))
+
+
+@pytest.mark.parametrize(
+    "resolver_error",
+    [
+        PyJWKClientConnectionError("internal provider response detail"),
+        PyJWKClientError("internal key algorithm mismatch detail"),
+    ],
+)
+def test_jwks_resolver_failure_keeps_uniform_public_credential_error(
+    security_context, resolver_error
+) -> None:
+    client, _ = security_context
+
+    class FailingVerifier:
+        def verify(self, _token: str) -> AuthClaims:
+            raise resolver_error
+
+    app.dependency_overrides[get_token_verifier] = FailingVerifier
+    response = client.get("/foods", headers=headers("unresolvable-jwks"))
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
+    assert "provider" not in response.text
+
+
+def test_malformed_algorithm_header_returns_generic_401_before_fetch(
+    security_context,
+) -> None:
+    client, _ = security_context
+    verifier = SupabaseTokenVerifier(
+        Settings(environment="test", supabase_url="https://project.supabase.co")
+    )
+    fetch_calls = 0
+
+    def unexpected_fetch():
+        nonlocal fetch_calls
+        fetch_calls += 1
+        raise AssertionError("malformed alg must be rejected before JWKS fetch")
+
+    verifier.jwks._fetcher = unexpected_fetch
+    app.dependency_overrides[get_token_verifier] = lambda: verifier
+    encoded_header = base64.urlsafe_b64encode(
+        json.dumps({"alg": [], "kid": "test"}).encode()
+    ).rstrip(b"=")
+    malformed_token = f"{encoded_header.decode()}.e30.c2ln"
+
+    response = client.get("/foods", headers=headers(malformed_token))
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
+    assert response.json()["detail"].keys() == {"code", "message_ar"}
+    assert fetch_calls == 0
 
 
 def test_production_auth_and_cors_configuration_fail_closed() -> None:
