@@ -152,7 +152,10 @@ class RotationSafeJwksClient:
             raise PyJWKClientError(_LOOKUP_FAILURE_MESSAGE) from error
         kid = header.get("kid")
         algorithm = header.get("alg")
-        if algorithm not in _SUPPORTED_SIGNING_ALGORITHMS:
+        if (
+            not isinstance(algorithm, str)
+            or algorithm not in _SUPPORTED_SIGNING_ALGORITHMS
+        ):
             raise PyJWKClientError(_LOOKUP_FAILURE_MESSAGE)
         if not isinstance(kid, str) or not kid or len(kid) > self._kid_max_length:
             raise PyJWKClientError(_LOOKUP_FAILURE_MESSAGE)

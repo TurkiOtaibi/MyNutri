@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import UUID
@@ -541,6 +543,35 @@ def test_jwks_resolver_failure_keeps_uniform_public_credential_error(
     assert response.status_code == 401
     assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
     assert "provider" not in response.text
+
+
+def test_malformed_algorithm_header_returns_generic_401_before_fetch(
+    security_context,
+) -> None:
+    client, _ = security_context
+    verifier = SupabaseTokenVerifier(
+        Settings(environment="test", supabase_url="https://project.supabase.co")
+    )
+    fetch_calls = 0
+
+    def unexpected_fetch():
+        nonlocal fetch_calls
+        fetch_calls += 1
+        raise AssertionError("malformed alg must be rejected before JWKS fetch")
+
+    verifier.jwks._fetcher = unexpected_fetch
+    app.dependency_overrides[get_token_verifier] = lambda: verifier
+    encoded_header = base64.urlsafe_b64encode(
+        json.dumps({"alg": [], "kid": "test"}).encode()
+    ).rstrip(b"=")
+    malformed_token = f"{encoded_header.decode()}.e30.c2ln"
+
+    response = client.get("/foods", headers=headers(malformed_token))
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
+    assert response.json()["detail"].keys() == {"code", "message_ar"}
+    assert fetch_calls == 0
 
 
 def test_production_auth_and_cors_configuration_fail_closed() -> None:
