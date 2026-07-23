@@ -506,6 +506,20 @@ def test_supabase_verifier_validates_signature_expiry_issuer_and_audience(monkey
         verifier.verify(_jwt(verifier, private_key, aud="wrong"))
 
 
+def test_supabase_verifier_rejects_signed_non_uuid_subject(monkeypatch) -> None:
+    settings = Settings(environment="test", supabase_url="https://project.supabase.co")
+    verifier = SupabaseTokenVerifier(settings)
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    monkeypatch.setattr(
+        verifier.jwks,
+        "get_signing_key_from_jwt",
+        lambda _token: SimpleNamespace(key=private_key.public_key()),
+    )
+
+    with pytest.raises(ValueError):
+        verifier.verify(_jwt(verifier, private_key, sub="not-a-uuid"))
+
+
 def test_jwks_resolver_failure_keeps_uniform_public_credential_error(security_context) -> None:
     client, _ = security_context
 
