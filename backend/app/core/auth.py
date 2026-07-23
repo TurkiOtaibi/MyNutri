@@ -44,6 +44,10 @@ class SupabaseTokenVerifier:
             timeout_seconds=settings.supabase_jwks_timeout_seconds,
             cache_lifespan_seconds=settings.supabase_jwks_cache_lifespan_seconds,
             refresh_cooldown_seconds=settings.supabase_jwks_refresh_cooldown_seconds,
+            negative_cache_ttl_seconds=settings.supabase_jwks_negative_cache_ttl_seconds,
+            negative_cache_max_entries=(
+                settings.supabase_jwks_negative_cache_max_entries
+            ),
             max_keys=settings.supabase_jwks_max_keys,
             kid_max_length=settings.supabase_jwt_kid_max_length,
         )
@@ -85,6 +89,8 @@ def _cached_verifier(
     timeout_seconds: int,
     cache_lifespan_seconds: int,
     refresh_cooldown_seconds: int,
+    negative_cache_ttl_seconds: int,
+    negative_cache_max_entries: int,
     max_keys: int,
     kid_max_length: int,
 ) -> SupabaseTokenVerifier:
@@ -97,6 +103,8 @@ def _cached_verifier(
             supabase_jwks_timeout_seconds=timeout_seconds,
             supabase_jwks_cache_lifespan_seconds=cache_lifespan_seconds,
             supabase_jwks_refresh_cooldown_seconds=refresh_cooldown_seconds,
+            supabase_jwks_negative_cache_ttl_seconds=negative_cache_ttl_seconds,
+            supabase_jwks_negative_cache_max_entries=negative_cache_max_entries,
             supabase_jwks_max_keys=max_keys,
             supabase_jwt_kid_max_length=kid_max_length,
         )
@@ -111,6 +119,8 @@ def get_token_verifier(settings: Settings = Depends(get_settings)) -> SupabaseTo
         settings.supabase_jwks_timeout_seconds,
         settings.supabase_jwks_cache_lifespan_seconds,
         settings.supabase_jwks_refresh_cooldown_seconds,
+        settings.supabase_jwks_negative_cache_ttl_seconds,
+        settings.supabase_jwks_negative_cache_max_entries,
         settings.supabase_jwks_max_keys,
         settings.supabase_jwt_kid_max_length,
     )

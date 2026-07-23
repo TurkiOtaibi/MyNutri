@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     supabase_jwks_timeout_seconds: int = Field(default=5, ge=1, le=30)
     supabase_jwks_cache_lifespan_seconds: int = Field(default=600, ge=60, le=86_400)
     supabase_jwks_refresh_cooldown_seconds: int = Field(default=30, ge=1, le=300)
+    supabase_jwks_negative_cache_ttl_seconds: int = Field(default=30, ge=1, le=300)
+    supabase_jwks_negative_cache_max_entries: int = Field(
+        default=256, ge=1, le=4_096
+    )
     supabase_jwks_max_keys: int = Field(default=32, ge=1, le=128)
     supabase_jwt_kid_max_length: int = Field(default=256, ge=1, le=1_024)
     calendar_timezone: str = "Asia/Riyadh"
@@ -38,6 +42,12 @@ class Settings(BaseSettings):
             self.supabase_jwks_refresh_cooldown_seconds
         ):
             raise ValueError("JWKS cache lifespan must be greater than or equal to cooldown.")
+        if self.supabase_jwks_cache_lifespan_seconds < (
+            self.supabase_jwks_negative_cache_ttl_seconds
+        ):
+            raise ValueError(
+                "JWKS cache lifespan must be greater than or equal to negative cache TTL."
+            )
         return self
 
     @property

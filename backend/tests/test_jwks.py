@@ -15,7 +15,7 @@ from jwt.algorithms import RSAAlgorithm
 from jwt.exceptions import PyJWKClientConnectionError, PyJWKClientError
 from pydantic import ValidationError
 
-from app.core.auth import get_token_verifier
+from app.core.auth import SupabaseTokenVerifier, get_token_verifier
 from app.core.config import Settings
 from app.core.jwks import RotationSafeJwksClient
 
@@ -84,20 +84,13 @@ def _document(*keys: dict[str, Any]) -> dict[str, Any]:
 
 
 def _token(kid: Any = "a", *, include_kid: bool = True, **headers: Any) -> str:
-    token_headers = dict(headers)
+    token_headers = {"alg": "RS256", "typ": "JWT", **headers}
     if include_kid:
         token_headers["kid"] = kid
-    if include_kid and not isinstance(kid, str):
-        encoded_header = base64.urlsafe_b64encode(
-            json.dumps({"alg": "HS256", "typ": "JWT", **token_headers}).encode()
-        ).rstrip(b"=")
-        return f"{encoded_header.decode()}.e30.signature"
-    return jwt.encode(
-        {"sub": "test"},
-        "test-secret-that-is-at-least-32-bytes",
-        algorithm="HS256",
-        headers=token_headers,
-    )
+    encoded_header = base64.urlsafe_b64encode(
+        json.dumps(token_headers).encode()
+    ).rstrip(b"=")
+    return f"{encoded_header.decode()}.e30.c2ln"
 
 
 def _client(
@@ -107,6 +100,8 @@ def _client(
     timeout: int = 1,
     lifespan: int = 60,
     cooldown: int = 5,
+    negative_ttl: int = 5,
+    negative_max_entries: int = 16,
     max_keys: int = 4,
     kid_max_length: int = 8,
 ) -> RotationSafeJwksClient:
@@ -115,6 +110,8 @@ def _client(
         timeout_seconds=timeout,
         cache_lifespan_seconds=lifespan,
         refresh_cooldown_seconds=cooldown,
+        negative_cache_ttl_seconds=negative_ttl,
+        negative_cache_max_entries=negative_max_entries,
         max_keys=max_keys,
         kid_max_length=kid_max_length,
         fetcher=fetcher,
@@ -134,6 +131,10 @@ def _client(
         ("supabase_jwks_refresh_cooldown_seconds", 0),
         ("supabase_jwks_refresh_cooldown_seconds", -1),
         ("supabase_jwks_refresh_cooldown_seconds", 301),
+        ("supabase_jwks_negative_cache_ttl_seconds", 0),
+        ("supabase_jwks_negative_cache_ttl_seconds", 301),
+        ("supabase_jwks_negative_cache_max_entries", 0),
+        ("supabase_jwks_negative_cache_max_entries", 4_097),
         ("supabase_jwks_max_keys", 0),
         ("supabase_jwks_max_keys", -1),
         ("supabase_jwks_max_keys", 129),
@@ -155,6 +156,14 @@ def test_jwks_settings_configuration_rejects_lifespan_shorter_than_cooldown() ->
         )
 
 
+def test_jwks_settings_configuration_rejects_lifespan_shorter_than_negative_ttl() -> None:
+    with pytest.raises(ValidationError, match="negative cache TTL"):
+        Settings(
+            supabase_jwks_cache_lifespan_seconds=60,
+            supabase_jwks_negative_cache_ttl_seconds=61,
+        )
+
+
 @pytest.mark.parametrize(
     "token",
     [
@@ -171,6 +180,15 @@ def test_header_kid_invalid_values_fail_before_fetch(token: str) -> None:
     client = _client(fetcher, clock)
     with pytest.raises(PyJWKClientError):
         client.get_signing_key_from_jwt(token)
+    assert fetcher.calls == 0
+
+
+@pytest.mark.parametrize("algorithm", ["HS256", "none", "RS512", "", None])
+def test_header_unsupported_algorithm_fails_before_fetch(algorithm: Any) -> None:
+    fetcher = FakeFetcher(_document(KEY_A))
+    client = _client(fetcher, FakeClock())
+    with pytest.raises(PyJWKClientError):
+        client.get_signing_key_from_jwt(_token(alg=algorithm))
     assert fetcher.calls == 0
 
 
@@ -287,6 +305,41 @@ def test_cooldown_unknown_kids_are_globally_bounded_at_exact_boundary() -> None:
     assert fetcher.calls == 3
 
 
+def test_negative_cache_is_bounded_and_evicts_oldest_kid() -> None:
+    clock = FakeClock()
+    fetcher = FakeFetcher(*[_document(KEY_A) for _ in range(5)])
+    client = _client(
+        fetcher,
+        clock,
+        cooldown=1,
+        negative_ttl=10,
+        negative_max_entries=3,
+    )
+    for kid in ("u0", "u1", "u2", "u3", "u4"):
+        with pytest.raises(PyJWKClientError):
+            client.get_signing_key_from_jwt(_token(kid))
+        clock.advance(1)
+        assert len(client._negative_cache) <= 3
+    assert list(client._negative_cache) == ["u2", "u3", "u4"]
+    assert fetcher.calls == 5
+
+
+def test_negative_cache_ttl_expiry_permits_rotation_recovery() -> None:
+    clock = FakeClock()
+    fetcher = FakeFetcher(_document(KEY_A), _document(KEY_A, KEY_B))
+    client = _client(fetcher, clock, cooldown=5, negative_ttl=10)
+    with pytest.raises(PyJWKClientError):
+        client.get_signing_key_from_jwt(_token("b"))
+    assert fetcher.calls == 1
+    clock.advance(5)
+    with pytest.raises(PyJWKClientError):
+        client.get_signing_key_from_jwt(_token("b"))
+    assert fetcher.calls == 1
+    clock.advance(5)
+    assert client.get_signing_key_from_jwt(_token("b")).key_id == "b"
+    assert fetcher.calls == 2
+
+
 @pytest.mark.parametrize("failure", [TimeoutError("timeout"), RuntimeError("transport")])
 def test_cache_connection_failure_consumes_cooldown(failure: Exception) -> None:
     clock = FakeClock()
@@ -381,6 +434,34 @@ def test_singleflight_concurrent_rotation_has_one_fetch_and_all_succeed() -> Non
     assert errors == []
     assert results == ["b"] * 8
     assert fetcher.calls == 2
+
+
+def test_singleflight_fifty_concurrent_same_unknown_kid_fetch_once() -> None:
+    clock = FakeClock()
+    started = threading.Event()
+    release = threading.Event()
+    fetcher = FakeFetcher(BlockingResponse(_document(KEY_A), started, release))
+    client = _client(fetcher, clock)
+    barrier = threading.Barrier(51)
+    errors: list[Exception] = []
+
+    def resolve() -> None:
+        barrier.wait()
+        try:
+            client.get_signing_key_from_jwt(_token("missing"))
+        except Exception as error:
+            errors.append(error)
+
+    threads = [threading.Thread(target=resolve) for _ in range(50)]
+    for thread in threads:
+        thread.start()
+    barrier.wait()
+    assert started.wait(timeout=3)
+    release.set()
+    _join_threads(threads)
+    assert len(errors) == 50
+    assert all(type(error) is PyJWKClientError for error in errors)
+    assert fetcher.calls == 1
 
 
 def test_singleflight_concurrent_random_unknown_kids_share_one_fetch_and_fail() -> None:
@@ -541,6 +622,61 @@ def test_rotation_retirement_replaces_snapshot_at_ttl_without_stale_acceptance()
     assert fetcher.calls == 3
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [TimeoutError("provider timeout"), RuntimeError("provider HTTP 500")],
+)
+def test_outage_unknown_kid_fails_fast_with_generic_connection_error(
+    failure: Exception,
+) -> None:
+    token = _token("unknown")
+    fetcher = FakeFetcher(failure)
+    client = _client(fetcher, FakeClock())
+    with pytest.raises(
+        PyJWKClientConnectionError, match="Unable to refresh signing keys"
+    ) as error:
+        client.get_signing_key_from_jwt(token)
+    assert token not in str(error.value)
+    assert "unknown" not in str(error.value)
+    assert fetcher.calls == 1
+
+
+def test_invalid_signature_does_not_trigger_refresh_storm() -> None:
+    clock = FakeClock()
+    fetcher = FakeFetcher(_document(KEY_A))
+    client = _client(fetcher, clock)
+    verifier = object.__new__(SupabaseTokenVerifier)
+    verifier.issuer = "https://project.supabase.co/auth/v1"
+    verifier.audience = "authenticated"
+    verifier.jwks = client
+    token = jwt.encode(
+        {
+            "sub": "00000000-0000-0000-0000-000000000001",
+            "iss": verifier.issuer,
+            "aud": verifier.audience,
+            "exp": 4_102_444_800,
+        },
+        PRIVATE_B,
+        algorithm="RS256",
+        headers={"kid": "a"},
+    )
+    for _ in range(20):
+        with pytest.raises(jwt.InvalidSignatureError):
+            verifier.verify(token)
+    assert fetcher.calls == 1
+
+
+def test_failures_do_not_log_raw_token_or_unverified_claims(caplog) -> None:
+    token = _token("sensitive-kid")
+    fetcher = FakeFetcher(TimeoutError("provider unavailable"))
+    client = _client(fetcher, FakeClock(), kid_max_length=32)
+    with pytest.raises(PyJWKClientConnectionError):
+        client.get_signing_key_from_jwt(token)
+    combined_logs = " ".join(record.getMessage() for record in caplog.records)
+    assert token not in combined_logs
+    assert "sensitive-kid" not in combined_logs
+
+
 def test_verifier_cache_identity_includes_every_jwks_policy_setting() -> None:
     from app.core.auth import _cached_verifier
 
@@ -554,6 +690,8 @@ def test_verifier_cache_identity_includes_every_jwks_policy_setting() -> None:
         Settings(**common, supabase_jwks_timeout_seconds=6),
         Settings(**common, supabase_jwks_cache_lifespan_seconds=601),
         Settings(**common, supabase_jwks_refresh_cooldown_seconds=31),
+        Settings(**common, supabase_jwks_negative_cache_ttl_seconds=31),
+        Settings(**common, supabase_jwks_negative_cache_max_entries=257),
         Settings(**common, supabase_jwks_max_keys=33),
         Settings(**common, supabase_jwt_kid_max_length=257),
     ]

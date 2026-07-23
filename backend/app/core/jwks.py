@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -37,6 +38,8 @@ class RotationSafeJwksClient:
         timeout_seconds: int,
         cache_lifespan_seconds: int,
         refresh_cooldown_seconds: int,
+        negative_cache_ttl_seconds: int,
+        negative_cache_max_entries: int,
         max_keys: int,
         kid_max_length: int,
         fetcher: Callable[[], Any] | None = None,
@@ -45,6 +48,8 @@ class RotationSafeJwksClient:
         self._timeout_seconds = timeout_seconds
         self._cache_lifespan_seconds = cache_lifespan_seconds
         self._refresh_cooldown_seconds = refresh_cooldown_seconds
+        self._negative_cache_ttl_seconds = negative_cache_ttl_seconds
+        self._negative_cache_max_entries = negative_cache_max_entries
         self._max_keys = max_keys
         self._kid_max_length = kid_max_length
         self._clock = clock or time.monotonic
@@ -66,6 +71,7 @@ class RotationSafeJwksClient:
         self._last_completed_generation = 0
         self._last_completed_failure: type[PyJWKClientError] | None = None
         self._next_refresh_allowed = 0.0
+        self._negative_cache: OrderedDict[str, float] = OrderedDict()
 
     def get_signing_key_from_jwt(self, token: str | bytes) -> PyJWK:
         kid = self._validated_kid(token)
@@ -75,6 +81,9 @@ class RotationSafeJwksClient:
                 key = self._unexpired_key(kid, self._clock())
                 if key is not None:
                     return key
+                now = self._clock()
+                if self._is_negative_cached(kid, now):
+                    raise PyJWKClientError(_LOOKUP_FAILURE_MESSAGE)
 
                 if self._refresh_in_flight:
                     captured_generation = self._refresh_generation
@@ -93,7 +102,6 @@ class RotationSafeJwksClient:
                         )
                     continue
 
-                now = self._clock()
                 if now < self._next_refresh_allowed:
                     raise PyJWKClientError(_LOOKUP_FAILURE_MESSAGE)
 
@@ -125,6 +133,8 @@ class RotationSafeJwksClient:
                 with self._condition:
                     if snapshot is not None:
                         self._snapshot = snapshot
+                        if kid not in snapshot.keys:
+                            self._record_negative(kid, self._clock())
                     self._last_completed_generation = owned_generation
                     self._last_completed_failure = failure_type
                     self._refresh_in_flight = False
@@ -139,6 +149,8 @@ class RotationSafeJwksClient:
         except Exception as error:
             raise PyJWKClientError(_LOOKUP_FAILURE_MESSAGE) from error
         kid = header.get("kid")
+        if header.get("alg") not in _SUPPORTED_SIGNING_ALGORITHMS:
+            raise PyJWKClientError(_LOOKUP_FAILURE_MESSAGE)
         if not isinstance(kid, str) or not kid or len(kid) > self._kid_max_length:
             raise PyJWKClientError(_LOOKUP_FAILURE_MESSAGE)
         return kid
@@ -185,6 +197,22 @@ class RotationSafeJwksClient:
         if snapshot is None or now >= snapshot.expires_at:
             return None
         return snapshot.keys.get(kid)
+
+    def _is_negative_cached(self, kid: str, now: float) -> bool:
+        expires_at = self._negative_cache.get(kid)
+        if expires_at is None:
+            return False
+        if now >= expires_at:
+            del self._negative_cache[kid]
+            return False
+        self._negative_cache.move_to_end(kid)
+        return True
+
+    def _record_negative(self, kid: str, now: float) -> None:
+        self._negative_cache[kid] = now + self._negative_cache_ttl_seconds
+        self._negative_cache.move_to_end(kid)
+        while len(self._negative_cache) > self._negative_cache_max_entries:
+            self._negative_cache.popitem(last=False)
 
     @staticmethod
     def _failure_message(failure_type: type[PyJWKClientError]) -> str:

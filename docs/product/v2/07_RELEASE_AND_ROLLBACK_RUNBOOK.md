@@ -33,6 +33,8 @@ SUPABASE_JWT_AUDIENCE=authenticated
 SUPABASE_JWKS_TIMEOUT_SECONDS=5
 SUPABASE_JWKS_CACHE_LIFESPAN_SECONDS=600
 SUPABASE_JWKS_REFRESH_COOLDOWN_SECONDS=30
+SUPABASE_JWKS_NEGATIVE_CACHE_TTL_SECONDS=30
+SUPABASE_JWKS_NEGATIVE_CACHE_MAX_ENTRIES=256
 SUPABASE_JWKS_MAX_KEYS=32
 SUPABASE_JWT_KID_MAX_LENGTH=256
 ALLOWED_ORIGINS=["https://<frontend-host>"]
@@ -57,10 +59,17 @@ whole cluster. `SUPABASE_JWKS_TIMEOUT_SECONDS` bounds both provider calls and
 singleflight waits. `SUPABASE_JWKS_CACHE_LIFESPAN_SECONDS` controls the
 successful snapshot lifetime, while
 `SUPABASE_JWKS_REFRESH_COOLDOWN_SECONDS` limits refresh attempts after misses
-and failures. `SUPABASE_JWKS_MAX_KEYS` and `SUPABASE_JWT_KID_MAX_LENGTH` bound
+and failures. `SUPABASE_JWKS_NEGATIVE_CACHE_TTL_SECONDS` suppresses repeated
+lookups for an absent `kid` while still allowing rotation recovery after a
+bounded interval. `SUPABASE_JWKS_NEGATIVE_CACHE_MAX_ENTRIES` caps that
+per-process cache at 256 entries by default. `SUPABASE_JWKS_MAX_KEYS` and
+`SUPABASE_JWT_KID_MAX_LENGTH` bound
 provider documents and token key IDs. The defaults are 5, 600, 30, 32, and 256
-respectively. A newly published provider key can be rejected until the next
-cooldown eligibility, at most 30 seconds with the default policy.
+respectively for timeout, snapshot lifetime, refresh cooldown, JWKS keys, and
+key-ID length. The negative-cache defaults are 30 seconds and 256 entries.
+A newly published provider key can be rejected until both its negative entry
+and refresh cooldown permit another lookup, at most 30 seconds with the default
+policy.
 
 Before rollout, inspect the real non-production provider JWKS and confirm its
 key count and key-ID lengths fit these bounds. Do not record private tokens or
