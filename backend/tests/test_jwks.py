@@ -7,6 +7,7 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from urllib.error import HTTPError
 
 import jwt
 import pytest
@@ -624,7 +625,19 @@ def test_rotation_retirement_replaces_snapshot_at_ttl_without_stale_acceptance()
 
 @pytest.mark.parametrize(
     "failure",
-    [TimeoutError("provider timeout"), RuntimeError("provider HTTP 500")],
+    [
+        pytest.param(TimeoutError("provider timeout"), id="timeout"),
+        pytest.param(
+            HTTPError(
+                "https://project.supabase.co/auth/v1/.well-known/jwks.json",
+                500,
+                "Internal Server Error",
+                None,
+                None,
+            ),
+            id="http-500",
+        ),
+    ],
 )
 def test_outage_unknown_kid_fails_fast_with_generic_connection_error(
     failure: Exception,
