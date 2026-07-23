@@ -1,17 +1,11 @@
 import type { Page } from "@playwright/test";
 
-import { API_TOKEN, API_URL, expect, test, uniqueName } from "./foods/helpers";
-
-function localDate(days = 0): string {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-}
+import { API_TOKEN, API_URL, diaryDate as localDate, expect, offsetIsoDate, test, uniqueName } from "./foods/helpers";
 
 function sundayStart(input: string): string {
-  const date = new Date(`${input}T00:00:00`);
-  date.setDate(date.getDate() - date.getDay());
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+  const [year, month, day] = input.split("-").map(Number);
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return offsetIsoDate(input, -weekday);
 }
 
 async function selectDiaryDate(page: Page, value: string) {

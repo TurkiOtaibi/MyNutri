@@ -1,15 +1,9 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { API_TOKEN, API_URL, expect, test, uniqueName } from "../foods/helpers";
+import { API_TOKEN, API_URL, diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
 
 const output = resolve("..", "docs", "ui-ux", "screenshots", "diary-final-polish");
-
-function localDate(days = 0): string {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-}
 
 async function selectDate(page: import("@playwright/test").Page, value: string) {
   await page.getByLabel("اختيار تاريخ اليوميات").fill(value);

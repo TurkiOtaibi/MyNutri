@@ -118,6 +118,9 @@ def test_v2_captures_one_unit_and_quantity_never_mutates_snapshot(snapshot_sessi
     assert entry.target_provenance == TargetProvenance.no_target_source
     assert entry.target_plan_id is None
     assert original["nutrition"]["fiber_g"] == 2.5
+    assert original["food"]["name"] == "Captured food"
+    assert original["food"]["food_category_key"] == "grains_starches"
+    assert original["nutrition"]["calories"] == 100
     assert original["nutrition"]["trans_fat_g"] == 0
     assert original["nutrition"]["sodium_mg"] is None
     assert original["food_groups"]["contributions"][0]["amount_per_captured_unit"] == 40

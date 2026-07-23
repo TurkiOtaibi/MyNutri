@@ -1,11 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { expect, test, uniqueName } from "../foods/helpers";
-
-function localDate(): string {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-}
+import { diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
 
 async function openGeneral(page: Page) {
   await page.goto("/diary");

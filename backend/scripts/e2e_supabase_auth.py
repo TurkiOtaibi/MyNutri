@@ -11,7 +11,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
-from uuid import UUID, uuid5
+from uuid import UUID, uuid4, uuid5
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -69,6 +69,7 @@ class AuthState:
                 "iss": self.issuer,
                 "iat": int(now.timestamp()),
                 "exp": int(expires.timestamp()),
+                "jti": str(uuid4()),
                 "user_metadata": user["user_metadata"],
             },
             self.key,

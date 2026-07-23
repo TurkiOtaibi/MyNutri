@@ -1,11 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { API_TOKEN, API_URL, expect, test, uniqueName } from "../foods/helpers";
-
-function localDate(): string {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-}
+import { API_TOKEN, API_URL, diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
 
 async function openAddAndSelect(page: Page, foodName: string) {
   await page.getByRole("button", { name: "إضافة طعام إلى فطور" }).click();
@@ -160,6 +155,7 @@ test.describe("@diary quantity and UX refinement", () => {
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto("/diary");
     const selected = page.locator(".compact-week-day.selected");
+    await expect(selected).toBeVisible();
     const box = await selected.boundingBox();
     expect(box && box.x >= 0 && box.x + box.width <= 360).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
