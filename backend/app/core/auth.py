@@ -6,13 +6,13 @@ from uuid import UUID
 import jwt
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jwt import PyJWKClient
 from jwt.exceptions import PyJWTError
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 from sqlmodel import select
 
 from app.core.config import Settings, get_settings
+from app.core.jwks import RotationSafeJwksClient
 from app.db.session import get_session
 from app.models import Principal, PrincipalRole, PrincipalStatus
 
@@ -39,10 +39,13 @@ class SupabaseTokenVerifier:
             raise RuntimeError("SUPABASE_URL is required for authentication.")
         self.issuer = settings.expected_supabase_issuer
         self.audience = settings.supabase_jwt_audience
-        self.jwks = PyJWKClient(
+        self.jwks = RotationSafeJwksClient(
             settings.effective_supabase_jwks_url,
-            cache_keys=True,
-            lifespan=600,
+            timeout_seconds=settings.supabase_jwks_timeout_seconds,
+            cache_lifespan_seconds=settings.supabase_jwks_cache_lifespan_seconds,
+            refresh_cooldown_seconds=settings.supabase_jwks_refresh_cooldown_seconds,
+            max_keys=settings.supabase_jwks_max_keys,
+            kid_max_length=settings.supabase_jwt_kid_max_length,
         )
 
     def verify(self, token: str) -> AuthClaims:
@@ -75,13 +78,27 @@ class SupabaseTokenVerifier:
 
 
 @lru_cache(maxsize=8)
-def _cached_verifier(url: str, jwks_url: str, audience: str) -> SupabaseTokenVerifier:
+def _cached_verifier(
+    url: str,
+    jwks_url: str,
+    audience: str,
+    timeout_seconds: int,
+    cache_lifespan_seconds: int,
+    refresh_cooldown_seconds: int,
+    max_keys: int,
+    kid_max_length: int,
+) -> SupabaseTokenVerifier:
     return SupabaseTokenVerifier(
         Settings(
             environment="test",
             supabase_url=url,
             supabase_jwks_url=jwks_url,
             supabase_jwt_audience=audience,
+            supabase_jwks_timeout_seconds=timeout_seconds,
+            supabase_jwks_cache_lifespan_seconds=cache_lifespan_seconds,
+            supabase_jwks_refresh_cooldown_seconds=refresh_cooldown_seconds,
+            supabase_jwks_max_keys=max_keys,
+            supabase_jwt_kid_max_length=kid_max_length,
         )
     )
 
@@ -91,6 +108,11 @@ def get_token_verifier(settings: Settings = Depends(get_settings)) -> SupabaseTo
         settings.normalized_supabase_url,
         settings.effective_supabase_jwks_url,
         settings.supabase_jwt_audience,
+        settings.supabase_jwks_timeout_seconds,
+        settings.supabase_jwks_cache_lifespan_seconds,
+        settings.supabase_jwks_refresh_cooldown_seconds,
+        settings.supabase_jwks_max_keys,
+        settings.supabase_jwt_kid_max_length,
     )
 
 

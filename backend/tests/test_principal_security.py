@@ -8,6 +8,7 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
+from jwt.exceptions import PyJWKClientConnectionError
 from sqlalchemy import Delete, Insert, Select, Update, event
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -503,6 +504,20 @@ def test_supabase_verifier_validates_signature_expiry_issuer_and_audience(monkey
         verifier.verify(_jwt(verifier, private_key, iss="https://wrong.example/auth/v1"))
     with pytest.raises(jwt.InvalidAudienceError):
         verifier.verify(_jwt(verifier, private_key, aud="wrong"))
+
+
+def test_jwks_resolver_failure_keeps_uniform_public_credential_error(security_context) -> None:
+    client, _ = security_context
+
+    class FailingVerifier:
+        def verify(self, _token: str) -> AuthClaims:
+            raise PyJWKClientConnectionError("internal provider response detail")
+
+    app.dependency_overrides[get_token_verifier] = FailingVerifier
+    response = client.get("/foods", headers=headers("unresolvable-jwks"))
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
+    assert "provider" not in response.text
 
 
 def test_production_auth_and_cors_configuration_fail_closed() -> None:
