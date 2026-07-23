@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 import pytest
@@ -19,8 +19,10 @@ from app.models import (
     Principal,
     Profile,
     TargetPlan,
+    TargetPlanStatus,
     TargetProvenance,
 )
+from app.services.target_plans import project_targets
 
 PRINCIPAL_A = UUID("00000000-0000-0000-0000-00000000000a")
 PRINCIPAL_B = UUID("00000000-0000-0000-0000-00000000000b")
@@ -110,6 +112,124 @@ def test_current_legacy_profile_target_is_available_before_transition(
     assert source.json()["target_provenance"] == "legacy_unversioned"
     assert source.json()["target_source_detail"] == "no_preserved_target_source"
     assert source.json()["targets"] == created.json()["targets"]
+
+
+def test_project_targets_selects_due_plan_without_lifecycle_dml(
+    target_plan_context,
+) -> None:
+    client, session = target_plan_context
+
+    fallback = client.put(
+        "/profile", json=profile_payload(weight=67), headers=headers("token-b")
+    )
+    assert fallback.status_code == 200
+    fallback_source = project_targets(
+        session, PrincipalContext(PRINCIPAL_B), TODAY
+    )
+    assert fallback_source.target_source_detail == "no_preserved_target_source"
+    assert fallback_source.targets is not None
+    assert fallback_source.targets.model_dump(mode="json") == fallback.json()["targets"]
+
+    created = client.put(
+        "/profile", json=profile_payload(weight=80), headers=headers("token-a")
+    )
+    assert created.status_code == 200
+    activation = activate(client, profile_payload(weight=82), "due-plan")
+    assert activation.status_code == 201, activation.text
+    due = session.exec(
+        select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_A)
+    ).one()
+    assert due.status == TargetPlanStatus.scheduled
+    lifecycle_before = (
+        due.status,
+        due.effective_to,
+        due.activated_at,
+        due.closed_at,
+        due.superseded_at,
+    )
+
+    due_source = project_targets(session, PrincipalContext(PRINCIPAL_A), TOMORROW)
+    assert due_source.target_source_detail == "effective_target_plan"
+    assert due_source.plan is not None
+    assert str(due_source.plan.id) == activation.json()["plan"]["id"]
+    assert due_source.targets == due_source.plan.targets
+    session.refresh(due)
+    assert (
+        due.status,
+        due.effective_to,
+        due.activated_at,
+        due.closed_at,
+        due.superseded_at,
+    ) == lifecycle_before
+
+    transition_source = project_targets(
+        session, PrincipalContext(PRINCIPAL_A), TODAY
+    )
+    assert transition_source.target_source_detail == "legacy_transition_snapshot"
+    assert transition_source.targets is not None
+    transition_targets = transition_source.targets.model_dump(
+        mode="json", exclude={"preview_hash"}
+    )
+    expected_transition_targets = created.json()["targets"].copy()
+    expected_transition_targets.pop("preview_hash")
+    assert transition_targets == expected_transition_targets
+
+    no_source = project_targets(
+        session,
+        PrincipalContext(UUID("00000000-0000-0000-0000-00000000000c")),
+        date(2026, 7, 15),
+    )
+    assert no_source.target_provenance == "no_target_source"
+    assert no_source.targets is None
+
+
+def test_owner_current_get_advances_due_target_lifecycle(
+    target_plan_context, monkeypatch
+) -> None:
+    client, session = target_plan_context
+    active_response = activate(
+        client, profile_payload(weight=80), "owner-active", token="token-b"
+    )
+    assert active_response.status_code == 201, active_response.text
+    scheduled_response = activate(
+        client, profile_payload(weight=82), "owner-scheduled", token="token-b"
+    )
+    assert scheduled_response.status_code == 201, scheduled_response.text
+
+    plans = session.exec(
+        select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_B)
+    ).all()
+    active = next(plan for plan in plans if plan.status == TargetPlanStatus.active)
+    scheduled = next(
+        plan for plan in plans if plan.status == TargetPlanStatus.scheduled
+    )
+    active.effective_from = TODAY - timedelta(days=1)
+    assert active.effective_to is None
+    assert active.closed_at is None
+    assert scheduled.effective_from == TOMORROW
+    assert scheduled.activated_at is None
+    session.add(active)
+    session.commit()
+
+    monkeypatch.setattr(
+        "app.services.target_plans.current_diary_date", lambda: TOMORROW
+    )
+    response = client.get(
+        f"/target-plans/current?date={TOMORROW.isoformat()}",
+        headers=headers("token-b"),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["plan"]["id"] == str(scheduled.id)
+
+    session.refresh(active)
+    session.refresh(scheduled)
+    assert active.status == TargetPlanStatus.closed
+    assert active.effective_to == TOMORROW
+    assert active.closed_at is not None
+    assert scheduled.status == TargetPlanStatus.active
+    assert scheduled.activated_at is not None
+    assert scheduled.closed_at is None
+    assert active.closed_at == scheduled.activated_at
 
 
 def test_existing_legacy_activation_preserves_today_and_updates_profile_atomically(

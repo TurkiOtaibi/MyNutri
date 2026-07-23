@@ -1,4 +1,6 @@
+from collections.abc import Callable
 from datetime import date, timedelta
+
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
@@ -10,11 +12,15 @@ from app.schemas import (
     DiaryNutrientAggregate,
     DiaryNutrientTarget,
     TargetResponse,
+    TargetSourceResponse,
     WeekSummary,
 )
 from app.services.diary import add_totals, empty_totals, totals_for_entry
 from app.services.profile import get_profile, to_target_response
-from app.services.target_plans import resolve_targets
+from app.services.target_plans import project_targets, resolve_targets
+
+
+TargetResolver = Callable[[Session, PrincipalContext, date], TargetSourceResponse]
 
 
 def sunday_start(day: date) -> date:
@@ -170,6 +176,7 @@ def _day_summary(
     principal: PrincipalContext,
     current: date,
     entries: list[DiaryEntry],
+    target_resolver: TargetResolver,
 ) -> DaySummary:
     totals = empty_totals()
     entry_totals = []
@@ -181,7 +188,7 @@ def _day_summary(
         entry_totals.append(resolved)
         totals = add_totals(totals, resolved)
 
-    source = resolve_targets(session, principal, current)
+    source = target_resolver(session, principal, current)
     aggregates = []
     for definition in NUTRIENTS:
         if not definition.diary_coverage_participation:
@@ -204,7 +211,12 @@ def _day_summary(
     )
 
 
-def weekly_summary(session: Session, principal: PrincipalContext, start: date) -> WeekSummary:
+def _weekly_summary(
+    session: Session,
+    principal: PrincipalContext,
+    start: date,
+    target_resolver: TargetResolver,
+) -> WeekSummary:
     week_start = sunday_start(start)
     week_end = week_start + timedelta(days=6)
     entries = session.exec(
@@ -229,8 +241,19 @@ def weekly_summary(session: Session, principal: PrincipalContext, start: date) -
             principal,
             current,
             [entry for entry in entries if entry.entry_date == current],
+            target_resolver,
         )
         weekly_totals = add_totals(weekly_totals, day.totals)
         days.append(day)
 
     return WeekSummary(start=week_start, end=week_end, days=days, weekly_totals=weekly_totals, targets=targets)
+
+
+def weekly_summary(session: Session, principal: PrincipalContext, start: date) -> WeekSummary:
+    return _weekly_summary(session, principal, start, resolve_targets)
+
+
+def weekly_summary_read_only(
+    session: Session, principal: PrincipalContext, start: date
+) -> WeekSummary:
+    return _weekly_summary(session, principal, start, project_targets)

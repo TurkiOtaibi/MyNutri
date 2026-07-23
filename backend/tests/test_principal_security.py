@@ -8,15 +8,24 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
+from sqlalchemy import Delete, Insert, Select, Update, event
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.core.auth import AuthClaims, SupabaseTokenVerifier, get_token_verifier
 from app.core.config import Settings, validate_runtime_configuration
 from app.core.calendar import current_diary_date
 from app.db.session import get_session
 from app.main import app
-from app.models import Principal, PrincipalRole, PrincipalStatus
+from app.models import (
+    DiaryEntry,
+    Principal,
+    PrincipalRole,
+    PrincipalStatus,
+    TargetPlan,
+    TargetPlanStatus,
+    TargetProvenance,
+)
 
 PRINCIPAL_A = UUID("00000000-0000-0000-0000-00000000000a")
 PRINCIPAL_B = UUID("00000000-0000-0000-0000-00000000000b")
@@ -109,6 +118,117 @@ def security_context():
 
 def headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def _activate_target(
+    client: TestClient, payload: dict, idempotency_key: str
+) -> dict:
+    preview = client.post("/profile/preview", json=payload, headers=headers("user-b"))
+    assert preview.status_code == 200, preview.text
+    response = client.post(
+        "/target-plans/activate",
+        json={
+            **payload,
+            "confirmed": True,
+            "expected_preview_hash": preview.json()["preview_hash"],
+        },
+        headers={**headers("user-b"), "Idempotency-Key": idempotency_key},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def _seed_active_and_due_targets(
+    client: TestClient, session: Session
+) -> tuple[dict, dict]:
+    _activate_target(client, profile_payload(70), "active-target")
+    due_response = _activate_target(client, profile_payload(67), "due-target")
+    today = current_diary_date()
+    plans = session.exec(
+        select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_B)
+    ).all()
+    active = next(plan for plan in plans if plan.status == TargetPlanStatus.active)
+    due = next(plan for plan in plans if plan.status == TargetPlanStatus.scheduled)
+    active.effective_from = today - timedelta(days=2)
+    active.effective_to = today - timedelta(days=1)
+    due.effective_from = today
+    session.add(active)
+    session.add(due)
+    session.commit()
+    lifecycle = {
+        plan.id: (
+            plan.status,
+            plan.effective_from,
+            plan.effective_to,
+            plan.activated_at,
+            plan.closed_at,
+            plan.superseded_at,
+        )
+        for plan in (active, due)
+    }
+    return due_response, lifecycle
+
+
+def _install_admin_read_guards(monkeypatch, session: Session):
+    engine = session.get_bind()
+    statements: list[str] = []
+
+    def fail_lifecycle(*_args, **_kwargs) -> None:
+        raise AssertionError("admin monitoring invoked lifecycle advancement")
+
+    def reject_writes(
+        _conn, clauseelement, _multiparams, _params, _execution_options
+    ) -> None:
+        if (
+            isinstance(clauseelement, Select)
+            and clauseelement._for_update_arg is not None
+        ):
+            raise AssertionError("admin monitoring issued SELECT FOR UPDATE")
+        if isinstance(clauseelement, (Insert, Update, Delete)):
+            raise AssertionError("admin monitoring issued DML")
+        normalized = " ".join(str(clauseelement).split()).lower()
+        if normalized.startswith(("insert ", "update ", "delete ")):
+            raise AssertionError("admin monitoring issued textual DML")
+
+    def capture_cursor(
+        _conn, _cursor, statement, _parameters, _context, _executemany
+    ) -> None:
+        statements.append(" ".join(statement.split()))
+
+    monkeypatch.setattr("app.services.target_plans._advance_lifecycle", fail_lifecycle)
+    event.listen(engine, "before_execute", reject_writes)
+    event.listen(engine, "before_cursor_execute", capture_cursor)
+
+    def cleanup() -> None:
+        event.remove(engine, "before_execute", reject_writes)
+        event.remove(engine, "before_cursor_execute", capture_cursor)
+
+    return engine, statements, cleanup
+
+
+def _assert_lifecycle_unchanged(engine, expected: dict) -> None:
+    with Session(engine) as fresh_session:
+        actual = {
+            plan.id: (
+                plan.status,
+                plan.effective_from,
+                plan.effective_to,
+                plan.activated_at,
+                plan.closed_at,
+                plan.superseded_at,
+            )
+            for plan in fresh_session.exec(
+                select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_B)
+            ).all()
+        }
+    assert actual == expected
+
+
+def _reject_admin_commit(monkeypatch, session: Session) -> None:
+    def fail_commit() -> None:
+        raise AssertionError("admin monitoring committed its transaction")
+
+    monkeypatch.setattr(session, "commit", fail_commit)
 
 
 def test_missing_invalid_and_unsupported_credentials(security_context) -> None:
@@ -210,15 +330,125 @@ def test_admin_archive_restore_and_history_safe_delete(security_context) -> None
 def test_admin_monitoring_is_authorized_and_read_only(security_context) -> None:
     client, _ = security_context
     assert client.get("/admin/users", headers=headers("user-b")).status_code == 403
+    assert (
+        client.get(
+            f"/admin/users/{PRINCIPAL_B}", headers=headers("user-b")
+        ).status_code
+        == 403
+    )
+    assert (
+        client.get(
+            f"/admin/users/{PRINCIPAL_B}/diary/week",
+            params={"start": current_diary_date().isoformat()},
+            headers=headers("user-b"),
+        ).status_code
+        == 403
+    )
     listing = client.get("/admin/users", headers=headers("admin-a"))
     detail = client.get(f"/admin/users/{PRINCIPAL_B}", headers=headers("admin-a"))
     assert listing.status_code == detail.status_code == 200
     assert listing.json()["total"] == 2
+    assert detail.json()["account"]["principal_id"] == str(PRINCIPAL_B)
     assert client.put(
         f"/admin/users/{PRINCIPAL_B}/profile",
         json=profile_payload(),
         headers=headers("admin-a"),
     ).status_code in {404, 405}
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    ["detail", "week", "diary", "target_history"],
+)
+def test_admin_monitoring_gets_execute_no_dml(
+    security_context, monkeypatch, endpoint: str
+) -> None:
+    client, session = security_context
+    due_response, lifecycle = _seed_active_and_due_targets(client, session)
+    due_plan = due_response["plan"]
+    today = current_diary_date()
+    paths = {
+        "detail": f"/admin/users/{PRINCIPAL_B}",
+        "week": (
+            f"/admin/users/{PRINCIPAL_B}/diary/week?start={today.isoformat()}"
+        ),
+        "diary": f"/admin/users/{PRINCIPAL_B}/diary?entry_date={today.isoformat()}",
+        "target_history": f"/admin/users/{PRINCIPAL_B}/target-plans",
+    }
+    path = paths[endpoint]
+    engine, statements, cleanup = _install_admin_read_guards(monkeypatch, session)
+    _reject_admin_commit(monkeypatch, session)
+    try:
+        response_documents = []
+        for _ in range(2):
+            response = client.get(path, headers=headers("admin-a"))
+            assert response.status_code == 200, response.text
+            response_documents.append(response.json())
+            if endpoint == "detail":
+                assert response.json()["current_target"]["plan"]["id"] == due_plan["id"]
+                assert response.json()["pending_plan"] is None
+            elif endpoint == "week":
+                today_summary = next(
+                    day
+                    for day in response.json()["days"]
+                    if day["date"] == today.isoformat()
+                )
+                assert (
+                    today_summary["targets"]["final_target_calories"]
+                    == due_plan["targets"]["final_target_calories"]
+                )
+            elif endpoint == "diary":
+                assert response.json() == []
+            else:
+                assert response.json()["items"][0]["id"] == due_plan["id"]
+            _assert_lifecycle_unchanged(engine, lifecycle)
+        assert response_documents[0] == response_documents[1]
+    finally:
+        cleanup()
+
+    normalized = [statement.lower() for statement in statements]
+    assert not any(
+        statement.startswith(("insert ", "update ", "delete "))
+        for statement in normalized
+    )
+    assert not any(" for update" in statement for statement in normalized)
+
+
+def test_admin_week_failure_executes_no_dml(security_context, monkeypatch) -> None:
+    client, session = security_context
+    _, lifecycle = _seed_active_and_due_targets(client, session)
+    today = current_diary_date()
+    week_start = today - timedelta(days=(today.weekday() + 1) % 7)
+    session.add(
+        DiaryEntry(
+            principal_id=PRINCIPAL_B,
+            entry_date=week_start + timedelta(days=6),
+            quantity=1,
+            snapshot_schema_version=2,
+            target_provenance=TargetProvenance.no_target_source,
+            nutrition_snapshot={"schema_version": 2},
+        )
+    )
+    session.commit()
+    engine, statements, cleanup = _install_admin_read_guards(monkeypatch, session)
+    _reject_admin_commit(monkeypatch, session)
+    try:
+        response = client.get(
+            f"/admin/users/{PRINCIPAL_B}/diary/week?start={today.isoformat()}",
+            headers=headers("admin-a"),
+        )
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"]["code"] == "DIARY_SUMMARY_DATA_INTEGRITY_ERROR"
+        _assert_lifecycle_unchanged(engine, lifecycle)
+    finally:
+        cleanup()
+
+    normalized = [statement.lower() for statement in statements]
+    assert not any(
+        statement.startswith(("insert ", "update ", "delete "))
+        for statement in normalized
+    )
+    assert not any(" for update" in statement for statement in normalized)
 
 
 def test_client_authoritative_identity_and_role_are_rejected(security_context) -> None:

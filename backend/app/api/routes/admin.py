@@ -18,11 +18,11 @@ from app.schemas import (
     TargetPlanHistoryResponse,
     WeekSummary,
 )
-from app.services.aggregation import weekly_summary
+from app.services.aggregation import weekly_summary_read_only
 from app.services.diary import list_entries, to_entry_response
 from app.services.errors import resource_not_found
 from app.services.profile import to_profile_response
-from app.services.target_plans import pending_plan, plan_history, resolve_targets
+from app.services.target_plans import pending_plan, plan_history, project_targets
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -108,7 +108,7 @@ def user_detail(
     return AdminUserDetail(
         account=_summary(session, principal),
         profile=to_profile_response(profile) if profile else None,
-        current_target=resolve_targets(session, selected, current_diary_date()),
+        current_target=project_targets(session, selected, current_diary_date()),
         pending_plan=pending_plan(session, selected),
         plan_history=plan_history(session, selected, 100, None),
     )
@@ -133,7 +133,7 @@ def user_week(
     session: Session = Depends(get_session),
 ) -> WeekSummary:
     selected = _selected_context(_get_principal(session, principal_id))
-    return weekly_summary(session, selected, start)
+    return weekly_summary_read_only(session, selected, start)
 
 
 @router.get("/users/{principal_id}/target-plans", response_model=TargetPlanHistoryResponse)
