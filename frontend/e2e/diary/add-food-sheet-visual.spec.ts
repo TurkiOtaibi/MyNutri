@@ -1,14 +1,9 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { expect, test, uniqueName } from "../foods/helpers";
+import { diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
 
 const output = resolve("..", "docs", "ui-ux", "screenshots", "diary-add-food-sheet");
-
-function localDate(): string {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-}
 
 test("@diary @visual capture production-style Add Food sheet states", async ({ page, foodsApi }) => {
   await mkdir(output, { recursive: true });

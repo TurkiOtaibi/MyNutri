@@ -1,15 +1,9 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { expect, test, uniqueName } from "../foods/helpers";
+import { diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
 
 const output = resolve("..", "docs", "ui-ux", "screenshots", "diary-page-refinement");
-
-function localDate(days = 0): string {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-}
 
 test("@diary @visual capture compact Diary page production states", async ({ page, foodsApi }) => {
   await mkdir(output, { recursive: true });
