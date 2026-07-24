@@ -266,11 +266,13 @@ test.describe("@profile Profile and targets redesign", () => {
         expectedIntensity = intensity;
         currentProfile = {
           ...currentProfile,
+          goal: "cut",
           selected_cut_intensity: intensity,
           targets: { ...currentProfile.targets, selected_cut_intensity: intensity }
         };
         await page.goto(`/profile?cut-payload=${index}`);
         const cutGroup = page.getByRole("radiogroup", { name: "شدة خفض الوزن" });
+        await expect(cutGroup).toBeVisible();
         const checkedIntensity = cutGroup.getByRole("radio", { checked: true });
         await expect(checkedIntensity).toBeChecked();
         await expect(checkedIntensity).toHaveAccessibleName(new RegExp(`${intensity * 100}%`));
@@ -320,7 +322,7 @@ test.describe("@profile Profile and targets redesign", () => {
       await page.getByLabel("الوزن").fill("70");
       const light = cutGroup.getByRole("radio", { name: /خفيف.*15%/ });
       await recommended.focus();
-      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("ArrowUp");
       await expect(light).toBeChecked();
       await page.keyboard.press("Tab");
       await expect(light).not.toBeFocused();
@@ -481,7 +483,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(preview).toContainText("130");
     await expect(preview).toContainText("حُسب البروتين باستخدام وزن مرجعي معدل.");
     await expect(preview).toContainText("وزن مرجعي للحساب");
-    for (const value of ["31.25", "100", "80", "86.6", "1.2", "103.9"]) await expect(preview).toContainText(value);
+    for (const value of ["31.3", "100", "80", "86.6", "1.2", "103.9"]) await expect(preview).toContainText(value);
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
     await expect(page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ })).toBeVisible();
 

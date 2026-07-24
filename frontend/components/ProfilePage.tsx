@@ -235,6 +235,7 @@ export function ProfilePage() {
   const proteinRef = useRef<HTMLInputElement>(null);
   const fatRef = useRef<HTMLInputElement>(null);
   const safetyRef = useRef<HTMLDivElement>(null);
+  const restoreActivationFocusRef = useRef(true);
   const activationKeyRef = useRef<string | null>(null);
   const activationSubmittingRef = useRef(false);
 
@@ -309,9 +310,15 @@ export function ProfilePage() {
   }, [dirty, normalizeDraft(draft), registryReady]);
 
   useEffect(() => {
+    if (activationSafetyOutcome) return;
     setSafetyAttempted(false);
     setActivationOpen(false);
-  }, [currentDraftHash, currentPreview?.preview_hash]);
+  }, [activationSafetyOutcome, currentDraftHash, currentPreview?.preview_hash]);
+
+  useEffect(() => {
+    if (!safetyAttempted || activationOpen) return;
+    safetyRef.current?.focus();
+  }, [activationOpen, activationSafetyOutcome, currentPreview?.safety_outcome, safetyAttempted]);
 
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -378,6 +385,7 @@ export function ProfilePage() {
       const mapped = mapProfileApiErrors(error);
       if (Object.keys(mapped).length > 0) setErrors(mapped);
       else if (error instanceof ApiError && ["SPECIALIST_REVIEW_REQUIRED", "VERY_LOW_ENERGY_TARGET_BLOCKED"].includes(error.code ?? "")) {
+        restoreActivationFocusRef.current = false;
         setActivationSafetyOutcome(
           error.code === "SPECIALIST_REVIEW_REQUIRED"
             ? "specialist_review_required"
@@ -389,7 +397,6 @@ export function ProfilePage() {
         setPreviewFailed(false);
         setSafetyAttempted(true);
         activationKeyRef.current = null;
-        window.setTimeout(() => safetyRef.current?.focus(), 0);
       }
       else if (error instanceof ApiError && ["PREVIEW_RESULT_CHANGED", "IDEMPOTENCY_KEY_REUSED"].includes(error.code ?? "")) {
         setActivationErrorCode(error.code ?? null);
@@ -457,9 +464,9 @@ export function ProfilePage() {
     if (!isPreviewActivatable(currentPreview)) {
       setSafetyAttempted(true);
       setActivationOpen(false);
-      window.setTimeout(() => safetyRef.current?.focus(), 0);
       return;
     }
+    restoreActivationFocusRef.current = true;
     setActivationOpen(true);
   }
 
@@ -697,12 +704,13 @@ export function ProfilePage() {
             : `المعاينة وحدها لا تحفظ الأهداف. ستبدأ الخطة في ${profileQuery.data ? "اليوم التالي" : "اليوم"}.`}
           safeLabel="متابعة المراجعة"
           confirmLabel={profileQuery.data?.pending_plan ? "استبدال الخطة" : "تفعيل الخطة"}
+          restoreFocusRef={restoreActivationFocusRef}
           onClose={() => setActivationOpen(false)}
           onConfirm={() => {
             if (!isPreviewActivatable(currentPreview)) {
+              restoreActivationFocusRef.current = false;
               setActivationOpen(false);
               setSafetyAttempted(true);
-              window.setTimeout(() => safetyRef.current?.focus(), 0);
               return;
             }
             if (activationSubmittingRef.current) return;
@@ -979,7 +987,7 @@ function OptionList({ value, options, onChoose }: { value: string; options: Arra
   return <div className="profile-option-list" role="radiogroup">{options.map((option) => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} onClick={() => onChoose(option.value)}><span><strong>{option.label}</strong>{option.description ? <small>{option.description}</small> : null}</span>{value === option.value ? <Check size={19} aria-label="محدد" /> : <span className="profile-radio-dot" />}</button>)}</div>;
 }
 
-function ProfileSheet({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+function ProfileSheet({ title, children, onClose, restoreFocusRef }: { title: string; children: ReactNode; onClose: () => void; restoreFocusRef?: RefObject<boolean> }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -998,13 +1006,17 @@ function ProfileSheet({ title, children, onClose }: { title: string; children: R
     };
     document.addEventListener("keydown", keydown);
     document.body.classList.add("modal-open");
-    return () => { document.removeEventListener("keydown", keydown); document.body.classList.remove("modal-open"); triggerRef.current?.focus(); };
-  }, [onClose]);
+    return () => {
+      document.removeEventListener("keydown", keydown);
+      document.body.classList.remove("modal-open");
+      if (restoreFocusRef?.current !== false) triggerRef.current?.focus();
+    };
+  }, [onClose, restoreFocusRef]);
   return <div className="profile-sheet-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={panelRef} className="profile-sheet" role="dialog" aria-modal="true" aria-labelledby="profile-sheet-title"><div className="profile-sheet-handle" /><header><h2 id="profile-sheet-title">{title}</h2><button ref={closeRef} type="button" onClick={onClose} aria-label={`إغلاق ${title}`}><X size={19} /></button></header><div className="profile-sheet-content">{children}</div></section></div>;
 }
 
-function ProfileConfirm({ title, description, safeLabel, confirmLabel, destructive = false, onClose, onConfirm }: { title: string; description: string; safeLabel: string; confirmLabel: string; destructive?: boolean; onClose: () => void; onConfirm: () => void }) {
-  return <ProfileSheet title={title} onClose={onClose}><div className="profile-confirm"><p>{description}</p><button className="btn primary" type="button" onClick={onClose}>{safeLabel}</button><button className={destructive ? "btn danger" : "btn"} type="button" onClick={onConfirm}>{confirmLabel}</button></div></ProfileSheet>;
+function ProfileConfirm({ title, description, safeLabel, confirmLabel, destructive = false, onClose, onConfirm, restoreFocusRef }: { title: string; description: string; safeLabel: string; confirmLabel: string; destructive?: boolean; onClose: () => void; onConfirm: () => void; restoreFocusRef?: RefObject<boolean> }) {
+  return <ProfileSheet title={title} onClose={onClose} restoreFocusRef={restoreFocusRef}><div className="profile-confirm"><p>{description}</p><button className="btn primary" type="button" onClick={onClose}>{safeLabel}</button><button className={destructive ? "btn danger" : "btn"} type="button" onClick={onConfirm}>{confirmLabel}</button></div></ProfileSheet>;
 }
 
 function ProfileSkeleton() {
