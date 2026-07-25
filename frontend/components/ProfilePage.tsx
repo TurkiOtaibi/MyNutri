@@ -226,7 +226,7 @@ export function ProfilePage() {
   const [saveError, setSaveError] = useState(false);
   const [activationErrorCode, setActivationErrorCode] = useState<string | null>(null);
   const [activationSafetyOutcome, setActivationSafetyOutcome] = useState<BlockingSafetyOutcome | null>(null);
-  const [safetyAttempted, setSafetyAttempted] = useState(false);
+  const [safetyAttemptSequence, setSafetyAttemptSequence] = useState(0);
   const [savedNotice, setSavedNotice] = useState(false);
   const previewSequence = useRef(0);
   const heightRef = useRef<HTMLInputElement>(null);
@@ -289,7 +289,7 @@ export function ProfilePage() {
         setPreviewDraftHash(requestedDraftHash);
         setPreviewFailed(false);
         setActivationSafetyOutcome(null);
-        setSafetyAttempted(false);
+        setSafetyAttemptSequence(0);
       })
       .catch(() => {
         if (sessionSignal.aborted || sequence !== previewSequence.current) return;
@@ -311,14 +311,14 @@ export function ProfilePage() {
 
   useEffect(() => {
     if (activationSafetyOutcome) return;
-    setSafetyAttempted(false);
+    setSafetyAttemptSequence(0);
     setActivationOpen(false);
   }, [activationSafetyOutcome, currentDraftHash, currentPreview?.preview_hash]);
 
   useEffect(() => {
-    if (!safetyAttempted || activationOpen) return;
+    if (safetyAttemptSequence === 0 || activationOpen) return;
     safetyRef.current?.focus();
-  }, [activationOpen, activationSafetyOutcome, currentPreview?.safety_outcome, safetyAttempted]);
+  }, [activationOpen, activationSafetyOutcome, currentPreview?.safety_outcome, safetyAttemptSequence]);
 
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -369,7 +369,7 @@ export function ProfilePage() {
       setSaveError(false);
       setActivationErrorCode(null);
       setActivationSafetyOutcome(null);
-      setSafetyAttempted(false);
+      setSafetyAttemptSequence(0);
       setSavedNotice(true);
       setActivationOpen(false);
       activationKeyRef.current = null;
@@ -395,7 +395,7 @@ export function ProfilePage() {
         setPreview(null);
         setPreviewDraftHash(null);
         setPreviewFailed(false);
-        setSafetyAttempted(true);
+        setSafetyAttemptSequence((current) => current + 1);
         activationKeyRef.current = null;
       }
       else if (error instanceof ApiError && ["PREVIEW_RESULT_CHANGED", "IDEMPOTENCY_KEY_REUSED"].includes(error.code ?? "")) {
@@ -420,7 +420,7 @@ export function ProfilePage() {
     setSaveError(false);
     setActivationErrorCode(null);
     setActivationSafetyOutcome(null);
-    setSafetyAttempted(false);
+    setSafetyAttemptSequence(0);
     setSavedNotice(false);
   }
 
@@ -438,7 +438,7 @@ export function ProfilePage() {
     setSaveError(false);
     setActivationErrorCode(null);
     setActivationSafetyOutcome(null);
-    setSafetyAttempted(false);
+    setSafetyAttemptSequence(0);
   }
 
   function submit(event?: FormEvent) {
@@ -462,7 +462,7 @@ export function ProfilePage() {
       return;
     }
     if (!isPreviewActivatable(currentPreview)) {
-      setSafetyAttempted(true);
+      setSafetyAttemptSequence((current) => current + 1);
       setActivationOpen(false);
       return;
     }
@@ -623,7 +623,7 @@ export function ProfilePage() {
             pending={previewPending}
             failed={previewFailed}
             recoveryOutcome={activationSafetyOutcome}
-            safetyAttempted={safetyAttempted}
+            safetyAttemptSequence={safetyAttemptSequence}
             safetyRef={safetyRef}
             onRetry={requestPreview}
           />
@@ -710,7 +710,7 @@ export function ProfilePage() {
             if (!isPreviewActivatable(currentPreview)) {
               restoreActivationFocusRef.current = false;
               setActivationOpen(false);
-              setSafetyAttempted(true);
+              setSafetyAttemptSequence((current) => current + 1);
               return;
             }
             if (activationSubmittingRef.current) return;
@@ -889,7 +889,7 @@ function ExpectedTargetsCard({
   pending,
   failed,
   recoveryOutcome,
-  safetyAttempted,
+  safetyAttemptSequence,
   safetyRef,
   onRetry
 }: {
@@ -898,7 +898,7 @@ function ExpectedTargetsCard({
   pending: boolean;
   failed: boolean;
   recoveryOutcome: BlockingSafetyOutcome | null;
-  safetyAttempted: boolean;
+  safetyAttemptSequence: number;
   safetyRef: RefObject<HTMLDivElement | null>;
   onRetry: () => void;
 }) {
@@ -909,9 +909,15 @@ function ExpectedTargetsCard({
         ? "تعذر التحقق من إمكانية تفعيل هذا الهدف. حدّث المعاينة قبل المتابعة."
         : null)
     : null;
+  const previewDescription = targets && isPreviewActivatable(targets)
+    ? "ستُطبق هذه الأهداف بعد حفظ التغييرات."
+    : safetyMessage
+      ? "هذه معاينة توضيحية فقط، ولا يمكن تفعيل هذا الهدف."
+      : "راجع نتيجة المعاينة قبل المتابعة.";
+  const announceSafety = safetyAttemptSequence > 0;
   return (
     <section className="profile-preview-card" aria-label="الأهداف المتوقعة بعد الحفظ">
-      <header><div><h2>الأهداف المتوقعة بعد الحفظ</h2><p>ستُطبق هذه الأهداف بعد حفظ التغييرات.</p></div><span>معاينة</span></header>
+      <header><div><h2>الأهداف المتوقعة بعد الحفظ</h2><p>{previewDescription}</p></div><span>معاينة</span></header>
       {pending ? <div className="profile-preview-skeleton" aria-label="جارٍ تحديث معاينة الأهداف" role="status" /> : null}
       {failed ? <div className="profile-preview-error"><strong>تعذر تحديث معاينة الأهداف</strong><button type="button" onClick={onRetry}>إعادة المحاولة</button></div> : null}
       {!pending && !failed && targets ? (
@@ -963,12 +969,13 @@ function ExpectedTargetsCard({
       ) : null}
       {!pending && !failed && safetyMessage ? (
         <div
+          key={`safety-${safetyAttemptSequence}`}
           ref={safetyRef}
           className="profile-safety-decision"
-          role="alert"
-          aria-live="assertive"
+          role={announceSafety ? "alert" : undefined}
+          aria-live={announceSafety ? "assertive" : undefined}
           tabIndex={-1}
-          data-focus-requested={safetyAttempted ? "true" : "false"}
+          data-focus-requested={announceSafety ? "true" : "false"}
         >
           <AlertTriangle size={20} aria-hidden="true" />
           <div><strong>لا يمكن تفعيل الهدف</strong><p>{safetyMessage}</p></div>

@@ -11,6 +11,7 @@ const SPECIALIST_REVIEW_REQUIRED =
   "لا يمكن تفعيل هذا الهدف لأنه غير مناسب لحالتك الحالية. إذا رغبت في اتباع هذا الهدف، فاستشر أخصائي تغذية قبل اعتماده.";
 const VERY_LOW_ENERGY_TARGET_BLOCKED =
   "لا يمكن تفعيل هذا الهدف لأن السعرات المستهدفة منخفضة جدًا ولا تحقق الحد الأدنى الآمن المعتمد في النظام.";
+const BLOCKED_PREVIEW_DESCRIPTION = "هذه معاينة توضيحية فقط، ولا يمكن تفعيل هذا الهدف.";
 const profilePath = (url: URL) => url.pathname === "/profile";
 const previewPath = (url: URL) => url.pathname === "/profile/preview";
 const activationPath = (url: URL) =>
@@ -34,6 +35,34 @@ async function fulfillPreview(
   const response = await route.fetch();
   const targets = await response.json() as TargetResponse;
   await route.fulfill({ response, json: transform(targets) });
+}
+
+async function assertBlockedResponsiveAndAxe(page: Page, message: string): Promise<void> {
+  const panel = page.locator(".profile-safety-decision").filter({ hasText: message });
+  const reviewButton = page.getByRole("button", { name: "مراجعة وتأكيد" });
+
+  for (const width of [320, 360, 390, 430]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(panel).toBeVisible();
+    await expect(panel.getByText(message, { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+    const panelBox = await panel.boundingBox();
+    expect(panelBox).not.toBeNull();
+    expect(panelBox!.x).toBeGreaterThanOrEqual(0);
+    expect(panelBox!.x + panelBox!.width).toBeLessThanOrEqual(width + 1);
+
+    const buttonBox = await reviewButton.boundingBox();
+    expect(buttonBox).not.toBeNull();
+    expect(buttonBox!.height).toBeGreaterThanOrEqual(44);
+    expect(buttonBox!.x + buttonBox!.width).toBeLessThanOrEqual(width + 1);
+
+    await panel.focus();
+    await expect(panel).toBeFocused();
+  }
+
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
 }
 
 function activationPlan(profile: ProfileResponse, targets: TargetResponse) {
@@ -385,12 +414,30 @@ test.describe("@profile Profile and targets redesign", () => {
       const preview = page.getByRole("region", { name: "الأهداف المتوقعة بعد الحفظ" });
       await expect(preview.getByText(SPECIALIST_REVIEW_REQUIRED, { exact: true })).toBeVisible();
       await expect(preview).toContainText(String(calories));
-      await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
-      const explanation = preview.getByRole("alert").filter({ hasText: SPECIALIST_REVIEW_REQUIRED });
+      await expect(preview.getByText(BLOCKED_PREVIEW_DESCRIPTION, { exact: true })).toBeVisible();
+      const passiveExplanation = preview.locator(".profile-safety-decision").filter({ hasText: SPECIALIST_REVIEW_REQUIRED });
+      await expect(passiveExplanation).not.toHaveAttribute("role", "alert");
+      await expect(passiveExplanation).not.toHaveAttribute("aria-live", "assertive");
+      await expect(preview.getByRole("alert").filter({ hasText: SPECIALIST_REVIEW_REQUIRED })).toHaveCount(0);
+
+      const reviewButton = page.getByRole("button", { name: "مراجعة وتأكيد" });
+      await reviewButton.click();
+      let explanation = preview.getByRole("alert").filter({ hasText: SPECIALIST_REVIEW_REQUIRED });
       await expect(explanation.getByText(SPECIALIST_REVIEW_REQUIRED, { exact: true })).toBeVisible();
+      await expect(explanation).toHaveAttribute("aria-live", "assertive");
       await expect(explanation).toBeFocused();
       await expect(page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ })).toHaveCount(0);
       expect(activationPosts).toBe(0);
+
+      if (index === 0) {
+        await reviewButton.focus();
+        await reviewButton.click();
+        explanation = preview.getByRole("alert").filter({ hasText: SPECIALIST_REVIEW_REQUIRED });
+        await expect(explanation).toBeFocused();
+        await expect(page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ })).toHaveCount(0);
+        expect(activationPosts).toBe(0);
+        await assertBlockedResponsiveAndAxe(page, SPECIALIST_REVIEW_REQUIRED);
+      }
     }
   });
 
@@ -413,64 +460,80 @@ test.describe("@profile Profile and targets redesign", () => {
     const preview = page.getByRole("region", { name: "الأهداف المتوقعة بعد الحفظ" });
     await expect(preview.getByText(VERY_LOW_ENERGY_TARGET_BLOCKED, { exact: true })).toBeVisible();
     await expect(preview).toContainText("799");
+    await expect(preview.getByText(BLOCKED_PREVIEW_DESCRIPTION, { exact: true })).toBeVisible();
+    const passiveExplanation = preview.locator(".profile-safety-decision").filter({ hasText: VERY_LOW_ENERGY_TARGET_BLOCKED });
+    await expect(passiveExplanation).not.toHaveAttribute("role", "alert");
+    await expect(passiveExplanation).not.toHaveAttribute("aria-live", "assertive");
+    await expect(preview.getByRole("alert").filter({ hasText: VERY_LOW_ENERGY_TARGET_BLOCKED })).toHaveCount(0);
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
     const explanation = preview.getByRole("alert").filter({ hasText: VERY_LOW_ENERGY_TARGET_BLOCKED });
     await expect(explanation.getByText(VERY_LOW_ENERGY_TARGET_BLOCKED, { exact: true })).toBeVisible();
+    await expect(explanation).toHaveAttribute("aria-live", "assertive");
     await expect(explanation).toBeFocused();
     await expect(page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ })).toHaveCount(0);
     expect(activationPosts).toBe(0);
+    await assertBlockedResponsiveAndAxe(page, VERY_LOW_ENERGY_TARGET_BLOCKED);
   });
 
   test("@p0 preview discloses cap and server calculation warnings", async ({ page, originalProfile }) => {
     let adjustedBasis = true;
     let activationPosts = 0;
-    await page.route(previewPath, (route) => fulfillPreview(route, (targets) => ({
-      ...targets,
-      calories: 1201,
-      target_calories: 1201,
-      final_target_calories: 1201,
-      requested_deficit_kcal: 900,
-      applied_deficit_kcal: 750,
-      deficit_cap_applied: true,
-      safety_outcome: "normal",
-      can_activate: true,
-      calculation_warnings: [{
-        code: "CARBOHYDRATE_BELOW_GENERAL_REFERENCE",
-        severity: "warning",
-        dimension: "carbohydrate",
-        value: 91.5,
-        reference_value: 130,
-        message_ar: "رسالة تحذير سلطوية من الخادم"
-      }],
-      protein_calculation: adjustedBasis
-        ? {
-            ...targets.protein_calculation,
-            basis: "adjusted_weight",
-            bmi_used: 31.25,
-            actual_weight_kg: 100,
-            reference_weight_kg: 80,
-            calculation_weight_kg: 86.6,
-            protein_per_kg: 1.2,
-            target_g: 103.9,
-            explanation_ar: "حُسب البروتين باستخدام وزن مرجعي معدل.",
-            reference_weight_label_ar: "وزن مرجعي للحساب"
-          }
-        : {
-            ...targets.protein_calculation,
-            basis: "actual_weight",
-            bmi_used: 24.5,
-            actual_weight_kg: 70,
-            reference_weight_kg: null,
-            calculation_weight_kg: 70,
-            protein_per_kg: 1.2,
-            target_g: 84,
-            explanation_ar: "حُسب البروتين باستخدام الوزن الفعلي.",
-            reference_weight_label_ar: "وزن مرجعي للحساب"
-          }
-    })));
+    let latestTargets = originalProfile.targets;
+    await page.route(previewPath, (route) => fulfillPreview(route, (targets) => {
+      latestTargets = {
+        ...targets,
+        calories: 1201,
+        target_calories: 1201,
+        final_target_calories: 1201,
+        requested_deficit_kcal: 900,
+        applied_deficit_kcal: 750,
+        deficit_cap_applied: true,
+        safety_outcome: "normal",
+        can_activate: true,
+        calculation_warnings: [{
+          code: "CARBOHYDRATE_BELOW_GENERAL_REFERENCE",
+          severity: "warning",
+          dimension: "carbohydrate",
+          value: 91.5,
+          reference_value: 130,
+          message_ar: "رسالة تحذير سلطوية من الخادم"
+        }],
+        protein_calculation: adjustedBasis
+          ? {
+              ...targets.protein_calculation,
+              basis: "adjusted_weight",
+              bmi_used: 31.25,
+              actual_weight_kg: 100,
+              reference_weight_kg: 80,
+              calculation_weight_kg: 86.6,
+              protein_per_kg: 1.2,
+              target_g: 103.9,
+              explanation_ar: "حُسب البروتين باستخدام وزن مرجعي معدل.",
+              reference_weight_label_ar: "وزن مرجعي للحساب"
+            }
+          : {
+              ...targets.protein_calculation,
+              basis: "actual_weight",
+              bmi_used: 24.5,
+              actual_weight_kg: 70,
+              reference_weight_kg: null,
+              calculation_weight_kg: 70,
+              protein_per_kg: 1.2,
+              target_g: 84,
+              explanation_ar: "حُسب البروتين باستخدام الوزن الفعلي.",
+              reference_weight_label_ar: "وزن مرجعي للحساب"
+            }
+      };
+      return latestTargets;
+    }));
     await page.route(activationPath, async (route) => {
-      if (route.request().method() === "POST") activationPosts += 1;
-      await route.abort("failed");
+      if (route.request().method() !== "POST") return route.continue();
+      activationPosts += 1;
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        json: { plan: activationPlan(originalProfile, latestTargets), replaced_plan: null }
+      });
     });
     await page.goto("/profile?authoritative-disclosures=1");
     await changedWeight(page, originalProfile);
@@ -484,16 +547,17 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(preview).toContainText("حُسب البروتين باستخدام وزن مرجعي معدل.");
     await expect(preview).toContainText("وزن مرجعي للحساب");
     for (const value of ["31.3", "100", "80", "86.6", "1.2", "103.9"]) await expect(preview).toContainText(value);
-    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
-    await expect(page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ })).toBeVisible();
-
-    await page.keyboard.press("Escape");
     adjustedBasis = false;
     await changedWeight(page, originalProfile, 2);
     await expect(preview).toContainText("حُسب البروتين باستخدام الوزن الفعلي.");
     await expect(preview).toContainText("70");
     await expect(preview).not.toContainText("null");
-    expect(activationPosts).toBe(0);
+    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+    const confirmation = page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ });
+    await expect(confirmation).toBeVisible();
+    await confirmation.getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+    await expect.poll(() => activationPosts).toBe(1);
+    await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
   });
 
   test("@p0 activation safety errors preserve the draft", async ({ page, originalProfile }) => {
