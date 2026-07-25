@@ -4254,6 +4254,7 @@ a {
 
 .profile-settings-card,
 .profile-selection-card,
+.profile-cut-intensity,
 .profile-advanced,
 .profile-targets-card,
 .profile-preview-card,
@@ -4266,10 +4267,93 @@ a {
 }
 
 .profile-settings-card > h2,
-.profile-selection-card > h2 {
+.profile-selection-card > h2,
+.profile-cut-intensity > legend {
   padding: 14px 15px 9px;
   color: var(--ink);
   font-size: 17px;
+}
+
+.profile-cut-intensity {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+  border-radius: 17px;
+  background: color-mix(in srgb, white 96%, var(--surface-strong));
+  padding: 0;
+  box-shadow: 0 3px 14px rgba(15, 35, 31, 0.035);
+}
+
+.profile-cut-intensity > legend {
+  float: inline-start;
+  width: 100%;
+}
+
+.profile-cut-intensity-options {
+  display: grid;
+  clear: both;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  padding: 9px;
+}
+
+.profile-cut-intensity-options label {
+  position: relative;
+  min-width: 0;
+  min-height: 52px;
+  cursor: pointer;
+}
+
+.profile-cut-intensity-options input {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.profile-cut-intensity-options label > span {
+  display: grid;
+  min-height: 52px;
+  place-content: center;
+  justify-items: center;
+  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+  border-radius: 12px;
+  background: var(--surface-strong);
+  color: var(--muted);
+  padding: 6px 4px;
+  text-align: center;
+}
+
+.profile-cut-intensity-options strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.profile-cut-intensity-options bdi,
+.profile-cut-intensity-options small {
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.profile-cut-intensity-options small {
+  color: var(--accent);
+  font-weight: 750;
+}
+
+.profile-cut-intensity-options input:checked + span {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  background: color-mix(in srgb, var(--diary-soft) 76%, white);
+  color: var(--accent);
+}
+
+.profile-cut-intensity-options input:focus-visible + span {
+  outline: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
+  outline-offset: 2px;
 }
 
 .profile-setting-row {
@@ -4626,6 +4710,159 @@ button.profile-setting-row:focus-visible,
   font-size: 14px;
 }
 
+.profile-preview-summary,
+.profile-protein-calculation dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+}
+
+.profile-preview-summary > div,
+.profile-protein-calculation dl > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, white 78%, var(--surface-strong));
+  padding: 8px;
+}
+
+.profile-preview-summary dt,
+.profile-protein-calculation dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.profile-preview-summary dd,
+.profile-protein-calculation dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.profile-preview-notice,
+.profile-safety-decision {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid color-mix(in srgb, var(--warning) 34%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--warning) 9%, white);
+  color: var(--ink);
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.profile-preview-notice svg,
+.profile-safety-decision svg {
+  flex: 0 0 auto;
+  color: var(--warning);
+}
+
+.profile-preview-warnings {
+  display: grid;
+  gap: 7px;
+}
+
+.profile-preview-warnings h3,
+.profile-protein-calculation h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.profile-preview-warnings h3 svg {
+  color: var(--warning);
+}
+
+.profile-preview-warnings ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.profile-preview-warnings li {
+  display: grid;
+  gap: 3px;
+  border-inline-start: 3px solid var(--warning);
+  background: color-mix(in srgb, var(--warning) 7%, white);
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.profile-preview-warnings small,
+.profile-protein-calculation > p {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.profile-protein-calculation {
+  display: grid;
+  gap: 8px;
+}
+
+.profile-protein-calculation > p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.profile-safety-decision {
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--line));
+  background: var(--danger-soft);
+}
+
+.profile-safety-decision:focus {
+  outline: 3px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.profile-safety-decision svg {
+  color: var(--danger);
+}
+
+.profile-safety-decision > div {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 3px;
+  min-width: 0;
+}
+
+.profile-safety-decision strong,
+.profile-safety-decision p {
+  margin: 0;
+}
+
+.profile-safety-decision p {
+  overflow-wrap: anywhere;
+}
+
+.profile-safety-decision button {
+  flex: 0 0 auto;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  font-weight: 750;
+}
+
+.profile-safety-decision.is-available {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: color-mix(in srgb, var(--diary-soft) 65%, white);
+}
+
+.profile-safety-decision.is-available svg {
+  color: var(--accent);
+}
+
 .profile-preview-skeleton,
 .profile-card-skeleton,
 .profile-loading .profile-page-head span {
@@ -4944,6 +5181,7 @@ button.profile-setting-row:focus-visible,
 
   .profile-settings-card > h2,
   .profile-selection-card > h2,
+  .profile-cut-intensity > legend,
   .profile-targets-card,
   .profile-preview-card {
     padding-inline: 12px;
@@ -4975,6 +5213,19 @@ button.profile-setting-row:focus-visible,
 
   .profile-preview-values {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .profile-preview-summary,
+  .profile-protein-calculation dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .profile-safety-decision {
+    flex-wrap: wrap;
+  }
+
+  .profile-safety-decision button {
+    width: 100%;
   }
 
   .profile-save-bar {

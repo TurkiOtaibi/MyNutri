@@ -1,6 +1,7 @@
 export type Sex = "male" | "female";
 export type ActivityLevel = "sedentary" | "light" | "moderate" | "active" | "very_active";
 export type Goal = "cut" | "maintain" | "bulk";
+export type CutIntensity = 0.15 | 0.2 | 0.25;
 export type NutritionBasis = "per_100g" | "per_100ml";
 export type DefaultUnitType = "g" | "ml" | "cup" | "slice" | "piece" | "scoop" | "serving" | "tablespoon" | "teaspoon";
 export type UnitBasis = "g" | "ml";
@@ -21,7 +22,7 @@ export interface TargetResponse {
   tdee: number;
   target_calories: number;
   calories: number;
-  selected_cut_intensity: 0.15 | 0.2 | 0.25;
+  selected_cut_intensity: CutIntensity;
   requested_deficit_kcal: number;
   applied_deficit_kcal: number;
   deficit_cap_applied: boolean;
@@ -83,7 +84,7 @@ export interface ProfileInput {
   goal: Goal;
   protein_per_kg: number;
   fat_pct: number;
-  selected_cut_intensity?: 0.15 | 0.2 | 0.25;
+  selected_cut_intensity: CutIntensity;
 }
 
 export interface NutritionRegistryResponse {

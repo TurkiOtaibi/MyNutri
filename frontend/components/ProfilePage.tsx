@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  AlertTriangle,
   CalendarDays,
   Check,
   ChevronDown,
@@ -31,13 +32,15 @@ import {
 import { ApiError, activateTargetPlan, getNutritionRegistry, getProfile, listTargetPlanHistory, previewProfile, replacePendingTargetPlan } from "@/lib/api";
 import { activityLabels, goalLabels, sexLabels } from "@/lib/labels";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels } from "@/lib/nutrients";
-import type { ActivityLevel, Goal, NutritionRegistryResponse, ProfileInput, ProfileResponse, Sex, TargetPlanSummary, TargetResponse } from "@/lib/types";
+import type { ActivityLevel, CutIntensity, Goal, NutritionRegistryResponse, ProfileInput, ProfileResponse, Sex, TargetPlanSummary, TargetResponse } from "@/lib/types";
 import { useAuth } from "./AuthProvider";
 import { useSessionAbortSignal } from "./SessionQueryProvider";
 
 const PROFILE_READ_ERROR = "تعذر تحميل بياناتك";
 const PROFILE_READ_HELP = "تحقق من الاتصال ثم أعد المحاولة";
 const PROFILE_WRITE_ERROR = "تعذر حفظ التغييرات";
+const SPECIALIST_REVIEW_MESSAGE = "لا يمكن تفعيل هذا الهدف لأنه غير مناسب لحالتك الحالية. إذا رغبت في اتباع هذا الهدف، فاستشر أخصائي تغذية قبل اعتماده.";
+const VERY_LOW_ENERGY_MESSAGE = "لا يمكن تفعيل هذا الهدف لأن السعرات المستهدفة منخفضة جدًا ولا تحقق الحد الأدنى الآمن المعتمد في النظام.";
 
 const PROTEIN_DEFAULT = 1.2;
 const FAT_DEFAULTS: Record<Sex, number> = { male: 0.25, female: 0.3 };
@@ -83,6 +86,7 @@ type DraftProfile = {
   weight_kg: string;
   activity_level: ActivityLevel;
   goal: Goal;
+  selected_cut_intensity: CutIntensity;
   protein_per_kg: string;
   fat_percent: string;
 };
@@ -99,6 +103,7 @@ function toDraft(profile: ProfileInput): DraftProfile {
     weight_kg: formatEditableNumber(profile.weight_kg),
     activity_level: profile.activity_level,
     goal: profile.goal,
+    selected_cut_intensity: profile.selected_cut_intensity,
     protein_per_kg: formatEditableNumber(profile.protein_per_kg),
     fat_percent: formatEditableNumber(profile.fat_pct * 100)
   };
@@ -112,6 +117,7 @@ function blankDraft(): DraftProfile {
     weight_kg: "",
     activity_level: "moderate",
     goal: "cut",
+    selected_cut_intensity: 0.2,
     protein_per_kg: String(PROTEIN_DEFAULT),
     fat_percent: String(FAT_DEFAULTS.male * 100)
   };
@@ -158,6 +164,9 @@ function validateDraft(draft: DraftProfile): { errors: FieldErrors; payload: Pro
   if (fatPercent == null || fatPercent < PROFILE_LIMITS.fatMinPercent || fatPercent > PROFILE_LIMITS.fatMaxPercent) {
     errors.fat_percent = "أدخل نسبة دهون صحيحة";
   }
+  if (![0.15, 0.2, 0.25].includes(draft.selected_cut_intensity)) {
+    errors.selected_cut_intensity = "اختر شدة خفض صحيحة";
+  }
 
   if (Object.keys(errors).length > 0 || height == null || weight == null || protein == null || fatPercent == null) {
     return { errors, payload: null };
@@ -171,10 +180,28 @@ function validateDraft(draft: DraftProfile): { errors: FieldErrors; payload: Pro
       weight_kg: weight,
       activity_level: draft.activity_level,
       goal: draft.goal,
+      selected_cut_intensity: draft.selected_cut_intensity,
       protein_per_kg: protein,
       fat_pct: fatPercent / 100
     }
   };
+}
+
+type BlockingSafetyOutcome = "specialist_review_required" | "very_low_energy_blocked";
+
+function blockingSafetyMessage(outcome: string): string | null {
+  if (outcome === "specialist_review_required") return SPECIALIST_REVIEW_MESSAGE;
+  if (outcome === "very_low_energy_blocked") return VERY_LOW_ENERGY_MESSAGE;
+  if (outcome !== "normal") return "تعذر التحقق من إمكانية تفعيل هذا الهدف. حدّث المعاينة قبل المتابعة.";
+  return null;
+}
+
+function isPreviewActivatable(targets: TargetResponse | null): targets is TargetResponse & { preview_hash: string } {
+  return Boolean(
+    targets?.preview_hash &&
+    targets.can_activate === true &&
+    targets.safety_outcome === "normal"
+  );
 }
 
 export function ProfilePage() {
@@ -187,6 +214,7 @@ export function ProfilePage() {
   const [savedDraft, setSavedDraft] = useState<DraftProfile | null>(null);
   const [savedTargets, setSavedTargets] = useState<TargetResponse | null>(null);
   const [preview, setPreview] = useState<TargetResponse | null>(null);
+  const [previewDraftHash, setPreviewDraftHash] = useState<string | null>(null);
   const [previewPending, setPreviewPending] = useState(false);
   const [previewFailed, setPreviewFailed] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -197,6 +225,8 @@ export function ProfilePage() {
   const [discardHref, setDiscardHref] = useState<string | null>(null);
   const [saveError, setSaveError] = useState(false);
   const [activationErrorCode, setActivationErrorCode] = useState<string | null>(null);
+  const [activationSafetyOutcome, setActivationSafetyOutcome] = useState<BlockingSafetyOutcome | null>(null);
+  const [safetyAttemptSequence, setSafetyAttemptSequence] = useState(0);
   const [savedNotice, setSavedNotice] = useState(false);
   const previewSequence = useRef(0);
   const heightRef = useRef<HTMLInputElement>(null);
@@ -204,6 +234,8 @@ export function ProfilePage() {
   const birthRef = useRef<HTMLInputElement>(null);
   const proteinRef = useRef<HTMLInputElement>(null);
   const fatRef = useRef<HTMLInputElement>(null);
+  const safetyRef = useRef<HTMLDivElement>(null);
+  const restoreActivationFocusRef = useRef(true);
   const activationKeyRef = useRef<string | null>(null);
   const activationSubmittingRef = useRef(false);
 
@@ -228,32 +260,41 @@ export function ProfilePage() {
     setSavedDraft(nextDraft);
     setSavedTargets(profileQuery.data?.targets ?? null);
     setPreview(null);
+    setPreviewDraftHash(null);
     setErrors({});
   }, [profileQuery.data]);
 
   const dirty = savedDraft != null && normalizeDraft(draft) !== normalizeDraft(savedDraft);
   const validation = useMemo(() => validateDraft(draft), [draft]);
+  const currentDraftHash = normalizeDraft(draft);
+  const currentPreview = previewDraftHash === currentDraftHash ? preview : null;
 
   const requestPreview = () => {
     if (sessionSignal.aborted) return;
     if (!dirty || !validation.payload || !registryReady) {
       setPreview(null);
+      setPreviewDraftHash(null);
       setPreviewPending(false);
       setPreviewFailed(false);
       return;
     }
     const sequence = ++previewSequence.current;
+    const requestedDraftHash = currentDraftHash;
     setPreviewPending(true);
     setPreviewFailed(false);
     previewProfile(validation.payload, accessToken, sessionSignal)
       .then((result) => {
         if (sessionSignal.aborted || sequence !== previewSequence.current) return;
         setPreview(result);
+        setPreviewDraftHash(requestedDraftHash);
         setPreviewFailed(false);
+        setActivationSafetyOutcome(null);
+        setSafetyAttemptSequence(0);
       })
       .catch(() => {
         if (sessionSignal.aborted || sequence !== previewSequence.current) return;
         setPreview(null);
+        setPreviewDraftHash(null);
         setPreviewFailed(true);
       })
       .finally(() => {
@@ -267,6 +308,17 @@ export function ProfilePage() {
     // requestPreview intentionally follows the normalized draft and saved baseline.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dirty, normalizeDraft(draft), registryReady]);
+
+  useEffect(() => {
+    if (activationSafetyOutcome) return;
+    setSafetyAttemptSequence(0);
+    setActivationOpen(false);
+  }, [activationSafetyOutcome, currentDraftHash, currentPreview?.preview_hash]);
+
+  useEffect(() => {
+    if (safetyAttemptSequence === 0 || activationOpen) return;
+    safetyRef.current?.focus();
+  }, [activationOpen, activationSafetyOutcome, currentPreview?.safety_outcome, safetyAttemptSequence]);
 
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -291,10 +343,14 @@ export function ProfilePage() {
   }, [dirty]);
 
   const mutation = useMutation({
-    mutationFn: ({ payload, previewHash, key }: { payload: ProfileInput; previewHash: string; key: string }) =>
-      profileQuery.data?.pending_plan
-        ? replacePendingTargetPlan(payload, previewHash, key, accessToken, sessionSignal)
-        : activateTargetPlan(payload, previewHash, key, accessToken, sessionSignal),
+    mutationFn: ({ payload, preview: confirmedPreview, key }: { payload: ProfileInput; preview: TargetResponse; key: string }) => {
+      if (!isPreviewActivatable(confirmedPreview)) {
+        throw new Error("Blocked preview cannot be activated");
+      }
+      return profileQuery.data?.pending_plan
+        ? replacePendingTargetPlan(payload, confirmedPreview.preview_hash, key, accessToken, sessionSignal)
+        : activateTargetPlan(payload, confirmedPreview.preview_hash, key, accessToken, sessionSignal);
+    },
     onSuccess: async (activation) => {
       if (sessionSignal.aborted) return;
       const refreshed = await profileQuery.refetch();
@@ -307,10 +363,13 @@ export function ProfilePage() {
       setSavedDraft(confirmed);
       setSavedTargets(profile.targets ?? activation.plan.targets);
       setPreview(null);
+      setPreviewDraftHash(null);
       setPreviewFailed(false);
       setErrors({});
       setSaveError(false);
       setActivationErrorCode(null);
+      setActivationSafetyOutcome(null);
+      setSafetyAttemptSequence(0);
       setSavedNotice(true);
       setActivationOpen(false);
       activationKeyRef.current = null;
@@ -325,10 +384,25 @@ export function ProfilePage() {
       if (sessionSignal.aborted) return;
       const mapped = mapProfileApiErrors(error);
       if (Object.keys(mapped).length > 0) setErrors(mapped);
+      else if (error instanceof ApiError && ["SPECIALIST_REVIEW_REQUIRED", "VERY_LOW_ENERGY_TARGET_BLOCKED"].includes(error.code ?? "")) {
+        restoreActivationFocusRef.current = false;
+        setActivationSafetyOutcome(
+          error.code === "SPECIALIST_REVIEW_REQUIRED"
+            ? "specialist_review_required"
+            : "very_low_energy_blocked"
+        );
+        setActivationErrorCode(error.code ?? null);
+        setPreview(null);
+        setPreviewDraftHash(null);
+        setPreviewFailed(false);
+        setSafetyAttemptSequence((current) => current + 1);
+        activationKeyRef.current = null;
+      }
       else if (error instanceof ApiError && ["PREVIEW_RESULT_CHANGED", "IDEMPOTENCY_KEY_REUSED"].includes(error.code ?? "")) {
         setActivationErrorCode(error.code ?? null);
         activationKeyRef.current = null;
         setPreview(null);
+        setPreviewDraftHash(null);
         requestPreview();
       } else setSaveError(true);
       setActivationOpen(false);
@@ -345,6 +419,8 @@ export function ProfilePage() {
     });
     setSaveError(false);
     setActivationErrorCode(null);
+    setActivationSafetyOutcome(null);
+    setSafetyAttemptSequence(0);
     setSavedNotice(false);
   }
 
@@ -361,6 +437,8 @@ export function ProfilePage() {
     setErrors((current) => { const next = { ...current }; delete next.sex; delete next.fat_percent; return next; });
     setSaveError(false);
     setActivationErrorCode(null);
+    setActivationSafetyOutcome(null);
+    setSafetyAttemptSequence(0);
   }
 
   function submit(event?: FormEvent) {
@@ -379,10 +457,16 @@ export function ProfilePage() {
       window.setTimeout(() => invalid?.[1].current?.focus(), 0);
       return;
     }
-    if (!preview?.preview_hash) {
+    if (!currentPreview?.preview_hash) {
       requestPreview();
       return;
     }
+    if (!isPreviewActivatable(currentPreview)) {
+      setSafetyAttemptSequence((current) => current + 1);
+      setActivationOpen(false);
+      return;
+    }
+    restoreActivationFocusRef.current = true;
     setActivationOpen(true);
   }
 
@@ -464,6 +548,13 @@ export function ProfilePage() {
           ariaLabel={`تغيير الهدف، القيمة الحالية ${goalLabels[draft.goal]}`}
         />
 
+        {draft.goal === "cut" ? (
+          <CutIntensitySelector
+            value={draft.selected_cut_intensity}
+            onChange={(value) => update("selected_cut_intensity", value)}
+          />
+        ) : null}
+
         <section className={`profile-advanced ${advancedOpen ? "open" : ""}`}>
           <button
             className="profile-advanced-toggle"
@@ -526,17 +617,26 @@ export function ProfilePage() {
         <button className="profile-explain-action" type="button" onClick={() => setActiveSheet("calculation")}><Info size={17} /> كيف حُسبت أهدافي؟</button>
 
         {dirty && validation.payload ? (
-          <ExpectedTargetsCard targets={preview} pending={previewPending} failed={previewFailed} onRetry={requestPreview} />
+          <ExpectedTargetsCard
+            targets={currentPreview}
+            goal={draft.goal}
+            pending={previewPending}
+            failed={previewFailed}
+            recoveryOutcome={activationSafetyOutcome}
+            safetyAttemptSequence={safetyAttemptSequence}
+            safetyRef={safetyRef}
+            onRetry={requestPreview}
+          />
         ) : null}
 
       </form>
 
       {dirty ? (
         <div className="profile-save-bar" role="region" aria-label="حفظ تغييرات الملف الشخصي">
-          <span>{Object.keys(errors).length > 0 ? "صحح الحقول المعلّمة للمتابعة" : activationErrorCode ? "تغيّرت المعاينة. راجع الأهداف المحدثة ثم أكد مجددًا" : saveError ? PROFILE_WRITE_ERROR : !registryReady ? "سجل التغذية غير جاهز" : "تغييرات غير محفوظة"}</span>
+          <span>{Object.keys(errors).length > 0 ? "صحح الحقول المعلّمة للمتابعة" : activationSafetyOutcome ? "راجع قرار السلامة وحدّث المعاينة قبل المتابعة" : activationErrorCode ? "تغيّرت المعاينة. راجع الأهداف المحدثة ثم أكد مجددًا" : saveError ? PROFILE_WRITE_ERROR : !registryReady ? "سجل التغذية غير جاهز" : "تغييرات غير محفوظة"}</span>
           {saveError ? <small>تحقق من الاتصال ثم أعد المحاولة</small> : null}
-          <button className="btn primary" type="button" onClick={() => submit()} disabled={!registryReady || mutation.isPending || previewPending || (Boolean(validation.payload) && !preview?.preview_hash)}>
-            {mutation.isPending ? <><LoaderCircle className="spin" size={17} /> جارٍ تفعيل الخطة…</> : activationErrorCode ? "مراجعة المعاينة" : saveError ? <><RotateCcw size={17} /> إعادة المحاولة</> : "مراجعة وتأكيد"}
+          <button className="btn primary" type="button" onClick={() => submit()} disabled={!registryReady || mutation.isPending || previewPending || (Boolean(validation.payload) && !currentPreview?.preview_hash && !activationSafetyOutcome)}>
+            {mutation.isPending ? <><LoaderCircle className="spin" size={17} /> جارٍ تفعيل الخطة…</> : activationSafetyOutcome ? "تحديث المعاينة" : activationErrorCode ? "مراجعة المعاينة" : saveError ? <><RotateCcw size={17} /> إعادة المحاولة</> : "مراجعة وتأكيد"}
           </button>
         </div>
       ) : null}
@@ -596,7 +696,7 @@ export function ProfilePage() {
         />
       ) : null}
 
-      {activationOpen && validation.payload && preview?.preview_hash ? (
+      {activationOpen && validation.payload && isPreviewActivatable(currentPreview) ? (
         <ProfileConfirm
           title={profileQuery.data?.pending_plan ? "استبدال الخطة المجدولة؟" : "تأكيد الأهداف الجديدة؟"}
           description={profileQuery.data?.pending_plan
@@ -604,14 +704,21 @@ export function ProfilePage() {
             : `المعاينة وحدها لا تحفظ الأهداف. ستبدأ الخطة في ${profileQuery.data ? "اليوم التالي" : "اليوم"}.`}
           safeLabel="متابعة المراجعة"
           confirmLabel={profileQuery.data?.pending_plan ? "استبدال الخطة" : "تفعيل الخطة"}
+          restoreFocusRef={restoreActivationFocusRef}
           onClose={() => setActivationOpen(false)}
           onConfirm={() => {
+            if (!isPreviewActivatable(currentPreview)) {
+              restoreActivationFocusRef.current = false;
+              setActivationOpen(false);
+              setSafetyAttemptSequence((current) => current + 1);
+              return;
+            }
             if (activationSubmittingRef.current) return;
             activationSubmittingRef.current = true;
             if (!activationKeyRef.current) activationKeyRef.current = crypto.randomUUID();
             mutation.mutate({
               payload: validation.payload!,
-              previewHash: preview.preview_hash!,
+              preview: currentPreview,
               key: activationKeyRef.current
             });
           }}
@@ -656,6 +763,38 @@ function SelectionCard({ icon, title, value, description, onClick, ariaLabel }: 
       <h2>{title}</h2>
       <button type="button" onClick={onClick} aria-label={ariaLabel}>{icon}<span><strong>{value}</strong><small>{description}</small></span><ChevronLeft size={19} aria-hidden="true" /></button>
     </section>
+  );
+}
+
+const cutIntensityOptions: Array<{ value: CutIntensity; label: string; percent: string; recommended?: boolean }> = [
+  { value: 0.15, label: "خفيف", percent: "15%" },
+  { value: 0.2, label: "عادي", percent: "20%", recommended: true },
+  { value: 0.25, label: "قوي", percent: "25%" }
+];
+
+function CutIntensitySelector({ value, onChange }: { value: CutIntensity; onChange: (value: CutIntensity) => void }) {
+  return (
+    <fieldset className="profile-cut-intensity" role="radiogroup">
+      <legend>شدة خفض الوزن</legend>
+      <div className="profile-cut-intensity-options">
+        {cutIntensityOptions.map((option) => (
+          <label key={option.value}>
+            <input
+              type="radio"
+              name="profile-cut-intensity"
+              value={option.value}
+              checked={value === option.value}
+              onChange={() => onChange(option.value)}
+            />
+            <span>
+              <strong>{option.label}</strong>
+              <bdi dir="ltr">{option.percent}</bdi>
+              {option.recommended ? <small>موصى به</small> : null}
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
 
@@ -744,13 +883,109 @@ function ScheduledPlanCard({ plan }: { plan: NonNullable<ProfileResponse["pendin
   );
 }
 
-function ExpectedTargetsCard({ targets, pending, failed, onRetry }: { targets: TargetResponse | null; pending: boolean; failed: boolean; onRetry: () => void }) {
+function ExpectedTargetsCard({
+  targets,
+  goal,
+  pending,
+  failed,
+  recoveryOutcome,
+  safetyAttemptSequence,
+  safetyRef,
+  onRetry
+}: {
+  targets: TargetResponse | null;
+  goal: Goal;
+  pending: boolean;
+  failed: boolean;
+  recoveryOutcome: BlockingSafetyOutcome | null;
+  safetyAttemptSequence: number;
+  safetyRef: RefObject<HTMLDivElement | null>;
+  onRetry: () => void;
+}) {
+  const outcome = recoveryOutcome ?? targets?.safety_outcome ?? null;
+  const safetyMessage = outcome
+    ? blockingSafetyMessage(outcome) ??
+      (targets && !isPreviewActivatable(targets)
+        ? "تعذر التحقق من إمكانية تفعيل هذا الهدف. حدّث المعاينة قبل المتابعة."
+        : null)
+    : null;
+  const previewDescription = targets && isPreviewActivatable(targets)
+    ? "ستُطبق هذه الأهداف بعد حفظ التغييرات."
+    : safetyMessage
+      ? "هذه معاينة توضيحية فقط، ولا يمكن تفعيل هذا الهدف."
+      : "راجع نتيجة المعاينة قبل المتابعة.";
+  const announceSafety = safetyAttemptSequence > 0;
   return (
     <section className="profile-preview-card" aria-label="الأهداف المتوقعة بعد الحفظ">
-      <header><div><h2>الأهداف المتوقعة بعد الحفظ</h2><p>ستُطبق هذه الأهداف بعد حفظ التغييرات.</p></div><span>معاينة</span></header>
+      <header><div><h2>الأهداف المتوقعة بعد الحفظ</h2><p>{previewDescription}</p></div><span>معاينة</span></header>
       {pending ? <div className="profile-preview-skeleton" aria-label="جارٍ تحديث معاينة الأهداف" role="status" /> : null}
       {failed ? <div className="profile-preview-error"><strong>تعذر تحديث معاينة الأهداف</strong><button type="button" onClick={onRetry}>إعادة المحاولة</button></div> : null}
-      {!pending && !failed && targets ? <div className="profile-preview-values"><strong><bdi>{targets.target_calories}</bdi> سعرة</strong><span>بروتين <bdi dir="ltr">{formatTargetNumber(targets.protein_g)}</bdi> جم</span><span>كارب <bdi dir="ltr">{formatTargetNumber(targets.carb_g)}</bdi> جم</span><span>دهون <bdi dir="ltr">{formatTargetNumber(targets.fat_g)}</bdi> جم</span></div> : null}
+      {!pending && !failed && targets ? (
+        <>
+          <div className="profile-preview-values">
+            <strong><bdi>{targets.final_target_calories}</bdi> سعرة</strong>
+            <span>بروتين <bdi dir="ltr">{formatTargetNumber(targets.protein_g)}</bdi> جم</span>
+            <span>كارب <bdi dir="ltr">{formatTargetNumber(targets.carb_g)}</bdi> جم</span>
+            <span>دهون <bdi dir="ltr">{formatTargetNumber(targets.fat_g)}</bdi> جم</span>
+          </div>
+          <dl className="profile-preview-summary">
+            {goal === "cut" ? <div><dt>شدة الخفض المختارة</dt><dd><bdi dir="ltr">{formatTargetNumber(targets.selected_cut_intensity * 100)}%</bdi></dd></div> : null}
+            <div><dt>العجز المطلوب</dt><dd><bdi dir="ltr">{formatTargetNumber(targets.requested_deficit_kcal)}</bdi> سعرة</dd></div>
+            <div><dt>العجز المطبق</dt><dd><bdi dir="ltr">{formatTargetNumber(targets.applied_deficit_kcal)}</bdi> سعرة</dd></div>
+          </dl>
+          {targets.deficit_cap_applied ? (
+            <div className="profile-preview-notice">
+              <Info size={18} aria-hidden="true" />
+              <span>طُبق حد العجز الآمن، وأصبح العجز المطبق <bdi dir="ltr">{formatTargetNumber(targets.applied_deficit_kcal)}</bdi> سعرة.</span>
+            </div>
+          ) : null}
+          {targets.calculation_warnings.length > 0 ? (
+            <section className="profile-preview-warnings" aria-label="تنبيهات الحساب">
+              <h3><AlertTriangle size={18} aria-hidden="true" /> تنبيهات الحساب</h3>
+              <ul>
+                {targets.calculation_warnings.map((warning) => (
+                  <li key={warning.code}>
+                    <span>{warning.message_ar}</span>
+                    <small>القيمة <bdi dir="ltr">{formatTargetNumber(warning.value)}</bdi> جم، والمرجع <bdi dir="ltr">{formatTargetNumber(warning.reference_value)}</bdi> جم</small>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          <section className="profile-protein-calculation" aria-labelledby="profile-protein-calculation-title">
+            <h3 id="profile-protein-calculation-title">تفاصيل حساب البروتين</h3>
+            <p>{targets.protein_calculation.explanation_ar}</p>
+            <dl>
+              <div><dt>أساس الحساب</dt><dd>{targets.protein_calculation.basis === "actual_weight" ? "الوزن الفعلي" : "الوزن المعدل"}</dd></div>
+              <div><dt>مؤشر كتلة الجسم المستخدم</dt><dd><bdi dir="ltr">{formatTargetNumber(targets.protein_calculation.bmi_used)}</bdi></dd></div>
+              <div><dt>الوزن الفعلي</dt><dd><bdi dir="ltr">{formatTargetNumber(targets.protein_calculation.actual_weight_kg)}</bdi> كجم</dd></div>
+              <div><dt>{targets.protein_calculation.reference_weight_label_ar}</dt><dd>{targets.protein_calculation.reference_weight_kg == null ? "غير مستخدم" : <><bdi dir="ltr">{formatTargetNumber(targets.protein_calculation.reference_weight_kg)}</bdi> كجم</>}</dd></div>
+              <div><dt>وزن الحساب</dt><dd><bdi dir="ltr">{formatTargetNumber(targets.protein_calculation.calculation_weight_kg)}</bdi> كجم</dd></div>
+              <div><dt>البروتين لكل كجم</dt><dd><bdi dir="ltr">{formatTargetNumber(targets.protein_calculation.protein_per_kg)}</bdi> جم</dd></div>
+              <div><dt>هدف البروتين</dt><dd><bdi dir="ltr">{formatTargetNumber(targets.protein_calculation.target_g)}</bdi> جم</dd></div>
+            </dl>
+          </section>
+        </>
+      ) : null}
+      {!pending && !failed && safetyMessage ? (
+        <div
+          key={`safety-${safetyAttemptSequence}`}
+          ref={safetyRef}
+          className="profile-safety-decision"
+          role={announceSafety ? "alert" : undefined}
+          aria-live={announceSafety ? "assertive" : undefined}
+          tabIndex={-1}
+          data-focus-requested={announceSafety ? "true" : "false"}
+        >
+          <AlertTriangle size={20} aria-hidden="true" />
+          <div><strong>لا يمكن تفعيل الهدف</strong><p>{safetyMessage}</p></div>
+        </div>
+      ) : !pending && !failed && isPreviewActivatable(targets) ? (
+        <div className="profile-safety-decision is-available" role="status">
+          <Check size={20} aria-hidden="true" />
+          <div><strong>الهدف متاح للتفعيل</strong><p>راجِع القيم ثم تابع إلى التأكيد.</p></div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -759,7 +994,7 @@ function OptionList({ value, options, onChoose }: { value: string; options: Arra
   return <div className="profile-option-list" role="radiogroup">{options.map((option) => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} onClick={() => onChoose(option.value)}><span><strong>{option.label}</strong>{option.description ? <small>{option.description}</small> : null}</span>{value === option.value ? <Check size={19} aria-label="محدد" /> : <span className="profile-radio-dot" />}</button>)}</div>;
 }
 
-function ProfileSheet({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+function ProfileSheet({ title, children, onClose, restoreFocusRef }: { title: string; children: ReactNode; onClose: () => void; restoreFocusRef?: RefObject<boolean> }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -778,13 +1013,17 @@ function ProfileSheet({ title, children, onClose }: { title: string; children: R
     };
     document.addEventListener("keydown", keydown);
     document.body.classList.add("modal-open");
-    return () => { document.removeEventListener("keydown", keydown); document.body.classList.remove("modal-open"); triggerRef.current?.focus(); };
-  }, [onClose]);
+    return () => {
+      document.removeEventListener("keydown", keydown);
+      document.body.classList.remove("modal-open");
+      if (restoreFocusRef?.current !== false) triggerRef.current?.focus();
+    };
+  }, [onClose, restoreFocusRef]);
   return <div className="profile-sheet-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={panelRef} className="profile-sheet" role="dialog" aria-modal="true" aria-labelledby="profile-sheet-title"><div className="profile-sheet-handle" /><header><h2 id="profile-sheet-title">{title}</h2><button ref={closeRef} type="button" onClick={onClose} aria-label={`إغلاق ${title}`}><X size={19} /></button></header><div className="profile-sheet-content">{children}</div></section></div>;
 }
 
-function ProfileConfirm({ title, description, safeLabel, confirmLabel, destructive = false, onClose, onConfirm }: { title: string; description: string; safeLabel: string; confirmLabel: string; destructive?: boolean; onClose: () => void; onConfirm: () => void }) {
-  return <ProfileSheet title={title} onClose={onClose}><div className="profile-confirm"><p>{description}</p><button className="btn primary" type="button" onClick={onClose}>{safeLabel}</button><button className={destructive ? "btn danger" : "btn"} type="button" onClick={onConfirm}>{confirmLabel}</button></div></ProfileSheet>;
+function ProfileConfirm({ title, description, safeLabel, confirmLabel, destructive = false, onClose, onConfirm, restoreFocusRef }: { title: string; description: string; safeLabel: string; confirmLabel: string; destructive?: boolean; onClose: () => void; onConfirm: () => void; restoreFocusRef?: RefObject<boolean> }) {
+  return <ProfileSheet title={title} onClose={onClose} restoreFocusRef={restoreFocusRef}><div className="profile-confirm"><p>{description}</p><button className="btn primary" type="button" onClick={onClose}>{safeLabel}</button><button className={destructive ? "btn danger" : "btn"} type="button" onClick={onConfirm}>{confirmLabel}</button></div></ProfileSheet>;
 }
 
 function ProfileSkeleton() {
