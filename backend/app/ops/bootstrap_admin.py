@@ -8,6 +8,7 @@ from uuid import UUID
 import httpx
 from sqlmodel import Session, select
 
+from app.core.config import validate_supabase_base_url
 from app.db.session import engine
 from app.models import Principal, PrincipalRole
 
@@ -20,13 +21,29 @@ class BootstrapRequest:
     auth_user_id: UUID | None
     create_auth_user: bool
     dry_run: bool
+    allow_loopback_auth_emulator: bool = False
 
 
 def _create_supabase_user(request: BootstrapRequest) -> UUID:
-    url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+    configured_url = os.environ.get("SUPABASE_URL", "")
+    if (
+        request.allow_loopback_auth_emulator
+        and os.environ.get("ENVIRONMENT", "dev").strip().lower() == "production"
+    ):
+        raise RuntimeError(
+            "The loopback auth emulator exception cannot be used in production."
+        )
+    try:
+        url = validate_supabase_base_url(
+            configured_url,
+            allow_loopback_http=request.allow_loopback_auth_emulator,
+        )
+    except ValueError as error:
+        raise RuntimeError("SUPABASE_URL is not safe for admin bootstrap.") from error
+
     service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
     password = os.environ.get("ADMIN_BOOTSTRAP_PASSWORD", "")
-    if not url or not service_key or not password:
+    if not service_key or not password:
         raise RuntimeError(
             "SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and ADMIN_BOOTSTRAP_PASSWORD are required."
         )
@@ -40,6 +57,7 @@ def _create_supabase_user(request: BootstrapRequest) -> UUID:
             "user_metadata": {"display_name": request.display_name},
         },
         timeout=30,
+        follow_redirects=False,
     )
     if response.status_code != 200:
         raise RuntimeError(f"Supabase Admin API rejected the request ({response.status_code}).")
@@ -88,6 +106,14 @@ def main() -> None:
     parser.add_argument("--display-name", required=True)
     parser.add_argument("--auth-user-id", type=UUID)
     parser.add_argument("--create-auth-user", action="store_true")
+    parser.add_argument(
+        "--allow-loopback-auth-emulator",
+        action="store_true",
+        help=(
+            "Allow HTTP only for a literal localhost, 127.0.0.1, or ::1 auth "
+            "emulator; prohibited in production."
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     request = BootstrapRequest(**vars(args))
