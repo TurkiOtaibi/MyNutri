@@ -29,7 +29,7 @@ import {
   useState
 } from "react";
 
-import { ApiError, activateTargetPlan, getNutritionRegistry, getProfile, listTargetPlanHistory, previewProfile, replacePendingTargetPlan } from "@/lib/api";
+import { ApiError, activateTargetPlan, getCalendarAuthority, getNutritionRegistry, getProfile, listTargetPlanHistory, previewProfile, replacePendingTargetPlan } from "@/lib/api";
 import { activityLabels, goalLabels, sexLabels } from "@/lib/labels";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels } from "@/lib/nutrients";
 import type { ActivityLevel, CutIntensity, Goal, NutritionRegistryResponse, ProfileInput, ProfileResponse, Sex, TargetPlanSummary, TargetResponse } from "@/lib/types";
@@ -45,10 +45,14 @@ const VERY_LOW_ENERGY_MESSAGE = "لا يمكن تفعيل هذا الهدف لأ
 const PROTEIN_DEFAULT = 1.2;
 const FAT_DEFAULTS: Record<Sex, number> = { male: 0.25, female: 0.3 };
 const PROFILE_LIMITS = {
+  heightMin: 100,
+  heightMax: 250,
+  weightMin: 20,
+  weightMax: 300,
   proteinMin: 1,
   proteinMax: 3,
-  fatMinPercent: 20,
-  fatMaxPercent: 30
+  fatMinPercent: 15,
+  fatMaxPercent: 40
 } as const;
 
 const activityDescriptions: Record<ActivityLevel, string> = {
@@ -145,19 +149,17 @@ function normalizeDraft(draft: DraftProfile): string {
   return JSON.stringify(normalized);
 }
 
-function validateDraft(draft: DraftProfile): { errors: FieldErrors; payload: ProfileInput | null } {
+function validateDraft(draft: DraftProfile, authoritativeDate: string | null): { errors: FieldErrors; payload: ProfileInput | null } {
   const errors: FieldErrors = {};
   const height = normalizeNumber(draft.height_cm);
   const weight = normalizeNumber(draft.weight_kg);
   const protein = normalizeNumber(draft.protein_per_kg);
   const fatPercent = normalizeNumber(draft.fat_percent);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const birth = draft.birth_date ? new Date(`${draft.birth_date}T00:00:00`) : null;
+  const validBirthDate = /^\d{4}-\d{2}-\d{2}$/.test(draft.birth_date);
 
-  if (!birth || Number.isNaN(birth.getTime()) || birth > today) errors.birth_date = "اختر تاريخ ميلاد صحيحًا";
-  if (height == null || height <= 0) errors.height_cm = "أدخل طولًا صحيحًا";
-  if (weight == null || weight <= 0) errors.weight_kg = "أدخل وزنًا صحيحًا";
+  if (!validBirthDate || !authoritativeDate || draft.birth_date > authoritativeDate) errors.birth_date = "اختر تاريخ ميلاد صحيحًا";
+  if (height == null || height < PROFILE_LIMITS.heightMin || height > PROFILE_LIMITS.heightMax) errors.height_cm = "أدخل طولًا صحيحًا";
+  if (weight == null || weight < PROFILE_LIMITS.weightMin || weight > PROFILE_LIMITS.weightMax) errors.weight_kg = "أدخل وزنًا صحيحًا";
   if (protein == null || protein < PROFILE_LIMITS.proteinMin || protein > PROFILE_LIMITS.proteinMax) {
     errors.protein_per_kg = "أدخل قيمة صحيحة للبروتين لكل كجم";
   }
@@ -240,6 +242,11 @@ export function ProfilePage() {
   const activationSubmittingRef = useRef(false);
 
   const profileQuery = useQuery({ queryKey: ["profile"], queryFn: getProfile });
+  const authorityQuery = useQuery({
+    queryKey: ["calendar-authority"],
+    queryFn: () => getCalendarAuthority({ accessToken: accessToken!, signal: sessionSignal }),
+    enabled: Boolean(accessToken)
+  });
   const registryQuery = useQuery({
     queryKey: ["nutrition-registry"],
     queryFn: getNutritionRegistry,
@@ -265,7 +272,11 @@ export function ProfilePage() {
   }, [profileQuery.data]);
 
   const dirty = savedDraft != null && normalizeDraft(draft) !== normalizeDraft(savedDraft);
-  const validation = useMemo(() => validateDraft(draft), [draft]);
+  const authoritativeDate = authorityQuery.data?.current_diary_date ?? null;
+  const validation = useMemo(
+    () => validateDraft(draft, authoritativeDate),
+    [draft, authoritativeDate]
+  );
   const currentDraftHash = normalizeDraft(draft);
   const currentPreview = previewDraftHash === currentDraftHash ? preview : null;
 
@@ -291,8 +302,12 @@ export function ProfilePage() {
         setActivationSafetyOutcome(null);
         setSafetyAttemptSequence(0);
       })
-      .catch(() => {
+      .catch((error) => {
         if (sessionSignal.aborted || sequence !== previewSequence.current) return;
+        const mapped = mapProfileApiErrors(error);
+        if (Object.keys(mapped).length > 0) {
+          setErrors((current) => ({ ...current, ...mapped }));
+        }
         setPreview(null);
         setPreviewDraftHash(null);
         setPreviewFailed(true);
@@ -443,7 +458,7 @@ export function ProfilePage() {
 
   function submit(event?: FormEvent) {
     event?.preventDefault();
-    const result = validateDraft(draft);
+    const result = validateDraft(draft, authoritativeDate);
     setErrors(result.errors);
     setSaveError(false);
     if (!registryReady) return;
@@ -470,8 +485,11 @@ export function ProfilePage() {
     setActivationOpen(true);
   }
 
-  if (profileQuery.isPending) return <ProfileSkeleton />;
-  if (profileQuery.isError) return <ProfileLoadError onRetry={() => profileQuery.refetch()} />;
+  if (profileQuery.isPending || authorityQuery.isPending) return <ProfileSkeleton />;
+  if (profileQuery.isError || authorityQuery.isError) return <ProfileLoadError onRetry={() => {
+    profileQuery.refetch();
+    authorityQuery.refetch();
+  }} />;
 
   const displayBirthDate = draft.birth_date ? formatArabicGregorianDate(draft.birth_date) : "غير محدد";
 
@@ -500,7 +518,7 @@ export function ProfilePage() {
               ref={birthRef}
               type="date"
               value={draft.birth_date}
-              max={todayIsoDate()}
+              max={authoritativeDate ?? undefined}
               onChange={(event) => update("birth_date", event.target.value)}
               aria-label="تاريخ الميلاد"
               aria-invalid={Boolean(errors.birth_date)}
@@ -515,6 +533,8 @@ export function ProfilePage() {
             value={draft.height_cm}
             unit="سم"
             step="0.1"
+            min={PROFILE_LIMITS.heightMin}
+            max={PROFILE_LIMITS.heightMax}
             error={errors.height_cm}
             onChange={(value) => update("height_cm", value)}
           />
@@ -525,6 +545,8 @@ export function ProfilePage() {
             value={draft.weight_kg}
             unit="كجم"
             step="0.1"
+            min={PROFILE_LIMITS.weightMin}
+            max={PROFILE_LIMITS.weightMax}
             error={errors.weight_kg}
             onChange={(value) => update("weight_kg", value)}
           />
@@ -575,6 +597,8 @@ export function ProfilePage() {
               value={draft.protein_per_kg}
               unit="جم/كجم"
               step="0.1"
+              min={PROFILE_LIMITS.proteinMin}
+              max={PROFILE_LIMITS.proteinMax}
               error={errors.protein_per_kg}
               help="يحدد هدف البروتين حسب وزنك."
               onChange={(value) => update("protein_per_kg", value)}
@@ -585,6 +609,8 @@ export function ProfilePage() {
               value={draft.fat_percent}
               unit="%"
               step="1"
+              min={PROFILE_LIMITS.fatMinPercent}
+              max={PROFILE_LIMITS.fatMaxPercent}
               error={errors.fat_percent}
               help="تحدد نسبة السعرات اليومية القادمة من الدهون."
               onChange={(value) => update("fat_percent", value)}
@@ -744,13 +770,13 @@ function SettingsButton({ icon, label, value, onClick, ariaLabel }: { icon: Reac
   return <button className="profile-setting-row" type="button" onClick={onClick} aria-label={ariaLabel}>{icon}<span className="profile-setting-copy"><strong>{label}</strong><bdi>{value}</bdi></span><ChevronLeft size={18} aria-hidden="true" /></button>;
 }
 
-function NumericSettingsRow({ ref, icon, label, value, unit, step, error, help, onChange }: { ref: RefObject<HTMLInputElement | null>; icon?: ReactNode; label: string; value: string; unit: string; step: string; error?: string; help?: string; onChange: (value: string) => void }) {
+function NumericSettingsRow({ ref, icon, label, value, unit, step, min, max, error, help, onChange }: { ref: RefObject<HTMLInputElement | null>; icon?: ReactNode; label: string; value: string; unit: string; step: string; min?: number; max?: number; error?: string; help?: string; onChange: (value: string) => void }) {
   const id = `profile-${label.replaceAll(" ", "-")}`;
   return (
     <label className={`profile-setting-row profile-number-row ${error ? "has-error" : ""}`}>
       {icon ?? <span className="profile-row-spacer" />}
       <span className="profile-setting-copy"><strong>{label}</strong>{help ? <small>{help}</small> : null}</span>
-      <span className="profile-number-control" dir="ltr"><input ref={ref} id={id} type="text" inputMode="decimal" value={value} onChange={(event) => onChange(event.target.value)} aria-label={label} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : help ? `${id}-help` : undefined} /><bdi>{unit}</bdi></span>
+      <span className="profile-number-control" dir="ltr"><input ref={ref} id={id} type="text" inputMode="decimal" value={value} min={min} max={max} step={step} onChange={(event) => onChange(event.target.value)} aria-label={label} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : help ? `${id}-help` : undefined} /><bdi>{unit}</bdi></span>
       {error ? <small id={`${id}-error`} className="profile-field-error">{error}</small> : null}
       {help ? <span id={`${id}-help`} className="sr-only">{help}</span> : null}
     </label>
@@ -1038,11 +1064,6 @@ function formatArabicGregorianDate(input: string): string {
   const [year, month, day] = input.split("-").map(Number);
   if (!year || !month || !day) return "غير محدد";
   return new Intl.DateTimeFormat("ar-SA-u-ca-gregory-nu-latn", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, day)));
-}
-
-function todayIsoDate(): string {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 }
 
 function formatTargetNumber(value: number): string {
