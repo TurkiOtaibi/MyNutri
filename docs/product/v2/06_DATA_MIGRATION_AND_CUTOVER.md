@@ -63,3 +63,16 @@ After the Auth user ID and dry-run output are reviewed, rerun without
 `--dry-run`. Alternatively, `--create-auth-user` requires
 `SUPABASE_SERVICE_ROLE_KEY` and `ADMIN_BOOTSTRAP_PASSWORD`; those values are
 process-only secrets and must be removed from the shell immediately afterward.
+The bootstrap operation validates `SUPABASE_URL` before constructing the
+credential-bearing request and requires HTTPS by default.
+
+For a local Supabase Auth emulator only, HTTP can be enabled explicitly:
+
+```powershell
+python -m app.ops.bootstrap_admin --principal-id <existing-principal-uuid> --email <admin-email> --display-name <display-name> --create-auth-user --allow-loopback-auth-emulator
+```
+
+The loopback exception accepts only literal `localhost`, `127.0.0.1`, or `::1`
+hosts. It is prohibited in production and must never target shared or
+production infrastructure. Service Role credentials and the bootstrap password
+remain process-only secrets even when the local emulator exception is used.
