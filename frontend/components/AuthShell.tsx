@@ -6,6 +6,7 @@ import { FormEvent, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/client";
+import { normalizePostLoginPath } from "@/lib/auth-return-path";
 
 type Mode = "login" | "sign-up";
 
@@ -50,8 +51,7 @@ export function AuthShell({ mode }: { mode: Mode }) {
       setMessage("تم إنشاء الحساب. تحقق من بريدك الإلكتروني لإكمال التسجيل.");
       return;
     }
-    const next = search.get("next");
-    router.replace(next?.startsWith("/") ? next : "/diary");
+    router.replace(normalizePostLoginPath(search.get("next"), window.location.origin));
     router.refresh();
   }
 
