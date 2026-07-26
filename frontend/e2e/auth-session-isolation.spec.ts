@@ -53,6 +53,52 @@ async function submitLogin(page: Page, email: string, password: string, next: st
   if (waitForDestination) await page.waitForURL(new RegExp(`${next.replace("/", "\\/")}$`));
 }
 
+type ReturnPathCase = {
+  name: string;
+  next: string | null;
+  destination: string;
+};
+
+const postLoginReturnPathCases: ReturnPathCase[] = [
+  { name: "missing", next: null, destination: "/diary" },
+  { name: "empty", next: "", destination: "/diary" },
+  { name: "absolute https", next: "https://attacker.example/owned", destination: "/diary" },
+  { name: "protocol relative", next: "//attacker.example/owned", destination: "/diary" },
+  { name: "backslash", next: "/\\attacker.example/owned", destination: "/diary" },
+  { name: "mixed slash and backslash", next: "/\\/attacker.example/owned", destination: "/diary" },
+  { name: "leading whitespace", next: " /profile", destination: "/diary" },
+  { name: "control-prefixed", next: "\t/profile", destination: "/diary" },
+  { name: "encoded separators", next: "/%2f%2fattacker.example/owned", destination: "/diary" },
+  { name: "double-encoded separators", next: "/%252f%252fattacker.example/owned", destination: "/diary" },
+  { name: "dot normalization", next: "/.//attacker.example/owned", destination: "/diary" },
+  { name: "encoded dot normalization", next: "/%2e//attacker.example/owned", destination: "/diary" },
+  { name: "encoded dotdot normalization", next: "/%2e%2e//attacker.example/owned", destination: "/diary" },
+  { name: "nested dotdot normalization", next: "/safe/%2e%2e//attacker.example/owned", destination: "/diary" },
+  { name: "internal query and fragment", next: "/diary?date=2026-07-26#summary", destination: "/diary?date=2026-07-26#summary" },
+  { name: "internal query and fragment with spaces", next: "/diary?note=hello world#daily summary", destination: "/diary?note=hello%20world#daily%20summary" },
+  { name: "internal query and fragment with encoded percent", next: "/diary?discount=100%25#save%25", destination: "/diary?discount=100%25#save%25" },
+  { name: "encoded internal profile", next: "/profile", destination: "/profile" }
+];
+
+function authUrl(mode: "login" | "sign-up", next: string | null) {
+  return `/auth/${mode}${next === null ? "" : `?next=${encodeURIComponent(next)}`}`;
+}
+
+async function submitAuthForm(page: Page, mode: "login" | "sign-up", email: string) {
+  if (mode === "sign-up") await page.locator('input[autocomplete="name"]').fill("Plan 006 E2E User");
+  await page.locator('input[type="email"]').fill(email);
+  await page.locator('input[type="password"]').fill(PASSWORD);
+  await page.locator('button[type="submit"]').click();
+}
+
+async function assertSafePostLoginDestination(page: Page, origin: string, destination: string, hostileRequests: string[]) {
+  await page.waitForURL((url) => url.origin === origin && `${url.pathname}${url.search}${url.hash}` === destination);
+  const finalUrl = new URL(page.url());
+  expect(finalUrl.origin).toBe(origin);
+  expect(`${finalUrl.pathname}${finalUrl.search}${finalUrl.hash}`).toBe(destination);
+  expect(hostileRequests).toEqual([]);
+}
+
 async function installLeakObserver(page: Page, textMarkers: string[], exactInputValues: string[] = [], recordAfterClear = false) {
   await page.evaluate(({ observedTextMarkers, observedInputValues, waitForClear }) => {
     const records: string[] = [];
@@ -196,6 +242,70 @@ test("development StrictMode replay keeps the anonymous session boundary signal 
   expect(await sessionSignalAborted(page)).toBe(false);
   expect(await sessionBoundaryRotations(page)).toEqual([]);
   await context.close();
+});
+
+for (const mode of ["login", "sign-up"] as const) {
+  for (const [index, scenario] of postLoginReturnPathCases.entries()) {
+    test(`@plan006 ${mode} post-auth return path: ${scenario.name}`, async ({ browser }) => {
+      const context = await browser.newContext({ storageState: undefined });
+      const page = await context.newPage();
+      const hostileRequests: string[] = [];
+      page.on("request", (request) => {
+        if (new URL(request.url()).hostname === "attacker.example") hostileRequests.push(request.url());
+      });
+      const email = `plan006-${mode}-${Date.now()}-${index}@example.test`;
+
+      try {
+        await test.step(scenario.name, async () => {
+          if (mode === "login") await token(email);
+          await page.goto(authUrl(mode, scenario.next));
+          const origin = new URL(page.url()).origin;
+          await submitAuthForm(page, mode, email);
+          await assertSafePostLoginDestination(page, origin, scenario.destination, hostileRequests);
+        });
+      } finally {
+        await context.close();
+      }
+    });
+  }
+}
+
+test("@plan006 confirmation-required sign-up keeps its confirmation state without navigating", async ({ browser }) => {
+  const context = await browser.newContext({ storageState: undefined });
+  const page = await context.newPage();
+  const hostileRequests: string[] = [];
+  let confirmationSignups = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).hostname === "attacker.example") hostileRequests.push(request.url());
+  });
+  const authOrigin = new URL(AUTH_URL).origin;
+  await page.route((url) => url.origin === authOrigin && url.pathname === "/auth/v1/signup", async (route) => {
+    confirmationSignups += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "00000000-0000-4000-8000-000000000006",
+        aud: "authenticated",
+        role: "authenticated",
+        email: "plan006-confirmation@example.test",
+        confirmation_sent_at: new Date().toISOString()
+      })
+    });
+  });
+
+  try {
+    await page.goto(authUrl("sign-up", "//attacker.example/owned"));
+    const origin = new URL(page.url()).origin;
+    await submitAuthForm(page, "sign-up", `plan006-confirmation-${Date.now()}@example.test`);
+    await expect(page.locator('[role="status"]')).toHaveText("تم إنشاء الحساب. تحقق من بريدك الإلكتروني لإكمال التسجيل.");
+    expect(confirmationSignups).toBe(1);
+    expect(new URL(page.url()).origin).toBe(origin);
+    expect(new URL(page.url()).pathname).toBe("/auth/sign-up");
+    expect(hostileRequests).toEqual([]);
+  } finally {
+    await context.close();
+  }
 });
 
 test("same browser context isolates cached profile and diary data across A to B to A", async ({ browser, request }) => {
