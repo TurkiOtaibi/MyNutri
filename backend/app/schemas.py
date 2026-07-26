@@ -1,4 +1,5 @@
 from datetime import date, datetime
+import math
 from typing import Any, Literal
 from uuid import UUID
 
@@ -149,6 +150,17 @@ class ProfileUpsert(BaseModel):
         allow_inf_nan=False,
     )
     selected_cut_intensity: Literal[0.15, 0.2, 0.25] = 0.2
+
+    @field_validator(
+        "height_cm", "weight_kg", "protein_per_kg", "fat_pct", mode="before"
+    )
+    @classmethod
+    def make_non_finite_validation_input_json_safe(cls, value: Any) -> Any:
+        if isinstance(value, float) and not math.isfinite(value):
+            if math.isnan(value):
+                return "NaN"
+            return "Infinity" if value > 0 else "-Infinity"
+        return value
 
     @model_validator(mode="before")
     @classmethod

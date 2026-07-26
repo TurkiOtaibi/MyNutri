@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+import json
 from uuid import UUID
 
 import pytest
@@ -218,6 +219,36 @@ def test_plan008_invalid_numeric_requests_return_422_without_profile(
     assert error["loc"] == ["body", field]
     assert error["type"] == error_type
     assert error["msg"]
+    assert session.exec(
+        select(Profile).where(Profile.principal_id == PRINCIPAL_A)
+    ).first() is None
+
+
+@pytest.mark.parametrize("path", ["/profile", "/profile/preview"])
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_plan008_non_finite_raw_json_returns_stable_422_without_profile(
+    target_plan_context, path: str, constant: str
+) -> None:
+    client, session = target_plan_context
+    payload = json.dumps(profile_payload(), separators=(",", ":"))
+    payload = payload.replace('"height_cm":175', f'"height_cm":{constant}')
+
+    response = client.request(
+        "PUT" if path == "/profile" else "POST",
+        path,
+        content=payload,
+        headers={**headers("token-a"), "Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {
+            "type": "finite_number",
+            "loc": ["body", "height_cm"],
+            "msg": "Input should be a finite number",
+            "input": constant,
+        }
+    ]
     assert session.exec(
         select(Profile).where(Profile.principal_id == PRINCIPAL_A)
     ).first() is None

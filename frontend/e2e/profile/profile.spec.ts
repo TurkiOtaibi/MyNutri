@@ -320,6 +320,27 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(protein).toHaveAttribute("max", "3");
     await expect(fat).toHaveAttribute("min", "15");
     await expect(fat).toHaveAttribute("max", "40");
+
+    await height.fill("100");
+    await weight.fill("300");
+    await protein.fill("3");
+    await fat.fill("15");
+    const preview = page.getByRole("region", { name: "الأهداف المتوقعة بعد الحفظ" });
+    await expect(preview).toBeVisible();
+    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+    const confirmation = page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ });
+    await confirmation.getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+    await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
+    await expect(height).toHaveValue("100");
+    await expect(weight).toHaveValue("300");
+    await expect(protein).toHaveValue("3");
+    await expect(fat).toHaveValue("15");
+
+    const stored = await readProfile(page.request);
+    expect(stored.height_cm).toBe(100);
+    expect(stored.weight_kg).toBe(300);
+    expect(stored.protein_per_kg).toBe(3);
+    expect(stored.fat_pct).toBe(0.15);
   });
 
   test("@p0 preview uses server result, stays distinct, and save adopts confirmed response", async ({ page, originalProfile }) => {
