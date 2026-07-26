@@ -274,10 +274,13 @@ test("@plan006 confirmation-required sign-up keeps its confirmation state withou
   const context = await browser.newContext({ storageState: undefined });
   const page = await context.newPage();
   const hostileRequests: string[] = [];
+  let confirmationSignups = 0;
   page.on("request", (request) => {
     if (new URL(request.url()).hostname === "attacker.example") hostileRequests.push(request.url());
   });
-  await page.route(`${AUTH_URL}/auth/v1/signup`, async (route) => {
+  const authOrigin = new URL(AUTH_URL).origin;
+  await page.route((url) => url.origin === authOrigin && url.pathname === "/auth/v1/signup", async (route) => {
+    confirmationSignups += 1;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -295,9 +298,10 @@ test("@plan006 confirmation-required sign-up keeps its confirmation state withou
     await page.goto(authUrl("sign-up", "//attacker.example/owned"));
     const origin = new URL(page.url()).origin;
     await submitAuthForm(page, "sign-up", `plan006-confirmation-${Date.now()}@example.test`);
-    await expect.poll(() => new URL(page.url()).pathname).toBe("/auth/sign-up");
-    expect(new URL(page.url()).origin).toBe(origin);
     await expect(page.locator('[role="status"]')).toHaveText("تم إنشاء الحساب. تحقق من بريدك الإلكتروني لإكمال التسجيل.");
+    expect(confirmationSignups).toBe(1);
+    expect(new URL(page.url()).origin).toBe(origin);
+    expect(new URL(page.url()).pathname).toBe("/auth/sign-up");
     expect(hostileRequests).toEqual([]);
   } finally {
     await context.close();
