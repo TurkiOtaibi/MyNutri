@@ -284,12 +284,39 @@ OPTIONAL_NUTRIENT_MAX: dict[str, float] = {
     "iodine_mcg": 9999999.999,
 }
 
+FOOD_CORE_NUMERIC_FIELDS = (
+    "unit_amount",
+    "calories",
+    "protein_g",
+    "carb_g",
+    "fat_g",
+)
+FOOD_NUMERIC_FIELDS = FOOD_CORE_NUMERIC_FIELDS + tuple(OPTIONAL_NUTRIENT_MAX)
+FOOD_GROUP_NUMERIC_FIELDS = ("amount_per_100_basis",)
+FOOD_RESPONSE_DERIVED_NUMERIC_FIELDS = ("net_carbs_g",)
+
 FOOD_TEXT_MAX: dict[str, int] = {
     "name": 120,
     "brand": 80,
     "notes": 500,
     "data_source": 120,
 }
+
+
+def _finite_number_input(value: Any) -> Any:
+    if isinstance(value, float) and not math.isfinite(value):
+        return "__non_finite_number__"
+    if isinstance(value, str) and value.strip().casefold() in {
+        "nan",
+        "infinity",
+        "+infinity",
+        "-infinity",
+        "inf",
+        "+inf",
+        "-inf",
+    }:
+        return "__non_finite_number__"
+    return value
 
 
 def _clean_optional_text(value: str | None) -> str | None:
@@ -371,8 +398,13 @@ class FoodGroupContributionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     group_key: str
     subtype_key: str | None = None
-    amount_per_100_basis: float = Field(gt=0, le=100)
+    amount_per_100_basis: float = Field(gt=0, le=100, allow_inf_nan=False)
     data_status: ContributionDataStatus
+
+    @field_validator("amount_per_100_basis", mode="before")
+    @classmethod
+    def make_non_finite_validation_input_json_safe(cls, value: Any) -> Any:
+        return _finite_number_input(value)
 
     @model_validator(mode="after")
     def validate_registry_key(self):
@@ -402,12 +434,12 @@ class FoodBase(BaseModel):
     food_kind: FoodKind = FoodKind.unknown
     nutrition_basis: NutritionBasis
     default_unit_type: DefaultUnitType
-    unit_amount: float = Field(gt=0, le=2000)
+    unit_amount: float = Field(gt=0, le=2000, allow_inf_nan=False)
     unit_basis: UnitBasis
-    calories: float = Field(ge=0, le=3000)
-    protein_g: float = Field(ge=0, le=300)
-    carb_g: float = Field(ge=0, le=500)
-    fat_g: float = Field(ge=0, le=300)
+    calories: float = Field(ge=0, le=3000, allow_inf_nan=False)
+    protein_g: float = Field(ge=0, le=300, allow_inf_nan=False)
+    carb_g: float = Field(ge=0, le=500, allow_inf_nan=False)
+    fat_g: float = Field(ge=0, le=300, allow_inf_nan=False)
     fiber_g: float | None = None
     sugar_g: float | None = None
     added_sugar_g: float | None = None
@@ -438,6 +470,11 @@ class FoodBase(BaseModel):
     group_contributions: list[FoodGroupContributionInput] = Field(default_factory=list)
     analytical_traits: list[str] = Field(default_factory=list)
 
+    @field_validator(*FOOD_NUMERIC_FIELDS, mode="before")
+    @classmethod
+    def make_non_finite_validation_input_json_safe(cls, value: Any) -> Any:
+        return _finite_number_input(value)
+
     @field_validator("name")
     @classmethod
     def clean_name(cls, value: str) -> str:
@@ -461,6 +498,8 @@ class FoodBase(BaseModel):
     def validate_optional_nutrient(cls, value: float | None, info) -> float | None:
         if value is None:
             return None
+        if not math.isfinite(value):
+            raise ValueError("Input should be a finite number")
         if value < 0:
             raise ValueError(OPTIONAL_NUTRIENT_NEGATIVE_MESSAGE)
         maximum = OPTIONAL_NUTRIENT_MAX[info.field_name]
@@ -559,12 +598,12 @@ class FoodUpdate(BaseModel):
     food_kind: FoodKind | None = None
     nutrition_basis: NutritionBasis | None = None
     default_unit_type: DefaultUnitType | None = None
-    unit_amount: float | None = Field(default=None, gt=0, le=2000)
+    unit_amount: float | None = Field(default=None, gt=0, le=2000, allow_inf_nan=False)
     unit_basis: UnitBasis | None = None
-    calories: float | None = Field(default=None, ge=0, le=3000)
-    protein_g: float | None = Field(default=None, ge=0, le=300)
-    carb_g: float | None = Field(default=None, ge=0, le=500)
-    fat_g: float | None = Field(default=None, ge=0, le=300)
+    calories: float | None = Field(default=None, ge=0, le=3000, allow_inf_nan=False)
+    protein_g: float | None = Field(default=None, ge=0, le=300, allow_inf_nan=False)
+    carb_g: float | None = Field(default=None, ge=0, le=500, allow_inf_nan=False)
+    fat_g: float | None = Field(default=None, ge=0, le=300, allow_inf_nan=False)
     fiber_g: float | None = None
     sugar_g: float | None = None
     added_sugar_g: float | None = None
@@ -595,6 +634,11 @@ class FoodUpdate(BaseModel):
     group_contributions: list[FoodGroupContributionInput] | None = None
     analytical_traits: list[str] | None = None
 
+    @field_validator(*FOOD_NUMERIC_FIELDS, mode="before")
+    @classmethod
+    def make_non_finite_validation_input_json_safe(cls, value: Any) -> Any:
+        return _finite_number_input(value)
+
     @field_validator("name")
     @classmethod
     def clean_name(cls, value: str | None) -> str | None:
@@ -620,6 +664,8 @@ class FoodUpdate(BaseModel):
     def validate_optional_nutrient(cls, value: float | None, info) -> float | None:
         if value is None:
             return None
+        if not math.isfinite(value):
+            raise ValueError("Input should be a finite number")
         if value < 0:
             raise ValueError(OPTIONAL_NUTRIENT_NEGATIVE_MESSAGE)
         maximum = OPTIONAL_NUTRIENT_MAX[info.field_name]
@@ -754,6 +800,8 @@ class AdminUserDetail(BaseModel):
 
 
 class NutritionSnapshot(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     food_id: UUID | None = None
     name: str
     brand: str | None = None
@@ -799,6 +847,8 @@ class NutritionSnapshot(BaseModel):
 
 
 class NutritionTotals(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     calories: float = 0
     protein_g: float = 0
     carb_g: float = 0

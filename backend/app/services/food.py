@@ -191,51 +191,62 @@ def to_food_response(session: Session, principal: PrincipalContext, food: Food) 
         if sum(float(item.amount_per_100_basis) for item in contributions) >= 100
         else "partial"
     )
-    return FoodResponse(
-        id=food.id,
-        **_food_data(food),
-        status=food.status,
-        group_data_status=derived_status,
-        group_data_completeness=derived_completeness,
-        taxonomy_review_required=food.taxonomy_review_required,
-        nutrition_source={
-            "type": food.nutrition_source_type,
-            "name": food.nutrition_source_name,
-            "reference": food.nutrition_source_reference,
-            "reliability": SOURCE_RELIABILITY_MAP[_enum_value(food.nutrition_source_type)],
-            "reliability_rules_version": VERSIONS.source_reliability_rules_version,
-        },
-        ingredients={
-            "text": food.ingredients_text,
-            "source_type": food.ingredients_source_type,
-            "source_name": food.ingredients_source_name,
-            "source_reference": food.ingredients_source_reference,
-        },
-        nova={
-            "classification": food.nova_classification,
-            "review_status": food.nova_review_status,
-            "rules_version": VERSIONS.nova_rules_version,
-        },
-        group_contributions=[
-            {
-                "group_key": item.group_key,
-                "subtype_key": item.subtype_key,
-                "amount_per_100_basis": float(item.amount_per_100_basis),
-                "data_status": item.data_status,
-                "food_group_rules_version": item.food_group_rules_version,
-            }
-            for item in contributions
-        ],
-        analytical_traits=[item.trait_key for item in traits],
-        legacy_nutrition={
-            "folate_mcg": _float_or_none(food.folate_mcg),
-            "vitamin_a_mcg": _float_or_none(food.vitamin_a_mcg),
-        },
-        net_carbs_g=net_carbs(food),
-        created_at=food.created_at,
-        updated_at=food.updated_at,
-        archived_at=food.archived_at,
-    )
+    try:
+        return FoodResponse(
+            id=food.id,
+            **_food_data(food),
+            status=food.status,
+            group_data_status=derived_status,
+            group_data_completeness=derived_completeness,
+            taxonomy_review_required=food.taxonomy_review_required,
+            nutrition_source={
+                "type": food.nutrition_source_type,
+                "name": food.nutrition_source_name,
+                "reference": food.nutrition_source_reference,
+                "reliability": SOURCE_RELIABILITY_MAP[
+                    _enum_value(food.nutrition_source_type)
+                ],
+                "reliability_rules_version": VERSIONS.source_reliability_rules_version,
+            },
+            ingredients={
+                "text": food.ingredients_text,
+                "source_type": food.ingredients_source_type,
+                "source_name": food.ingredients_source_name,
+                "source_reference": food.ingredients_source_reference,
+            },
+            nova={
+                "classification": food.nova_classification,
+                "review_status": food.nova_review_status,
+                "rules_version": VERSIONS.nova_rules_version,
+            },
+            group_contributions=[
+                {
+                    "group_key": item.group_key,
+                    "subtype_key": item.subtype_key,
+                    "amount_per_100_basis": float(item.amount_per_100_basis),
+                    "data_status": item.data_status,
+                    "food_group_rules_version": item.food_group_rules_version,
+                }
+                for item in contributions
+            ],
+            analytical_traits=[item.trait_key for item in traits],
+            legacy_nutrition={
+                "folate_mcg": _float_or_none(food.folate_mcg),
+                "vitamin_a_mcg": _float_or_none(food.vitamin_a_mcg),
+            },
+            net_carbs_g=net_carbs(food),
+            created_at=food.created_at,
+            updated_at=food.updated_at,
+            archived_at=food.archived_at,
+        )
+    except ValidationError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "INVALID_FOOD_DATA",
+                "message_ar": "تعذر قراءة بيانات الطعام بسبب عدم توافقها.",
+            },
+        ) from error
 
 
 def normalize_text(value: str) -> str:
@@ -527,7 +538,9 @@ def get_food_for_update(
     return food
 
 
-def create_food(session: Session, principal: PrincipalContext, payload: FoodCreate) -> Food:
+def _create_food_uncommitted(
+    session: Session, principal: PrincipalContext, payload: FoodCreate
+) -> Food:
     _lock_food_namespace(session)
     data = _persistence_data(payload)
     if payload.id is not None:
@@ -539,11 +552,12 @@ def create_food(session: Session, principal: PrincipalContext, payload: FoodCrea
         ).first()
         if existing is not None:
             ensure_not_duplicate(session, data, food_id=existing.id)
-            return update_food(
+            return _update_food_uncommitted(
                 session,
                 principal,
                 existing.id,
                 FoodUpdate.model_validate(payload.model_dump(exclude={"id"})),
+                food=existing,
             )
         data["id"] = payload.id
 
@@ -556,16 +570,46 @@ def create_food(session: Session, principal: PrincipalContext, payload: FoodCrea
     session.add(food)
     session.flush()
     _replace_classification(session, principal, food, payload)
-    session.commit()
-    session.refresh(food)
+    session.flush()
     return food
 
 
-def update_food(
-    session: Session, principal: PrincipalContext, food_id: UUID, payload: FoodUpdate
+def create_food(session: Session, principal: PrincipalContext, payload: FoodCreate) -> Food:
+    try:
+        food = _create_food_uncommitted(session, principal, payload)
+        session.commit()
+        session.refresh(food)
+        return food
+    except Exception:
+        session.rollback()
+        raise
+
+
+def create_food_response(
+    session: Session, principal: PrincipalContext, payload: FoodCreate
+) -> FoodResponse:
+    try:
+        food = _create_food_uncommitted(session, principal, payload)
+        response = to_food_response(session, principal, food)
+        response.model_dump_json()
+        session.commit()
+        return response
+    except Exception:
+        session.rollback()
+        raise
+
+
+def _update_food_uncommitted(
+    session: Session,
+    principal: PrincipalContext,
+    food_id: UUID,
+    payload: FoodUpdate,
+    *,
+    food: Food | None = None,
 ) -> Food:
-    _lock_food_namespace(session)
-    food = get_food_for_update(session, principal, food_id, include_archived=True)
+    if food is None:
+        _lock_food_namespace(session)
+        food = get_food_for_update(session, principal, food_id, include_archived=True)
     validated = _validated_update_data(session, principal, food, payload)
     data = _persistence_data(validated)
     ensure_not_duplicate(session, data, food_id=food.id)
@@ -576,19 +620,71 @@ def update_food(
     session.add(food)
     session.flush()
     _replace_classification(session, principal, food, validated)
-    session.commit()
-    session.refresh(food)
+    session.flush()
     return food
 
 
-def archive_food(session: Session, principal: PrincipalContext, food_id: UUID) -> Food:
+def update_food(
+    session: Session, principal: PrincipalContext, food_id: UUID, payload: FoodUpdate
+) -> Food:
+    try:
+        food = _update_food_uncommitted(session, principal, food_id, payload)
+        session.commit()
+        session.refresh(food)
+        return food
+    except Exception:
+        session.rollback()
+        raise
+
+
+def update_food_response(
+    session: Session, principal: PrincipalContext, food_id: UUID, payload: FoodUpdate
+) -> FoodResponse:
+    try:
+        food = _update_food_uncommitted(session, principal, food_id, payload)
+        response = to_food_response(session, principal, food)
+        response.model_dump_json()
+        session.commit()
+        return response
+    except Exception:
+        session.rollback()
+        raise
+
+
+def _archive_food_uncommitted(
+    session: Session, principal: PrincipalContext, food_id: UUID
+) -> Food:
     _lock_food_namespace(session)
     food = get_food_for_update(session, principal, food_id, include_archived=True)
     _archive_locked_food(principal, food)
     session.add(food)
-    session.commit()
-    session.refresh(food)
+    session.flush()
     return food
+
+
+def archive_food(session: Session, principal: PrincipalContext, food_id: UUID) -> Food:
+    try:
+        food = _archive_food_uncommitted(session, principal, food_id)
+        session.commit()
+        session.refresh(food)
+        return food
+    except Exception:
+        session.rollback()
+        raise
+
+
+def archive_food_response(
+    session: Session, principal: PrincipalContext, food_id: UUID
+) -> FoodResponse:
+    try:
+        food = _archive_food_uncommitted(session, principal, food_id)
+        response = to_food_response(session, principal, food)
+        response.model_dump_json()
+        session.commit()
+        return response
+    except Exception:
+        session.rollback()
+        raise
 
 
 def _archive_locked_food(
@@ -604,12 +700,12 @@ def _archive_locked_food(
     food.updated_at = utcnow()
 
 
-def restore_food(session: Session, principal: PrincipalContext, food_id: UUID) -> Food:
+def _restore_food_uncommitted(
+    session: Session, principal: PrincipalContext, food_id: UUID
+) -> Food:
     _lock_food_namespace(session)
     food = get_food_for_update(session, principal, food_id, include_archived=True)
     if _enum_value(food.status) == FoodStatus.active.value:
-        session.commit()
-        session.refresh(food)
         return food
     food.status = FoodStatus.active
     food.archived_at = None
@@ -617,9 +713,33 @@ def restore_food(session: Session, principal: PrincipalContext, food_id: UUID) -
     food.updated_by_principal_id = principal.principal_id
     food.updated_at = utcnow()
     session.add(food)
-    session.commit()
-    session.refresh(food)
+    session.flush()
     return food
+
+
+def restore_food(session: Session, principal: PrincipalContext, food_id: UUID) -> Food:
+    try:
+        food = _restore_food_uncommitted(session, principal, food_id)
+        session.commit()
+        session.refresh(food)
+        return food
+    except Exception:
+        session.rollback()
+        raise
+
+
+def restore_food_response(
+    session: Session, principal: PrincipalContext, food_id: UUID
+) -> FoodResponse:
+    try:
+        food = _restore_food_uncommitted(session, principal, food_id)
+        response = to_food_response(session, principal, food)
+        response.model_dump_json()
+        session.commit()
+        return response
+    except Exception:
+        session.rollback()
+        raise
 
 
 def delete_food(session: Session, principal: PrincipalContext, food_id: UUID) -> bool:

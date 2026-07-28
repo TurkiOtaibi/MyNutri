@@ -6,18 +6,30 @@ import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
+from psycopg.errors import CheckViolation, NumericValueOutOfRange
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlmodel import Session
 
 from app.core.auth import PrincipalContext
+from app.models import (
+    FOOD_GROUP_NUMERIC_COLUMNS,
+    FOOD_NUMERIC_COLUMNS,
+    DefaultUnitType,
+    Food,
+    FoodGroupContribution,
+    NutritionBasis,
+    Principal,
+    UnitBasis,
+)
 from app.schemas import ProfilePreview, TargetPlanActivationRequest
 from app.services.profile import to_target_response
 from app.services.target_plans import TargetPlanError, activate_plan
@@ -28,6 +40,13 @@ BASELINE_HASHES = {
     "0003_diary_meal_type.py": "3df7b5160cc393a7df1a5ef3765b318a228df23fc26908ec8ed338ac57168929",
 }
 DEPLOYMENT_PRINCIPAL = UUID("00000000-0000-0000-0000-000000000001")
+PLAN009_TIMESTAMP = datetime(2026, 7, 28, tzinfo=UTC)
+PLAN009_GROUP_NAN_CONSTRAINTS = frozenset(
+    {
+        "ck_food_group_contribution_amount",
+        "ck_food_group_contribution_amount_finite",
+    }
+)
 
 
 def _database_url() -> str:
@@ -141,7 +160,7 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "0014_v2_food_taxonomy"
+            "df46234d2a7e"
         )
     assert "principal" in inspector.get_table_names()
     for table in ("profile", "diary_entry"):
@@ -628,4 +647,329 @@ def test_concurrent_first_legacy_activations_create_one_snapshot_and_plan() -> N
         assert connection.execute(text("SELECT count(*) FROM legacy_target_transition_snapshots")).scalar_one() == 1
         assert connection.execute(text("SELECT count(*) FROM target_plan")).scalar_one() == 1
         assert connection.execute(text("SELECT count(*) FROM idempotency_record")).scalar_one() == 1
+    engine.dispose()
+
+
+def _seed_plan009_food(url: str) -> tuple[UUID, UUID]:
+    principal_id = uuid4()
+    food_id = uuid4()
+    engine = create_engine(url)
+    with Session(engine) as session:
+        session.add(Principal(id=principal_id))
+        session.flush()
+        session.add(
+            Food(
+                id=food_id,
+                principal_id=principal_id,
+                name="Plan 009 migration fixture",
+                normalized_name="plan 009 migration fixture",
+                food_category_key="other",
+                nutrition_basis=NutritionBasis.per_100g,
+                default_unit_type=DefaultUnitType.serving,
+                unit_amount=100,
+                unit_basis=UnitBasis.g,
+                calories=100,
+                protein_g=10,
+                carb_g=20,
+                fat_g=5,
+            )
+        )
+        session.commit()
+    engine.dispose()
+    return principal_id, food_id
+
+
+def _assert_plan009_special_value_failure(
+    error: DBAPIError,
+    special: str,
+    constraint_names: str | frozenset[str],
+) -> None:
+    if special == "NaN":
+        approved_names = (
+            frozenset({constraint_names})
+            if isinstance(constraint_names, str)
+            else constraint_names
+        )
+        assert isinstance(error.orig, CheckViolation)
+        assert error.orig.sqlstate == "23514"
+        assert error.orig.diag.constraint_name in approved_names
+        return
+    assert isinstance(error.orig, NumericValueOutOfRange)
+    assert error.orig.sqlstate == "22003"
+
+
+@pytest.mark.migration
+def test_plan009_existing_special_values_block_migration_with_field_counts() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "0014_v2_food_taxonomy")
+    _, food_id = _seed_plan009_food(url)
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text("UPDATE food SET calories = CAST('NaN' AS numeric) WHERE id = :food"),
+            {"food": food_id},
+        )
+
+    result = _run_alembic(url, "upgrade", "head", check=False)
+
+    assert result.returncode != 0
+    output = result.stdout + result.stderr
+    assert "Plan 009 cannot add finite Food constraints" in output
+    assert "food.calories" in output
+    assert "'1'" in output or ": 1" in output
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "head")
+    principal_id, food_id = _seed_plan009_food(url)
+    engine = create_engine(url)
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT constraint_record.conname,
+                       constraint_record.convalidated,
+                       constraint_record.conrelid::regclass::text AS table_name,
+                       pg_get_constraintdef(constraint_record.oid) AS definition,
+                       ARRAY(
+                           SELECT attribute.attname
+                           FROM pg_attribute AS attribute
+                           WHERE attribute.attrelid = constraint_record.conrelid
+                             AND attribute.attnum = ANY(constraint_record.conkey)
+                           ORDER BY attribute.attname
+                       ) AS column_names
+                FROM pg_constraint AS constraint_record
+                WHERE constraint_record.contype = 'c'
+                  AND constraint_record.conname IN (
+                      'ck_food_numeric_values_finite',
+                      'ck_food_group_contribution_amount_finite'
+                  )
+                ORDER BY constraint_record.conname
+                """
+            )
+        ).all()
+    constraints = {row.conname: row for row in rows}
+    assert set(constraints) == {
+        "ck_food_numeric_values_finite",
+        "ck_food_group_contribution_amount_finite",
+    }
+    expected_constraint_metadata = {
+        "ck_food_numeric_values_finite": ("food", set(FOOD_NUMERIC_COLUMNS)),
+        "ck_food_group_contribution_amount_finite": (
+            "food_group_contribution",
+            set(FOOD_GROUP_NUMERIC_COLUMNS),
+        ),
+    }
+    for constraint_name, (table_name, expected_columns) in (
+        expected_constraint_metadata.items()
+    ):
+        constraint = constraints[constraint_name]
+        assert constraint.convalidated is True
+        assert constraint.table_name == table_name
+        assert set(constraint.column_names) == expected_columns
+        for special in ("NaN", "Infinity", "-Infinity"):
+            assert constraint.definition.count(f"'{special}'::numeric") == len(
+                expected_columns
+            )
+
+    def insert_values(insert_id: UUID, name: str) -> dict[str, object]:
+        return {
+            "id": insert_id,
+            "created_by_principal_id": principal_id,
+            "updated_by_principal_id": principal_id,
+            "name": name,
+            "normalized_name": name.casefold(),
+            "food_category_key": "other",
+            "nutrition_basis": NutritionBasis.per_100g,
+            "default_unit_type": DefaultUnitType.serving,
+            "unit_amount": 100,
+            "unit_basis": UnitBasis.g,
+            "calories": 100,
+            "protein_g": 10,
+            "carb_g": 20,
+            "fat_g": 5,
+            "created_at": PLAN009_TIMESTAMP,
+            "updated_at": PLAN009_TIMESTAMP,
+        }
+
+    for field in ("calories", "fiber_g"):
+        for special in ("NaN", "Infinity", "-Infinity"):
+            rejected_id = uuid4()
+            values = insert_values(rejected_id, f"Rejected {field} {special}")
+            values[field] = Decimal(special)
+            with pytest.raises(DBAPIError) as rejected:
+                with engine.begin() as connection:
+                    connection.execute(Food.__table__.insert().values(**values))
+            _assert_plan009_special_value_failure(
+                rejected.value, special, "ck_food_numeric_values_finite"
+            )
+            with engine.connect() as connection:
+                assert connection.execute(
+                    text("SELECT count(*) FROM food WHERE id = :food"),
+                    {"food": rejected_id},
+                ).scalar_one() == 0
+
+    for field in FOOD_NUMERIC_COLUMNS:
+        with engine.connect() as connection:
+            original = connection.execute(
+                text(f"SELECT {field} FROM food WHERE id = :food"),
+                {"food": food_id},
+            ).one()[0]
+        for special in ("NaN", "Infinity", "-Infinity"):
+            with pytest.raises(DBAPIError) as rejected:
+                with engine.begin() as connection:
+                    connection.execute(
+                        text(
+                            f"UPDATE food SET {field} = CAST(:special AS numeric) "
+                            "WHERE id = :food"
+                        ),
+                        {"special": special, "food": food_id},
+                    )
+            _assert_plan009_special_value_failure(
+                rejected.value, special, "ck_food_numeric_values_finite"
+            )
+            with engine.connect() as connection:
+                assert connection.execute(
+                    text(f"SELECT {field} FROM food WHERE id = :food"),
+                    {"food": food_id},
+                ).one()[0] == original
+
+    contribution_id = uuid4()
+    with Session(engine) as session:
+        session.add(
+            FoodGroupContribution(
+                id=contribution_id,
+                principal_id=principal_id,
+                food_id=food_id,
+                group_key="fruits",
+                amount_per_100_basis=100,
+                data_status="known",
+                food_group_rules_version="1.0.0",
+            )
+        )
+        session.commit()
+    for special in ("NaN", "Infinity", "-Infinity"):
+        with pytest.raises(DBAPIError) as rejected:
+            with engine.begin() as connection:
+                connection.execute(
+                    FoodGroupContribution.__table__.insert().values(
+                        id=uuid4(),
+                        created_by_principal_id=principal_id,
+                        food_id=food_id,
+                        group_key="vegetables",
+                        amount_per_100_basis=Decimal(special),
+                        data_status="known",
+                        food_group_rules_version="1.0.0",
+                        created_at=PLAN009_TIMESTAMP,
+                        updated_at=PLAN009_TIMESTAMP,
+                    )
+                )
+        _assert_plan009_special_value_failure(
+            rejected.value, special, PLAN009_GROUP_NAN_CONSTRAINTS
+        )
+        with engine.connect() as connection:
+            assert connection.execute(
+                text(
+                    "SELECT count(*) FROM food_group_contribution "
+                    "WHERE food_id = :food AND group_key = 'vegetables'"
+                ),
+                {"food": food_id},
+            ).scalar_one() == 0
+    for special in ("NaN", "Infinity", "-Infinity"):
+        with pytest.raises(DBAPIError) as rejected:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "UPDATE food_group_contribution "
+                        "SET amount_per_100_basis = CAST(:special AS numeric) WHERE id = :id"
+                    ),
+                    {"special": special, "id": contribution_id},
+                )
+        _assert_plan009_special_value_failure(
+            rejected.value, special, PLAN009_GROUP_NAN_CONSTRAINTS
+        )
+        with engine.connect() as connection:
+            assert connection.execute(
+                text(
+                    "SELECT amount_per_100_basis FROM food_group_contribution WHERE id = :id"
+                ),
+                {"id": contribution_id},
+            ).scalar_one() == Decimal("100.000")
+
+    maximum_food_id = uuid4()
+    maximum_values = insert_values(maximum_food_id, "Accepted schema maxima")
+    maximum_values.update(
+        unit_amount=2000,
+        calories=3000,
+        protein_g=300,
+        carb_g=500,
+        fat_g=300,
+        fiber_g=100,
+        sodium_mg=50000,
+        vitamin_d_mcg=250,
+        sugar_g=0,
+    )
+    with engine.begin() as connection:
+        connection.execute(Food.__table__.insert().values(**maximum_values))
+        connection.execute(
+            FoodGroupContribution.__table__.insert().values(
+                id=uuid4(),
+                created_by_principal_id=principal_id,
+                food_id=maximum_food_id,
+                group_key="fruits",
+                amount_per_100_basis=100,
+                data_status="known",
+                food_group_rules_version="1.0.0",
+                created_at=PLAN009_TIMESTAMP,
+                updated_at=PLAN009_TIMESTAMP,
+            )
+        )
+        before = connection.execute(
+            text(
+                "SELECT unit_amount, calories, protein_g, carb_g, fat_g, "
+                "fiber_g, sodium_mg, vitamin_d_mcg, sugar_g "
+                "FROM food WHERE id = :food"
+            ),
+            {"food": maximum_food_id},
+        ).one()
+
+    _run_alembic(url, "downgrade", "0014_v2_food_taxonomy")
+    with engine.connect() as connection:
+        during = connection.execute(
+            text(
+                "SELECT unit_amount, calories, protein_g, carb_g, fat_g, "
+                "fiber_g, sodium_mg, vitamin_d_mcg, sugar_g "
+                "FROM food WHERE id = :food"
+            ),
+            {"food": maximum_food_id},
+        ).one()
+    _run_alembic(url, "upgrade", "head")
+    with engine.connect() as connection:
+        after = connection.execute(
+            text(
+                "SELECT unit_amount, calories, protein_g, carb_g, fat_g, "
+                "fiber_g, sodium_mg, vitamin_d_mcg, sugar_g "
+                "FROM food WHERE id = :food"
+            ),
+            {"food": maximum_food_id},
+        ).one()
+
+    assert before == during == after
+    assert tuple(before) == (
+        Decimal("2000.00"),
+        Decimal("3000.00"),
+        Decimal("300.00"),
+        Decimal("500.00"),
+        Decimal("300.00"),
+        Decimal("100.00"),
+        Decimal("50000.00"),
+        Decimal("250.00"),
+        Decimal("0.00"),
+    )
     engine.dispose()

@@ -1,5 +1,6 @@
 from copy import deepcopy
 from datetime import date
+from typing import get_args
 from uuid import UUID
 
 import pytest
@@ -29,7 +30,17 @@ from app.models import (
 )
 from app.schemas import DiaryEntryCreate, DiaryEntryUpdate
 from app.services.diary import create_entry, make_snapshot, to_entry_response, update_entry
-from app.services.snapshot import read_snapshot_v2
+from app.services.snapshot import (
+    SnapshotGroupContribution,
+    SNAPSHOT_GROUP_NUMERIC_FIELDS,
+    SNAPSHOT_NUTRITION_NUMERIC_FIELDS,
+    SNAPSHOT_UNIT_NUMERIC_FIELDS,
+    SnapshotNutrition,
+    SnapshotUnit,
+    WAVE1_NUTRIENTS,
+    read_snapshot_v2,
+    read_snapshot_v3,
+)
 
 PRINCIPAL_ID = UUID("00000000-0000-0000-0000-000000000001")
 PRINCIPAL = PrincipalContext(PRINCIPAL_ID)
@@ -188,3 +199,55 @@ def test_snapshot_readers_reject_unknown_or_malformed_data() -> None:
     with pytest.raises(HTTPException) as malformed_error:
         to_entry_response(malformed)
     assert malformed_error.value.detail["code"] == "INVALID_DIARY_SNAPSHOT_DATA"
+
+
+def test_plan009_snapshot_numeric_registry_is_exhaustive() -> None:
+    def direct_float_fields(model) -> set[str]:
+        return {
+            name
+            for name, field in model.model_fields.items()
+            if field.annotation is float or float in get_args(field.annotation)
+        }
+
+    assert set(SNAPSHOT_NUTRITION_NUMERIC_FIELDS) == direct_float_fields(
+        SnapshotNutrition
+    )
+    assert set(SNAPSHOT_UNIT_NUMERIC_FIELDS) == direct_float_fields(SnapshotUnit)
+    assert set(SNAPSHOT_GROUP_NUMERIC_FIELDS) == direct_float_fields(
+        SnapshotGroupContribution
+    )
+    assert SNAPSHOT_NUTRITION_NUMERIC_FIELDS == (
+        "calories",
+        "protein_g",
+        "carb_g",
+        "fat_g",
+        *WAVE1_NUTRIENTS,
+    )
+
+
+@pytest.mark.parametrize("constant", [float("nan"), float("inf"), float("-inf")])
+def test_plan009_snapshot_readers_fail_closed_on_non_finite_values(
+    snapshot_session, constant: float
+) -> None:
+    food = _food()
+    snapshot_session.add(food)
+    snapshot_session.commit()
+    entry = create_entry(
+        snapshot_session,
+        PRINCIPAL,
+        DiaryEntryCreate(
+            entry_date=date(2026, 7, 16),
+            food_id=food.id,
+            quantity=1,
+            meal_type=MealType.breakfast,
+        ),
+        snapshot_v3_writer_enabled=True,
+    )
+    document = deepcopy(entry.nutrition_snapshot)
+    document["nutrition"]["calories"] = constant
+
+    with pytest.raises(HTTPException) as invalid:
+        read_snapshot_v3(document)
+
+    assert invalid.value.status_code == 409
+    assert invalid.value.detail["code"] == "INVALID_DIARY_SNAPSHOT_DATA"
