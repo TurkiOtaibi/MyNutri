@@ -193,49 +193,51 @@ def to_food_response(session: Session, principal: PrincipalContext, food: Food) 
     )
     try:
         return FoodResponse(
-        id=food.id,
-        **_food_data(food),
-        status=food.status,
-        group_data_status=derived_status,
-        group_data_completeness=derived_completeness,
-        taxonomy_review_required=food.taxonomy_review_required,
-        nutrition_source={
-            "type": food.nutrition_source_type,
-            "name": food.nutrition_source_name,
-            "reference": food.nutrition_source_reference,
-            "reliability": SOURCE_RELIABILITY_MAP[_enum_value(food.nutrition_source_type)],
-            "reliability_rules_version": VERSIONS.source_reliability_rules_version,
-        },
-        ingredients={
-            "text": food.ingredients_text,
-            "source_type": food.ingredients_source_type,
-            "source_name": food.ingredients_source_name,
-            "source_reference": food.ingredients_source_reference,
-        },
-        nova={
-            "classification": food.nova_classification,
-            "review_status": food.nova_review_status,
-            "rules_version": VERSIONS.nova_rules_version,
-        },
-        group_contributions=[
-            {
-                "group_key": item.group_key,
-                "subtype_key": item.subtype_key,
-                "amount_per_100_basis": float(item.amount_per_100_basis),
-                "data_status": item.data_status,
-                "food_group_rules_version": item.food_group_rules_version,
-            }
-            for item in contributions
-        ],
-        analytical_traits=[item.trait_key for item in traits],
-        legacy_nutrition={
-            "folate_mcg": _float_or_none(food.folate_mcg),
-            "vitamin_a_mcg": _float_or_none(food.vitamin_a_mcg),
-        },
-        net_carbs_g=net_carbs(food),
-        created_at=food.created_at,
-        updated_at=food.updated_at,
-        archived_at=food.archived_at,
+            id=food.id,
+            **_food_data(food),
+            status=food.status,
+            group_data_status=derived_status,
+            group_data_completeness=derived_completeness,
+            taxonomy_review_required=food.taxonomy_review_required,
+            nutrition_source={
+                "type": food.nutrition_source_type,
+                "name": food.nutrition_source_name,
+                "reference": food.nutrition_source_reference,
+                "reliability": SOURCE_RELIABILITY_MAP[
+                    _enum_value(food.nutrition_source_type)
+                ],
+                "reliability_rules_version": VERSIONS.source_reliability_rules_version,
+            },
+            ingredients={
+                "text": food.ingredients_text,
+                "source_type": food.ingredients_source_type,
+                "source_name": food.ingredients_source_name,
+                "source_reference": food.ingredients_source_reference,
+            },
+            nova={
+                "classification": food.nova_classification,
+                "review_status": food.nova_review_status,
+                "rules_version": VERSIONS.nova_rules_version,
+            },
+            group_contributions=[
+                {
+                    "group_key": item.group_key,
+                    "subtype_key": item.subtype_key,
+                    "amount_per_100_basis": float(item.amount_per_100_basis),
+                    "data_status": item.data_status,
+                    "food_group_rules_version": item.food_group_rules_version,
+                }
+                for item in contributions
+            ],
+            analytical_traits=[item.trait_key for item in traits],
+            legacy_nutrition={
+                "folate_mcg": _float_or_none(food.folate_mcg),
+                "vitamin_a_mcg": _float_or_none(food.vitamin_a_mcg),
+            },
+            net_carbs_g=net_carbs(food),
+            created_at=food.created_at,
+            updated_at=food.updated_at,
+            archived_at=food.archived_at,
         )
     except ValidationError as error:
         raise HTTPException(

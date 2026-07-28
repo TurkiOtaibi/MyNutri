@@ -7,6 +7,7 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from threading import Barrier
 from uuid import UUID, uuid4
@@ -699,9 +700,36 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
     principal_id, food_id = _seed_plan009_food(url)
     engine = create_engine(url)
 
+    def insert_values(insert_id: UUID, name: str) -> dict[str, object]:
+        return {
+            "id": insert_id,
+            "created_by_principal_id": principal_id,
+            "updated_by_principal_id": principal_id,
+            "name": name,
+            "normalized_name": name.casefold(),
+            "food_category_key": "other",
+            "nutrition_basis": NutritionBasis.per_100g,
+            "default_unit_type": DefaultUnitType.serving,
+            "unit_amount": 100,
+            "unit_basis": UnitBasis.g,
+            "calories": 100,
+            "protein_g": 10,
+            "carb_g": 20,
+            "fat_g": 5,
+        }
+
+    for field in ("calories", "fiber_g"):
+        for special in ("NaN", "Infinity", "-Infinity"):
+            values = insert_values(uuid4(), f"Rejected {field} {special}")
+            values[field] = Decimal(special)
+            with pytest.raises(DBAPIError) as rejected:
+                with engine.begin() as connection:
+                    connection.execute(Food.__table__.insert().values(**values))
+            assert "ck_food_numeric_values_finite" in str(rejected.value)
+
     for field in FOOD_NUMERIC_COLUMNS:
         for special in ("NaN", "Infinity", "-Infinity"):
-            with pytest.raises(DBAPIError):
+            with pytest.raises(DBAPIError) as rejected:
                 with engine.begin() as connection:
                     connection.execute(
                         text(
@@ -710,6 +738,7 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
                         ),
                         {"special": special, "food": food_id},
                     )
+            assert "ck_food_numeric_values_finite" in str(rejected.value)
 
     contribution_id = uuid4()
     with Session(engine) as session:
@@ -726,7 +755,22 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
         )
         session.commit()
     for special in ("NaN", "Infinity", "-Infinity"):
-        with pytest.raises(DBAPIError):
+        with pytest.raises(DBAPIError) as rejected:
+            with engine.begin() as connection:
+                connection.execute(
+                    FoodGroupContribution.__table__.insert().values(
+                        id=uuid4(),
+                        created_by_principal_id=principal_id,
+                        food_id=food_id,
+                        group_key="vegetables",
+                        amount_per_100_basis=Decimal(special),
+                        data_status="known",
+                        food_group_rules_version="1.0.0",
+                    )
+                )
+        assert "ck_food_group_contribution_amount_finite" in str(rejected.value)
+    for special in ("NaN", "Infinity", "-Infinity"):
+        with pytest.raises(DBAPIError) as rejected:
             with engine.begin() as connection:
                 connection.execute(
                     text(
@@ -735,38 +779,74 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
                     ),
                     {"special": special, "id": contribution_id},
                 )
+        assert "ck_food_group_contribution_amount_finite" in str(rejected.value)
 
+    maximum_food_id = uuid4()
+    maximum_values = insert_values(maximum_food_id, "Accepted schema maxima")
+    maximum_values.update(
+        unit_amount=2000,
+        calories=3000,
+        protein_g=300,
+        carb_g=500,
+        fat_g=300,
+        fiber_g=100,
+        sodium_mg=50000,
+        vitamin_d_mcg=250,
+        sugar_g=0,
+    )
     with engine.begin() as connection:
+        connection.execute(Food.__table__.insert().values(**maximum_values))
         connection.execute(
-            text(
-                "UPDATE food SET fiber_g = NULL, sugar_g = 0, calories = 0 "
-                "WHERE id = :food"
-            ),
-            {"food": food_id},
+            FoodGroupContribution.__table__.insert().values(
+                id=uuid4(),
+                created_by_principal_id=principal_id,
+                food_id=maximum_food_id,
+                group_key="fruits",
+                amount_per_100_basis=100,
+                data_status="known",
+                food_group_rules_version="1.0.0",
+            )
         )
         before = connection.execute(
             text(
-                "SELECT calories, fiber_g, sugar_g FROM food WHERE id = :food"
+                "SELECT unit_amount, calories, protein_g, carb_g, fat_g, "
+                "fiber_g, sodium_mg, vitamin_d_mcg, sugar_g "
+                "FROM food WHERE id = :food"
             ),
-            {"food": food_id},
+            {"food": maximum_food_id},
         ).one()
 
     _run_alembic(url, "downgrade", "0014_v2_food_taxonomy")
     with engine.connect() as connection:
         during = connection.execute(
             text(
-                "SELECT calories, fiber_g, sugar_g FROM food WHERE id = :food"
+                "SELECT unit_amount, calories, protein_g, carb_g, fat_g, "
+                "fiber_g, sodium_mg, vitamin_d_mcg, sugar_g "
+                "FROM food WHERE id = :food"
             ),
-            {"food": food_id},
+            {"food": maximum_food_id},
         ).one()
     _run_alembic(url, "upgrade", "head")
     with engine.connect() as connection:
         after = connection.execute(
             text(
-                "SELECT calories, fiber_g, sugar_g FROM food WHERE id = :food"
+                "SELECT unit_amount, calories, protein_g, carb_g, fat_g, "
+                "fiber_g, sodium_mg, vitamin_d_mcg, sugar_g "
+                "FROM food WHERE id = :food"
             ),
-            {"food": food_id},
+            {"food": maximum_food_id},
         ).one()
 
     assert before == during == after
+    assert tuple(before) == (
+        Decimal("2000.00"),
+        Decimal("3000.00"),
+        Decimal("300.00"),
+        Decimal("500.00"),
+        Decimal("300.00"),
+        Decimal("100.00"),
+        Decimal("50000.00"),
+        Decimal("250.00"),
+        Decimal("0.00"),
+    )
     engine.dispose()

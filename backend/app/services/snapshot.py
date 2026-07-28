@@ -28,6 +28,15 @@ WAVE1_NUTRIENTS = (
     "vitamin_a_rae_mcg",
     "iodine_mcg",
 )
+SNAPSHOT_NUTRITION_NUMERIC_FIELDS = (
+    "calories",
+    "protein_g",
+    "carb_g",
+    "fat_g",
+    *WAVE1_NUTRIENTS,
+)
+SNAPSHOT_UNIT_NUMERIC_FIELDS = ("unit_amount",)
+SNAPSHOT_GROUP_NUMERIC_FIELDS = ("amount_per_captured_unit",)
 
 PrimaryCategory = Literal[
     "vegetables",

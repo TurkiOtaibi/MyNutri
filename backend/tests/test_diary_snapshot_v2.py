@@ -1,5 +1,6 @@
 from copy import deepcopy
 from datetime import date
+from typing import get_args
 from uuid import UUID
 
 import pytest
@@ -31,6 +32,9 @@ from app.schemas import DiaryEntryCreate, DiaryEntryUpdate
 from app.services.diary import create_entry, make_snapshot, to_entry_response, update_entry
 from app.services.snapshot import (
     SnapshotGroupContribution,
+    SNAPSHOT_GROUP_NUMERIC_FIELDS,
+    SNAPSHOT_NUTRITION_NUMERIC_FIELDS,
+    SNAPSHOT_UNIT_NUMERIC_FIELDS,
     SnapshotNutrition,
     SnapshotUnit,
     WAVE1_NUTRIENTS,
@@ -198,15 +202,27 @@ def test_snapshot_readers_reject_unknown_or_malformed_data() -> None:
 
 
 def test_plan009_snapshot_numeric_registry_is_exhaustive() -> None:
-    assert set(SnapshotNutrition.model_fields) == {
+    def direct_float_fields(model) -> set[str]:
+        return {
+            name
+            for name, field in model.model_fields.items()
+            if field.annotation is float or float in get_args(field.annotation)
+        }
+
+    assert set(SNAPSHOT_NUTRITION_NUMERIC_FIELDS) == direct_float_fields(
+        SnapshotNutrition
+    )
+    assert set(SNAPSHOT_UNIT_NUMERIC_FIELDS) == direct_float_fields(SnapshotUnit)
+    assert set(SNAPSHOT_GROUP_NUMERIC_FIELDS) == direct_float_fields(
+        SnapshotGroupContribution
+    )
+    assert SNAPSHOT_NUTRITION_NUMERIC_FIELDS == (
         "calories",
         "protein_g",
         "carb_g",
         "fat_g",
         *WAVE1_NUTRIENTS,
-    }
-    assert {"unit_amount"} <= set(SnapshotUnit.model_fields)
-    assert {"amount_per_captured_unit"} <= set(SnapshotGroupContribution.model_fields)
+    )
 
 
 @pytest.mark.parametrize("constant", [float("nan"), float("inf"), float("-inf")])

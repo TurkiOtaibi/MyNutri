@@ -1,11 +1,13 @@
 import json
 from datetime import date
+from typing import get_args
 from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from sqlalchemy import Numeric
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -28,8 +30,10 @@ from app.models import (
 from app.schemas import (
     FOOD_GROUP_NUMERIC_FIELDS,
     FOOD_NUMERIC_FIELDS,
+    FOOD_RESPONSE_DERIVED_NUMERIC_FIELDS,
     OPTIONAL_NUTRIENT_MAX,
     FoodCreate,
+    FoodGroupContributionInput,
     FoodResponse,
     FoodUpdate,
 )
@@ -801,12 +805,35 @@ def test_legacy_category_is_not_part_of_v2_food_contract(api_client: TestClient)
 
 
 def test_plan009_numeric_registry_matches_schema_and_database_models() -> None:
-    assert set(FOOD_NUMERIC_FIELDS) == set(FOOD_NUMERIC_COLUMNS)
-    assert set(FOOD_GROUP_NUMERIC_FIELDS) == set(FOOD_GROUP_NUMERIC_COLUMNS)
-    assert set(FOOD_NUMERIC_FIELDS) <= set(FoodCreate.model_fields)
-    assert set(FOOD_NUMERIC_FIELDS) <= set(FoodUpdate.model_fields)
-    assert set(FOOD_NUMERIC_FIELDS) <= set(FoodResponse.model_fields)
-    assert set(FOOD_NUMERIC_FIELDS) <= set(Food.__table__.columns.keys())
+    def direct_float_fields(model) -> set[str]:
+        return {
+            name
+            for name, field in model.model_fields.items()
+            if field.annotation is float or float in get_args(field.annotation)
+        }
+
+    food_numeric_columns = {
+        column.name
+        for column in Food.__table__.columns
+        if isinstance(column.type, Numeric)
+    }
+    group_numeric_columns = {
+        column.name
+        for column in FoodGroupContribution.__table__.columns
+        if isinstance(column.type, Numeric)
+    }
+
+    assert set(FOOD_NUMERIC_COLUMNS) == food_numeric_columns
+    assert set(FOOD_GROUP_NUMERIC_COLUMNS) == group_numeric_columns
+    assert set(FOOD_GROUP_NUMERIC_FIELDS) == group_numeric_columns
+    assert set(FOOD_GROUP_NUMERIC_FIELDS) == direct_float_fields(
+        FoodGroupContributionInput
+    )
+    assert set(FOOD_NUMERIC_FIELDS) == direct_float_fields(FoodCreate)
+    assert set(FOOD_NUMERIC_FIELDS) == direct_float_fields(FoodUpdate)
+    assert set(FOOD_NUMERIC_FIELDS) | set(
+        FOOD_RESPONSE_DERIVED_NUMERIC_FIELDS
+    ) == direct_float_fields(FoodResponse)
 
 
 @pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
