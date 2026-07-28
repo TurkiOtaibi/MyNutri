@@ -36,5 +36,9 @@ def current_diary_date(now: datetime | None = None) -> date:
     return diary_calendar_authority(now).current_diary_date
 
 
+def following_diary_date(current_date: date) -> date:
+    return current_date + timedelta(days=1)
+
+
 def next_diary_date(now: datetime | None = None) -> date:
-    return current_diary_date(now) + timedelta(days=1)
+    return following_diary_date(current_diary_date(now))

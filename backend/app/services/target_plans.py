@@ -13,7 +13,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
-from app.core.calendar import current_diary_date, next_diary_date
+from app.core.calendar import (
+    current_diary_date,
+    diary_calendar_authority,
+    following_diary_date,
+)
 from app.models import (
     IdempotencyRecord,
     IdempotencyState,
@@ -196,6 +200,8 @@ def activate_plan(
             .where(Profile.principal_id == principal.principal_id)
             .with_for_update()
         ).first()
+        authority = diary_calendar_authority()
+        today = authority.current_diary_date
         existing_record = session.exec(
             select(IdempotencyRecord).where(
                 IdempotencyRecord.principal_id == principal.principal_id,
@@ -208,7 +214,6 @@ def activate_plan(
             session.rollback()
             return replay, True
 
-        today = current_diary_date()
         _advance_lifecycle(session, principal.principal_id, today)
         plans = session.exec(
             select(TargetPlan).where(TargetPlan.principal_id == principal.principal_id)
@@ -225,7 +230,9 @@ def activate_plan(
             session.add(profile)
             session.flush()
 
-        effective_from = today if was_new_profile and not plans else next_diary_date()
+        effective_from = (
+            today if was_new_profile and not plans else following_diary_date(today)
+        )
         targets = to_target_response(payload, effective_from)
         if targets.preview_hash != payload.expected_preview_hash:
             raise TargetPlanError("PREVIEW_RESULT_CHANGED", 409, "تغيّرت نتيجة المعاينة؛ راجعها ثم أكد مجددًا.")
