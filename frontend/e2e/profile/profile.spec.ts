@@ -86,6 +86,28 @@ function activationPlan(profile: ProfileResponse, targets: TargetResponse) {
       };
 }
 
+function plan011ActivationPlan(profile: ProfileResponse, targets: TargetResponse) {
+  return {
+    ...activationPlan(profile, targets),
+    id: "00000000-0000-4000-8000-000000000011",
+    targets
+  };
+}
+
+async function mockPlan011Preview(page: Page, originalProfile: ProfileResponse): Promise<TargetResponse> {
+  const targets: TargetResponse = {
+    ...originalProfile.targets,
+    calories: 1777,
+    preview_hash: "plan011-preview-hash",
+    can_activate: true,
+    safety_outcome: "normal"
+  };
+  await page.route(previewPath, (route) => route.request().method() === "POST"
+    ? route.fulfill({ status: 200, contentType: "application/json", json: targets })
+    : route.continue());
+  return targets;
+}
+
 function inputFrom(profile: ProfileResponse): ProfileInput {
   return {
     sex: profile.sex,
@@ -343,7 +365,7 @@ test.describe("@profile Profile and targets redesign", () => {
     expect(stored.fat_pct).toBe(0.15);
   });
 
-  test("@p0 preview uses server result, stays distinct, and save adopts confirmed response", async ({ page, originalProfile }) => {
+  test("@p0 @plan011 successful activation adopts the accepted response", async ({ page, originalProfile }) => {
     await page.goto("/profile");
     const nextWeight = originalProfile.weight_kg + 1;
     let previewRequests = 0;
@@ -359,11 +381,156 @@ test.describe("@profile Profile and targets redesign", () => {
     const save = page.getByRole("button", { name: "مراجعة وتأكيد" });
     await save.click();
     const confirmation = page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ });
-    await confirmation.getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).dblclick();
+    await confirmation.getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).evaluate((element) => {
+      const button = element as HTMLButtonElement;
+      button.click();
+      button.click();
+    });
     await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
     expect(activationRequests).toBe(1);
     await expect(page.locator(".profile-save-bar")).toHaveCount(0);
     await expect(preview).toHaveCount(0);
+  });
+
+  test("@plan011 pending activation is non-dismissible and sends one request", async ({ page, originalProfile }) => {
+    const targets = await mockPlan011Preview(page, originalProfile);
+    let activationRequests = 0;
+    let releaseActivation!: () => void;
+    const activationGate = new Promise<void>((resolve) => { releaseActivation = resolve; });
+    await page.route(activationPath, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      activationRequests += 1;
+      await activationGate;
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        json: { plan: plan011ActivationPlan(originalProfile, targets), replaced_plan: null }
+      });
+    });
+
+    await page.goto("/profile?plan011-pending=1");
+    await changedWeight(page, originalProfile);
+    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+    const dialog = page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ });
+    const confirm = dialog.getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ });
+    await confirm.evaluate((element) => {
+      const button = element as HTMLButtonElement;
+      button.click();
+      button.click();
+    });
+    await expect.poll(() => activationRequests).toBe(1);
+    await expect(dialog).toHaveAttribute("aria-busy", "true");
+    await expect(dialog).toBeFocused();
+    await expect(dialog.getByRole("button", { name: /إغلاق/ })).toBeDisabled();
+    await expect(dialog.getByRole("button", { name: "متابعة المراجعة" })).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await page.locator(".profile-sheet-backdrop").dispatchEvent("mousedown");
+    await expect(dialog).toBeVisible();
+    expect(activationRequests).toBe(1);
+
+    releaseActivation();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
+  });
+
+  for (const reconciliation of ["error", "empty", "stale"] as const) {
+    test(`@plan011 accepted activation survives ${reconciliation} Profile reconciliation`, async ({ page, originalProfile }) => {
+      const targets = await mockPlan011Preview(page, originalProfile);
+      const acceptedPlan = plan011ActivationPlan(originalProfile, targets);
+      let accepted = false;
+      let allowFresh = false;
+      let acceptedPayload: ProfileInput | null = null;
+      let activationRequests = 0;
+      await page.route(profilePath, (route) => {
+        if (route.request().method() !== "GET" || route.request().resourceType() !== "fetch") return route.continue();
+        if (!accepted) {
+          return route.fulfill({ status: 200, contentType: "application/json", json: originalProfile });
+        }
+        if (allowFresh) {
+          return route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            json: {
+              ...originalProfile,
+              ...acceptedPayload,
+              targets,
+              pending_plan: acceptedPlan
+            }
+          });
+        }
+        if (reconciliation === "error") {
+          return route.fulfill({ status: 500, contentType: "application/json", json: { detail: "unavailable" } });
+        }
+        if (reconciliation === "empty") {
+          return route.fulfill({ status: 404, contentType: "application/json", json: { detail: "not found" } });
+        }
+        return route.fulfill({ status: 200, contentType: "application/json", json: originalProfile });
+      });
+      await page.route(activationPath, async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        activationRequests += 1;
+        acceptedPayload = route.request().postDataJSON() as ProfileInput;
+        accepted = true;
+        await route.fulfill({
+          status: 201,
+          contentType: "application/json",
+          json: { plan: acceptedPlan, replaced_plan: null }
+        });
+      });
+
+      await page.goto(`/profile?plan011-reconciliation=${reconciliation}`);
+      const acceptedWeight = await changedWeight(page, originalProfile);
+      await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+      await page.getByRole("dialog").getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+
+      const recovery = page.getByRole("status").filter({ hasText: "تعذر تحديث البيانات المعروضة" });
+      await expect(recovery).toBeVisible();
+      await expect(recovery.getByRole("button", { name: "إعادة تحديث البيانات" })).toBeEnabled();
+      await expect(page.getByLabel("الوزن")).toHaveValue(acceptedWeight);
+      await expect(page.getByLabel("الوزن")).toBeEnabled();
+      await expect(page.getByRole("region", { name: "الأهداف اليومية" })).toContainText("1777");
+      await expect(page.locator(".profile-save-bar")).toHaveCount(0);
+      expect(activationRequests).toBe(1);
+      if (reconciliation === "stale") {
+        allowFresh = true;
+        await recovery.getByRole("button", { name: "إعادة تحديث البيانات" }).click();
+        await expect(recovery).toHaveCount(0);
+        await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
+        expect(activationRequests).toBe(1);
+      }
+    });
+  }
+
+  test("@plan011 first Profile activation retains accepted truth when reconciliation is empty", async ({ page, originalProfile }) => {
+    const targets = await mockPlan011Preview(page, originalProfile);
+    const acceptedPlan = plan011ActivationPlan(originalProfile, targets);
+    let activationRequests = 0;
+    await page.route(profilePath, (route) =>
+      route.request().method() === "GET" && route.request().resourceType() === "fetch"
+        ? route.fulfill({ status: 404, contentType: "application/json", json: { detail: "not found" } })
+        : route.continue()
+    );
+    await page.route(activationPath, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      activationRequests += 1;
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        json: { plan: acceptedPlan, replaced_plan: null }
+      });
+    });
+
+    await page.goto("/profile?plan011-first-profile=1");
+    await page.getByLabel("تاريخ الميلاد").fill("1990-01-01");
+    await page.getByLabel("الطول").fill("170");
+    await page.getByLabel("الوزن").fill("70");
+    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+
+    await expect(page.getByRole("status").filter({ hasText: "تعذر تحديث البيانات المعروضة" })).toBeVisible();
+    await expect(page.getByLabel("الوزن")).toHaveValue("70");
+    await expect(page.getByRole("region", { name: "الأهداف اليومية" })).toContainText("1777");
+    expect(activationRequests).toBe(1);
   });
 
   test("@p0 cut intensity survives edits and activation payloads", async ({ page, originalProfile }) => {
@@ -717,13 +884,15 @@ test.describe("@profile Profile and targets redesign", () => {
     }
   });
 
-  test("@p0 save failure preserves draft and Retry succeeds", async ({ page, originalProfile }) => {
+  test("@p0 @plan011 pre-accept failure preserves draft and Retry reuses the key", async ({ page, originalProfile }) => {
     await page.goto("/profile");
     const nextHeight = originalProfile.height_cm + 1;
     await page.getByLabel("الطول").fill(String(nextHeight));
     let fail = true;
+    const idempotencyKeys: string[] = [];
     await page.route("**/target-plans/**", async (route) => {
       if (route.request().method() !== "POST") return route.continue();
+      idempotencyKeys.push(route.request().headers()["idempotency-key"]);
       if (fail) return route.abort("failed");
       return route.continue();
     });
@@ -735,6 +904,8 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.getByRole("button", { name: "إعادة المحاولة" }).click();
     await page.getByRole("dialog").getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
     await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
+    expect(idempotencyKeys).toHaveLength(2);
+    expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
   });
 
   test("@p0 navigation guard preserves or discards dirty draft", async ({ page, originalProfile }) => {

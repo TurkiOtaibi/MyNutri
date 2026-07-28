@@ -17,7 +17,7 @@ import {
   UserRound,
   X
 } from "lucide-react";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
   type FormEvent,
@@ -32,7 +32,7 @@ import {
 import { ApiError, activateTargetPlan, getCalendarAuthority, getNutritionRegistry, getProfile, listTargetPlanHistory, previewProfile, replacePendingTargetPlan } from "@/lib/api";
 import { activityLabels, goalLabels, sexLabels } from "@/lib/labels";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels } from "@/lib/nutrients";
-import type { ActivityLevel, CutIntensity, Goal, NutritionRegistryResponse, ProfileInput, ProfileResponse, Sex, TargetPlanSummary, TargetResponse } from "@/lib/types";
+import type { ActivityLevel, CutIntensity, Goal, NutritionRegistryResponse, ProfileInput, ProfileResponse, Sex, TargetPlanActivationResponse, TargetPlanSummary, TargetResponse } from "@/lib/types";
 import { useAuth } from "./AuthProvider";
 import { useSessionAbortSignal } from "./SessionQueryProvider";
 
@@ -98,6 +98,20 @@ type DraftProfile = {
 type ProfileField = keyof DraftProfile;
 type FieldErrors = Partial<Record<ProfileField, string>>;
 type SheetKind = "sex" | "activity" | "goal" | "calculation" | null;
+type ActivationSubmission = {
+  payload: ProfileInput;
+  preview: TargetResponse & { preview_hash: string };
+  idempotencyKey: string;
+  replacesPendingPlan: boolean;
+};
+type ActivationPhase =
+  | { kind: "idle" }
+  | { kind: "confirming"; submission: ActivationSubmission }
+  | { kind: "submitting"; submission: ActivationSubmission }
+  | { kind: "reconciling"; submission: ActivationSubmission; accepted: TargetPlanActivationResponse }
+  | { kind: "committed"; accepted: TargetPlanActivationResponse }
+  | { kind: "recovery"; submission: ActivationSubmission; accepted: TargetPlanActivationResponse }
+  | { kind: "failed"; submission: ActivationSubmission };
 
 function toDraft(profile: ProfileInput): DraftProfile {
   return {
@@ -206,6 +220,15 @@ function isPreviewActivatable(targets: TargetResponse | null): targets is Target
   );
 }
 
+function profileMatchesAcceptedActivation(
+  profile: ProfileResponse,
+  submission: ActivationSubmission,
+  activation: TargetPlanActivationResponse
+): boolean {
+  const containsPlan = profile.effective_plan?.id === activation.plan.id || profile.pending_plan?.id === activation.plan.id;
+  return containsPlan && normalizeDraft(toDraft(profile)) === normalizeDraft(toDraft(submission.payload));
+}
+
 export function ProfilePage() {
   const { session } = useAuth();
   const accessToken = session?.access_token;
@@ -223,13 +246,11 @@ export function ProfilePage() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [activeSheet, setActiveSheet] = useState<SheetKind>(null);
   const [restoreOpen, setRestoreOpen] = useState(false);
-  const [activationOpen, setActivationOpen] = useState(false);
+  const [activationPhase, setActivationPhase] = useState<ActivationPhase>({ kind: "idle" });
   const [discardHref, setDiscardHref] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState(false);
   const [activationErrorCode, setActivationErrorCode] = useState<string | null>(null);
   const [activationSafetyOutcome, setActivationSafetyOutcome] = useState<BlockingSafetyOutcome | null>(null);
   const [safetyAttemptSequence, setSafetyAttemptSequence] = useState(0);
-  const [savedNotice, setSavedNotice] = useState(false);
   const previewSequence = useRef(0);
   const heightRef = useRef<HTMLInputElement>(null);
   const weightRef = useRef<HTMLInputElement>(null);
@@ -238,8 +259,17 @@ export function ProfilePage() {
   const fatRef = useRef<HTMLInputElement>(null);
   const safetyRef = useRef<HTMLDivElement>(null);
   const restoreActivationFocusRef = useRef(true);
-  const activationKeyRef = useRef<string | null>(null);
-  const activationSubmittingRef = useRef(false);
+  const activationPhaseRef = useRef<ActivationPhase>(activationPhase);
+  const mountedRef = useRef(true);
+
+  function transitionActivation(next: ActivationPhase) {
+    activationPhaseRef.current = next;
+    setActivationPhase(next);
+  }
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
 
   const profileQuery = useQuery({ queryKey: ["profile"], queryFn: getProfile });
   const authorityQuery = useQuery({
@@ -262,6 +292,7 @@ export function ProfilePage() {
 
   useEffect(() => {
     if (profileQuery.data === undefined) return;
+    if (["reconciling", "recovery"].includes(activationPhaseRef.current.kind)) return;
     const nextDraft = profileQuery.data ? toDraft(profileQuery.data) : blankDraft();
     setDraft(nextDraft);
     setSavedDraft(nextDraft);
@@ -327,13 +358,21 @@ export function ProfilePage() {
   useEffect(() => {
     if (activationSafetyOutcome) return;
     setSafetyAttemptSequence(0);
-    setActivationOpen(false);
+    if (activationPhaseRef.current.kind === "confirming") {
+      transitionActivation({ kind: "idle" });
+    }
   }, [activationSafetyOutcome, currentDraftHash, currentPreview?.preview_hash]);
 
   useEffect(() => {
-    if (safetyAttemptSequence === 0 || activationOpen) return;
+    if (safetyAttemptSequence === 0 || ["confirming", "submitting"].includes(activationPhase.kind)) return;
     safetyRef.current?.focus();
-  }, [activationOpen, activationSafetyOutcome, currentPreview?.safety_outcome, safetyAttemptSequence]);
+  }, [activationPhase.kind, activationSafetyOutcome, currentPreview?.safety_outcome, safetyAttemptSequence]);
+
+  useEffect(() => {
+    if (activationPhase.kind !== "committed") return;
+    const timer = window.setTimeout(() => transitionActivation({ kind: "idle" }), 2800);
+    return () => window.clearTimeout(timer);
+  }, [activationPhase.kind]);
 
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -357,46 +396,69 @@ export function ProfilePage() {
     };
   }, [dirty]);
 
-  const mutation = useMutation({
-    mutationFn: ({ payload, preview: confirmedPreview, key }: { payload: ProfileInput; preview: TargetResponse; key: string }) => {
-      if (!isPreviewActivatable(confirmedPreview)) {
-        throw new Error("Blocked preview cannot be activated");
-      }
-      return profileQuery.data?.pending_plan
-        ? replacePendingTargetPlan(payload, confirmedPreview.preview_hash, key, accessToken, sessionSignal)
-        : activateTargetPlan(payload, confirmedPreview.preview_hash, key, accessToken, sessionSignal);
-    },
-    onSuccess: async (activation) => {
-      if (sessionSignal.aborted) return;
+  async function reconcileAcceptedActivation(
+    submission: ActivationSubmission,
+    accepted: TargetPlanActivationResponse
+  ) {
+    transitionActivation({ kind: "reconciling", submission, accepted });
+    try {
       const refreshed = await profileQuery.refetch();
-      if (sessionSignal.aborted) return;
+      if (sessionSignal.aborted || !mountedRef.current) return;
       const profile = refreshed.data;
-      if (!profile) return;
+      if (!profile || !profileMatchesAcceptedActivation(profile, submission, accepted)) {
+        transitionActivation({ kind: "recovery", submission, accepted });
+        return;
+      }
       const confirmed = toDraft(profile);
       queryClient.setQueryData(["profile"], profile);
       setDraft(confirmed);
       setSavedDraft(confirmed);
-      setSavedTargets(profile.targets ?? activation.plan.targets);
+      setSavedTargets(profile.targets ?? accepted.plan.targets);
+      transitionActivation({ kind: "committed", accepted });
+    } catch {
+      if (!sessionSignal.aborted && mountedRef.current) {
+        transitionActivation({ kind: "recovery", submission, accepted });
+      }
+    }
+  }
+
+  async function activateConfirmedPlan() {
+    const current = activationPhaseRef.current;
+    if (current.kind !== "confirming") return;
+    const { submission } = current;
+    transitionActivation({ kind: "submitting", submission });
+    try {
+      const accepted = submission.replacesPendingPlan
+        ? await replacePendingTargetPlan(
+          submission.payload,
+          submission.preview.preview_hash,
+          submission.idempotencyKey,
+          accessToken,
+          sessionSignal
+        )
+        : await activateTargetPlan(
+          submission.payload,
+          submission.preview.preview_hash,
+          submission.idempotencyKey,
+          accessToken,
+          sessionSignal
+        );
+      if (sessionSignal.aborted || !mountedRef.current) return;
+      const committedDraft = toDraft(submission.payload);
+      setDraft(committedDraft);
+      setSavedDraft(committedDraft);
+      setSavedTargets(accepted.plan.targets);
       setPreview(null);
       setPreviewDraftHash(null);
       setPreviewFailed(false);
       setErrors({});
-      setSaveError(false);
       setActivationErrorCode(null);
       setActivationSafetyOutcome(null);
       setSafetyAttemptSequence(0);
-      setSavedNotice(true);
-      setActivationOpen(false);
-      activationKeyRef.current = null;
-      activationSubmittingRef.current = false;
-      await queryClient.invalidateQueries({ queryKey: ["target-plan-history"] });
-      if (sessionSignal.aborted) return;
-      window.setTimeout(() => {
-        if (!sessionSignal.aborted) setSavedNotice(false);
-      }, 2800);
-    },
-    onError: (error) => {
-      if (sessionSignal.aborted) return;
+      void queryClient.invalidateQueries({ queryKey: ["target-plan-history"] });
+      await reconcileAcceptedActivation(submission, accepted);
+    } catch (error) {
+      if (sessionSignal.aborted || !mountedRef.current) return;
       const mapped = mapProfileApiErrors(error);
       if (Object.keys(mapped).length > 0) setErrors(mapped);
       else if (error instanceof ApiError && ["SPECIALIST_REVIEW_REQUIRED", "VERY_LOW_ENERGY_TARGET_BLOCKED"].includes(error.code ?? "")) {
@@ -410,20 +472,27 @@ export function ProfilePage() {
         setPreview(null);
         setPreviewDraftHash(null);
         setPreviewFailed(false);
-        setSafetyAttemptSequence((current) => current + 1);
-        activationKeyRef.current = null;
+        setSafetyAttemptSequence((sequence) => sequence + 1);
+        transitionActivation({ kind: "idle" });
       }
       else if (error instanceof ApiError && ["PREVIEW_RESULT_CHANGED", "IDEMPOTENCY_KEY_REUSED"].includes(error.code ?? "")) {
         setActivationErrorCode(error.code ?? null);
-        activationKeyRef.current = null;
         setPreview(null);
         setPreviewDraftHash(null);
+        transitionActivation({ kind: "idle" });
         requestPreview();
-      } else setSaveError(true);
-      setActivationOpen(false);
-      activationSubmittingRef.current = false;
+      } else {
+        transitionActivation({ kind: "failed", submission });
+      }
+    } finally {
+      if (activationPhaseRef.current.kind === "submitting") {
+        activationPhaseRef.current = { kind: "idle" };
+        if (mountedRef.current) {
+          setActivationPhase({ kind: "idle" });
+        }
+      }
     }
-  });
+  }
 
   function update<K extends keyof DraftProfile>(key: K, value: DraftProfile[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -432,11 +501,10 @@ export function ProfilePage() {
       delete next[key];
       return next;
     });
-    setSaveError(false);
+    transitionActivation({ kind: "idle" });
     setActivationErrorCode(null);
     setActivationSafetyOutcome(null);
     setSafetyAttemptSequence(0);
-    setSavedNotice(false);
   }
 
   function updateSex(nextSex: Sex) {
@@ -450,7 +518,7 @@ export function ProfilePage() {
       };
     });
     setErrors((current) => { const next = { ...current }; delete next.sex; delete next.fat_percent; return next; });
-    setSaveError(false);
+    transitionActivation({ kind: "idle" });
     setActivationErrorCode(null);
     setActivationSafetyOutcome(null);
     setSafetyAttemptSequence(0);
@@ -460,7 +528,6 @@ export function ProfilePage() {
     event?.preventDefault();
     const result = validateDraft(draft, authoritativeDate);
     setErrors(result.errors);
-    setSaveError(false);
     if (!registryReady) return;
     if (!result.payload) {
       const order: Array<[ProfileField, RefObject<HTMLInputElement | null>]> = [
@@ -478,15 +545,31 @@ export function ProfilePage() {
     }
     if (!isPreviewActivatable(currentPreview)) {
       setSafetyAttemptSequence((current) => current + 1);
-      setActivationOpen(false);
+      transitionActivation({ kind: "idle" });
       return;
     }
     restoreActivationFocusRef.current = true;
-    setActivationOpen(true);
+    const failedSubmission = activationPhaseRef.current.kind === "failed"
+      ? activationPhaseRef.current.submission
+      : null;
+    const idempotencyKey = failedSubmission &&
+      normalizeDraft(toDraft(failedSubmission.payload)) === normalizeDraft(toDraft(result.payload)) &&
+      failedSubmission.preview.preview_hash === currentPreview.preview_hash
+      ? failedSubmission.idempotencyKey
+      : crypto.randomUUID();
+    transitionActivation({
+      kind: "confirming",
+      submission: {
+        payload: result.payload,
+        preview: currentPreview,
+        idempotencyKey,
+        replacesPendingPlan: Boolean(profileQuery.data?.pending_plan)
+      }
+    });
   }
 
   if (profileQuery.isPending || authorityQuery.isPending) return <ProfileSkeleton />;
-  if (profileQuery.isError || authorityQuery.isError) return <ProfileLoadError onRetry={() => {
+  if ((profileQuery.isError && savedDraft === null) || authorityQuery.isError) return <ProfileLoadError onRetry={() => {
     profileQuery.refetch();
     authorityQuery.refetch();
   }} />;
@@ -659,15 +742,23 @@ export function ProfilePage() {
 
       {dirty ? (
         <div className="profile-save-bar" role="region" aria-label="حفظ تغييرات الملف الشخصي">
-          <span>{Object.keys(errors).length > 0 ? "صحح الحقول المعلّمة للمتابعة" : activationSafetyOutcome ? "راجع قرار السلامة وحدّث المعاينة قبل المتابعة" : activationErrorCode ? "تغيّرت المعاينة. راجع الأهداف المحدثة ثم أكد مجددًا" : saveError ? PROFILE_WRITE_ERROR : !registryReady ? "سجل التغذية غير جاهز" : "تغييرات غير محفوظة"}</span>
-          {saveError ? <small>تحقق من الاتصال ثم أعد المحاولة</small> : null}
-          <button className="btn primary" type="button" onClick={() => submit()} disabled={!registryReady || mutation.isPending || previewPending || (Boolean(validation.payload) && !currentPreview?.preview_hash && !activationSafetyOutcome)}>
-            {mutation.isPending ? <><LoaderCircle className="spin" size={17} /> جارٍ تفعيل الخطة…</> : activationSafetyOutcome ? "تحديث المعاينة" : activationErrorCode ? "مراجعة المعاينة" : saveError ? <><RotateCcw size={17} /> إعادة المحاولة</> : "مراجعة وتأكيد"}
+          <span>{Object.keys(errors).length > 0 ? "صحح الحقول المعلّمة للمتابعة" : activationSafetyOutcome ? "راجع قرار السلامة وحدّث المعاينة قبل المتابعة" : activationErrorCode ? "تغيّرت المعاينة. راجع الأهداف المحدثة ثم أكد مجددًا" : activationPhase.kind === "failed" ? PROFILE_WRITE_ERROR : !registryReady ? "سجل التغذية غير جاهز" : "تغييرات غير محفوظة"}</span>
+          {activationPhase.kind === "failed" ? <small>تحقق من الاتصال ثم أعد المحاولة</small> : null}
+          <button className="btn primary" type="button" onClick={() => submit()} disabled={!registryReady || activationPhase.kind === "submitting" || previewPending || (Boolean(validation.payload) && !currentPreview?.preview_hash && !activationSafetyOutcome)}>
+            {activationPhase.kind === "submitting" ? <><LoaderCircle className="spin" size={17} /> جارٍ تفعيل الخطة…</> : activationSafetyOutcome ? "تحديث المعاينة" : activationErrorCode ? "مراجعة المعاينة" : activationPhase.kind === "failed" ? <><RotateCcw size={17} /> إعادة المحاولة</> : "مراجعة وتأكيد"}
           </button>
         </div>
       ) : null}
 
-      {savedNotice ? <div className="profile-save-status" role="status"><Check size={17} /> تم حفظ التغييرات</div> : null}
+      {["reconciling", "committed"].includes(activationPhase.kind) ? <div className="profile-save-status" role="status"><Check size={17} /> تم حفظ التغييرات</div> : null}
+      {activationPhase.kind === "recovery" ? (
+        <div className="profile-reconciliation-status" role="status">
+          <div><Check size={17} /><span><strong>تم حفظ التغييرات</strong><small>تعذر تحديث البيانات المعروضة. الأهداف المحفوظة أدناه ما زالت معتمدة.</small></span></div>
+          <button className="btn" type="button" onClick={() => void reconcileAcceptedActivation(activationPhase.submission, activationPhase.accepted)}>
+            <RotateCcw size={17} /> إعادة تحديث البيانات
+          </button>
+        </div>
+      ) : null}
 
       {activeSheet === "sex" ? (
         <ProfileSheet title="اختر الجنس" onClose={() => setActiveSheet(null)}>
@@ -722,32 +813,20 @@ export function ProfilePage() {
         />
       ) : null}
 
-      {activationOpen && validation.payload && isPreviewActivatable(currentPreview) ? (
+      {(activationPhase.kind === "confirming" || activationPhase.kind === "submitting") ? (
         <ProfileConfirm
-          title={profileQuery.data?.pending_plan ? "استبدال الخطة المجدولة؟" : "تأكيد الأهداف الجديدة؟"}
-          description={profileQuery.data?.pending_plan
+          title={activationPhase.submission.replacesPendingPlan ? "استبدال الخطة المجدولة؟" : "تأكيد الأهداف الجديدة؟"}
+          description={activationPhase.submission.replacesPendingPlan
             ? "سيتم الاحتفاظ بالخطة المجدولة السابقة في السجل، وتبدأ الخطة البديلة في التاريخ المعروض."
             : `المعاينة وحدها لا تحفظ الأهداف. ستبدأ الخطة في ${profileQuery.data ? "اليوم التالي" : "اليوم"}.`}
           safeLabel="متابعة المراجعة"
-          confirmLabel={profileQuery.data?.pending_plan ? "استبدال الخطة" : "تفعيل الخطة"}
+          confirmLabel={activationPhase.submission.replacesPendingPlan ? "استبدال الخطة" : "تفعيل الخطة"}
           restoreFocusRef={restoreActivationFocusRef}
-          onClose={() => setActivationOpen(false)}
-          onConfirm={() => {
-            if (!isPreviewActivatable(currentPreview)) {
-              restoreActivationFocusRef.current = false;
-              setActivationOpen(false);
-              setSafetyAttemptSequence((current) => current + 1);
-              return;
-            }
-            if (activationSubmittingRef.current) return;
-            activationSubmittingRef.current = true;
-            if (!activationKeyRef.current) activationKeyRef.current = crypto.randomUUID();
-            mutation.mutate({
-              payload: validation.payload!,
-              preview: currentPreview,
-              key: activationKeyRef.current
-            });
+          pending={activationPhase.kind === "submitting"}
+          onClose={() => {
+            if (activationPhaseRef.current.kind === "confirming") transitionActivation({ kind: "idle" });
           }}
+          onConfirm={() => void activateConfirmedPlan()}
         />
       ) : null}
 
@@ -1020,16 +1099,23 @@ function OptionList({ value, options, onChoose }: { value: string; options: Arra
   return <div className="profile-option-list" role="radiogroup">{options.map((option) => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} onClick={() => onChoose(option.value)}><span><strong>{option.label}</strong>{option.description ? <small>{option.description}</small> : null}</span>{value === option.value ? <Check size={19} aria-label="محدد" /> : <span className="profile-radio-dot" />}</button>)}</div>;
 }
 
-function ProfileSheet({ title, children, onClose, restoreFocusRef }: { title: string; children: ReactNode; onClose: () => void; restoreFocusRef?: RefObject<boolean> }) {
+function ProfileSheet({ title, children, onClose, restoreFocusRef, dismissible = true, busy = false }: { title: string; children: ReactNode; onClose: () => void; restoreFocusRef?: RefObject<boolean>; dismissible?: boolean; busy?: boolean }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  const dismissibleRef = useRef(dismissible);
+  onCloseRef.current = onClose;
+  dismissibleRef.current = dismissible;
   useEffect(() => {
     triggerRef.current = document.activeElement as HTMLElement | null;
     const panel = panelRef.current;
     closeRef.current?.focus();
     const keydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (dismissibleRef.current) onCloseRef.current();
+      }
       if (event.key !== "Tab" || !panel) return;
       const focusable = [...panel.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex='-1'])")];
       if (!focusable.length) return;
@@ -1044,12 +1130,15 @@ function ProfileSheet({ title, children, onClose, restoreFocusRef }: { title: st
       document.body.classList.remove("modal-open");
       if (restoreFocusRef?.current !== false) triggerRef.current?.focus();
     };
-  }, [onClose, restoreFocusRef]);
-  return <div className="profile-sheet-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={panelRef} className="profile-sheet" role="dialog" aria-modal="true" aria-labelledby="profile-sheet-title"><div className="profile-sheet-handle" /><header><h2 id="profile-sheet-title">{title}</h2><button ref={closeRef} type="button" onClick={onClose} aria-label={`إغلاق ${title}`}><X size={19} /></button></header><div className="profile-sheet-content">{children}</div></section></div>;
+  }, [restoreFocusRef]);
+  useEffect(() => {
+    if (busy) panelRef.current?.focus();
+  }, [busy]);
+  return <div className="profile-sheet-backdrop" role="presentation" onMouseDown={(event) => { if (dismissible && event.target === event.currentTarget) onClose(); }}><section ref={panelRef} className="profile-sheet" role="dialog" aria-modal="true" aria-labelledby="profile-sheet-title" aria-busy={busy || undefined} tabIndex={-1}><div className="profile-sheet-handle" /><header><h2 id="profile-sheet-title">{title}</h2><button ref={closeRef} type="button" onClick={onClose} aria-label={`إغلاق ${title}`} disabled={!dismissible}><X size={19} /></button></header><div className="profile-sheet-content">{children}</div></section></div>;
 }
 
-function ProfileConfirm({ title, description, safeLabel, confirmLabel, destructive = false, onClose, onConfirm, restoreFocusRef }: { title: string; description: string; safeLabel: string; confirmLabel: string; destructive?: boolean; onClose: () => void; onConfirm: () => void; restoreFocusRef?: RefObject<boolean> }) {
-  return <ProfileSheet title={title} onClose={onClose} restoreFocusRef={restoreFocusRef}><div className="profile-confirm"><p>{description}</p><button className="btn primary" type="button" onClick={onClose}>{safeLabel}</button><button className={destructive ? "btn danger" : "btn"} type="button" onClick={onConfirm}>{confirmLabel}</button></div></ProfileSheet>;
+function ProfileConfirm({ title, description, safeLabel, confirmLabel, destructive = false, pending = false, onClose, onConfirm, restoreFocusRef }: { title: string; description: string; safeLabel: string; confirmLabel: string; destructive?: boolean; pending?: boolean; onClose: () => void; onConfirm: () => void; restoreFocusRef?: RefObject<boolean> }) {
+  return <ProfileSheet title={title} onClose={onClose} restoreFocusRef={restoreFocusRef} dismissible={!pending} busy={pending}><div className="profile-confirm"><p>{description}</p><button className="btn primary" type="button" onClick={onClose} disabled={pending}>{safeLabel}</button><button className={destructive ? "btn danger" : "btn"} type="button" onClick={onConfirm} disabled={pending}>{pending ? <><LoaderCircle className="spin" size={17} /> جارٍ التفعيل…</> : confirmLabel}</button></div></ProfileSheet>;
 }
 
 function ProfileSkeleton() {
