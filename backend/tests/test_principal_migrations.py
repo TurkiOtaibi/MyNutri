@@ -647,6 +647,7 @@ def _seed_plan009_food(url: str) -> tuple[UUID, UUID]:
     engine = create_engine(url)
     with Session(engine) as session:
         session.add(Principal(id=principal_id))
+        session.flush()
         session.add(
             Food(
                 id=food_id,
