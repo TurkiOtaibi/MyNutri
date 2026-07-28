@@ -9,15 +9,15 @@ from app.models import FoodStatus
 from app.db.session import get_session
 from app.schemas import FoodCreate, FoodDeleteResponse, FoodListResponse, FoodResponse, FoodSort, FoodUpdate
 from app.services.food import (
-    archive_food,
-    create_food,
+    archive_food_response,
+    create_food_response,
     delete_food,
     get_food,
     list_foods,
     list_foods_page,
-    restore_food,
+    restore_food_response,
     to_food_response,
-    update_food,
+    update_food_response,
 )
 from app.services.food_validation_errors import validate_food_payload
 
@@ -68,7 +68,7 @@ def add_food(
     session: Session = Depends(get_session),
 ) -> FoodResponse:
     food_payload = validate_food_payload(FoodCreate, payload)
-    return to_food_response(session, principal, create_food(session, principal, food_payload))
+    return create_food_response(session, principal, food_payload)
 
 
 @router.get("/{food_id}", response_model=FoodResponse)
@@ -88,9 +88,7 @@ def edit_food(
     session: Session = Depends(get_session),
 ) -> FoodResponse:
     food_payload = validate_food_payload(FoodUpdate, payload)
-    return to_food_response(
-        session, principal, update_food(session, principal, food_id, food_payload)
-    )
+    return update_food_response(session, principal, food_id, food_payload)
 
 
 @router.delete("/{food_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -165,7 +163,7 @@ def archive_admin_food(
     principal: PrincipalContext = Depends(require_admin),
     session: Session = Depends(get_session),
 ) -> FoodResponse:
-    return to_food_response(session, principal, archive_food(session, principal, food_id))
+    return archive_food_response(session, principal, food_id)
 
 
 @admin_router.post("/{food_id}/restore", response_model=FoodResponse)
@@ -174,4 +172,4 @@ def restore_admin_food(
     principal: PrincipalContext = Depends(require_admin),
     session: Session = Depends(get_session),
 ) -> FoodResponse:
-    return to_food_response(session, principal, restore_food(session, principal, food_id))
+    return restore_food_response(session, principal, food_id)

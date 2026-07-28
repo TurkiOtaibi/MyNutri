@@ -1,3 +1,4 @@
+import json
 from datetime import date
 from uuid import UUID
 
@@ -15,19 +16,32 @@ from app.models import (
     DefaultUnitType,
     DiaryEntry,
     FoodAnalyticalTrait,
+    Food,
+    FOOD_GROUP_NUMERIC_COLUMNS,
+    FOOD_NUMERIC_COLUMNS,
     FoodGroupContribution,
     NutritionBasis,
     Principal,
     PrincipalRole,
     UnitBasis,
 )
-from app.schemas import FoodCreate
+from app.schemas import (
+    FOOD_GROUP_NUMERIC_FIELDS,
+    FOOD_NUMERIC_FIELDS,
+    OPTIONAL_NUTRIENT_MAX,
+    FoodCreate,
+    FoodResponse,
+    FoodUpdate,
+)
 from app.services.diary import make_snapshot, to_entry_response
 from app.services.food import (
     create_food,
+    create_food_response,
     delete_food,
     list_foods,
     list_foods_page,
+    to_food_response,
+    update_food_response,
 )
 
 from app.services.food_validation_errors import (
@@ -784,3 +798,249 @@ def test_legacy_category_is_not_part_of_v2_food_contract(api_client: TestClient)
     payload["category"] = "Legacy"
     response = api_client.post("/foods", json=payload, headers=auth_headers())
     assert response.status_code == 422
+
+
+def test_plan009_numeric_registry_matches_schema_and_database_models() -> None:
+    assert set(FOOD_NUMERIC_FIELDS) == set(FOOD_NUMERIC_COLUMNS)
+    assert set(FOOD_GROUP_NUMERIC_FIELDS) == set(FOOD_GROUP_NUMERIC_COLUMNS)
+    assert set(FOOD_NUMERIC_FIELDS) <= set(FoodCreate.model_fields)
+    assert set(FOOD_NUMERIC_FIELDS) <= set(FoodUpdate.model_fields)
+    assert set(FOOD_NUMERIC_FIELDS) <= set(FoodResponse.model_fields)
+    assert set(FOOD_NUMERIC_FIELDS) <= set(Food.__table__.columns.keys())
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+@pytest.mark.parametrize("field", FOOD_NUMERIC_FIELDS)
+def test_plan009_create_rejects_every_non_finite_food_number(
+    api_client: TestClient, field: str, constant: str
+) -> None:
+    payload = food_json(name=f"Non finite create {field} {constant}")
+    payload[field] = 1
+    raw = json.dumps(payload, separators=(",", ":")).replace(
+        f'"{field}":1', f'"{field}":{constant}', 1
+    )
+
+    response = api_client.post(
+        "/foods",
+        content=raw,
+        headers={**auth_headers(), "Content-Type": "application/json"},
+    )
+
+    errors = error_by_field(response)
+    assert errors[field]["field"] == field
+    assert errors[field]["code"] == "invalid_number"
+    assert api_client.get("/foods", headers=auth_headers()).json() == []
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+@pytest.mark.parametrize("field", FOOD_NUMERIC_FIELDS)
+def test_plan009_partial_update_rejects_non_finite_without_mutation(
+    api_client: TestClient, field: str, constant: str
+) -> None:
+    created = api_client.post(
+        "/foods",
+        json=food_json(name=f"Non finite update {field} {constant}"),
+        headers=auth_headers(),
+    )
+    assert created.status_code == 201
+    food_id = created.json()["id"]
+    before = created.json()[field]
+
+    response = api_client.put(
+        f"/foods/{food_id}",
+        content=f'{{"{field}":{constant}}}',
+        headers={**auth_headers(), "Content-Type": "application/json"},
+    )
+
+    errors = error_by_field(response)
+    assert errors[field]["field"] == field
+    assert errors[field]["code"] == "invalid_number"
+    stored = api_client.get(f"/foods/{food_id}", headers=auth_headers())
+    assert stored.status_code == 200
+    assert stored.json()[field] == before
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_plan009_nested_group_amount_rejects_non_finite(
+    api_client: TestClient, constant: str
+) -> None:
+    payload = food_json(
+        name=f"Non finite group {constant}",
+        group_contributions=[
+            {
+                "group_key": "fruits",
+                "amount_per_100_basis": 1,
+                "data_status": "known",
+            }
+        ],
+    )
+    raw = json.dumps(payload, separators=(",", ":")).replace(
+        '"amount_per_100_basis":1',
+        f'"amount_per_100_basis":{constant}',
+        1,
+    )
+
+    response = api_client.post(
+        "/foods",
+        content=raw,
+        headers={**auth_headers(), "Content-Type": "application/json"},
+    )
+
+    errors = error_by_field(response)
+    assert errors["amount_per_100_basis"]["field"] == "amount_per_100_basis"
+
+
+def test_plan009_zero_null_and_inclusive_bounds_remain_valid(api_client: TestClient) -> None:
+    created = api_client.post(
+        "/foods",
+        json=food_json(
+            name="Finite boundaries",
+            unit_amount=2000,
+            calories=3000,
+            protein_g=300,
+            carb_g=500,
+            fat_g=300,
+            fiber_g=0,
+            sugar_g=None,
+            sodium_mg=50000,
+            group_contributions=[
+                {
+                    "group_key": "fruits",
+                    "amount_per_100_basis": 100,
+                    "data_status": "known",
+                }
+            ],
+        ),
+        headers=auth_headers(),
+    )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["fiber_g"] == 0
+    assert created.json()["sugar_g"] is None
+    assert created.json()["group_contributions"][0]["amount_per_100_basis"] == 100
+
+
+@pytest.mark.parametrize(
+    ("field", "minimum", "maximum"),
+    [
+        ("unit_amount", 0.01, 2000),
+        ("calories", 0, 3000),
+        ("protein_g", 0, 300),
+        ("carb_g", 0, 500),
+        ("fat_g", 0, 300),
+        *[(field, 0, maximum) for field, maximum in OPTIONAL_NUTRIENT_MAX.items()],
+    ],
+)
+def test_plan009_numeric_boundaries_are_enforced(
+    field: str, minimum: float, maximum: float
+) -> None:
+    dependencies = {
+        "carb_g": 500,
+        "fat_g": 300,
+        "fiber_g": None,
+        "sugar_g": 100,
+        "saturated_fat_g": None,
+    }
+    FoodCreate.model_validate(food_payload(**(dependencies | {field: minimum})))
+    FoodCreate.model_validate(food_payload(**(dependencies | {field: maximum})))
+
+    invalid_minimum = 0 if field == "unit_amount" else -0.01
+    with pytest.raises(ValidationError):
+        FoodCreate.model_validate(food_payload(**(dependencies | {field: invalid_minimum})))
+    with pytest.raises(ValidationError):
+        FoodCreate.model_validate(food_payload(**(dependencies | {field: maximum + 0.01})))
+
+
+def test_plan009_create_response_failure_rolls_back_parent_and_children(monkeypatch) -> None:
+    with session_fixture() as session:
+        def fail_response(*_args, **_kwargs):
+            raise RuntimeError("injected response validation failure")
+
+        monkeypatch.setattr("app.services.food.to_food_response", fail_response)
+        payload = FoodCreate.model_validate(
+            food_payload(
+                name="Rollback create",
+                group_contributions=[
+                    {
+                        "group_key": "fruits",
+                        "amount_per_100_basis": 100,
+                        "data_status": "known",
+                    }
+                ],
+            )
+        )
+
+        with pytest.raises(RuntimeError, match="injected response validation failure"):
+            create_food_response(session, TEST_PRINCIPAL, payload)
+
+        assert session.exec(select(Food).where(Food.name == "Rollback create")).first() is None
+        assert session.exec(select(FoodGroupContribution)).all() == []
+
+
+def test_plan009_update_response_failure_rolls_back_parent_and_children(monkeypatch) -> None:
+    with session_fixture() as session:
+        food = create_food(
+            session,
+            TEST_PRINCIPAL,
+            FoodCreate.model_validate(
+                food_payload(
+                    name="Rollback update original",
+                    group_contributions=[
+                        {
+                            "group_key": "fruits",
+                            "amount_per_100_basis": 100,
+                            "data_status": "known",
+                        }
+                    ],
+                )
+            ),
+        )
+
+        def fail_response(*_args, **_kwargs):
+            raise RuntimeError("injected response validation failure")
+
+        monkeypatch.setattr("app.services.food.to_food_response", fail_response)
+        update = FoodUpdate.model_validate(
+            {
+                "name": "Rollback update changed",
+                "group_contributions": [
+                    {
+                        "group_key": "vegetables",
+                        "amount_per_100_basis": 100,
+                        "data_status": "known",
+                    }
+                ],
+            }
+        )
+
+        with pytest.raises(RuntimeError, match="injected response validation failure"):
+            update_food_response(session, TEST_PRINCIPAL, food.id, update)
+
+        session.expire_all()
+        stored = session.get(Food, food.id)
+        contributions = session.exec(
+            select(FoodGroupContribution).where(FoodGroupContribution.food_id == food.id)
+        ).all()
+        assert stored is not None
+        assert stored.name == "Rollback update original"
+        assert [item.group_key for item in contributions] == ["fruits"]
+
+
+@pytest.mark.parametrize("constant", [float("nan"), float("inf"), float("-inf")])
+def test_plan009_legacy_non_finite_food_response_fails_closed(constant: float) -> None:
+    with session_fixture() as session:
+        food = create_food(
+            session,
+            TEST_PRINCIPAL,
+            FoodCreate.model_validate(food_payload(name="Legacy invalid response")),
+        )
+        food.calories = constant
+
+        with session.no_autoflush:
+            with pytest.raises(HTTPException) as invalid:
+                to_food_response(session, TEST_PRINCIPAL, food)
+
+        assert invalid.value.status_code == 409
+        assert invalid.value.detail["code"] == "INVALID_FOOD_DATA"
+        assert "nan" not in str(invalid.value.detail).lower()
+        assert "inf" not in str(invalid.value.detail).lower()

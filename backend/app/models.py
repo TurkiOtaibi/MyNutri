@@ -435,6 +435,43 @@ class IdempotencyRecord(SQLModel, table=True):
     expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
 
 
+FOOD_NUMERIC_COLUMNS = (
+    "unit_amount",
+    "calories",
+    "protein_g",
+    "carb_g",
+    "fat_g",
+    "fiber_g",
+    "sugar_g",
+    "added_sugar_g",
+    "saturated_fat_g",
+    "trans_fat_g",
+    "sodium_mg",
+    "cholesterol_mg",
+    "potassium_mg",
+    "calcium_mg",
+    "iron_mg",
+    "magnesium_mg",
+    "zinc_mg",
+    "selenium_mcg",
+    "vitamin_d_mcg",
+    "vitamin_b12_mcg",
+    "vitamin_c_mg",
+    "vitamin_a_mcg",
+    "vitamin_a_rae_mcg",
+    "folate_mcg",
+    "folate_dfe_mcg",
+    "vitamin_k_mcg",
+    "iodine_mcg",
+)
+FOOD_GROUP_NUMERIC_COLUMNS = ("amount_per_100_basis",)
+
+
+def _finite_numeric_check(columns: tuple[str, ...]) -> str:
+    special_values = "('NaN', 'Infinity', '-Infinity')"
+    return " AND ".join(f"{column} NOT IN {special_values}" for column in columns)
+
+
 class Food(SQLModel, table=True):
     __tablename__ = "food"
     __table_args__ = (
@@ -495,6 +532,10 @@ class Food(SQLModel, table=True):
         CheckConstraint(
             "calories >= 0 AND protein_g >= 0 AND carb_g >= 0 AND fat_g >= 0",
             name="ck_food_core_nonnegative",
+        ),
+        CheckConstraint(
+            _finite_numeric_check(FOOD_NUMERIC_COLUMNS),
+            name="ck_food_numeric_values_finite",
         ),
         CheckConstraint(
             "(CAST(nutrition_basis AS TEXT) = 'per_100g' AND CAST(unit_basis AS TEXT) = 'g') OR (CAST(nutrition_basis AS TEXT) = 'per_100ml' AND CAST(unit_basis AS TEXT) = 'ml')",
@@ -657,6 +698,10 @@ class FoodGroupContribution(SQLModel, table=True):
         CheckConstraint(
             "amount_per_100_basis > 0 AND amount_per_100_basis <= 100",
             name="ck_food_group_contribution_amount",
+        ),
+        CheckConstraint(
+            _finite_numeric_check(FOOD_GROUP_NUMERIC_COLUMNS),
+            name="ck_food_group_contribution_amount_finite",
         ),
         CheckConstraint(
             "data_status IN ('known', 'estimated')", name="ck_food_group_contribution_status"

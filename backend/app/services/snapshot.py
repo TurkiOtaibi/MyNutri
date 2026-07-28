@@ -100,7 +100,7 @@ def _value(value: Any) -> Any:
 
 
 class _ClosedModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
 class SnapshotFoodV2(_ClosedModel):

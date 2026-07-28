@@ -18,6 +18,15 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlmodel import Session
 
 from app.core.auth import PrincipalContext
+from app.models import (
+    FOOD_NUMERIC_COLUMNS,
+    DefaultUnitType,
+    Food,
+    FoodGroupContribution,
+    NutritionBasis,
+    Principal,
+    UnitBasis,
+)
 from app.schemas import ProfilePreview, TargetPlanActivationRequest
 from app.services.profile import to_target_response
 from app.services.target_plans import TargetPlanError, activate_plan
@@ -141,7 +150,7 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "0014_v2_food_taxonomy"
+            "df46234d2a7e"
         )
     assert "principal" in inspector.get_table_names()
     for table in ("profile", "diary_entry"):
@@ -628,4 +637,136 @@ def test_concurrent_first_legacy_activations_create_one_snapshot_and_plan() -> N
         assert connection.execute(text("SELECT count(*) FROM legacy_target_transition_snapshots")).scalar_one() == 1
         assert connection.execute(text("SELECT count(*) FROM target_plan")).scalar_one() == 1
         assert connection.execute(text("SELECT count(*) FROM idempotency_record")).scalar_one() == 1
+    engine.dispose()
+
+
+def _seed_plan009_food(url: str) -> tuple[UUID, UUID]:
+    principal_id = uuid4()
+    food_id = uuid4()
+    engine = create_engine(url)
+    with Session(engine) as session:
+        session.add(Principal(id=principal_id))
+        session.add(
+            Food(
+                id=food_id,
+                principal_id=principal_id,
+                name="Plan 009 migration fixture",
+                normalized_name="plan 009 migration fixture",
+                food_category_key="other",
+                nutrition_basis=NutritionBasis.per_100g,
+                default_unit_type=DefaultUnitType.serving,
+                unit_amount=100,
+                unit_basis=UnitBasis.g,
+                calories=100,
+                protein_g=10,
+                carb_g=20,
+                fat_g=5,
+            )
+        )
+        session.commit()
+    engine.dispose()
+    return principal_id, food_id
+
+
+@pytest.mark.migration
+def test_plan009_existing_special_values_block_migration_with_field_counts() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "0014_v2_food_taxonomy")
+    _, food_id = _seed_plan009_food(url)
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text("UPDATE food SET calories = CAST('NaN' AS numeric) WHERE id = :food"),
+            {"food": food_id},
+        )
+
+    result = _run_alembic(url, "upgrade", "head", check=False)
+
+    assert result.returncode != 0
+    output = result.stdout + result.stderr
+    assert "Plan 009 cannot add finite Food constraints" in output
+    assert "food.calories" in output
+    assert "'1'" in output or ": 1" in output
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "head")
+    principal_id, food_id = _seed_plan009_food(url)
+    engine = create_engine(url)
+
+    for field in FOOD_NUMERIC_COLUMNS:
+        for special in ("NaN", "Infinity", "-Infinity"):
+            with pytest.raises(DBAPIError):
+                with engine.begin() as connection:
+                    connection.execute(
+                        text(
+                            f"UPDATE food SET {field} = CAST(:special AS numeric) "
+                            "WHERE id = :food"
+                        ),
+                        {"special": special, "food": food_id},
+                    )
+
+    contribution_id = uuid4()
+    with Session(engine) as session:
+        session.add(
+            FoodGroupContribution(
+                id=contribution_id,
+                principal_id=principal_id,
+                food_id=food_id,
+                group_key="fruits",
+                amount_per_100_basis=100,
+                data_status="known",
+                food_group_rules_version="1.0.0",
+            )
+        )
+        session.commit()
+    for special in ("NaN", "Infinity", "-Infinity"):
+        with pytest.raises(DBAPIError):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "UPDATE food_group_contribution "
+                        "SET amount_per_100_basis = CAST(:special AS numeric) WHERE id = :id"
+                    ),
+                    {"special": special, "id": contribution_id},
+                )
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE food SET fiber_g = NULL, sugar_g = 0, calories = 0 "
+                "WHERE id = :food"
+            ),
+            {"food": food_id},
+        )
+        before = connection.execute(
+            text(
+                "SELECT calories, fiber_g, sugar_g FROM food WHERE id = :food"
+            ),
+            {"food": food_id},
+        ).one()
+
+    _run_alembic(url, "downgrade", "0014_v2_food_taxonomy")
+    with engine.connect() as connection:
+        during = connection.execute(
+            text(
+                "SELECT calories, fiber_g, sugar_g FROM food WHERE id = :food"
+            ),
+            {"food": food_id},
+        ).one()
+    _run_alembic(url, "upgrade", "head")
+    with engine.connect() as connection:
+        after = connection.execute(
+            text(
+                "SELECT calories, fiber_g, sugar_g FROM food WHERE id = :food"
+            ),
+            {"food": food_id},
+        ).one()
+
+    assert before == during == after
     engine.dispose()
