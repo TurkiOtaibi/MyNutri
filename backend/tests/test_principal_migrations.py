@@ -6,7 +6,7 @@ import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from threading import Barrier
@@ -38,6 +38,7 @@ BASELINE_HASHES = {
     "0003_diary_meal_type.py": "3df7b5160cc393a7df1a5ef3765b318a228df23fc26908ec8ed338ac57168929",
 }
 DEPLOYMENT_PRINCIPAL = UUID("00000000-0000-0000-0000-000000000001")
+PLAN009_TIMESTAMP = datetime(2026, 7, 28, tzinfo=UTC)
 
 
 def _database_url() -> str:
@@ -717,6 +718,8 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
             "protein_g": 10,
             "carb_g": 20,
             "fat_g": 5,
+            "created_at": PLAN009_TIMESTAMP,
+            "updated_at": PLAN009_TIMESTAMP,
         }
 
     for field in ("calories", "fiber_g"):
