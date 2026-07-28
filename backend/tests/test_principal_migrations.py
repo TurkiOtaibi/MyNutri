@@ -13,6 +13,7 @@ from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
+from psycopg.errors import CheckViolation, NumericValueOutOfRange
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
@@ -671,6 +672,18 @@ def _seed_plan009_food(url: str) -> tuple[UUID, UUID]:
     return principal_id, food_id
 
 
+def _assert_plan009_special_value_failure(
+    error: DBAPIError, special: str, constraint_name: str
+) -> None:
+    if special == "NaN":
+        assert isinstance(error.orig, CheckViolation)
+        assert error.orig.sqlstate == "23514"
+        assert error.orig.diag.constraint_name == constraint_name
+        return
+    assert isinstance(error.orig, NumericValueOutOfRange)
+    assert error.orig.sqlstate == "22003"
+
+
 @pytest.mark.migration
 def test_plan009_existing_special_values_block_migration_with_field_counts() -> None:
     url = _database_url()
@@ -724,14 +737,27 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
 
     for field in ("calories", "fiber_g"):
         for special in ("NaN", "Infinity", "-Infinity"):
-            values = insert_values(uuid4(), f"Rejected {field} {special}")
+            rejected_id = uuid4()
+            values = insert_values(rejected_id, f"Rejected {field} {special}")
             values[field] = Decimal(special)
             with pytest.raises(DBAPIError) as rejected:
                 with engine.begin() as connection:
                     connection.execute(Food.__table__.insert().values(**values))
-            assert "ck_food_numeric_values_finite" in str(rejected.value)
+            _assert_plan009_special_value_failure(
+                rejected.value, special, "ck_food_numeric_values_finite"
+            )
+            with engine.connect() as connection:
+                assert connection.execute(
+                    text("SELECT count(*) FROM food WHERE id = :food"),
+                    {"food": rejected_id},
+                ).scalar_one() == 0
 
     for field in FOOD_NUMERIC_COLUMNS:
+        with engine.connect() as connection:
+            original = connection.execute(
+                text(f"SELECT {field} FROM food WHERE id = :food"),
+                {"food": food_id},
+            ).one()[0]
         for special in ("NaN", "Infinity", "-Infinity"):
             with pytest.raises(DBAPIError) as rejected:
                 with engine.begin() as connection:
@@ -742,7 +768,14 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
                         ),
                         {"special": special, "food": food_id},
                     )
-            assert "ck_food_numeric_values_finite" in str(rejected.value)
+            _assert_plan009_special_value_failure(
+                rejected.value, special, "ck_food_numeric_values_finite"
+            )
+            with engine.connect() as connection:
+                assert connection.execute(
+                    text(f"SELECT {field} FROM food WHERE id = :food"),
+                    {"food": food_id},
+                ).one()[0] == original
 
     contribution_id = uuid4()
     with Session(engine) as session:
@@ -770,9 +803,21 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
                         amount_per_100_basis=Decimal(special),
                         data_status="known",
                         food_group_rules_version="1.0.0",
+                        created_at=PLAN009_TIMESTAMP,
+                        updated_at=PLAN009_TIMESTAMP,
                     )
                 )
-        assert "ck_food_group_contribution_amount_finite" in str(rejected.value)
+        _assert_plan009_special_value_failure(
+            rejected.value, special, "ck_food_group_contribution_amount_finite"
+        )
+        with engine.connect() as connection:
+            assert connection.execute(
+                text(
+                    "SELECT count(*) FROM food_group_contribution "
+                    "WHERE food_id = :food AND group_key = 'vegetables'"
+                ),
+                {"food": food_id},
+            ).scalar_one() == 0
     for special in ("NaN", "Infinity", "-Infinity"):
         with pytest.raises(DBAPIError) as rejected:
             with engine.begin() as connection:
@@ -783,7 +828,16 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
                     ),
                     {"special": special, "id": contribution_id},
                 )
-        assert "ck_food_group_contribution_amount_finite" in str(rejected.value)
+        _assert_plan009_special_value_failure(
+            rejected.value, special, "ck_food_group_contribution_amount_finite"
+        )
+        with engine.connect() as connection:
+            assert connection.execute(
+                text(
+                    "SELECT amount_per_100_basis FROM food_group_contribution WHERE id = :id"
+                ),
+                {"id": contribution_id},
+            ).scalar_one() == Decimal("100.000")
 
     maximum_food_id = uuid4()
     maximum_values = insert_values(maximum_food_id, "Accepted schema maxima")
@@ -809,6 +863,8 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
                 amount_per_100_basis=100,
                 data_status="known",
                 food_group_rules_version="1.0.0",
+                created_at=PLAN009_TIMESTAMP,
+                updated_at=PLAN009_TIMESTAMP,
             )
         )
         before = connection.execute(
