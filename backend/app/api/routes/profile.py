@@ -1,3 +1,4 @@
+from datetime import timedelta
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends
@@ -9,7 +10,7 @@ from app.db.session import get_session
 from app.nutrition_rules.calculation import CalculationError
 from app.schemas import ProfilePreview, ProfileResponse, ProfileUpsert, TargetResponse
 from app.services.profile import get_profile, preview_targets, to_profile_response, upsert_profile
-from app.core.calendar import current_diary_date, next_diary_date
+from app.core.calendar import diary_calendar_authority
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -24,10 +25,11 @@ def read_profile(
         from app.services.errors import resource_not_found
 
         raise resource_not_found()
-    response = to_profile_response(profile)
+    authority = diary_calendar_authority()
+    response = to_profile_response(profile, authority.current_diary_date)
     from app.services.target_plans import pending_plan, resolve_targets
 
-    source = resolve_targets(session, principal, current_diary_date())
+    source = resolve_targets(session, principal, authority.current_diary_date)
     if source.targets is not None:
         response.targets = source.targets
         response.target_provenance = source.target_provenance
@@ -42,8 +44,8 @@ def save_profile(
     principal: PrincipalContext = Depends(get_principal_context),
     session: Session = Depends(get_session),
 ) -> ProfileResponse:
-    profile = upsert_profile(session, principal, payload)
-    return to_profile_response(profile)
+    authority = diary_calendar_authority()
+    return upsert_profile(session, principal, payload, authority.current_diary_date)
 
 
 @router.post("/preview", response_model=TargetResponse)
@@ -53,7 +55,10 @@ def preview_profile(
     session: Session = Depends(get_session),
 ) -> TargetResponse | JSONResponse:
     try:
-        effective_date = current_diary_date() if get_profile(session, principal) is None else next_diary_date()
+        authority = diary_calendar_authority()
+        effective_date = authority.current_diary_date
+        if get_profile(session, principal) is not None:
+            effective_date += timedelta(days=1)
         return preview_targets(payload, effective_date)
     except CalculationError as error:
         return JSONResponse(

@@ -14,6 +14,7 @@ const VERY_LOW_ENERGY_TARGET_BLOCKED =
 const BLOCKED_PREVIEW_DESCRIPTION = "هذه معاينة توضيحية فقط، ولا يمكن تفعيل هذا الهدف.";
 const profilePath = (url: URL) => url.pathname === "/profile";
 const previewPath = (url: URL) => url.pathname === "/profile/preview";
+const calendarPath = (url: URL) => url.pathname === "/account/calendar";
 const activationPath = (url: URL) =>
   url.pathname === "/target-plans/activate" || url.pathname === "/target-plans/pending/replace";
 
@@ -225,6 +226,121 @@ test.describe("@profile Profile and targets redesign", () => {
     expect(activations).toBe(0);
     await weight.fill(original);
     await expect(page.locator(".profile-save-bar")).toHaveCount(0);
+  });
+
+  test("@plan008 authoritative calendar bounds the birth date and Backend 422 preserves the draft", async ({ browser }) => {
+    const context = await browser.newContext({
+      baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000",
+      storageState: "e2e/.auth/admin.json",
+      locale: "ar-SA",
+      timezoneId: "Pacific/Honolulu",
+      serviceWorkers: "block"
+    });
+    const page = await context.newPage();
+    let previewRequests = 0;
+    await page.route(calendarPath, (route) => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      json: {
+        current_diary_date: "2030-01-02",
+        calendar_timezone: "Asia/Riyadh",
+        next_rollover_at: "2030-01-03T00:00:00+03:00"
+      }
+    }));
+    await page.route(previewPath, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      previewRequests += 1;
+      await route.fulfill({
+        status: 422,
+        contentType: "application/json",
+        json: {
+          detail: [{
+            type: "profile_age_below_minimum",
+            loc: ["body", "birth_date"],
+            msg: "Age must be at least 10 on the authoritative effective date.",
+            input: "2021-01-01"
+          }]
+        }
+      });
+    });
+
+    try {
+      await page.goto("/profile?plan008-calendar=1");
+      const birthDate = page.getByLabel("تاريخ الميلاد");
+      await expect(birthDate).toHaveAttribute("max", "2030-01-02");
+
+      await birthDate.fill("2030-01-03");
+      await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+      await expect(birthDate).toHaveAttribute("aria-invalid", "true");
+      expect(previewRequests).toBe(0);
+
+      await birthDate.fill("2021-01-01");
+      await expect.poll(() => previewRequests).toBe(1);
+      await expect(birthDate).toHaveValue("2021-01-01");
+      await expect(birthDate).toHaveAttribute("aria-invalid", "true");
+      await expect(page.getByText("اختر تاريخ ميلاد صحيحًا")).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("@plan008 numeric guidance enforces exact practical boundaries", async ({ page, originalProfile }) => {
+    let previewRequests = 0;
+    await page.route(previewPath, async (route) => {
+      if (route.request().method() === "POST") previewRequests += 1;
+      await route.continue();
+    });
+    await page.goto("/profile?plan008-numeric-bounds=1");
+    const height = page.getByLabel("الطول");
+    const weight = page.getByLabel("الوزن");
+    await expect(height).toHaveAttribute("min", "100");
+    await expect(height).toHaveAttribute("max", "250");
+    await expect(weight).toHaveAttribute("min", "20");
+    await expect(weight).toHaveAttribute("max", "300");
+
+    for (const scenario of [
+      { input: height, invalid: "99.9", boundary: "100", original: String(originalProfile.height_cm) },
+      { input: height, invalid: "250.1", boundary: "250", original: String(originalProfile.height_cm) },
+      { input: weight, invalid: "19.9", boundary: "20", original: String(originalProfile.weight_kg) },
+      { input: weight, invalid: "300.1", boundary: "300", original: String(originalProfile.weight_kg) }
+    ]) {
+      await scenario.input.fill(scenario.invalid);
+      await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+      await expect(scenario.input).toHaveAttribute("aria-invalid", "true");
+      const before = previewRequests;
+      await scenario.input.fill(scenario.boundary);
+      await expect.poll(() => previewRequests).toBeGreaterThan(before);
+      await scenario.input.fill(scenario.original);
+    }
+
+    await page.getByRole("button", { name: /فتح الخيارات المتقدمة/ }).click();
+    const protein = page.getByLabel("البروتين لكل كجم");
+    const fat = page.getByLabel("نسبة الدهون");
+    await expect(protein).toHaveAttribute("min", "1");
+    await expect(protein).toHaveAttribute("max", "3");
+    await expect(fat).toHaveAttribute("min", "15");
+    await expect(fat).toHaveAttribute("max", "40");
+
+    await height.fill("100");
+    await weight.fill("300");
+    await protein.fill("3");
+    await fat.fill("15");
+    const preview = page.getByRole("region", { name: "الأهداف المتوقعة بعد الحفظ" });
+    await expect(preview).toBeVisible();
+    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+    const confirmation = page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ });
+    await confirmation.getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+    await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
+    await expect(height).toHaveValue("100");
+    await expect(weight).toHaveValue("300");
+    await expect(protein).toHaveValue("3");
+    await expect(fat).toHaveValue("15");
+
+    const stored = await readProfile(page.request);
+    expect(stored.height_cm).toBe(100);
+    expect(stored.weight_kg).toBe(300);
+    expect(stored.protein_per_kg).toBe(3);
+    expect(stored.fat_pct).toBe(0.15);
   });
 
   test("@p0 preview uses server result, stays distinct, and save adopts confirmed response", async ({ page, originalProfile }) => {

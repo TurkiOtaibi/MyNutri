@@ -2,6 +2,8 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from pydantic import ValidationError
+from fastapi.exceptions import RequestValidationError
 
 from app.models import ActivityLevel, Goal, Profile, Sex
 from app.nutrition_rules.calculation import (
@@ -15,6 +17,108 @@ from app.nutrition_rules.calculation import (
     calculate_targets,
     classify_calorie_safety,
 )
+from app.schemas import ProfilePreview, ProfileUpsert, validate_profile_domain
+from app.services.profile import preview_targets
+
+
+def plan008_profile_payload(**overrides):
+    payload = {
+        "sex": "male",
+        "birth_date": date(1990, 1, 1),
+        "height_cm": 175,
+        "weight_kg": 80,
+        "activity_level": "moderate",
+        "goal": "maintain",
+        "protein_per_kg": 1.2,
+        "fat_pct": 0.25,
+        "selected_cut_intensity": 0.2,
+    }
+    payload.update(overrides)
+    return payload
+
+
+@pytest.mark.parametrize(
+    ("field", "minimum", "maximum"),
+    [
+        ("height_cm", 100.0, 250.0),
+        ("weight_kg", 20.0, 300.0),
+        ("protein_per_kg", 1.0, 3.0),
+        ("fat_pct", 0.15, 0.40),
+    ],
+)
+def test_plan008_profile_numeric_bounds_are_inclusive(
+    field: str, minimum: float, maximum: float
+) -> None:
+    assert getattr(ProfileUpsert(**plan008_profile_payload(**{field: minimum})), field) == minimum
+    assert getattr(ProfilePreview(**plan008_profile_payload(**{field: maximum})), field) == maximum
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error_type", "message"),
+    [
+        ("height_cm", 99.9, "greater_than_equal", "Input should be greater than or equal to 100"),
+        ("height_cm", 250.1, "less_than_equal", "Input should be less than or equal to 250"),
+        ("weight_kg", 19.9, "greater_than_equal", "Input should be greater than or equal to 20"),
+        ("weight_kg", 300.1, "less_than_equal", "Input should be less than or equal to 300"),
+        ("protein_per_kg", 0.99, "greater_than_equal", "Input should be greater than or equal to 1"),
+        ("protein_per_kg", 3.01, "less_than_equal", "Input should be less than or equal to 3"),
+        ("fat_pct", 0.149, "greater_than_equal", "Input should be greater than or equal to 0.15"),
+        ("fat_pct", 0.401, "less_than_equal", "Input should be less than or equal to 0.4"),
+        ("height_cm", float("nan"), "finite_number", "Input should be a finite number"),
+        ("weight_kg", float("inf"), "finite_number", "Input should be a finite number"),
+        ("protein_per_kg", float("-inf"), "finite_number", "Input should be a finite number"),
+    ],
+)
+def test_plan008_profile_numeric_bounds_have_stable_errors(
+    field: str, value: float, error_type: str, message: str
+) -> None:
+    with pytest.raises(ValidationError) as raised:
+        ProfileUpsert(**plan008_profile_payload(**{field: value}))
+
+    error = raised.value.errors()[0]
+    assert error["loc"] == (field,)
+    assert error["type"] == error_type
+    assert error["msg"] == message
+
+
+@pytest.mark.parametrize(
+    ("birth_date", "effective_date"),
+    [
+        (date(2016, 7, 27), date(2026, 7, 27)),
+        (date(1925, 7, 28), date(2026, 7, 27)),
+        (date(1926, 7, 27), date(2026, 7, 27)),
+    ],
+)
+def test_plan008_age_boundaries_are_inclusive(
+    birth_date: date, effective_date: date
+) -> None:
+    profile = ProfileUpsert(**plan008_profile_payload(birth_date=birth_date))
+    assert validate_profile_domain(profile, effective_date) is profile
+
+
+@pytest.mark.parametrize(
+    ("birth_date", "effective_date", "code"),
+    [
+        (date(2016, 7, 28), date(2026, 7, 27), "profile_age_below_minimum"),
+        (date(1925, 7, 27), date(2026, 7, 27), "profile_age_above_maximum"),
+        (date(2026, 7, 28), date(2026, 7, 27), "profile_birth_date_future"),
+    ],
+)
+def test_plan008_age_errors_are_stable_request_validation_details(
+    birth_date: date, effective_date: date, code: str
+) -> None:
+    profile = ProfilePreview(**plan008_profile_payload(birth_date=birth_date))
+    with pytest.raises(RequestValidationError) as raised:
+        preview_targets(profile, effective_date)
+
+    error = raised.value.errors()[0]
+    assert error["loc"] == ("body", "birth_date")
+    assert error["type"] == code
+    assert error["msg"] == {
+        "profile_age_below_minimum": "Age must be at least 10 on the authoritative effective date.",
+        "profile_age_above_maximum": "Age must be at most 100 on the authoritative effective date.",
+        "profile_birth_date_future": "Birth date cannot be later than the authoritative effective date.",
+    }[code]
 
 
 def test_age_on_accounts_for_birthday() -> None:

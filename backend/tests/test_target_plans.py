@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+import json
 from uuid import UUID
 
 import pytest
@@ -23,6 +24,8 @@ from app.models import (
     TargetProvenance,
 )
 from app.services.target_plans import project_targets
+from app.schemas import ProfileResponse, ProfileUpsert
+from app.services.profile import upsert_profile
 
 PRINCIPAL_A = UUID("00000000-0000-0000-0000-00000000000a")
 PRINCIPAL_B = UUID("00000000-0000-0000-0000-00000000000b")
@@ -88,10 +91,207 @@ def headers(token: str, key: str | None = None) -> dict[str, str]:
     return result
 
 
+def _profile_state(profile: Profile) -> tuple:
+    return (
+        profile.sex,
+        profile.birth_date,
+        float(profile.height_cm),
+        float(profile.weight_kg),
+        profile.activity_level,
+        profile.goal,
+        float(profile.protein_per_kg),
+        float(profile.fat_pct),
+        float(profile.cut_intensity),
+        profile.updated_at,
+    )
+
+
+@pytest.mark.parametrize("failure_point", ["calculation", "serialization", "flush", "commit"])
+@pytest.mark.parametrize("existing", [False, True])
+def test_plan008_profile_upsert_rolls_back_every_failure(
+    target_plan_context, monkeypatch, failure_point: str, existing: bool
+) -> None:
+    client, session = target_plan_context
+    principal_id = PRINCIPAL_A if existing else PRINCIPAL_B
+    principal = PrincipalContext(principal_id)
+    before = None
+    if existing:
+        created = client.put(
+            "/profile", json=profile_payload(weight=80), headers=headers("token-a")
+        )
+        assert created.status_code == 200
+        stored = session.exec(
+            select(Profile).where(Profile.principal_id == principal_id)
+        ).one()
+        before = _profile_state(stored)
+
+    payload = ProfileUpsert.model_validate(profile_payload(weight=92))
+
+    def fail(*args, **kwargs):
+        raise RuntimeError(f"injected {failure_point} failure")
+
+    with monkeypatch.context() as patch:
+        if failure_point == "calculation":
+            patch.setattr("app.services.profile.calculate_targets", fail)
+        elif failure_point == "serialization":
+            patch.setattr(ProfileResponse, "model_validate", classmethod(fail))
+        elif failure_point == "flush":
+            patch.setattr(session, "flush", fail)
+        else:
+            patch.setattr(session, "commit", fail)
+
+        with pytest.raises(RuntimeError, match=f"injected {failure_point} failure"):
+            upsert_profile(session, principal, payload, TODAY)
+
+    session.expire_all()
+    stored_after = session.exec(
+        select(Profile).where(Profile.principal_id == principal_id)
+    ).first()
+    if existing:
+        assert stored_after is not None
+        assert _profile_state(stored_after) == before
+    else:
+        assert stored_after is None
+
+
 def preview(client: TestClient, payload: dict, token: str = "token-a") -> dict:
     response = client.post("/profile/preview", json=payload, headers=headers(token))
     assert response.status_code == 200, response.text
     return response.json()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("height_cm", 100),
+        ("height_cm", 250),
+        ("weight_kg", 20),
+        ("weight_kg", 300),
+        ("protein_per_kg", 1.0),
+        ("protein_per_kg", 3.0),
+        ("fat_pct", 0.15),
+        ("fat_pct", 0.40),
+    ],
+)
+def test_plan008_valid_profile_boundaries_save(
+    target_plan_context, field: str, value: float
+) -> None:
+    client, session = target_plan_context
+    response = client.put(
+        "/profile",
+        json=profile_payload() | {field: value},
+        headers=headers("token-a"),
+    )
+
+    assert response.status_code == 200, response.text
+    stored = session.exec(
+        select(Profile).where(Profile.principal_id == PRINCIPAL_A)
+    ).one()
+    stored_field = "cut_intensity" if field == "selected_cut_intensity" else field
+    assert float(getattr(stored, stored_field)) == value
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error_type"),
+    [
+        ("height_cm", 99.9, "greater_than_equal"),
+        ("height_cm", 250.1, "less_than_equal"),
+        ("weight_kg", 19.9, "greater_than_equal"),
+        ("weight_kg", 300.1, "less_than_equal"),
+        ("protein_per_kg", 0.9, "greater_than_equal"),
+        ("protein_per_kg", 3.1, "less_than_equal"),
+        ("fat_pct", 0.14, "greater_than_equal"),
+        ("fat_pct", 0.41, "less_than_equal"),
+    ],
+)
+def test_plan008_invalid_numeric_requests_return_422_without_profile(
+    target_plan_context, field: str, value: float, error_type: str
+) -> None:
+    client, session = target_plan_context
+    response = client.put(
+        "/profile",
+        json=profile_payload() | {field: value},
+        headers=headers("token-a"),
+    )
+
+    assert response.status_code == 422
+    error = response.json()["detail"][0]
+    assert error["loc"] == ["body", field]
+    assert error["type"] == error_type
+    assert error["msg"]
+    assert session.exec(
+        select(Profile).where(Profile.principal_id == PRINCIPAL_A)
+    ).first() is None
+
+
+@pytest.mark.parametrize("path", ["/profile", "/profile/preview"])
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_plan008_non_finite_raw_json_returns_stable_422_without_profile(
+    target_plan_context, path: str, constant: str
+) -> None:
+    client, session = target_plan_context
+    payload = json.dumps(profile_payload(), separators=(",", ":"))
+    payload = payload.replace('"height_cm":175', f'"height_cm":{constant}')
+
+    response = client.request(
+        "PUT" if path == "/profile" else "POST",
+        path,
+        content=payload,
+        headers={**headers("token-a"), "Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {
+            "type": "finite_number",
+            "loc": ["body", "height_cm"],
+            "msg": "Input should be a finite number",
+            "input": constant,
+        }
+    ]
+    assert session.exec(
+        select(Profile).where(Profile.principal_id == PRINCIPAL_A)
+    ).first() is None
+
+
+@pytest.mark.parametrize(
+    ("birth_date", "error_type"),
+    [
+        ("2020-07-28", "profile_age_below_minimum"),
+        ("1920-07-26", "profile_age_above_maximum"),
+        ("2031-01-01", "profile_birth_date_future"),
+    ],
+)
+def test_plan008_invalid_birth_dates_return_422_without_profile(
+    target_plan_context, monkeypatch, birth_date: str, error_type: str
+) -> None:
+    client, session = target_plan_context
+    authority = type(
+        "Authority",
+        (),
+        {
+            "current_diary_date": date(2030, 7, 27),
+            "calendar_timezone": "Asia/Riyadh",
+            "next_rollover_at": datetime(2030, 7, 28, tzinfo=timezone.utc),
+        },
+    )()
+    monkeypatch.setattr(
+        "app.api.routes.profile.diary_calendar_authority", lambda: authority
+    )
+    response = client.put(
+        "/profile",
+        json=profile_payload() | {"birth_date": birth_date},
+        headers=headers("token-a"),
+    )
+
+    assert response.status_code == 422
+    error = response.json()["detail"][0]
+    assert error["loc"] == ["body", "birth_date"]
+    assert error["type"] == error_type
+    assert error["msg"]
+    assert session.exec(
+        select(Profile).where(Profile.principal_id == PRINCIPAL_A)
+    ).first() is None
 
 
 def activate(client: TestClient, payload: dict, key: str, token: str = "token-a"):

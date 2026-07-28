@@ -1,4 +1,5 @@
 from datetime import date, datetime
+import math
 from typing import Any, Literal
 from uuid import UUID
 
@@ -27,6 +28,7 @@ from app.models import (
     Sex,
     UnitBasis,
 )
+from app.nutrition_rules.calculation import age_on
 from app.nutrition_rules.registry import FOOD_CATEGORIES, FOOD_GROUPS, SOURCE_RELIABILITY, TRAITS
 from app.services.food_validation_errors import (
     ABOVE_MAX_MESSAGE,
@@ -101,18 +103,64 @@ class TargetResponse(BaseModel):
     preview_hash: str | None = None
 
 
+PROFILE_HEIGHT_MIN_CM = 100.0
+PROFILE_HEIGHT_MAX_CM = 250.0
+PROFILE_WEIGHT_MIN_KG = 20.0
+PROFILE_WEIGHT_MAX_KG = 300.0
+PROFILE_PROTEIN_MIN_PER_KG = 1.0
+PROFILE_PROTEIN_MAX_PER_KG = 3.0
+PROFILE_FAT_MIN_PCT = 0.15
+PROFILE_FAT_MAX_PCT = 0.40
+PROFILE_MIN_AGE = 10
+PROFILE_MAX_AGE = 100
+
+
+class ProfileDomainValidationError(ValueError):
+    def __init__(self, field: str, code: str, message: str, value: Any) -> None:
+        super().__init__(message)
+        self.field = field
+        self.code = code
+        self.message = message
+        self.value = value
+
+
 class ProfileUpsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     sex: Sex
     birth_date: date
-    height_cm: float = Field(gt=0)
-    weight_kg: float = Field(gt=0)
+    height_cm: float = Field(
+        ge=PROFILE_HEIGHT_MIN_CM, le=PROFILE_HEIGHT_MAX_CM, allow_inf_nan=False
+    )
+    weight_kg: float = Field(
+        ge=PROFILE_WEIGHT_MIN_KG, le=PROFILE_WEIGHT_MAX_KG, allow_inf_nan=False
+    )
     activity_level: ActivityLevel
     goal: Goal
-    protein_per_kg: float = Field(default=1.2, ge=1.0, le=3.0)
-    fat_pct: float = Field(default=0.25, ge=0.2, le=0.3)
+    protein_per_kg: float = Field(
+        default=1.2,
+        ge=PROFILE_PROTEIN_MIN_PER_KG,
+        le=PROFILE_PROTEIN_MAX_PER_KG,
+        allow_inf_nan=False,
+    )
+    fat_pct: float = Field(
+        default=0.25,
+        ge=PROFILE_FAT_MIN_PCT,
+        le=PROFILE_FAT_MAX_PCT,
+        allow_inf_nan=False,
+    )
     selected_cut_intensity: Literal[0.15, 0.2, 0.25] = 0.2
+
+    @field_validator(
+        "height_cm", "weight_kg", "protein_per_kg", "fat_pct", mode="before"
+    )
+    @classmethod
+    def make_non_finite_validation_input_json_safe(cls, value: Any) -> Any:
+        if isinstance(value, float) and not math.isfinite(value):
+            if math.isnan(value):
+                return "NaN"
+            return "Infinity" if value > 0 else "-Infinity"
+        return value
 
     @model_validator(mode="before")
     @classmethod
@@ -125,6 +173,35 @@ class ProfileUpsert(BaseModel):
 
 class ProfilePreview(ProfileUpsert):
     pass
+
+
+def validate_profile_domain(
+    profile: ProfileUpsert, effective_date: date
+) -> ProfileUpsert:
+    if profile.birth_date > effective_date:
+        raise ProfileDomainValidationError(
+            "birth_date",
+            "profile_birth_date_future",
+            "Birth date cannot be later than the authoritative effective date.",
+            profile.birth_date,
+        )
+
+    age = age_on(profile.birth_date, effective_date)
+    if age < PROFILE_MIN_AGE:
+        raise ProfileDomainValidationError(
+            "birth_date",
+            "profile_age_below_minimum",
+            f"Age must be at least {PROFILE_MIN_AGE} on the authoritative effective date.",
+            profile.birth_date,
+        )
+    if age > PROFILE_MAX_AGE:
+        raise ProfileDomainValidationError(
+            "birth_date",
+            "profile_age_above_maximum",
+            f"Age must be at most {PROFILE_MAX_AGE} on the authoritative effective date.",
+            profile.birth_date,
+        )
+    return profile
 
 
 class TargetPlanSummary(BaseModel):
