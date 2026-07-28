@@ -10,7 +10,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.core.config import Settings, get_settings
 from app.core.auth import PrincipalContext, get_principal_context
-from app.core.calendar import current_diary_date
+from app.core.calendar import current_diary_date, diary_calendar_authority
 from app.db.session import get_session
 from app.main import app
 from app.models import (
@@ -73,8 +73,13 @@ def target_plan_context(monkeypatch):
         return PrincipalContext(PRINCIPAL_B if token == "token-b" else PRINCIPAL_A)
 
     app.dependency_overrides[get_principal_context] = override_principal
+    fixed_authority = diary_calendar_authority(
+        datetime(2026, 7, 15, 21, 0, 0, tzinfo=timezone.utc)
+    )
+    monkeypatch.setattr(
+        "app.services.target_plans.diary_calendar_authority", lambda: fixed_authority
+    )
     monkeypatch.setattr("app.services.target_plans.current_diary_date", lambda: TODAY)
-    monkeypatch.setattr("app.services.target_plans.next_diary_date", lambda: TOMORROW)
     client = TestClient(app)
     try:
         yield client, session
@@ -298,6 +303,91 @@ def activate(client: TestClient, payload: dict, key: str, token: str = "token-a"
     result = preview(client, payload, token)
     body = {**payload, "confirmed": True, "expected_preview_hash": result["preview_hash"]}
     return client.post("/target-plans/activate", json=body, headers=headers(token, key))
+
+
+@pytest.mark.parametrize(("token", "existing_profile"), [("token-b", False), ("token-a", True)])
+def test_plan010_activation_captures_one_calendar_authority(
+    target_plan_context, monkeypatch, token: str, existing_profile: bool
+) -> None:
+    client, _ = target_plan_context
+    if existing_profile:
+        saved = client.put("/profile", json=profile_payload(), headers=headers(token))
+        assert saved.status_code == 200
+
+    fixed = diary_calendar_authority(
+        datetime(2026, 7, 15, 21, 0, 0, tzinfo=timezone.utc)
+    )
+    calls = 0
+
+    def authority():
+        nonlocal calls
+        calls += 1
+        return fixed
+
+    monkeypatch.setattr("app.services.target_plans.diary_calendar_authority", authority)
+
+    response = activate(client, profile_payload(weight=82), f"plan010-{token}", token)
+
+    assert response.status_code == 201, response.text
+    assert calls == 1
+
+
+@pytest.mark.parametrize(
+    ("token", "existing_profile", "expected_effective_from"),
+    [
+        ("token-b", False, date(2026, 12, 31)),
+        ("token-a", True, date(2027, 1, 1)),
+    ],
+)
+def test_plan010_midnight_crossing_cannot_skip_an_effective_date(
+    target_plan_context,
+    monkeypatch,
+    token: str,
+    existing_profile: bool,
+    expected_effective_from: date,
+) -> None:
+    client, session = target_plan_context
+    if existing_profile:
+        saved = client.put("/profile", json=profile_payload(), headers=headers(token))
+        assert saved.status_code == 200
+
+    before_midnight = diary_calendar_authority(
+        datetime(2026, 12, 30, 21, 0, 0, tzinfo=timezone.utc)
+    )
+    after_midnight = diary_calendar_authority(
+        datetime(2026, 12, 31, 21, 0, 0, tzinfo=timezone.utc)
+    )
+    calls = 0
+
+    def crossing_authority():
+        nonlocal calls
+        authority = before_midnight if calls == 0 else after_midnight
+        calls += 1
+        return authority
+
+    monkeypatch.setattr(
+        "app.api.routes.profile.diary_calendar_authority", lambda: before_midnight
+    )
+    monkeypatch.setattr(
+        "app.services.target_plans.diary_calendar_authority", crossing_authority
+    )
+
+    response = activate(client, profile_payload(weight=82), f"midnight-{token}", token)
+
+    assert response.status_code == 201, response.text
+    assert calls == 1
+    assert response.json()["plan"]["effective_from"] == expected_effective_from.isoformat()
+    transitions = session.exec(
+        select(LegacyTargetTransitionSnapshot).where(
+            LegacyTargetTransitionSnapshot.principal_id
+            == (PRINCIPAL_A if existing_profile else PRINCIPAL_B)
+        )
+    ).all()
+    if existing_profile:
+        assert len(transitions) == 1
+        assert transitions[0].transition_date == before_midnight.current_diary_date
+    else:
+        assert transitions == []
 
 
 def test_current_legacy_profile_target_is_available_before_transition(

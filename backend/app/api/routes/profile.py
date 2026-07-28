@@ -1,4 +1,3 @@
-from datetime import timedelta
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends
@@ -10,7 +9,7 @@ from app.db.session import get_session
 from app.nutrition_rules.calculation import CalculationError
 from app.schemas import ProfilePreview, ProfileResponse, ProfileUpsert, TargetResponse
 from app.services.profile import get_profile, preview_targets, to_profile_response, upsert_profile
-from app.core.calendar import diary_calendar_authority
+from app.core.calendar import diary_calendar_authority, following_diary_date
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -58,7 +57,7 @@ def preview_profile(
         authority = diary_calendar_authority()
         effective_date = authority.current_diary_date
         if get_profile(session, principal) is not None:
-            effective_date += timedelta(days=1)
+            effective_date = following_diary_date(effective_date)
         return preview_targets(payload, effective_date)
     except CalculationError as error:
         return JSONResponse(
