@@ -21,6 +21,7 @@ from sqlmodel import Session
 
 from app.core.auth import PrincipalContext
 from app.models import (
+    FOOD_GROUP_NUMERIC_COLUMNS,
     FOOD_NUMERIC_COLUMNS,
     DefaultUnitType,
     Food,
@@ -40,6 +41,12 @@ BASELINE_HASHES = {
 }
 DEPLOYMENT_PRINCIPAL = UUID("00000000-0000-0000-0000-000000000001")
 PLAN009_TIMESTAMP = datetime(2026, 7, 28, tzinfo=UTC)
+PLAN009_GROUP_NAN_CONSTRAINTS = frozenset(
+    {
+        "ck_food_group_contribution_amount",
+        "ck_food_group_contribution_amount_finite",
+    }
+)
 
 
 def _database_url() -> str:
@@ -673,12 +680,19 @@ def _seed_plan009_food(url: str) -> tuple[UUID, UUID]:
 
 
 def _assert_plan009_special_value_failure(
-    error: DBAPIError, special: str, constraint_name: str
+    error: DBAPIError,
+    special: str,
+    constraint_names: str | frozenset[str],
 ) -> None:
     if special == "NaN":
+        approved_names = (
+            frozenset({constraint_names})
+            if isinstance(constraint_names, str)
+            else constraint_names
+        )
         assert isinstance(error.orig, CheckViolation)
         assert error.orig.sqlstate == "23514"
-        assert error.orig.diag.constraint_name == constraint_name
+        assert error.orig.diag.constraint_name in approved_names
         return
     assert isinstance(error.orig, NumericValueOutOfRange)
     assert error.orig.sqlstate == "22003"
@@ -714,6 +728,55 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
     _run_alembic(url, "upgrade", "head")
     principal_id, food_id = _seed_plan009_food(url)
     engine = create_engine(url)
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT constraint_record.conname,
+                       constraint_record.convalidated,
+                       constraint_record.conrelid::regclass::text AS table_name,
+                       pg_get_constraintdef(constraint_record.oid) AS definition,
+                       ARRAY(
+                           SELECT attribute.attname
+                           FROM pg_attribute AS attribute
+                           WHERE attribute.attrelid = constraint_record.conrelid
+                             AND attribute.attnum = ANY(constraint_record.conkey)
+                           ORDER BY attribute.attname
+                       ) AS column_names
+                FROM pg_constraint AS constraint_record
+                WHERE constraint_record.contype = 'c'
+                  AND constraint_record.conname IN (
+                      'ck_food_numeric_values_finite',
+                      'ck_food_group_contribution_amount_finite'
+                  )
+                ORDER BY constraint_record.conname
+                """
+            )
+        ).all()
+    constraints = {row.conname: row for row in rows}
+    assert set(constraints) == {
+        "ck_food_numeric_values_finite",
+        "ck_food_group_contribution_amount_finite",
+    }
+    expected_constraint_metadata = {
+        "ck_food_numeric_values_finite": ("food", set(FOOD_NUMERIC_COLUMNS)),
+        "ck_food_group_contribution_amount_finite": (
+            "food_group_contribution",
+            set(FOOD_GROUP_NUMERIC_COLUMNS),
+        ),
+    }
+    for constraint_name, (table_name, expected_columns) in (
+        expected_constraint_metadata.items()
+    ):
+        constraint = constraints[constraint_name]
+        assert constraint.convalidated is True
+        assert constraint.table_name == table_name
+        assert set(constraint.column_names) == expected_columns
+        for special in ("NaN", "Infinity", "-Infinity"):
+            assert constraint.definition.count(f"'{special}'::numeric") == len(
+                expected_columns
+            )
 
     def insert_values(insert_id: UUID, name: str) -> dict[str, object]:
         return {
@@ -808,7 +871,7 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
                     )
                 )
         _assert_plan009_special_value_failure(
-            rejected.value, special, "ck_food_group_contribution_amount_finite"
+            rejected.value, special, PLAN009_GROUP_NAN_CONSTRAINTS
         )
         with engine.connect() as connection:
             assert connection.execute(
@@ -829,7 +892,7 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
                     {"special": special, "id": contribution_id},
                 )
         _assert_plan009_special_value_failure(
-            rejected.value, special, "ck_food_group_contribution_amount_finite"
+            rejected.value, special, PLAN009_GROUP_NAN_CONSTRAINTS
         )
         with engine.connect() as connection:
             assert connection.execute(
