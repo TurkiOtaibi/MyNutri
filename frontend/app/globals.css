@@ -4951,6 +4951,43 @@ button.profile-setting-row:focus-visible,
   transform: translateX(50%);
 }
 
+.profile-reconciliation-status {
+  position: fixed;
+  z-index: 45;
+  inset-inline: max(16px, calc((100vw - 760px) / 2));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--line));
+  border-radius: 17px;
+  background: white;
+  padding: 11px;
+  box-shadow: var(--shadow);
+}
+
+.profile-reconciliation-status > div,
+.profile-reconciliation-status span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.profile-reconciliation-status span {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.profile-reconciliation-status small {
+  color: var(--muted);
+}
+
+.profile-reconciliation-status .btn {
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+
 .profile-sheet-backdrop {
   position: fixed;
   z-index: 100;
@@ -5169,8 +5206,21 @@ button.profile-setting-row:focus-visible,
     inset-inline: 12px;
   }
 
+  .profile-reconciliation-status {
+    inset-inline: 12px;
+  }
+
   .profile-save-bar .btn {
     min-width: 142px;
+  }
+
+  .profile-reconciliation-status {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .profile-reconciliation-status .btn {
+    width: 100%;
   }
 }
 
@@ -5248,6 +5298,7 @@ button.profile-setting-row:focus-visible,
   .profile-advanced-chevron,
   .profile-preview-card,
   .profile-save-bar,
+  .profile-reconciliation-status,
   .profile-sheet,
   .profile-card-skeleton,
   .profile-preview-skeleton {
