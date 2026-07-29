@@ -21,7 +21,7 @@ import {
   X
 } from "lucide-react";
 import { CSSProperties, FormEvent, MouseEvent as ReactMouseEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   ApiError,
@@ -31,12 +31,11 @@ import {
   getNutritionRegistry,
   getWeekSummary,
   listDiaryEntries,
-  listDiaryHistory,
-  listFoods,
+  listFoodPicker,
   updateDiaryEntry
 } from "@/lib/api";
 import { addDays, formatDayNumber, formatLongArabicDate, formatShortDate, weekStartSunday } from "@/lib/dates";
-import { calculateServingNutrition, defaultUnitLabels, defaultServingText, formatServingMacro, unitBasisLabels } from "@/lib/food";
+import { defaultUnitLabels, defaultServingText, formatServingMacro, unitBasisLabels } from "@/lib/food";
 import { weekdays } from "@/lib/labels";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels, type NutrientDefinition } from "@/lib/nutrients";
 import type {
@@ -44,7 +43,7 @@ import type {
   DiaryNutrientAggregate,
   DiaryEntryInput,
   DiaryEntryResponse,
-  FoodResponse,
+  FoodPickerItem,
   MealType,
   NutritionSnapshot,
   NutritionRegistryResponse,
@@ -719,7 +718,7 @@ function DailyNutrientRow({ aggregate, definition }: { aggregate: DiaryNutrientA
 
 function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { selectedDate: string; initialMeal: MealType | null; onClose: () => void; onSaved: (meal: MealType) => Promise<void> }) {
   const [search, setSearch] = useState("");
-  const [selectedFood, setSelectedFood] = useState<FoodResponse | null>(null);
+  const [selectedFood, setSelectedFood] = useState<FoodPickerItem | null>(null);
   const [quantity, setQuantity] = useState("1");
   const [mealType, setMealType] = useState<MealType | null>(initialMeal);
   const [error, setError] = useState("");
@@ -732,16 +731,20 @@ function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { select
   const dragStartRef = useRef<number | null>(null);
   const submitLockRef = useRef(false);
   const debouncedSearch = useDebouncedValue(search, 275);
-  const foodsQuery = useQuery({
-    queryKey: ["diary-food-search", debouncedSearch],
-    queryFn: () => listFoods(debouncedSearch),
-    staleTime: 30_000,
-    placeholderData: (previous) => previous
-  });
-  const historyQuery = useQuery({
-    queryKey: ["diary-history-for-recent-foods"],
-    queryFn: listDiaryHistory,
-    staleTime: 60_000
+  const normalizedSearch = debouncedSearch.trim();
+  const foodsQuery = useInfiniteQuery({
+    queryKey: ["diary-food-picker", session?.user.id, normalizedSearch],
+    queryFn: ({ pageParam, signal }) => listFoodPicker({
+      accessToken,
+      search: normalizedSearch,
+      cursor: pageParam,
+      limit: 30,
+      signal: AbortSignal.any([signal, sessionSignal])
+    }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    enabled: Boolean(accessToken),
+    staleTime: 30_000
   });
 
   const mutation = useMutation({
@@ -765,23 +768,17 @@ function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { select
   const quantityError = selectedFood ? validateQuantity(quantity) : "";
   const preview = selectedFood && amount != null ? multiplyServing(selectedFood, amount) : null;
   const equivalentAmount = selectedFood && amount != null ? selectedFood.unit_amount * amount : null;
-  const allFoods = foodsQuery.data ?? [];
-  const recentFoods = useMemo(() => {
-    if (debouncedSearch.trim()) return [];
-    const foodsById = new Map(allFoods.map((food) => [food.id, food]));
+  const allFoods = useMemo(() => {
     const seen = new Set<string>();
-    const recent: FoodResponse[] = [];
-    for (const entry of historyQuery.data ?? []) {
-      const id = entry.food_id ?? entry.nutrition_snapshot.food_id;
-      if (!id || seen.has(id)) continue;
-      const food = foodsById.get(id);
-      if (!food) continue;
-      seen.add(id);
-      recent.push(food);
-      if (recent.length === 5) break;
-    }
-    return recent;
-  }, [allFoods, debouncedSearch, historyQuery.data]);
+    return (foodsQuery.data?.pages ?? []).flatMap((page) =>
+      page.items.filter((food) => {
+        if (seen.has(food.id)) return false;
+        seen.add(food.id);
+        return true;
+      })
+    );
+  }, [foodsQuery.data]);
+  const recentFoods = normalizedSearch ? [] : foodsQuery.data?.pages[0]?.recent_items ?? [];
   const recentIds = new Set(recentFoods.map((food) => food.id));
   const visibleFoods = debouncedSearch.trim() ? allFoods : allFoods.filter((food) => !recentIds.has(food.id));
   const hasMeaningfulChanges = Boolean(selectedFood) || quantity !== "1" || mealType !== initialMeal;
@@ -800,7 +797,7 @@ function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { select
     onClose();
   }
 
-  function chooseFood(food: FoodResponse) {
+  function chooseFood(food: FoodPickerItem) {
     setSelectedFood(food);
     setQuantity("1");
     setError("");
@@ -876,6 +873,16 @@ function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { select
                   </>
                 ) : null}
                 {!foodsQuery.isError && debouncedSearch.trim() ? <FoodResultGroup foods={allFoods} onChoose={chooseFood} /> : null}
+                {!foodsQuery.isError && foodsQuery.hasNextPage ? (
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={() => foodsQuery.fetchNextPage()}
+                    disabled={foodsQuery.isFetchingNextPage}
+                  >
+                    {foodsQuery.isFetchingNextPage ? "جاري التحميل…" : "عرض المزيد"}
+                  </button>
+                ) : null}
               </div>
             </div>
           ) : (
@@ -938,20 +945,20 @@ function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { select
   );
 }
 
-function FoodResultGroup({ title, foods, onChoose, emptyText }: { title?: string; foods: FoodResponse[]; onChoose: (food: FoodResponse) => void; emptyText?: string }) {
+function FoodResultGroup({ title, foods, onChoose, emptyText }: { title?: string; foods: FoodPickerItem[]; onChoose: (food: FoodPickerItem) => void; emptyText?: string }) {
   return (
     <section className="food-result-group">
       {title ? <h4>{title}</h4> : null}
       {foods.length === 0 && emptyText ? <p className="recent-foods-empty">{emptyText}</p> : null}
       <div className="food-result-list">
-        {foods.slice(0, 30).map((food) => <FoodResultRow key={food.id} food={food} onChoose={onChoose} />)}
+        {foods.map((food) => <FoodResultRow key={food.id} food={food} onChoose={onChoose} />)}
       </div>
     </section>
   );
 }
 
-function FoodResultRow({ food, onChoose }: { food: FoodResponse; onChoose: (food: FoodResponse) => void }) {
-  const serving = calculateServingNutrition(food);
+function FoodResultRow({ food, onChoose }: { food: FoodPickerItem; onChoose: (food: FoodPickerItem) => void }) {
+  const serving = pickerServingNutrition(food);
   return (
     <button className="diary-food-option" type="button" onClick={() => onChoose(food)} aria-label={`${food.name}، ${defaultServingText(food)}، ${serving ? Math.round(serving.calories) : "غير متاح"} سعرة`}>
       <span className="diary-food-option-copy">
@@ -967,8 +974,8 @@ function FoodResultSkeletons() {
   return <div className="food-result-skeletons" aria-label="جارٍ تحميل الأطعمة" role="status">{[1, 2, 3, 4].map((item) => <span key={item} />)}</div>;
 }
 
-function SelectedFoodSummary({ food, onChange }: { food: FoodResponse; onChange: () => void }) {
-  const serving = calculateServingNutrition(food);
+function SelectedFoodSummary({ food, onChange }: { food: FoodPickerItem; onChange: () => void }) {
+  const serving = pickerServingNutrition(food);
   return (
     <section className="selected-food-summary" aria-label={`الطعام المحدد: ${food.name}`}>
       <div>
@@ -1206,8 +1213,19 @@ function formatDiarySelectedDate(input: string, today: string): string {
   return input.slice(0, 4) === today.slice(0, 4) ? full.replace(/\s\d{4}$/, "") : full;
 }
 
-function multiplyServing(food: FoodResponse, quantity: number) {
-  const serving = calculateServingNutrition(food);
+function pickerServingNutrition(food: FoodPickerItem) {
+  const factor = Number(food.unit_amount) / 100;
+  if (!Number.isFinite(factor) || factor <= 0) return null;
+  return {
+    calories: Number(food.calories) * factor,
+    protein_g: Number(food.protein_g) * factor,
+    carb_g: Number(food.carb_g) * factor,
+    fat_g: Number(food.fat_g) * factor
+  };
+}
+
+function multiplyServing(food: FoodPickerItem, quantity: number) {
+  const serving = pickerServingNutrition(food);
   if (!serving) return null;
   return {
     calories: serving.calories * quantity,

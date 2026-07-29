@@ -264,6 +264,26 @@ export interface FoodResponse extends FoodInput {
   };
 }
 
+export interface FoodPickerItem {
+  id: string;
+  name: string;
+  brand: string | null;
+  nutrition_basis: NutritionBasis;
+  default_unit_type: DefaultUnitType;
+  unit_amount: number;
+  unit_basis: UnitBasis;
+  calories: number;
+  protein_g: number;
+  carb_g: number;
+  fat_g: number;
+}
+
+export interface FoodPickerResponse {
+  items: FoodPickerItem[];
+  recent_items: FoodPickerItem[];
+  next_cursor: string | null;
+}
+
 export type FoodSort = "name" | "recent" | "calories" | "protein";
 
 export interface FoodListResponse {

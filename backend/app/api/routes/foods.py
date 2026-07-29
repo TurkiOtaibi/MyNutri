@@ -1,19 +1,29 @@
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Body, Depends, Query, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
+from fastapi.responses import JSONResponse
 from sqlmodel import Session
 
 from app.core.auth import PrincipalContext, get_principal_context, require_admin
 from app.models import FoodStatus
 from app.db.session import get_session
-from app.schemas import FoodCreate, FoodDeleteResponse, FoodListResponse, FoodResponse, FoodSort, FoodUpdate
+from app.schemas import (
+    FoodCreate,
+    FoodDeleteResponse,
+    FoodListResponse,
+    FoodPickerResponse,
+    FoodResponse,
+    FoodSort,
+    FoodUpdate,
+)
 from app.services.food import (
     archive_food_response,
     create_food_response,
     delete_food,
     get_food,
     list_foods,
+    list_food_picker,
     list_foods_page,
     restore_food_response,
     to_food_response,
@@ -68,6 +78,38 @@ def add_food(
 ) -> FoodResponse:
     food_payload = validate_food_payload(FoodCreate, payload)
     return create_food_response(session, principal, food_payload)
+
+
+@router.get("/picker", response_model=FoodPickerResponse)
+def read_food_picker(
+    search: str = "",
+    limit: int = Query(default=30, ge=1, le=30),
+    cursor: str | None = Query(default=None),
+    principal: PrincipalContext = Depends(get_principal_context),
+    session: Session = Depends(get_session),
+) -> FoodPickerResponse | JSONResponse:
+    try:
+        return list_food_picker(
+            session,
+            principal,
+            search=search,
+            limit=limit,
+            cursor=cursor,
+        )
+    except HTTPException as error:
+        if error.status_code != 422 or not isinstance(error.detail, dict):
+            raise
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "code": error.detail["code"],
+                    "message_ar": error.detail["message_ar"],
+                    "details": {},
+                    "request_id": str(uuid4()),
+                }
+            },
+        )
 
 
 @router.get("/{food_id}", response_model=FoodResponse)

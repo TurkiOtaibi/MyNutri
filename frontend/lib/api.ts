@@ -4,6 +4,7 @@ import type {
   MealType,
   FoodInput,
   FoodListResponse,
+  FoodPickerResponse,
   FoodResponse,
   FoodSort,
   ProfileInput,
@@ -176,6 +177,24 @@ export function listTargetPlanHistory(cursor?: string | null, limit = 20): Promi
 export function listFoods(query = ""): Promise<FoodResponse[]> {
   const suffix = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
   return apiFetch<FoodResponse[]>(`/foods${suffix}`);
+}
+
+export function listFoodPicker(
+  options: {
+    accessToken: string | null | undefined;
+    search?: string;
+    cursor?: string | null;
+    limit?: number;
+    signal?: AbortSignal;
+  }
+): Promise<FoodPickerResponse> {
+  const params = new URLSearchParams({ limit: String(options.limit ?? 30) });
+  if (options.search?.trim()) params.set("search", options.search.trim());
+  if (options.cursor) params.set("cursor", options.cursor);
+  return apiFetch<FoodPickerResponse>(
+    `/foods/picker?${params.toString()}`,
+    authorizedInit(options.accessToken, options.signal)
+  );
 }
 
 export interface FoodListOptions {

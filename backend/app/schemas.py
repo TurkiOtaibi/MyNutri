@@ -739,6 +739,30 @@ class FoodResponse(FoodBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FoodPickerItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    name: str
+    brand: str | None
+    nutrition_basis: NutritionBasis
+    default_unit_type: DefaultUnitType
+    unit_amount: float
+    unit_basis: UnitBasis
+    calories: float
+    protein_g: float
+    carb_g: float
+    fat_g: float
+
+
+class FoodPickerResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[FoodPickerItem]
+    recent_items: list[FoodPickerItem]
+    next_cursor: str | None
+
+
 FoodSort = Literal["name", "recent", "calories", "protein"]
 
 
