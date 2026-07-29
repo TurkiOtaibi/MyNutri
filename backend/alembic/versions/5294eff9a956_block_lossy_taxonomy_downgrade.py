@@ -8,11 +8,20 @@ Create Date: 2026-07-29
 from collections.abc import Sequence
 
 from alembic import op
+from alembic.util.exc import CommandError
 
 revision: str = "5294eff9a956"
 down_revision: str | None = "df46234d2a7e"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+DOWNGRADE_BLOCK_MESSAGE = (
+    "PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED "
+    "[plan012_lossy_taxonomy_downgrade_guard]: Food Taxonomy V2 is intentionally "
+    "irreversible because frozen revision 0014 cannot restore the exact prior "
+    "category type and primary_category_key nullability; retain the current schema "
+    "and roll forward or restore an approved pre-migration backup"
+)
 
 
 def upgrade() -> None:
@@ -20,66 +29,19 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if op.get_context().as_sql:
+        raise CommandError(
+            f"{DOWNGRADE_BLOCK_MESSAGE}; offline downgrade SQL is intentionally unavailable"
+        )
+
     op.execute(
-        """
+        f"""
         DO $$
         BEGIN
-            IF EXISTS (
-                SELECT 1
-                FROM food_taxonomy_v2_migration_audit
-                WHERE legacy_primary_category_key IS NULL
-            ) THEN
-                RAISE EXCEPTION
-                    'PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED [plan012_lossy_taxonomy_downgrade_guard]: legacy NULL-origin taxonomy cannot be restored safely through frozen revision 0014'
-                    USING
-                        ERRCODE = 'check_violation',
-                        CONSTRAINT = 'plan012_lossy_taxonomy_downgrade_guard';
-            ELSIF EXISTS (
-                SELECT 1
-                FROM diary_entry
-                WHERE snapshot_schema_version = 3
-            ) OR EXISTS (
-                SELECT 1
-                FROM food AS current_food
-                LEFT JOIN food_taxonomy_v2_migration_audit AS audit
-                  ON audit.food_id = current_food.id
-                WHERE audit.food_id IS NULL
-                   OR current_food.food_category_key IS DISTINCT FROM
-                      CASE
-                          WHEN audit.legacy_primary_category_key IN (
-                              'whole_grains', 'refined_grains'
-                          ) THEN 'grains_starches'
-                          WHEN audit.legacy_primary_category_key IS NULL THEN 'other'
-                          ELSE audit.legacy_primary_category_key
-                      END
-                   OR current_food.grain_type IS DISTINCT FROM
-                      CASE audit.legacy_primary_category_key
-                          WHEN 'whole_grains' THEN 'whole'
-                          WHEN 'refined_grains' THEN 'refined'
-                          ELSE NULL
-                      END
-                   OR current_food.baked_good_type IS DISTINCT FROM NULL
-                   OR current_food.grain_starch_type IS DISTINCT FROM
-                      CASE
-                          WHEN audit.legacy_primary_category_key IN (
-                              'whole_grains', 'refined_grains'
-                          ) THEN 'other'
-                          ELSE NULL
-                      END
-                   OR current_food.taxonomy_review_required IS DISTINCT FROM
-                      (
-                          audit.legacy_primary_category_key IN (
-                              'whole_grains', 'refined_grains'
-                          )
-                          OR audit.legacy_primary_category_key IS NULL
-                      )
-            ) THEN
-                RAISE EXCEPTION
-                    'PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED [plan012_lossy_taxonomy_downgrade_guard]: current Food Taxonomy V2 state is not the untouched 0014 mapping'
-                    USING
-                        ERRCODE = 'check_violation',
-                        CONSTRAINT = 'plan012_lossy_taxonomy_downgrade_guard';
-            END IF;
+            RAISE EXCEPTION '{DOWNGRADE_BLOCK_MESSAGE}'
+                USING
+                    ERRCODE = 'check_violation',
+                    CONSTRAINT = 'plan012_lossy_taxonomy_downgrade_guard';
         END
         $$;
         """
