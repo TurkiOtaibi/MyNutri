@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -14,7 +15,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from psycopg.errors import CheckViolation, NumericValueOutOfRange
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import Numeric, String, create_engine, inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlmodel import Session
@@ -1085,15 +1086,237 @@ def _plan012_food_signature(url: str) -> tuple[tuple[object, ...], ...]:
     return signature
 
 
-def _plan012_schema_signature(url: str) -> tuple[tuple[str, str, bool], ...]:
+def _plan012_normalize_sql(value: object) -> str | None:
+    if value is None:
+        return None
+    return " ".join(str(value).split())
+
+
+def _plan012_canonical_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        return tuple(
+            sorted(
+                (
+                    str(key),
+                    _plan012_canonical_value(nested_value),
+                )
+                for key, nested_value in value.items()
+            )
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(_plan012_canonical_value(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return tuple(
+            sorted(
+                (_plan012_canonical_value(item) for item in value),
+                key=repr,
+            )
+        )
+    return value
+
+
+def _plan012_type_signature(sql_type: object) -> tuple[object, ...]:
+    return (
+        type(sql_type).__module__,
+        type(sql_type).__qualname__,
+        str(sql_type),
+        getattr(sql_type, "length", None),
+        getattr(sql_type, "precision", None),
+        getattr(sql_type, "scale", None),
+        getattr(sql_type, "timezone", None),
+    )
+
+
+def _plan012_canonical_table_signature(
+    *,
+    table_name: str,
+    schema_name: str,
+    columns: Sequence[Mapping[str, object]],
+    primary_key: Mapping[str, object],
+    foreign_keys: Sequence[Mapping[str, object]] = (),
+    unique_constraints: Sequence[Mapping[str, object]] = (),
+    check_constraints: Sequence[Mapping[str, object]] = (),
+    indexes: Sequence[Mapping[str, object]] = (),
+) -> tuple[object, ...]:
+    column_names = [column.get("name") for column in columns]
+    assert all(isinstance(name, str) and name for name in column_names)
+    assert len(column_names) == len(set(column_names)), "Duplicate reflected column metadata"
+
+    primary_key_columns = tuple(primary_key.get("constrained_columns") or ())
+    canonical_columns = tuple(
+        sorted(
+            (
+                (
+                    column["name"],
+                    _plan012_type_signature(column["type"]),
+                    column.get("nullable"),
+                    _plan012_normalize_sql(column.get("default")),
+                    column["name"] in primary_key_columns,
+                    _plan012_canonical_value(column.get("identity")),
+                    _plan012_canonical_value(column.get("computed")),
+                    column.get("autoincrement"),
+                    column.get("comment"),
+                )
+                for column in columns
+            ),
+            key=lambda item: str(item[0]),
+        )
+    )
+    canonical_primary_key = (
+        primary_key.get("name"),
+        primary_key_columns,
+        _plan012_canonical_value(primary_key.get("dialect_options")),
+    )
+    canonical_foreign_keys = tuple(
+        sorted(
+            (
+                (
+                    foreign_key.get("name"),
+                    tuple(foreign_key.get("constrained_columns") or ()),
+                    foreign_key.get("referred_schema"),
+                    foreign_key.get("referred_table"),
+                    tuple(foreign_key.get("referred_columns") or ()),
+                    _plan012_canonical_value(foreign_key.get("options")),
+                    _plan012_canonical_value(foreign_key.get("dialect_options")),
+                )
+                for foreign_key in foreign_keys
+            ),
+            key=repr,
+        )
+    )
+    canonical_unique_constraints = tuple(
+        sorted(
+            (
+                (
+                    constraint.get("name"),
+                    tuple(constraint.get("column_names") or ()),
+                    constraint.get("duplicates_index"),
+                    _plan012_canonical_value(constraint.get("dialect_options")),
+                )
+                for constraint in unique_constraints
+            ),
+            key=repr,
+        )
+    )
+    canonical_check_constraints = tuple(
+        sorted(
+            (
+                (
+                    constraint.get("name"),
+                    _plan012_normalize_sql(constraint.get("sqltext")),
+                    _plan012_canonical_value(constraint.get("dialect_options")),
+                )
+                for constraint in check_constraints
+            ),
+            key=repr,
+        )
+    )
+    canonical_indexes = tuple(
+        sorted(
+            (
+                (
+                    index.get("name"),
+                    index.get("unique"),
+                    tuple(index.get("column_names") or ()),
+                    tuple(index.get("expressions") or ()),
+                    _plan012_canonical_value(index.get("column_sorting")),
+                    index.get("duplicates_constraint"),
+                    _plan012_canonical_value(index.get("dialect_options")),
+                )
+                for index in indexes
+            ),
+            key=repr,
+        )
+    )
+    return (
+        ("schema", schema_name),
+        ("table", table_name),
+        ("columns", canonical_columns),
+        ("primary_key", canonical_primary_key),
+        ("foreign_keys", canonical_foreign_keys),
+        ("unique_constraints", canonical_unique_constraints),
+        ("check_constraints", canonical_check_constraints),
+        ("indexes", canonical_indexes),
+    )
+
+
+def _plan012_schema_signature(url: str) -> tuple[object, ...]:
     engine = create_engine(url)
     inspector = inspect(engine)
-    signature = tuple(
-        (column["name"], str(column["type"]), column["nullable"])
-        for column in inspector.get_columns("food")
+    table_name = "food"
+    schema_name = inspector.default_schema_name
+    signature = _plan012_canonical_table_signature(
+        table_name=table_name,
+        schema_name=schema_name,
+        columns=inspector.get_columns(table_name, schema=schema_name),
+        primary_key=inspector.get_pk_constraint(table_name, schema=schema_name),
+        foreign_keys=inspector.get_foreign_keys(table_name, schema=schema_name),
+        unique_constraints=inspector.get_unique_constraints(table_name, schema=schema_name),
+        check_constraints=inspector.get_check_constraints(table_name, schema=schema_name),
+        indexes=inspector.get_indexes(table_name, schema=schema_name),
     )
     engine.dispose()
     return signature
+
+
+def test_plan012_schema_signature_normalizes_only_inspector_collection_order() -> None:
+    id_column = {
+        "name": "id",
+        "type": String(36),
+        "nullable": False,
+        "default": None,
+    }
+    amount_column = {
+        "name": "amount",
+        "type": Numeric(8, 2),
+        "nullable": False,
+        "default": "0",
+    }
+    shared = {
+        "table_name": "food",
+        "schema_name": "public",
+        "primary_key": {"name": "pk_food", "constrained_columns": ["id"]},
+        "check_constraints": [
+            {"name": "ck_food_amount", "sqltext": "amount >= 0"},
+        ],
+        "indexes": [
+            {
+                "name": "ix_food_amount_id",
+                "unique": False,
+                "column_names": ["amount", "id"],
+            },
+        ],
+    }
+
+    expected = _plan012_canonical_table_signature(
+        columns=[id_column, amount_column],
+        **shared,
+    )
+    reordered = _plan012_canonical_table_signature(
+        columns=[amount_column, id_column],
+        **shared,
+    )
+    changed_nullability = _plan012_canonical_table_signature(
+        columns=[id_column, {**amount_column, "nullable": True}],
+        **shared,
+    )
+    changed_index_order = _plan012_canonical_table_signature(
+        columns=[id_column, amount_column],
+        **{
+            **shared,
+            "indexes": [
+                {
+                    "name": "ix_food_amount_id",
+                    "unique": False,
+                    "column_names": ["id", "amount"],
+                },
+            ],
+        },
+    )
+
+    assert reordered == expected
+    assert changed_nullability != expected
+    assert changed_index_order != expected
 
 
 def _plan012_legacy_food_signature(url: str) -> tuple[tuple[object, ...], ...]:
@@ -1131,7 +1354,7 @@ def _plan012_audit_signature(url: str) -> tuple[tuple[object, ...], ...]:
 def _assert_plan012_guard_failure(
     url: str,
     before_food: tuple[tuple[object, ...], ...],
-    before_schema: tuple[tuple[str, str, bool], ...],
+    before_schema: tuple[object, ...],
     expected_reason: str | None = None,
 ) -> None:
     result = _run_alembic(
