@@ -17,6 +17,7 @@ from app.services.food import (
     list_foods_page,
     restore_food_response,
     to_food_response,
+    to_food_responses,
     update_food_response,
 )
 from app.services.food_validation_errors import validate_food_payload
@@ -37,9 +38,7 @@ def read_foods(
 ) -> list[FoodResponse] | FoodListResponse:
     # Preserve the original list response for Diary and existing API consumers.
     if page is None and search is None and category is None and sort == "name":
-        return [
-            to_food_response(session, principal, food) for food in list_foods(session, principal, q)
-        ]
+        return to_food_responses(session, principal, list_foods(session, principal, q))
 
     result = list_foods_page(
         session,
@@ -51,7 +50,7 @@ def read_foods(
         page_size=page_size,
     )
     return FoodListResponse(
-        items=[to_food_response(session, principal, food) for food in result.items],
+        items=to_food_responses(session, principal, result.items),
         total=result.total,
         page=result.page,
         page_size=result.page_size,
@@ -126,7 +125,7 @@ def read_admin_foods(
         page_size=page_size,
     )
     return FoodListResponse(
-        items=[to_food_response(session, principal, food) for food in result.items],
+        items=to_food_responses(session, principal, result.items),
         total=result.total,
         page=result.page,
         page_size=result.page_size,
