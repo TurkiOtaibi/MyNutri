@@ -42,6 +42,9 @@ BASELINE_HASHES = {
 }
 DEPLOYMENT_PRINCIPAL = UUID("00000000-0000-0000-0000-000000000001")
 PLAN009_TIMESTAMP = datetime(2026, 7, 28, tzinfo=UTC)
+TRANSITION_SNAPSHOT_REVISION = "0009_legacy_target_transition_expand"
+SNAPSHOT_V2_REVISION = "0011_diary_snapshot_v2_expand"
+PLAN009_FINITE_NUTRIENTS_REVISION = "df46234d2a7e"
 PLAN009_GROUP_NAN_CONSTRAINTS = frozenset(
     {
         "ck_food_group_contribution_amount",
@@ -275,17 +278,18 @@ def test_transition_snapshot_constraints_and_immutability() -> None:
             ),
             {"id": DEPLOYMENT_PRINCIPAL},
         )
-    _run_alembic(url, "upgrade", "head")
+    # Exercise the transition-snapshot guard at its historical boundary, below Plan 012.
+    _run_alembic(url, "upgrade", TRANSITION_SNAPSHOT_REVISION)
     with engine.begin() as connection:
         connection.execute(
             text(
                 """
                 INSERT INTO profile
                   (id,principal_id,sex,birth_date,height_cm,weight_kg,activity_level,goal,
-                   protein_per_kg,fat_pct,cut_intensity,updated_at)
+                   protein_per_kg,fat_pct,updated_at)
                 VALUES
                   (:id,:principal,'male','1990-01-01',175,80,'moderate','maintain',
-                   1.2,0.25,0.2,now())
+                   1.2,0.25,now())
                 """
             ),
             {"id": profile_id, "principal": DEPLOYMENT_PRINCIPAL},
@@ -328,7 +332,18 @@ def test_transition_snapshot_constraints_and_immutability() -> None:
         ).scalar_one() == date(2026, 7, 16)
     downgrade = _run_alembic(url, "downgrade", "0008_food_groups_expand", check=False)
     assert downgrade.returncode != 0
-    assert "Lossy" in downgrade.stderr
+    assert "Lossy downgrade of transition snapshots is prohibited." in downgrade.stderr
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            TRANSITION_SNAPSHOT_REVISION
+        )
+        assert connection.execute(
+            text(
+                "SELECT transition_date FROM legacy_target_transition_snapshots WHERE id=:id"
+            ),
+            {"id": snapshot_id},
+        ).scalar_one() == date(2026, 7, 16)
+        assert connection.execute(text("SELECT 1")).scalar_one() == 1
     engine.dispose()
 
 
@@ -455,17 +470,18 @@ def test_snapshot_v2_database_shape_is_immutable_and_blocks_lossy_downgrade() ->
             ),
             {"id": DEPLOYMENT_PRINCIPAL},
         )
-    _run_alembic(url, "upgrade", "head")
+    # Exercise the Snapshot v2 guard at its historical boundary, below Plan 012.
+    _run_alembic(url, "upgrade", SNAPSHOT_V2_REVISION)
     with engine.begin() as connection:
         connection.execute(
             text(
                 """
                 INSERT INTO food
-                  (id,created_by_principal_id,name,normalized_name,food_category_key,
+                  (id,principal_id,name,
                    nutrition_basis,default_unit_type,unit_amount,unit_basis,
                    calories,protein_g,carb_g,fat_g,created_at,updated_at)
                 VALUES
-                  (:id,:principal,'Snapshot source','snapshot source','other','per_100g','serving',100,'g',
+                  (:id,:principal,'Snapshot source','per_100g','serving',100,'g',
                    100,1,2,3,now(),now())
                 """
             ),
@@ -519,6 +535,15 @@ def test_snapshot_v2_database_shape_is_immutable_and_blocks_lossy_downgrade() ->
     downgrade = _run_alembic(url, "downgrade", "0010_target_plan_expand", check=False)
     assert downgrade.returncode != 0
     assert "Lossy Snapshot v2 downgrade prohibited" in downgrade.stderr
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            SNAPSHOT_V2_REVISION
+        )
+        assert connection.execute(
+            text("SELECT nutrition_snapshot::text FROM diary_entry WHERE id=:id"),
+            {"id": entry_id},
+        ).scalar_one() == before_delete
+        assert connection.execute(text("SELECT 1")).scalar_one() == 1
     engine.dispose()
 
 
@@ -777,7 +802,13 @@ def test_plan009_existing_special_values_block_migration_with_field_counts() -> 
             {"food": food_id},
         )
 
-    result = _run_alembic(url, "upgrade", "head", check=False)
+    # Target Plan 009 directly so later irreversible revisions cannot shadow its guard.
+    result = _run_alembic(
+        url,
+        "upgrade",
+        PLAN009_FINITE_NUTRIENTS_REVISION,
+        check=False,
+    )
 
     assert result.returncode != 0
     output = result.stdout + result.stderr
@@ -791,12 +822,16 @@ def test_plan009_existing_special_values_block_migration_with_field_counts() -> 
 def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data() -> None:
     url = _database_url()
     identifiers = _prepare_plan012_0013_foods(url, ("other",))
-    _run_alembic(url, "upgrade", "head")
+    # Keep the round trip within Plan 009's historical boundary, below Plan 012.
+    _run_alembic(url, "upgrade", PLAN009_FINITE_NUTRIENTS_REVISION)
     principal_id = DEPLOYMENT_PRINCIPAL
     food_id = identifiers["other"]
     engine = create_engine(url)
 
     with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            PLAN009_FINITE_NUTRIENTS_REVISION
+        )
         rows = connection.execute(
             text(
                 """
@@ -990,6 +1025,9 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
 
     _run_alembic(url, "downgrade", "0014_v2_food_taxonomy")
     with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            "0014_v2_food_taxonomy"
+        )
         during = connection.execute(
             text(
                 "SELECT unit_amount, calories, protein_g, carb_g, fat_g, "
@@ -998,8 +1036,11 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
             ),
             {"food": maximum_food_id},
         ).one()
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", PLAN009_FINITE_NUTRIENTS_REVISION)
     with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            PLAN009_FINITE_NUTRIENTS_REVISION
+        )
         after = connection.execute(
             text(
                 "SELECT unit_amount, calories, protein_g, carb_g, fat_g, "
