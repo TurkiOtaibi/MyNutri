@@ -26,6 +26,16 @@ def downgrade() -> None:
         BEGIN
             IF EXISTS (
                 SELECT 1
+                FROM food_taxonomy_v2_migration_audit
+                WHERE legacy_primary_category_key IS NULL
+            ) THEN
+                RAISE EXCEPTION
+                    'PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED [plan012_lossy_taxonomy_downgrade_guard]: legacy NULL-origin taxonomy cannot be restored safely through frozen revision 0014'
+                    USING
+                        ERRCODE = 'check_violation',
+                        CONSTRAINT = 'plan012_lossy_taxonomy_downgrade_guard';
+            ELSIF EXISTS (
+                SELECT 1
                 FROM diary_entry
                 WHERE snapshot_schema_version = 3
             ) OR EXISTS (

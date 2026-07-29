@@ -76,6 +76,9 @@ PLAN012_LEGACY_CATEGORY_KEYS = (
     "other",
     None,
 )
+PLAN012_SAFE_LEGACY_CATEGORY_KEYS = tuple(
+    key for key in PLAN012_LEGACY_CATEGORY_KEYS if key is not None
+)
 
 
 def _plan012_expected_tuple(
@@ -1129,6 +1132,7 @@ def _assert_plan012_guard_failure(
     url: str,
     before_food: tuple[tuple[object, ...], ...],
     before_schema: tuple[tuple[str, str, bool], ...],
+    expected_reason: str | None = None,
 ) -> None:
     result = _run_alembic(
         url, "downgrade", "0013_v2_shared_food_catalog", check=False
@@ -1138,11 +1142,15 @@ def _assert_plan012_guard_failure(
     assert result.returncode != 0
     assert "PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED" in output
     assert "plan012_lossy_taxonomy_downgrade_guard" in output
+    if expected_reason is not None:
+        assert expected_reason in output
+    assert "NotNullViolation" not in output
     engine = create_engine(url)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
             "5294eff9a956"
         )
+        assert connection.execute(text("SELECT 1")).scalar_one() == 1
     engine.dispose()
     assert _plan012_food_signature(url) == before_food
     assert _plan012_schema_signature(url) == before_schema
@@ -1233,7 +1241,7 @@ def test_plan012_direct_edits_reviewed_resolution_and_new_food_block_downgrade(
 @pytest.mark.migration
 def test_plan012_untouched_upgrade_downgrade_reupgrade_preserves_exact_ledger() -> None:
     url = _database_url()
-    identifiers = _prepare_plan012_0013_foods(url, PLAN012_LEGACY_CATEGORY_KEYS)
+    identifiers = _prepare_plan012_0013_foods(url, PLAN012_SAFE_LEGACY_CATEGORY_KEYS)
     legacy_before = _plan012_legacy_food_signature(url)
     legacy_schema_before = _plan012_schema_signature(url)
 
@@ -1261,6 +1269,35 @@ def test_plan012_untouched_upgrade_downgrade_reupgrade_preserves_exact_ledger() 
     assert _plan012_food_signature(url) == v2_before
     assert _plan012_schema_signature(url) == v2_schema_before
     assert _plan012_audit_signature(url) == audit_before
+
+
+@pytest.mark.migration
+def test_plan012_legacy_null_origin_blocks_before_frozen_0014_downgrade() -> None:
+    url = _database_url()
+    identifiers = _prepare_plan012_0013_foods(url, (None,))
+    _run_alembic(url, "upgrade", "head")
+
+    before_food = _plan012_food_signature(url)
+    before_schema = _plan012_schema_signature(url)
+    assert before_food == ((identifiers[None], *_plan012_expected_tuple(None)),)
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        assert connection.execute(
+            text(
+                "SELECT count(*) FROM food_taxonomy_v2_migration_audit "
+                "WHERE legacy_primary_category_key IS NULL"
+            )
+        ).scalar_one() == 1
+    engine.dispose()
+
+    _assert_plan012_guard_failure(
+        url,
+        before_food=before_food,
+        before_schema=before_schema,
+        expected_reason=(
+            "legacy NULL-origin taxonomy cannot be restored safely through frozen revision 0014"
+        ),
+    )
 
 
 @pytest.mark.migration

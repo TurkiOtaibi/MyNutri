@@ -124,9 +124,13 @@ Emergency rollback keeps expanded schema and deploys the latest previously verif
 The tested lossless Food Taxonomy V2 schema boundary is current head to
 `0013_v2_shared_food_catalog`, and only when every Food still exactly matches
 the deterministic tuple produced by `0014_v2_food_taxonomy`, every Food has its
-`food_taxonomy_v2_migration_audit` row, and no Snapshot v3 row exists. Confirm
-the current revision, stop writers, and run the downgrade only through the
-approved deployment workflow:
+`food_taxonomy_v2_migration_audit` row, every audit row has a non-null
+`legacy_primary_category_key`, and no Snapshot v3 row exists. A legacy
+NULL-origin category is intentionally non-downgradable: frozen revision `0014`
+maps it to `other` on upgrade but cannot restore the exact NULL ledger value
+without violating its current non-null column ordering. Confirm the current
+revision, stop writers, and run the downgrade only through the approved
+deployment workflow:
 
 ```text
 alembic current
@@ -137,11 +141,21 @@ alembic current
 `PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED` with constraint
 `plan012_lossy_taxonomy_downgrade_guard` means the transaction remained at the
 current head because taxonomy data, audit coverage, or Snapshot v3 made the
-downgrade lossy. Preserve the database unchanged, capture the revision and
-invariant evidence, and deploy the latest verified V2-compatible reader
-instead. Never bypass or drop the guard, delete review work, insert or rewrite
-audit rows, use `alembic stamp`, or mutate the Alembic ledger to force a
-downgrade.
+downgrade lossy. Diagnose the NULL-origin blocker without changing data:
+
+```text
+SELECT count(*) AS legacy_null_origin_foods
+FROM food_taxonomy_v2_migration_audit
+WHERE legacy_primary_category_key IS NULL;
+```
+
+Preserve the database unchanged, confirm `alembic current` still reports the
+current head, retain the normal health checks, and deploy the latest verified
+V2-compatible reader instead. Never bypass or drop the guard, relax
+`food_category_key` nullability, coerce NULL to another legacy value, delete
+review work, insert or rewrite audit rows, use `alembic stamp`, or mutate the
+Alembic ledger to force a downgrade. Frozen revision `0014` must remain
+unchanged.
 
 ## 9. Preflight and Postflight
 
