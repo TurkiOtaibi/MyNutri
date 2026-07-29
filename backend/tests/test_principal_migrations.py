@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -14,7 +15,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from psycopg.errors import CheckViolation, NumericValueOutOfRange
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import Numeric, String, create_engine, inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlmodel import Session
@@ -41,12 +42,80 @@ BASELINE_HASHES = {
 }
 DEPLOYMENT_PRINCIPAL = UUID("00000000-0000-0000-0000-000000000001")
 PLAN009_TIMESTAMP = datetime(2026, 7, 28, tzinfo=UTC)
+TRANSITION_SNAPSHOT_REVISION = "0009_legacy_target_transition_expand"
+SNAPSHOT_V2_REVISION = "0011_diary_snapshot_v2_expand"
+PLAN009_FINITE_NUTRIENTS_REVISION = "df46234d2a7e"
 PLAN009_GROUP_NAN_CONSTRAINTS = frozenset(
     {
         "ck_food_group_contribution_amount",
         "ck_food_group_contribution_amount_finite",
     }
 )
+PLAN012_V2_FIELDS = (
+    "food_category_key",
+    "grain_type",
+    "baked_good_type",
+    "grain_starch_type",
+    "taxonomy_review_required",
+)
+PLAN012_LEGACY_CATEGORY_KEYS = (
+    "vegetables",
+    "fruits",
+    "legumes",
+    "whole_grains",
+    "refined_grains",
+    "nuts_seeds",
+    "seafood",
+    "dairy_fortified_alternatives",
+    "eggs",
+    "poultry",
+    "red_meat",
+    "processed_meat",
+    "added_oils_fats",
+    "sweets",
+    "sugar_sweetened_beverages",
+    "unsweetened_beverages",
+    "herbs_spices",
+    "mixed_dish",
+    "other",
+    None,
+)
+PLAN012_NON_NULL_LEGACY_CATEGORY_KEYS = tuple(
+    key for key in PLAN012_LEGACY_CATEGORY_KEYS if key is not None
+)
+PLAN012_IRREVERSIBLE_REASON = (
+    "Food Taxonomy V2 is intentionally irreversible because frozen revision 0014 "
+    "cannot restore the exact prior category type and primary_category_key nullability"
+)
+
+
+def _plan012_expected_tuple(
+    legacy_primary_category_key: str | None,
+) -> tuple[str, str | None, None, str | None, bool]:
+    if legacy_primary_category_key == "whole_grains":
+        return ("grains_starches", "whole", None, "other", True)
+    if legacy_primary_category_key == "refined_grains":
+        return ("grains_starches", "refined", None, "other", True)
+    if legacy_primary_category_key is None:
+        return ("other", None, None, None, True)
+    return (legacy_primary_category_key, None, None, None, False)
+
+
+@pytest.mark.migration
+@pytest.mark.parametrize("legacy_primary_category_key", PLAN012_LEGACY_CATEGORY_KEYS)
+def test_plan012_deterministic_0014_mapping_fixture_covers_every_v2_field(
+    legacy_primary_category_key: str | None,
+) -> None:
+    expected = _plan012_expected_tuple(legacy_primary_category_key)
+
+    assert len(expected) == len(PLAN012_V2_FIELDS)
+    assert dict(zip(PLAN012_V2_FIELDS, expected, strict=True)) == {
+        "food_category_key": expected[0],
+        "grain_type": expected[1],
+        "baked_good_type": expected[2],
+        "grain_starch_type": expected[3],
+        "taxonomy_review_required": expected[4],
+    }
 
 
 def _database_url() -> str:
@@ -160,7 +229,7 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "df46234d2a7e"
+            "5294eff9a956"
         )
     assert "principal" in inspector.get_table_names()
     for table in ("profile", "diary_entry"):
@@ -209,17 +278,18 @@ def test_transition_snapshot_constraints_and_immutability() -> None:
             ),
             {"id": DEPLOYMENT_PRINCIPAL},
         )
-    _run_alembic(url, "upgrade", "head")
+    # Exercise the transition-snapshot guard at its historical boundary, below Plan 012.
+    _run_alembic(url, "upgrade", TRANSITION_SNAPSHOT_REVISION)
     with engine.begin() as connection:
         connection.execute(
             text(
                 """
                 INSERT INTO profile
                   (id,principal_id,sex,birth_date,height_cm,weight_kg,activity_level,goal,
-                   protein_per_kg,fat_pct,cut_intensity,updated_at)
+                   protein_per_kg,fat_pct,updated_at)
                 VALUES
                   (:id,:principal,'male','1990-01-01',175,80,'moderate','maintain',
-                   1.2,0.25,0.2,now())
+                   1.2,0.25,now())
                 """
             ),
             {"id": profile_id, "principal": DEPLOYMENT_PRINCIPAL},
@@ -262,7 +332,18 @@ def test_transition_snapshot_constraints_and_immutability() -> None:
         ).scalar_one() == date(2026, 7, 16)
     downgrade = _run_alembic(url, "downgrade", "0008_food_groups_expand", check=False)
     assert downgrade.returncode != 0
-    assert "Lossy" in downgrade.stderr
+    assert "Lossy downgrade of transition snapshots is prohibited." in downgrade.stderr
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            TRANSITION_SNAPSHOT_REVISION
+        )
+        assert connection.execute(
+            text(
+                "SELECT transition_date FROM legacy_target_transition_snapshots WHERE id=:id"
+            ),
+            {"id": snapshot_id},
+        ).scalar_one() == date(2026, 7, 16)
+        assert connection.execute(text("SELECT 1")).scalar_one() == 1
     engine.dispose()
 
 
@@ -389,17 +470,18 @@ def test_snapshot_v2_database_shape_is_immutable_and_blocks_lossy_downgrade() ->
             ),
             {"id": DEPLOYMENT_PRINCIPAL},
         )
-    _run_alembic(url, "upgrade", "head")
+    # Exercise the Snapshot v2 guard at its historical boundary, below Plan 012.
+    _run_alembic(url, "upgrade", SNAPSHOT_V2_REVISION)
     with engine.begin() as connection:
         connection.execute(
             text(
                 """
                 INSERT INTO food
-                  (id,created_by_principal_id,name,normalized_name,food_category_key,
+                  (id,principal_id,name,
                    nutrition_basis,default_unit_type,unit_amount,unit_basis,
                    calories,protein_g,carb_g,fat_g,created_at,updated_at)
                 VALUES
-                  (:id,:principal,'Snapshot source','snapshot source','other','per_100g','serving',100,'g',
+                  (:id,:principal,'Snapshot source','per_100g','serving',100,'g',
                    100,1,2,3,now(),now())
                 """
             ),
@@ -453,6 +535,15 @@ def test_snapshot_v2_database_shape_is_immutable_and_blocks_lossy_downgrade() ->
     downgrade = _run_alembic(url, "downgrade", "0010_target_plan_expand", check=False)
     assert downgrade.returncode != 0
     assert "Lossy Snapshot v2 downgrade prohibited" in downgrade.stderr
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            SNAPSHOT_V2_REVISION
+        )
+        assert connection.execute(
+            text("SELECT nutrition_snapshot::text FROM diary_entry WHERE id=:id"),
+            {"id": entry_id},
+        ).scalar_one() == before_delete
+        assert connection.execute(text("SELECT 1")).scalar_one() == 1
     engine.dispose()
 
 
@@ -711,7 +802,13 @@ def test_plan009_existing_special_values_block_migration_with_field_counts() -> 
             {"food": food_id},
         )
 
-    result = _run_alembic(url, "upgrade", "head", check=False)
+    # Target Plan 009 directly so later irreversible revisions cannot shadow its guard.
+    result = _run_alembic(
+        url,
+        "upgrade",
+        PLAN009_FINITE_NUTRIENTS_REVISION,
+        check=False,
+    )
 
     assert result.returncode != 0
     output = result.stdout + result.stderr
@@ -724,12 +821,17 @@ def test_plan009_existing_special_values_block_migration_with_field_counts() -> 
 @pytest.mark.migration
 def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data() -> None:
     url = _database_url()
-    _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
-    principal_id, food_id = _seed_plan009_food(url)
+    identifiers = _prepare_plan012_0013_foods(url, ("other",))
+    # Keep the round trip within Plan 009's historical boundary, below Plan 012.
+    _run_alembic(url, "upgrade", PLAN009_FINITE_NUTRIENTS_REVISION)
+    principal_id = DEPLOYMENT_PRINCIPAL
+    food_id = identifiers["other"]
     engine = create_engine(url)
 
     with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            PLAN009_FINITE_NUTRIENTS_REVISION
+        )
         rows = connection.execute(
             text(
                 """
@@ -902,33 +1004,15 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
                 {"id": contribution_id},
             ).scalar_one() == Decimal("100.000")
 
-    maximum_food_id = uuid4()
-    maximum_values = insert_values(maximum_food_id, "Accepted schema maxima")
-    maximum_values.update(
-        unit_amount=2000,
-        calories=3000,
-        protein_g=300,
-        carb_g=500,
-        fat_g=300,
-        fiber_g=100,
-        sodium_mg=50000,
-        vitamin_d_mcg=250,
-        sugar_g=0,
-    )
+    maximum_food_id = food_id
     with engine.begin() as connection:
-        connection.execute(Food.__table__.insert().values(**maximum_values))
         connection.execute(
-            FoodGroupContribution.__table__.insert().values(
-                id=uuid4(),
-                created_by_principal_id=principal_id,
-                food_id=maximum_food_id,
-                group_key="fruits",
-                amount_per_100_basis=100,
-                data_status="known",
-                food_group_rules_version="1.0.0",
-                created_at=PLAN009_TIMESTAMP,
-                updated_at=PLAN009_TIMESTAMP,
-            )
+            text(
+                "UPDATE food SET unit_amount=2000,calories=3000,protein_g=300,"
+                "carb_g=500,fat_g=300,fiber_g=100,sodium_mg=50000,"
+                "vitamin_d_mcg=250,sugar_g=0 WHERE id=:food"
+            ),
+            {"food": maximum_food_id},
         )
         before = connection.execute(
             text(
@@ -941,6 +1025,9 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
 
     _run_alembic(url, "downgrade", "0014_v2_food_taxonomy")
     with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            "0014_v2_food_taxonomy"
+        )
         during = connection.execute(
             text(
                 "SELECT unit_amount, calories, protein_g, carb_g, fat_g, "
@@ -949,8 +1036,11 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
             ),
             {"food": maximum_food_id},
         ).one()
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", PLAN009_FINITE_NUTRIENTS_REVISION)
     with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            PLAN009_FINITE_NUTRIENTS_REVISION
+        )
         after = connection.execute(
             text(
                 "SELECT unit_amount, calories, protein_g, carb_g, fat_g, "
@@ -973,3 +1063,580 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
         Decimal("0.00"),
     )
     engine.dispose()
+
+
+def _prepare_plan012_0013_foods(
+    url: str,
+    legacy_primary_category_keys: tuple[str | None, ...],
+) -> dict[str | None, UUID]:
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "0004_principal_expand")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO principal (id,status,created_at,updated_at) "
+                "VALUES (:id,'active',now(),now())"
+            ),
+            {"id": DEPLOYMENT_PRINCIPAL},
+        )
+    engine.dispose()
+    _run_alembic(url, "upgrade", "0013_v2_shared_food_catalog")
+
+    identifiers: dict[str | None, UUID] = {}
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        for index, legacy_key in enumerate(legacy_primary_category_keys):
+            food_id = uuid4()
+            identifiers[legacy_key] = food_id
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO food
+                      (id,created_by_principal_id,name,normalized_name,category,
+                       primary_category_key,nutrition_basis,default_unit_type,unit_amount,
+                       unit_basis,calories,protein_g,carb_g,fat_g,created_at,updated_at)
+                    VALUES
+                      (:id,:principal,:name,:normalized_name,:category,:primary_category_key,
+                       'per_100g','serving',100,'g',100,10,20,5,now(),now())
+                    """
+                ),
+                {
+                    "id": food_id,
+                    "principal": DEPLOYMENT_PRINCIPAL,
+                    "name": f"Plan 012 legacy fixture {index}",
+                    "normalized_name": f"plan 012 legacy fixture {index}",
+                    "category": f"Legacy category {index}",
+                    "primary_category_key": legacy_key,
+                },
+            )
+    engine.dispose()
+    return identifiers
+
+
+def _plan012_food_signature(url: str) -> tuple[tuple[object, ...], ...]:
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        signature = tuple(
+            tuple(row)
+            for row in connection.execute(
+                text(
+                    "SELECT id,food_category_key,grain_type,baked_good_type,"
+                    "grain_starch_type,taxonomy_review_required "
+                    "FROM food ORDER BY id"
+                )
+            ).all()
+        )
+    engine.dispose()
+    return signature
+
+
+def _plan012_normalize_sql(value: object) -> str | None:
+    if value is None:
+        return None
+    return " ".join(str(value).split())
+
+
+def _plan012_canonical_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        return tuple(
+            sorted(
+                (
+                    str(key),
+                    _plan012_canonical_value(nested_value),
+                )
+                for key, nested_value in value.items()
+            )
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(_plan012_canonical_value(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return tuple(
+            sorted(
+                (_plan012_canonical_value(item) for item in value),
+                key=repr,
+            )
+        )
+    return value
+
+
+def _plan012_type_signature(sql_type: object) -> tuple[object, ...]:
+    return (
+        type(sql_type).__module__,
+        type(sql_type).__qualname__,
+        str(sql_type),
+        getattr(sql_type, "length", None),
+        getattr(sql_type, "precision", None),
+        getattr(sql_type, "scale", None),
+        getattr(sql_type, "timezone", None),
+    )
+
+
+def _plan012_canonical_table_signature(
+    *,
+    table_name: str,
+    schema_name: str,
+    columns: Sequence[Mapping[str, object]],
+    primary_key: Mapping[str, object],
+    foreign_keys: Sequence[Mapping[str, object]] = (),
+    unique_constraints: Sequence[Mapping[str, object]] = (),
+    check_constraints: Sequence[Mapping[str, object]] = (),
+    indexes: Sequence[Mapping[str, object]] = (),
+) -> tuple[object, ...]:
+    column_names = [column.get("name") for column in columns]
+    assert all(isinstance(name, str) and name for name in column_names)
+    assert len(column_names) == len(set(column_names)), "Duplicate reflected column metadata"
+
+    primary_key_columns = tuple(primary_key.get("constrained_columns") or ())
+    canonical_columns = tuple(
+        sorted(
+            (
+                (
+                    column["name"],
+                    _plan012_type_signature(column["type"]),
+                    column.get("nullable"),
+                    _plan012_normalize_sql(column.get("default")),
+                    column["name"] in primary_key_columns,
+                    _plan012_canonical_value(column.get("identity")),
+                    _plan012_canonical_value(column.get("computed")),
+                    column.get("autoincrement"),
+                    column.get("comment"),
+                )
+                for column in columns
+            ),
+            key=lambda item: str(item[0]),
+        )
+    )
+    canonical_primary_key = (
+        primary_key.get("name"),
+        primary_key_columns,
+        _plan012_canonical_value(primary_key.get("dialect_options")),
+    )
+    canonical_foreign_keys = tuple(
+        sorted(
+            (
+                (
+                    foreign_key.get("name"),
+                    tuple(foreign_key.get("constrained_columns") or ()),
+                    foreign_key.get("referred_schema"),
+                    foreign_key.get("referred_table"),
+                    tuple(foreign_key.get("referred_columns") or ()),
+                    _plan012_canonical_value(foreign_key.get("options")),
+                    _plan012_canonical_value(foreign_key.get("dialect_options")),
+                )
+                for foreign_key in foreign_keys
+            ),
+            key=repr,
+        )
+    )
+    canonical_unique_constraints = tuple(
+        sorted(
+            (
+                (
+                    constraint.get("name"),
+                    tuple(constraint.get("column_names") or ()),
+                    constraint.get("duplicates_index"),
+                    _plan012_canonical_value(constraint.get("dialect_options")),
+                )
+                for constraint in unique_constraints
+            ),
+            key=repr,
+        )
+    )
+    canonical_check_constraints = tuple(
+        sorted(
+            (
+                (
+                    constraint.get("name"),
+                    _plan012_normalize_sql(constraint.get("sqltext")),
+                    _plan012_canonical_value(constraint.get("dialect_options")),
+                )
+                for constraint in check_constraints
+            ),
+            key=repr,
+        )
+    )
+    canonical_indexes = tuple(
+        sorted(
+            (
+                (
+                    index.get("name"),
+                    index.get("unique"),
+                    tuple(index.get("column_names") or ()),
+                    tuple(index.get("expressions") or ()),
+                    _plan012_canonical_value(index.get("column_sorting")),
+                    index.get("duplicates_constraint"),
+                    _plan012_canonical_value(index.get("dialect_options")),
+                )
+                for index in indexes
+            ),
+            key=repr,
+        )
+    )
+    return (
+        ("schema", schema_name),
+        ("table", table_name),
+        ("columns", canonical_columns),
+        ("primary_key", canonical_primary_key),
+        ("foreign_keys", canonical_foreign_keys),
+        ("unique_constraints", canonical_unique_constraints),
+        ("check_constraints", canonical_check_constraints),
+        ("indexes", canonical_indexes),
+    )
+
+
+def _plan012_schema_signature(url: str) -> tuple[object, ...]:
+    engine = create_engine(url)
+    inspector = inspect(engine)
+    table_name = "food"
+    schema_name = inspector.default_schema_name
+    signature = _plan012_canonical_table_signature(
+        table_name=table_name,
+        schema_name=schema_name,
+        columns=inspector.get_columns(table_name, schema=schema_name),
+        primary_key=inspector.get_pk_constraint(table_name, schema=schema_name),
+        foreign_keys=inspector.get_foreign_keys(table_name, schema=schema_name),
+        unique_constraints=inspector.get_unique_constraints(table_name, schema=schema_name),
+        check_constraints=inspector.get_check_constraints(table_name, schema=schema_name),
+        indexes=inspector.get_indexes(table_name, schema=schema_name),
+    )
+    engine.dispose()
+    return signature
+
+
+def test_plan012_schema_signature_normalizes_only_inspector_collection_order() -> None:
+    id_column = {
+        "name": "id",
+        "type": String(36),
+        "nullable": False,
+        "default": None,
+    }
+    amount_column = {
+        "name": "amount",
+        "type": Numeric(8, 2),
+        "nullable": False,
+        "default": "0",
+    }
+    shared = {
+        "table_name": "food",
+        "schema_name": "public",
+        "primary_key": {"name": "pk_food", "constrained_columns": ["id"]},
+        "check_constraints": [
+            {"name": "ck_food_amount", "sqltext": "amount >= 0"},
+        ],
+        "indexes": [
+            {
+                "name": "ix_food_amount_id",
+                "unique": False,
+                "column_names": ["amount", "id"],
+            },
+        ],
+    }
+
+    expected = _plan012_canonical_table_signature(
+        columns=[id_column, amount_column],
+        **shared,
+    )
+    reordered = _plan012_canonical_table_signature(
+        columns=[amount_column, id_column],
+        **shared,
+    )
+    changed_nullability = _plan012_canonical_table_signature(
+        columns=[id_column, {**amount_column, "nullable": True}],
+        **shared,
+    )
+    changed_index_order = _plan012_canonical_table_signature(
+        columns=[id_column, amount_column],
+        **{
+            **shared,
+            "indexes": [
+                {
+                    "name": "ix_food_amount_id",
+                    "unique": False,
+                    "column_names": ["id", "amount"],
+                },
+            ],
+        },
+    )
+
+    assert reordered == expected
+    assert changed_nullability != expected
+    assert changed_index_order != expected
+
+
+def test_plan012_offline_downgrade_fails_before_destructive_sql() -> None:
+    result = _run_alembic(
+        "postgresql+psycopg://offline:offline@127.0.0.1:5432/mynutri_test_offline",
+        "downgrade",
+        "5294eff9a956:df46234d2a7e",
+        "--sql",
+        check=False,
+    )
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert "PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED" in output
+    assert "offline downgrade SQL is intentionally unavailable" in output
+    assert "ALTER TABLE" not in result.stdout
+    assert "DROP TABLE" not in result.stdout
+    assert "UPDATE " not in result.stdout
+    assert "DELETE " not in result.stdout
+    assert "INSERT " not in result.stdout
+
+
+def _plan012_audit_signature(url: str) -> tuple[tuple[object, ...], ...]:
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        signature = tuple(
+            tuple(row)
+            for row in connection.execute(
+                text(
+                    "SELECT food_id,legacy_category,legacy_primary_category_key "
+                    "FROM food_taxonomy_v2_migration_audit ORDER BY food_id"
+                )
+            ).all()
+        )
+    engine.dispose()
+    return signature
+
+
+def _assert_plan012_guard_failure(
+    url: str,
+    before_food: tuple[tuple[object, ...], ...],
+    before_schema: tuple[object, ...],
+) -> None:
+    before_audit = _plan012_audit_signature(url)
+    result = _run_alembic(
+        url, "downgrade", "0013_v2_shared_food_catalog", check=False
+    )
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert "PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED" in output
+    assert "plan012_lossy_taxonomy_downgrade_guard" in output
+    assert PLAN012_IRREVERSIBLE_REASON in output
+    assert "Running downgrade 0014_v2_food_taxonomy" not in output
+    assert "NotNullViolation" not in output
+    engine = create_engine(url)
+    inspector = inspect(engine)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            "5294eff9a956"
+        )
+        assert connection.execute(text("SELECT 1")).scalar_one() == 1
+    column_names = {column["name"] for column in inspector.get_columns("food")}
+    engine.dispose()
+    assert "food_category_key" in column_names
+    assert "category" not in column_names
+    assert _plan012_food_signature(url) == before_food
+    assert _plan012_audit_signature(url) == before_audit
+    assert _plan012_schema_signature(url) == before_schema
+
+
+@pytest.mark.migration
+def test_plan012_empty_database_blocks_before_frozen_0014_downgrade() -> None:
+    url = _database_url()
+    _prepare_plan012_0013_foods(url, ())
+    _run_alembic(url, "upgrade", "head")
+
+    assert _plan012_food_signature(url) == ()
+    assert _plan012_audit_signature(url) == ()
+    _assert_plan012_guard_failure(
+        url,
+        before_food=(),
+        before_schema=_plan012_schema_signature(url),
+    )
+
+
+@pytest.mark.migration
+@pytest.mark.parametrize(
+    ("scenario", "legacy_key"),
+    (
+        ("direct_update", "vegetables"),
+        ("reviewed_resolution", "whole_grains"),
+        ("new_food", "other"),
+    ),
+)
+def test_plan012_direct_edits_reviewed_resolution_and_new_food_block_downgrade(
+    scenario: str,
+    legacy_key: str,
+) -> None:
+    url = _database_url()
+    identifiers = _prepare_plan012_0013_foods(url, (legacy_key,))
+    _run_alembic(url, "upgrade", "head")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        if scenario == "direct_update":
+            connection.execute(
+                text("UPDATE food SET food_category_key='fruits' WHERE id=:id"),
+                {"id": identifiers[legacy_key]},
+            )
+        elif scenario == "reviewed_resolution":
+            connection.execute(
+                text(
+                    "UPDATE food SET grain_starch_type='rice',"
+                    "taxonomy_review_required=false WHERE id=:id"
+                ),
+                {"id": identifiers[legacy_key]},
+            )
+        else:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO food
+                      (id,created_by_principal_id,name,normalized_name,food_category_key,
+                       nutrition_basis,default_unit_type,unit_amount,unit_basis,
+                       calories,protein_g,carb_g,fat_g,created_at,updated_at)
+                    VALUES
+                      (:id,:principal,'Plan 012 new Food','plan 012 new food','other',
+                       'per_100g','serving',100,'g',100,10,20,5,now(),now())
+                    """
+                ),
+                {"id": uuid4(), "principal": DEPLOYMENT_PRINCIPAL},
+            )
+    engine.dispose()
+
+    _assert_plan012_guard_failure(
+        url,
+        before_food=_plan012_food_signature(url),
+        before_schema=_plan012_schema_signature(url),
+    )
+
+
+@pytest.mark.migration
+def test_plan012_non_null_legacy_ledger_blocks_irreversible_boundary() -> None:
+    url = _database_url()
+    identifiers = _prepare_plan012_0013_foods(url, PLAN012_NON_NULL_LEGACY_CATEGORY_KEYS)
+
+    _run_alembic(url, "upgrade", "head")
+    v2_before = _plan012_food_signature(url)
+    v2_schema_before = _plan012_schema_signature(url)
+    audit_before = _plan012_audit_signature(url)
+    actual_by_id = {row[0]: row[1:] for row in v2_before}
+    assert actual_by_id == {
+        food_id: _plan012_expected_tuple(legacy_key)
+        for legacy_key, food_id in identifiers.items()
+    }
+
+    _assert_plan012_guard_failure(
+        url,
+        before_food=v2_before,
+        before_schema=v2_schema_before,
+    )
+    assert _plan012_food_signature(url) == v2_before
+    assert _plan012_schema_signature(url) == v2_schema_before
+    assert _plan012_audit_signature(url) == audit_before
+
+
+@pytest.mark.migration
+def test_plan012_legacy_null_origin_blocks_before_frozen_0014_downgrade() -> None:
+    url = _database_url()
+    identifiers = _prepare_plan012_0013_foods(url, (None,))
+    _run_alembic(url, "upgrade", "head")
+
+    before_food = _plan012_food_signature(url)
+    before_schema = _plan012_schema_signature(url)
+    assert before_food == ((identifiers[None], *_plan012_expected_tuple(None)),)
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        assert connection.execute(
+            text(
+                "SELECT count(*) FROM food_taxonomy_v2_migration_audit "
+                "WHERE legacy_primary_category_key IS NULL"
+            )
+        ).scalar_one() == 1
+    engine.dispose()
+
+    _assert_plan012_guard_failure(
+        url,
+        before_food=before_food,
+        before_schema=before_schema,
+    )
+
+
+@pytest.mark.migration
+@pytest.mark.parametrize(
+    ("field", "legacy_key", "update_sql"),
+    (
+        (
+            "food_category_key",
+            "vegetables",
+            "UPDATE food SET food_category_key='fruits' WHERE id=:id",
+        ),
+        (
+            "grain_type",
+            "whole_grains",
+            "UPDATE food SET grain_type='refined' WHERE id=:id",
+        ),
+        (
+            "baked_good_type",
+            "vegetables",
+            "UPDATE food SET food_category_key='baked_goods',grain_type='unknown',"
+            "baked_good_type='other' WHERE id=:id",
+        ),
+        (
+            "grain_starch_type",
+            "whole_grains",
+            "UPDATE food SET grain_starch_type='rice' WHERE id=:id",
+        ),
+        (
+            "taxonomy_review_required",
+            "whole_grains",
+            "UPDATE food SET taxonomy_review_required=false WHERE id=:id",
+        ),
+    ),
+)
+def test_plan012_each_v2_field_divergence_aborts_before_schema_or_data_loss(
+    field: str,
+    legacy_key: str,
+    update_sql: str,
+) -> None:
+    url = _database_url()
+    identifiers = _prepare_plan012_0013_foods(url, (legacy_key,))
+    _run_alembic(url, "upgrade", "head")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(text(update_sql), {"id": identifiers[legacy_key]})
+    engine.dispose()
+
+    before_food = _plan012_food_signature(url)
+    assert dict(zip(PLAN012_V2_FIELDS, before_food[0][1:], strict=True))[field] is not None
+    _assert_plan012_guard_failure(
+        url,
+        before_food=before_food,
+        before_schema=_plan012_schema_signature(url),
+    )
+
+
+@pytest.mark.migration
+def test_plan012_snapshot_v3_baseline_condition_blocks_at_current_head() -> None:
+    url = _database_url()
+    identifiers = _prepare_plan012_0013_foods(url, ("other",))
+    _run_alembic(url, "upgrade", "head")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO diary_entry
+                  (id,principal_id,entry_date,food_id,quantity,meal_type,nutrition_snapshot,
+                   target_plan_id,target_provenance,snapshot_schema_version,created_at)
+                VALUES
+                  (:id,:principal,'2026-07-29',:food,1,'breakfast',
+                   CAST(:document AS jsonb),NULL,'legacy_unversioned',3,now())
+                """
+            ),
+            {
+                "id": uuid4(),
+                "principal": DEPLOYMENT_PRINCIPAL,
+                "food": identifiers["other"],
+                "document": json.dumps({"schema_version": 3}),
+            },
+        )
+    engine.dispose()
+
+    _assert_plan012_guard_failure(
+        url,
+        before_food=_plan012_food_signature(url),
+        before_schema=_plan012_schema_signature(url),
+    )

@@ -38,7 +38,7 @@ Each revision is independently reviewable. Physical implementation may split a b
 
 Version 1.1 requires the snapshot-aware reader to deploy with the writer disabled after `0009`. No migration creates snapshot rows or backfills historical targets. The first eligible activation creates its row at runtime in the same transaction as Profile and Target Plan changes.
 
-Required W1-CD-01 rehearsal adds: fresh and populated upgrade; zero rows after migration; exact first-runtime insert; one row under concurrent activation; owner/profile FK and immutable trigger failures; transaction rollback leaving zero rows; safe rerun after failed deployment; downgrade/re-upgrade before writes; and explicit refusal to downgrade after snapshot or Target Plan writes.
+Required W1-CD-01 rehearsal adds: fresh and populated upgrade; zero rows after migration; exact first-runtime insert; one row under concurrent activation; owner/profile FK and immutable trigger failures; transaction rollback leaving zero rows; safe rerun after failed deployment; downgrade/re-upgrade before writes at explicitly reversible earlier boundaries; and explicit refusal to downgrade after snapshot or Target Plan writes. The later Food Taxonomy V2 boundary is excluded because Plan 012 makes it intentionally irreversible.
 
 The compatibility floor after first snapshot/plan write is the first release that understands `legacy_target_transition_snapshots` and the W1-CD-01 precedence. Application rollback keeps the expanded schema and may target only a verified snapshot-aware reader. Rollback to a reader that calculates historical targets from mutable Profile is prohibited. Schema downgrade is lossless only while both transition and Target Plan tables contain no data; otherwise it fails without deleting data.
 
@@ -99,7 +99,7 @@ Required executable rehearsals:
 - mixed readers before writer;
 - first Target Plan and Snapshot v2 writes;
 - compatible application rollback after new writes;
-- supported downgrade/re-upgrade before writes;
+- supported downgrade/re-upgrade before writes at explicitly reversible earlier boundaries;
 - schema/model drift and one-head checks.
 
 ## 7. Transaction, Failure, and Resume
@@ -121,6 +121,38 @@ Resume procedure: stop writers; capture revision and invariant queries; restore/
 
 Emergency rollback keeps expanded schema and deploys the latest previously verified compatible reader. A downgrade that would lose or reinterpret data fails explicitly as unsupported. Database restore is disaster recovery, not routine deployment rollback.
 
+The Food Taxonomy V2 boundary at `5294eff9a956` is intentionally irreversible.
+There is no clean-data exception. Frozen revision `0014` recreates the legacy
+`category` column as `TEXT` instead of its original `VARCHAR` and does not
+restore nullable semantics for `primary_category_key`. It therefore cannot
+restore the exact prior schema even when the database has no Food rows or every
+Food still matches the untouched migration ledger. Legacy NULL-origin rows also
+cannot be restored without violating the frozen non-null operation order.
+
+Any runtime downgrade through `5294eff9a956` fails before frozen revision
+`0014` executes. The database remains at `5294eff9a956`, and its schema and data
+remain unchanged. Confirm that invariant through the approved workflow:
+
+```text
+alembic current
+alembic downgrade 0013_v2_shared_food_catalog  # expected to fail closed
+alembic current
+```
+
+`PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED` with constraint
+`plan012_lossy_taxonomy_downgrade_guard` means the transaction remained at the
+current head because exact schema restoration is impossible through frozen
+revision `0014`. Offline downgrade SQL generation is also intentionally
+rejected before destructive statements are emitted; generated downgrade output
+must never be executed.
+
+Supported recovery is to keep the current schema and roll forward with a
+verified V2-compatible release, or restore an approved pre-migration backup
+under normal backup-restoration governance and post-restore verification.
+Never edit frozen revision `0014`, bypass or drop the guard, relax nullability,
+coerce taxonomy values, execute generated destructive downgrade SQL, apply
+direct compensating DDL, use `alembic stamp`, or mutate the Alembic ledger.
+
 ## 9. Preflight and Postflight
 
 Preflight: expected repository revisions unique/ordered; one Alembic head; database revision known and non-divergent; explicit Principal prerequisite; valid `Asia/Riyadh`; required extensions/privileges (`btree_gist` where approved); writer gates off; backup/recovery point confirmed.
@@ -136,8 +168,8 @@ alembic heads
 alembic upgrade 0003_diary_meal_type
 alembic upgrade head
 alembic current
-alembic downgrade <tested_lossless_boundary>
-alembic upgrade head
+alembic downgrade 0013_v2_shared_food_catalog  # expected Plan 012 rejection
+alembic current                                # must remain 5294eff9a956
 pytest -m migration
 ```
 

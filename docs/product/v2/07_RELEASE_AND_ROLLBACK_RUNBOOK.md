@@ -94,6 +94,38 @@ For a frontend-only fault, keep Backend/schema and roll back to a V2-compatible
 frontend. For auth-provider outage, fail closed and restore service rather than
 bypass authentication.
 
+The Food Taxonomy V2 boundary at `5294eff9a956` is intentionally irreversible.
+There is no clean-data exception. Frozen revision `0014` recreates the legacy
+`category` column as `TEXT` instead of its original `VARCHAR` and does not
+restore nullable semantics for `primary_category_key`. It therefore cannot
+restore the exact prior schema even when the database has no Food rows or every
+Food still matches the untouched migration ledger. Legacy NULL-origin rows also
+cannot be restored without violating the frozen non-null operation order.
+
+Any runtime downgrade through `5294eff9a956` fails before frozen revision
+`0014` executes. The database remains at `5294eff9a956`, and its schema and data
+remain unchanged. Confirm that invariant through the approved workflow:
+
+```text
+alembic current
+alembic downgrade 0013_v2_shared_food_catalog  # expected to fail closed
+alembic current
+```
+
+`PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED` with constraint
+`plan012_lossy_taxonomy_downgrade_guard` means the transaction remained at the
+current head because exact schema restoration is impossible through frozen
+revision `0014`. Offline downgrade SQL generation is also intentionally
+rejected before destructive statements are emitted; generated downgrade output
+must never be executed.
+
+Supported recovery is to keep the current schema and roll forward with a
+verified V2-compatible release, or restore an approved pre-migration backup
+under normal backup-restoration governance and post-restore verification.
+Never edit frozen revision `0014`, bypass or drop the guard, relax nullability,
+coerce taxonomy values, execute generated destructive downgrade SQL, apply
+direct compensating DDL, use `alembic stamp`, or mutate the Alembic ledger.
+
 Rolling back the JWKS policy removes the application-owned snapshot,
 singleflight, cooldown, and input limits and restores the prior PyJWT client
 behavior. Retain fail-closed authentication during rollback; do not accept
