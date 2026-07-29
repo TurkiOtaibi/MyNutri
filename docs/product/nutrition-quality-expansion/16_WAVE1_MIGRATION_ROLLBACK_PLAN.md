@@ -121,6 +121,28 @@ Resume procedure: stop writers; capture revision and invariant queries; restore/
 
 Emergency rollback keeps expanded schema and deploys the latest previously verified compatible reader. A downgrade that would lose or reinterpret data fails explicitly as unsupported. Database restore is disaster recovery, not routine deployment rollback.
 
+The tested lossless Food Taxonomy V2 schema boundary is current head to
+`0013_v2_shared_food_catalog`, and only when every Food still exactly matches
+the deterministic tuple produced by `0014_v2_food_taxonomy`, every Food has its
+`food_taxonomy_v2_migration_audit` row, and no Snapshot v3 row exists. Confirm
+the current revision, stop writers, and run the downgrade only through the
+approved deployment workflow:
+
+```text
+alembic current
+alembic downgrade 0013_v2_shared_food_catalog
+alembic current
+```
+
+`PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED` with constraint
+`plan012_lossy_taxonomy_downgrade_guard` means the transaction remained at the
+current head because taxonomy data, audit coverage, or Snapshot v3 made the
+downgrade lossy. Preserve the database unchanged, capture the revision and
+invariant evidence, and deploy the latest verified V2-compatible reader
+instead. Never bypass or drop the guard, delete review work, insert or rewrite
+audit rows, use `alembic stamp`, or mutate the Alembic ledger to force a
+downgrade.
+
 ## 9. Preflight and Postflight
 
 Preflight: expected repository revisions unique/ordered; one Alembic head; database revision known and non-divergent; explicit Principal prerequisite; valid `Asia/Riyadh`; required extensions/privileges (`btree_gist` where approved); writer gates off; backup/recovery point confirmed.

@@ -94,6 +94,28 @@ For a frontend-only fault, keep Backend/schema and roll back to a V2-compatible
 frontend. For auth-provider outage, fail closed and restore service rather than
 bypass authentication.
 
+The tested lossless Food Taxonomy V2 schema boundary is current head to
+`0013_v2_shared_food_catalog`, and only when every Food still exactly matches
+the deterministic tuple produced by `0014_v2_food_taxonomy`, every Food has its
+`food_taxonomy_v2_migration_audit` row, and no Snapshot v3 row exists. Confirm
+the current revision, stop writers, and run the downgrade only through the
+approved deployment workflow:
+
+```text
+alembic current
+alembic downgrade 0013_v2_shared_food_catalog
+alembic current
+```
+
+`PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED` with constraint
+`plan012_lossy_taxonomy_downgrade_guard` means the transaction remained at the
+current head because taxonomy data, audit coverage, or Snapshot v3 made the
+downgrade lossy. Preserve the database unchanged, capture the revision and
+invariant evidence, and deploy the latest verified V2-compatible reader
+instead. Never bypass or drop the guard, delete review work, insert or rewrite
+audit rows, use `alembic stamp`, or mutate the Alembic ledger to force a
+downgrade.
+
 Rolling back the JWKS policy removes the application-owned snapshot,
 singleflight, cooldown, and input limits and restores the prior PyJWT client
 behavior. Retain fail-closed authentication during rollback; do not accept
