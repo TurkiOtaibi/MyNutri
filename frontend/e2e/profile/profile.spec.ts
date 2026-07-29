@@ -98,6 +98,8 @@ async function mockPlan011Preview(page: Page, originalProfile: ProfileResponse):
   const targets: TargetResponse = {
     ...originalProfile.targets,
     calories: 1777,
+    target_calories: 1777,
+    final_target_calories: 1777,
     preview_hash: "plan011-preview-hash",
     can_activate: true,
     safety_outcome: "normal"
