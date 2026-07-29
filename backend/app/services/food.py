@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from math import ceil
 from typing import Any
@@ -174,9 +176,11 @@ def _food_input_data(session: Session, principal: PrincipalContext, food: Food) 
     return data
 
 
-def to_food_response(session: Session, principal: PrincipalContext, food: Food) -> FoodResponse:
-    contributions = _group_contributions(session, food.id)
-    traits = _analytical_traits(session, food.id)
+def _build_food_response(
+    food: Food,
+    contributions: Sequence[FoodGroupContribution],
+    traits: Sequence[FoodAnalyticalTrait],
+) -> FoodResponse:
     derived_status = (
         "unknown"
         if not contributions
@@ -247,6 +251,46 @@ def to_food_response(session: Session, principal: PrincipalContext, food: Food) 
                 "message_ar": "تعذر قراءة بيانات الطعام بسبب عدم توافقها.",
             },
         ) from error
+
+
+def to_food_responses(
+    session: Session, principal: PrincipalContext, foods: Sequence[Food]
+) -> list[FoodResponse]:
+    if not foods:
+        return []
+
+    food_ids = list(dict.fromkeys(food.id for food in foods))
+    contributions_by_food_id: dict[UUID, list[FoodGroupContribution]] = defaultdict(list)
+    traits_by_food_id: dict[UUID, list[FoodAnalyticalTrait]] = defaultdict(list)
+
+    contributions = session.exec(
+        select(FoodGroupContribution)
+        .where(FoodGroupContribution.food_id.in_(food_ids))
+        .order_by(FoodGroupContribution.food_id, FoodGroupContribution.group_key)
+    ).all()
+    for contribution in contributions:
+        contributions_by_food_id[contribution.food_id].append(contribution)
+
+    traits = session.exec(
+        select(FoodAnalyticalTrait)
+        .where(FoodAnalyticalTrait.food_id.in_(food_ids))
+        .order_by(FoodAnalyticalTrait.food_id, FoodAnalyticalTrait.trait_key)
+    ).all()
+    for trait in traits:
+        traits_by_food_id[trait.food_id].append(trait)
+
+    return [
+        _build_food_response(
+            food,
+            contributions_by_food_id[food.id],
+            traits_by_food_id[food.id],
+        )
+        for food in foods
+    ]
+
+
+def to_food_response(session: Session, principal: PrincipalContext, food: Food) -> FoodResponse:
+    return to_food_responses(session, principal, [food])[0]
 
 
 def normalize_text(value: str) -> str:
@@ -455,7 +499,7 @@ def list_foods_page(
     statement = statement.offset((page - 1) * page_size).limit(page_size)
     items = list(session.exec(statement).all())
 
-    category_statement = select(Food.food_category_key)
+    category_statement = select(Food.food_category_key).distinct()
     if status is not None:
         category_statement = category_statement.where(Food.status == status)
     category_rows = session.exec(category_statement).all()

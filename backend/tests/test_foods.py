@@ -1,13 +1,16 @@
 import json
+import os
+from contextlib import contextmanager
 from datetime import date
 from typing import get_args
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import Numeric
+from sqlalchemy import Numeric, event, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -22,6 +25,7 @@ from app.models import (
     FOOD_GROUP_NUMERIC_COLUMNS,
     FOOD_NUMERIC_COLUMNS,
     FoodGroupContribution,
+    FoodStatus,
     NutritionBasis,
     Principal,
     PrincipalRole,
@@ -39,12 +43,14 @@ from app.schemas import (
 )
 from app.services.diary import make_snapshot, to_entry_response
 from app.services.food import (
+    archive_food_response,
     create_food,
     create_food_response,
     delete_food,
     list_foods,
     list_foods_page,
     to_food_response,
+    to_food_responses,
     update_food_response,
 )
 
@@ -137,6 +143,307 @@ def error_by_field(response) -> dict[str, dict]:
     assert response.status_code == 422
     details = response.json()["detail"]
     return {item["field"]: item for item in details}
+
+
+@contextmanager
+def capture_application_selects(session: Session):
+    engine = session.get_bind()
+    statements: list[str] = []
+
+    def capture_cursor(
+        _conn, _cursor, statement, _parameters, _context, _executemany
+    ) -> None:
+        normalized = " ".join(statement.split()).lower()
+        if normalized.startswith("select "):
+            statements.append(normalized)
+
+    event.listen(engine, "before_cursor_execute", capture_cursor)
+    try:
+        yield statements
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_cursor)
+
+
+@contextmanager
+def client_for_session(session: Session):
+    def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_principal_context] = lambda: PrincipalContext(
+        TEST_PRINCIPAL_ID, role=PrincipalRole.admin
+    )
+    client = TestClient(app)
+    try:
+        yield client
+    finally:
+        app.dependency_overrides.clear()
+        client.close()
+
+
+def child_selects(statements: list[str]) -> list[str]:
+    child_tables = ("food_group_contribution", "food_analytical_trait")
+    return [statement for statement in statements if any(table in statement for table in child_tables)]
+
+
+def create_plan013_representative_foods(session: Session) -> list[Food]:
+    zero = create_food(
+        session,
+        TEST_PRINCIPAL,
+        FoodCreate.model_validate(
+            food_payload(name="Alpha Zero", food_category_key="other", sugar_g=None)
+        ),
+    )
+    multiple = create_food(
+        session,
+        TEST_PRINCIPAL,
+        FoodCreate.model_validate(
+            food_payload(
+                name="Beta Multiple",
+                food_category_key="other",
+                group_contributions=[
+                    {
+                        "group_key": "vegetables",
+                        "amount_per_100_basis": 40,
+                        "data_status": "estimated",
+                    },
+                    {
+                        "group_key": "fruits",
+                        "amount_per_100_basis": 60,
+                        "data_status": "known",
+                    },
+                ],
+                analytical_traits=["salted", "processed"],
+            )
+        ),
+    )
+    archived = create_food(
+        session,
+        TEST_PRINCIPAL,
+        FoodCreate.model_validate(
+            food_payload(
+                name="Gamma Archived",
+                food_category_key="sweets",
+                group_contributions=[
+                    {
+                        "group_key": "fruits",
+                        "amount_per_100_basis": 25,
+                        "data_status": "known",
+                    }
+                ],
+                analytical_traits=["sweetened"],
+            )
+        ),
+    )
+    archive_food_response(session, TEST_PRINCIPAL, archived.id)
+    return [zero, multiple, archived]
+
+
+def test_plan013_batch_responses_preserve_single_item_semantics() -> None:
+    with session_fixture() as session:
+        foods = create_plan013_representative_foods(session)
+
+        public_foods = list_foods(session, TEST_PRINCIPAL)
+        admin_foods = list_foods_page(session, TEST_PRINCIPAL, status=None).items
+        expected = [
+            to_food_response(session, TEST_PRINCIPAL, food).model_dump(mode="json")
+            for food in foods
+        ]
+        with capture_application_selects(session) as statements:
+            responses = to_food_responses(session, TEST_PRINCIPAL, foods)
+
+        assert [food.name for food in public_foods] == ["Alpha Zero", "Beta Multiple"]
+        assert [food.name for food in admin_foods] == [
+            "Alpha Zero",
+            "Beta Multiple",
+            "Gamma Archived",
+        ]
+        assert [response.name for response in responses] == [
+            "Alpha Zero",
+            "Beta Multiple",
+            "Gamma Archived",
+        ]
+        assert responses[0].sugar_g is None
+        assert responses[0].group_data_status == "unknown"
+        assert responses[0].group_data_completeness == "unknown"
+        assert [item.group_key for item in responses[1].group_contributions] == [
+            "fruits",
+            "vegetables",
+        ]
+        assert responses[1].analytical_traits == ["processed", "salted"]
+        assert responses[1].group_data_status == "estimated"
+        assert responses[1].group_data_completeness == "complete"
+        assert responses[2].status == FoodStatus.archived
+        assert [response.model_dump(mode="json") for response in responses] == expected
+        assert len(child_selects(statements)) == 2
+
+
+@pytest.mark.parametrize(("size", "expected_child_selects"), [(0, 0), (1, 2), (20, 2), (100, 2)])
+def test_plan013_batch_response_child_query_budget(
+    size: int, expected_child_selects: int
+) -> None:
+    with session_fixture() as session:
+        foods = [
+            create_food(
+                session,
+                TEST_PRINCIPAL,
+                FoodCreate.model_validate(food_payload(name=f"Budget Food {index:03}")),
+            )
+            for index in range(size)
+        ]
+
+        with capture_application_selects(session) as statements:
+            responses = to_food_responses(session, TEST_PRINCIPAL, foods)
+
+        assert len(responses) == size
+        assert len(child_selects(statements)) == expected_child_selects
+
+
+def test_plan013_category_metadata_is_distinct_status_scoped_and_empty_safe() -> None:
+    with session_fixture() as session:
+        empty = list_foods_page(session, TEST_PRINCIPAL)
+        assert empty.categories == []
+        assert empty.uncategorized_count == 0
+
+        for name in ("Alpha Sweet", "Beta Sweet"):
+            create_food(
+                session,
+                TEST_PRINCIPAL,
+                FoodCreate.model_validate(
+                    food_payload(name=name, food_category_key="sweets")
+                ),
+            )
+        archived = create_food(
+            session,
+            TEST_PRINCIPAL,
+            FoodCreate.model_validate(
+                food_payload(name="Gamma Archived Category", food_category_key="other")
+            ),
+        )
+        archive_food_response(session, TEST_PRINCIPAL, archived.id)
+
+        with capture_application_selects(session) as statements:
+            active = list_foods_page(session, TEST_PRINCIPAL)
+        all_statuses = list_foods_page(session, TEST_PRINCIPAL, status=None)
+
+        assert active.categories == ["sweets"]
+        assert active.uncategorized_count == 0
+        assert all_statuses.categories == ["other", "sweets"]
+        assert all_statuses.uncategorized_count == 0
+        assert any(
+            statement.startswith("select distinct food.food_category_key")
+            for statement in statements
+        )
+
+
+def assert_plan013_list_route_query_budgets(session: Session, size: int) -> None:
+    for index in range(size):
+        create_food(
+            session,
+            TEST_PRINCIPAL,
+            FoodCreate.model_validate(food_payload(name=f"Route Budget {index:03}")),
+        )
+
+    routes = {
+        "legacy": ("/foods", 1 if size == 0 else 3),
+        "public_page": (
+            "/foods?page=1&page_size=100",
+            3 if size == 0 else 5,
+        ),
+        "admin_page": (
+            "/admin/foods?page=1&page_size=100",
+            3 if size == 0 else 5,
+        ),
+    }
+    with client_for_session(session) as client:
+        for route_name, (path, expected_total_selects) in routes.items():
+            with capture_application_selects(session) as statements:
+                response = client.get(path, headers=auth_headers())
+
+            assert response.status_code == 200, route_name
+            body = response.json()
+            items = body if route_name == "legacy" else body["items"]
+            assert len(items) == size, route_name
+            assert len(child_selects(statements)) == (0 if size == 0 else 2)
+            assert len(statements) == expected_total_selects, route_name
+
+
+@pytest.mark.parametrize("size", [0, 1, 20, 100])
+def test_plan013_list_route_total_and_child_query_budgets(size: int) -> None:
+    with session_fixture() as session:
+        assert_plan013_list_route_query_budgets(session, size)
+
+
+@pytest.fixture
+def plan013_postgresql_session():
+    url = os.environ.get("TEST_DATABASE_URL", "")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL is required for Plan 013 PostgreSQL query budgets.")
+    if make_url(url).get_backend_name() != "postgresql":
+        pytest.fail("Plan 013 PostgreSQL query budgets require a PostgreSQL TEST_DATABASE_URL.")
+
+    schema_name = f"plan013_{uuid4().hex}"
+    admin_engine = create_engine(url, isolation_level="AUTOCOMMIT")
+    test_engine = None
+    schema_created = False
+    try:
+        with admin_engine.connect() as connection:
+            connection.execute(text(f'CREATE SCHEMA "{schema_name}"'))
+            schema_created = True
+        test_engine = create_engine(
+            url,
+            connect_args={"options": f"-csearch_path={schema_name}"},
+        )
+        SQLModel.metadata.create_all(test_engine)
+        with Session(test_engine) as session:
+            session.add(Principal(id=TEST_PRINCIPAL_ID))
+            session.commit()
+            yield session
+    finally:
+        if test_engine is not None:
+            test_engine.dispose()
+        if schema_created:
+            with admin_engine.connect() as connection:
+                connection.execute(text(f'DROP SCHEMA "{schema_name}" CASCADE'))
+        admin_engine.dispose()
+
+
+@pytest.mark.parametrize("size", [0, 1, 20, 100])
+def test_plan013_postgresql_list_route_total_and_child_query_budgets(
+    plan013_postgresql_session: Session, size: int
+) -> None:
+    assert_plan013_list_route_query_budgets(plan013_postgresql_session, size)
+
+
+def test_plan013_detail_endpoint_keeps_single_item_response_path() -> None:
+    with session_fixture() as session:
+        food = create_food(
+            session,
+            TEST_PRINCIPAL,
+            FoodCreate.model_validate(
+                food_payload(
+                    name="Detail Regression",
+                    group_contributions=[
+                        {
+                            "group_key": "fruits",
+                            "amount_per_100_basis": 100,
+                            "data_status": "known",
+                        }
+                    ],
+                    analytical_traits=["sweetened"],
+                )
+            ),
+        )
+
+        with client_for_session(session) as client:
+            with capture_application_selects(session) as statements:
+                response = client.get(f"/foods/{food.id}", headers=auth_headers())
+
+        assert response.status_code == 200
+        assert response.json()["group_contributions"][0]["group_key"] == "fruits"
+        assert response.json()["analytical_traits"] == ["sweetened"]
+        assert len(child_selects(statements)) == 2
+        assert len(statements) == 3
 
 
 def test_create_food_blocks_normalized_duplicate() -> None:
