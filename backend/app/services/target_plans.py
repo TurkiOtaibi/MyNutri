@@ -60,6 +60,15 @@ class TargetBinding:
     profile: Profile | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class WeekTargetContext:
+    plans: tuple[TargetPlan, ...]
+    transitions_by_date: dict[date, LegacyTargetTransitionSnapshot]
+    profile: Profile | None
+    has_transition: bool
+    current_date: date
+
+
 def _canonical_hash(payload: Any) -> str:
     data = payload.model_dump(mode="json", exclude={"expected_preview_hash"})
     return sha256(
@@ -417,6 +426,126 @@ def _target_source_response(
         target_source_detail="no_preserved_target_source",
         plan=None,
         targets=None,
+    )
+
+
+def _load_week_target_context(
+    session: Session,
+    principal: PrincipalContext,
+    week_start: date,
+    week_end: date,
+    current_date: date,
+) -> WeekTargetContext:
+    plans = session.exec(
+        select(TargetPlan)
+        .where(
+            TargetPlan.principal_id == principal.principal_id,
+            TargetPlan.effective_from <= week_end,
+            (
+                TargetPlan.effective_to.is_(None)
+                | (TargetPlan.effective_to > week_start)
+            ),
+            TargetPlan.status.in_(
+                [
+                    TargetPlanStatus.active,
+                    TargetPlanStatus.closed,
+                    TargetPlanStatus.scheduled,
+                ]
+            ),
+        )
+        .order_by(TargetPlan.effective_from.desc())
+    ).all()
+    transitions = session.exec(
+        select(LegacyTargetTransitionSnapshot).where(
+            LegacyTargetTransitionSnapshot.principal_id == principal.principal_id,
+            LegacyTargetTransitionSnapshot.transition_date >= week_start,
+            LegacyTargetTransitionSnapshot.transition_date <= week_end,
+        )
+    ).all()
+    has_transition = (
+        session.exec(
+            select(LegacyTargetTransitionSnapshot.id)
+            .where(
+                LegacyTargetTransitionSnapshot.principal_id
+                == principal.principal_id
+            )
+            .limit(1)
+        ).first()
+        is not None
+    )
+    profile = session.exec(
+        select(Profile).where(Profile.principal_id == principal.principal_id)
+    ).first()
+    return WeekTargetContext(
+        plans=tuple(plans),
+        transitions_by_date={
+            transition.transition_date: transition for transition in transitions
+        },
+        profile=profile,
+        has_transition=has_transition,
+        current_date=current_date,
+    )
+
+
+def target_for_date(
+    context: WeekTargetContext, requested_date: date
+) -> TargetSourceResponse:
+    plan = next(
+        (
+            item
+            for item in context.plans
+            if item.effective_from <= requested_date
+            and (item.effective_to is None or item.effective_to > requested_date)
+        ),
+        None,
+    )
+    if plan is not None:
+        binding = TargetBinding(
+            provenance=TargetProvenance.versioned_plan,
+            plan=plan,
+        )
+    elif transition := context.transitions_by_date.get(requested_date):
+        binding = TargetBinding(
+            provenance=TargetProvenance.legacy_unversioned,
+            transition=transition,
+        )
+    elif (
+        context.profile is not None
+        and not context.has_transition
+        and requested_date <= context.current_date
+    ):
+        binding = TargetBinding(
+            provenance=TargetProvenance.legacy_unversioned,
+            profile=context.profile,
+        )
+    else:
+        binding = TargetBinding(provenance=TargetProvenance.no_target_source)
+    return _target_source_response(binding, requested_date)
+
+
+def resolve_week_target_context(
+    session: Session,
+    principal: PrincipalContext,
+    week_start: date,
+    week_end: date,
+) -> WeekTargetContext:
+    current_date = diary_calendar_authority().current_diary_date
+    _advance_lifecycle(session, principal.principal_id, current_date)
+    session.commit()
+    return _load_week_target_context(
+        session, principal, week_start, week_end, current_date
+    )
+
+
+def project_week_target_context(
+    session: Session,
+    principal: PrincipalContext,
+    week_start: date,
+    week_end: date,
+) -> WeekTargetContext:
+    current_date = diary_calendar_authority().current_diary_date
+    return _load_week_target_context(
+        session, principal, week_start, week_end, current_date
     )
 
 
