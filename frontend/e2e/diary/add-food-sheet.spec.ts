@@ -1,6 +1,37 @@
 import type { Page } from "@playwright/test";
 
-import { diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
+import {
+  API_TOKEN,
+  API_URL,
+  diaryDate as localDate,
+  expect,
+  test,
+  uniqueName
+} from "../foods/helpers";
+
+function pickerItem(index: number, name = `Picker Food ${index}`) {
+  return {
+    id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    name,
+    brand: null,
+    nutrition_basis: "per_100g",
+    default_unit_type: "serving",
+    unit_amount: 100,
+    unit_basis: "g",
+    calories: 100,
+    protein_g: 10,
+    carb_g: 15,
+    fat_g: 3
+  };
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
 
 async function openGeneral(page: Page) {
   await page.goto("/diary");
@@ -16,6 +47,131 @@ async function selectFood(page: Page, name: string) {
 }
 
 test.describe("@diary @add-food-sheet focused Add Food experience", () => {
+  test("@plan014 @p0 picker reads are bounded and never use full Food or lifetime Diary endpoints", async ({ page, foodsApi }) => {
+    const food = await foodsApi.create({ name: uniqueName("Bounded picker") });
+    const apiOrigin = new URL(API_URL).origin;
+    const pickerAudits: Array<Promise<void>> = [];
+    const getUrls: URL[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (request.method() === "GET" && url.origin === apiOrigin) getUrls.push(url);
+    });
+    page.on("response", (response) => {
+      const url = new URL(response.url());
+      if (url.origin !== apiOrigin || url.pathname !== "/foods/picker" || !response.ok()) return;
+      pickerAudits.push((async () => {
+        const requestedLimit = Number(url.searchParams.get("limit"));
+        const body = await response.json() as { items: unknown[]; recent_items: unknown[] };
+        expect(requestedLimit).toBeGreaterThanOrEqual(1);
+        expect(requestedLimit).toBeLessThanOrEqual(30);
+        expect(body.items.length).toBeLessThanOrEqual(requestedLimit);
+        expect(body.recent_items.length).toBeLessThanOrEqual(5);
+      })());
+    });
+
+    const dialog = await openGeneral(page);
+    await dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية").fill(food.name);
+    await expect(dialog.getByRole("button", { name: new RegExp(food.name) })).toBeVisible();
+    await Promise.all(pickerAudits);
+
+    expect(getUrls.filter((url) => url.pathname === "/foods/picker").length).toBeGreaterThan(0);
+    expect(getUrls.filter((url) => url.pathname === "/foods" && !url.search)).toHaveLength(0);
+    expect(getUrls.filter((url) => url.pathname === "/diary" && !url.search)).toHaveLength(0);
+  });
+
+  test("@plan014 @p0 pagination appends stable bounded pages without duplicate Food IDs", async ({ page }) => {
+    const firstPage = Array.from({ length: 30 }, (_, index) => pickerItem(index + 1));
+    const secondPage = [pickerItem(31)];
+    const cursors: Array<string | null> = [];
+    await page.route("**/foods/picker?*", async (route) => {
+      const cursor = new URL(route.request().url()).searchParams.get("cursor");
+      cursors.push(cursor);
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: cursor ? secondPage : firstPage,
+          recent_items: [],
+          next_cursor: cursor ? null : "opaque-next"
+        })
+      });
+    });
+
+    const dialog = await openGeneral(page);
+    const options = dialog.locator(".diary-food-option");
+    await expect(dialog.getByRole("button", { name: /^Picker Food 1،/ })).toHaveCount(1);
+    await expect(options).toHaveCount(30);
+    await dialog.getByRole("button", { name: "عرض المزيد" }).click();
+    await expect(dialog.getByRole("button", { name: /^Picker Food 31،/ })).toHaveCount(1);
+    await expect(options).toHaveCount(31);
+    for (let index = 1; index <= 31; index += 1) {
+      await expect(dialog.getByRole("button", { name: new RegExp(`^Picker Food ${index}،`) })).toHaveCount(1);
+    }
+    expect(
+      await options.evaluateAll((elements) =>
+        elements.map((element) => element.getAttribute("aria-label")?.split("،", 1)[0])
+      )
+    ).toEqual([...firstPage, ...secondPage].map((food) => food.name));
+    expect(cursors).toEqual([null, "opaque-next"]);
+  });
+
+  test("@plan014 @p0 stale search is cancelled and cannot replace the latest results", async ({ page }) => {
+    const slowStarted = deferred();
+    const releaseSlow = deferred();
+    const slowFinished = deferred();
+    const slowCancellationObserved = deferred();
+    let slowCancellationKind: "request-failed" | "fulfill-rejected" | null = null;
+    page.on("requestfailed", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === "/foods/picker" && url.searchParams.get("search") === "slow") {
+        slowCancellationKind = "request-failed";
+        slowCancellationObserved.resolve();
+      }
+    });
+    await page.route("**/foods/picker?*", async (route) => {
+      const search = new URL(route.request().url()).searchParams.get("search") ?? "";
+      if (search === "slow") {
+        slowStarted.resolve();
+        await releaseSlow.promise;
+        try {
+          await route.fulfill({
+            contentType: "application/json",
+            body: JSON.stringify({
+              items: [pickerItem(101, "slow result")],
+              recent_items: [],
+              next_cursor: null
+            })
+          });
+        } catch {
+          slowCancellationKind = "fulfill-rejected";
+          slowCancellationObserved.resolve();
+        } finally {
+          slowFinished.resolve();
+        }
+        return;
+      }
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: search ? [pickerItem(102, `${search} result`)] : [],
+          recent_items: [],
+          next_cursor: null
+        })
+      });
+    });
+
+    const dialog = await openGeneral(page);
+    const search = dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية");
+    await search.fill("slow");
+    await slowStarted.promise;
+    await search.fill("fast");
+    await expect(dialog.getByRole("button", { name: /fast result/ })).toBeVisible();
+    releaseSlow.resolve();
+    await slowFinished.promise;
+    await slowCancellationObserved.promise;
+    await expect(dialog.getByRole("button", { name: /slow result/ })).toHaveCount(0);
+    expect(slowCancellationKind).toMatch(/request-failed|fulfill-rejected/);
+  });
+
   test("@p0 general Add opens search state with recent foods and no premature configure controls", async ({ page, foodsApi }) => {
     const recent = await foodsApi.create({ name: uniqueName("Recent sheet") });
     await foodsApi.createDiary(recent.id, localDate(), 1, "snack");
@@ -25,6 +181,29 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     await expect(dialog.getByRole("button", { name: new RegExp(recent.name) })).toBeVisible();
     await expect(dialog.getByRole("heading", { name: "قسم الوجبة" })).toHaveCount(0);
     await expect(dialog.getByRole("button", { name: "إضافة الطعام", exact: true })).toHaveCount(0);
+  });
+
+  test("@plan014 @p0 recents de-duplicate repeated entries and exclude archived and deleted Foods", async ({ page, request, foodsApi }) => {
+    const repeated = await foodsApi.create({ name: uniqueName("Repeated recent") });
+    const archived = await foodsApi.create({ name: uniqueName("Archived recent") });
+    const deleted = await foodsApi.create({ name: uniqueName("Deleted picker") });
+    await foodsApi.createDiary(repeated.id, localDate(), 1, "snack");
+    await foodsApi.createDiary(repeated.id, localDate(), 2, "lunch");
+    await foodsApi.createDiary(archived.id, localDate(), 1, "snack");
+    const headers = { Authorization: `Bearer ${API_TOKEN}` };
+    const archivedResponse = await request.delete(`${API_URL}/admin/foods/${archived.id}`, { headers });
+    expect(archivedResponse.status()).toBe(200);
+    expect((await archivedResponse.json()).disposition).toBe("archived");
+    const deletedResponse = await request.delete(`${API_URL}/admin/foods/${deleted.id}`, { headers });
+    expect(deletedResponse.status()).toBe(200);
+    expect((await deletedResponse.json()).disposition).toBe("deleted");
+
+    const dialog = await openGeneral(page);
+    await expect(dialog.getByRole("button", { name: new RegExp(repeated.name) })).toHaveCount(1);
+    await expect(dialog.getByRole("button", { name: new RegExp(archived.name) })).toHaveCount(0);
+    const search = dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية");
+    await search.fill(deleted.name);
+    await expect(dialog.getByRole("button", { name: new RegExp(deleted.name) })).toHaveCount(0);
   });
 
   test("@p0 each meal Add action preserves its preselected meal after Food selection", async ({ page, foodsApi }) => {
@@ -55,17 +234,72 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     await expect(dialog.getByText("جرّب اسمًا آخر أو ابحث بالعلامة التجارية")).toBeVisible();
   });
 
+  test("@plan014 @p0 picker result can be selected with the keyboard", async ({ page, foodsApi }) => {
+    const food = await foodsApi.create({ name: uniqueName("Keyboard picker") });
+    const dialog = await openGeneral(page);
+    await dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية").fill(food.name);
+    const option = dialog.getByRole("button", { name: new RegExp(food.name) });
+    await option.focus();
+    await page.keyboard.press("Enter");
+    await expect(dialog.getByLabel(`الطعام المحدد: ${food.name}`)).toBeVisible();
+  });
+
   test("@p1 loading, search error, and Retry are explicit without blank alerts", async ({ page }) => {
-    let fail = true;
-    await page.route("**/foods*", async (route) => {
-      if (fail) return route.abort("failed");
-      return route.continue();
+    const apiOrigin = new URL(API_URL).origin;
+    const firstRequestStarted = deferred();
+    const releaseFirstRequest = deferred();
+    const pickerRequests: Array<{ method: string; origin: string; pathname: string }> = [];
+    await page.route((url) => url.origin === apiOrigin && url.pathname === "/foods/picker", async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      pickerRequests.push({ method: request.method(), origin: url.origin, pathname: url.pathname });
+      if (pickerRequests.length === 1) {
+        firstRequestStarted.resolve();
+        await releaseFirstRequest.promise;
+      }
+      if (pickerRequests.length <= 2) {
+        return route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({
+            error: {
+              code: "INTERNAL_ERROR",
+              message_ar: "تعذر تحميل الأطعمة",
+              details: {},
+              request_id: "00000000-0000-4000-8000-000000000500"
+            }
+          })
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [pickerItem(500, "Retry picker result")],
+          recent_items: [],
+          next_cursor: null
+        })
+      });
     });
     const dialog = await openGeneral(page);
+    await firstRequestStarted.promise;
+    const loading = dialog.getByRole("status", { name: "جارٍ تحميل الأطعمة" });
+    await expect(loading).toBeVisible();
+    await expect(dialog.locator('[role="alert"]:empty')).toHaveCount(0);
+    releaseFirstRequest.resolve();
     await expect(dialog.getByText("تعذر تحميل الأطعمة", { exact: true })).toBeVisible();
-    fail = false;
+    await expect(loading).toHaveCount(0);
+    await expect(dialog.locator(".diary-food-option")).toHaveCount(0);
+    expect(pickerRequests).toHaveLength(2);
     await dialog.getByRole("button", { name: "إعادة المحاولة" }).click();
-    await expect(dialog.getByText("جميع الأطعمة", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /^Retry picker result،/ })).toHaveCount(1);
+    await expect(dialog.getByText("تعذر تحميل الأطعمة", { exact: true })).toHaveCount(0);
+    await expect(dialog.locator(".diary-food-option")).toHaveCount(1);
+    expect(pickerRequests).toEqual([
+      { method: "GET", origin: apiOrigin, pathname: "/foods/picker" },
+      { method: "GET", origin: apiOrigin, pathname: "/foods/picker" },
+      { method: "GET", origin: apiOrigin, pathname: "/foods/picker" }
+    ]);
     await expect(dialog.locator('[role="alert"]:empty')).toHaveCount(0);
   });
 
@@ -107,9 +341,11 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
   test("@p0 save is single-submit, exposes saving state, and inserts into selected meal", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Single modern save") });
     let posts = 0;
+    const createPayloads: Array<Record<string, unknown>> = [];
     await page.route("**/diary", async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       posts += 1;
+      createPayloads.push(route.request().postDataJSON() as Record<string, unknown>);
       await new Promise((resolve) => setTimeout(resolve, 300));
       return route.continue();
     });
@@ -121,6 +357,8 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     await expect(dialog.getByRole("button", { name: /جارٍ الإضافة|تمت الإضافة/ })).toBeVisible();
     await expect(dialog).toHaveCount(0);
     expect(posts).toBe(1);
+    expect(Object.keys(createPayloads[0] ?? {}).sort()).toEqual(["entry_date", "food_id", "meal_type", "quantity"]);
+    expect(createPayloads[0]?.food_id).toBe(food.id);
     const dinner = page.locator("#meal-dinner");
     await expect(dinner.getByRole("heading", { name: food.name })).toBeVisible();
   });

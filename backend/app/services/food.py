@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import re
+from base64 import b64decode, urlsafe_b64encode
+from binascii import Error as Base64Error
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -10,7 +13,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from pydantic import ValidationError
-from sqlalchemy import delete, func, or_
+from sqlalchemy import and_, delete, func, or_
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
@@ -28,6 +31,8 @@ from app.nutrition_rules.versions import VERSIONS
 from app.schemas import (
     SOURCE_RELIABILITY_MAP,
     FoodCreate,
+    FoodPickerItem,
+    FoodPickerResponse,
     FoodResponse,
     FoodSort,
     FoodUpdate,
@@ -91,6 +96,122 @@ class FoodPage:
     total_pages: int
     categories: list[str]
     uncategorized_count: int
+
+
+PICKER_COLUMNS = (
+    Food.id,
+    Food.name,
+    Food.brand,
+    Food.nutrition_basis,
+    Food.default_unit_type,
+    Food.unit_amount,
+    Food.unit_basis,
+    Food.calories,
+    Food.protein_g,
+    Food.carb_g,
+    Food.fat_g,
+)
+
+
+def _picker_item(row: Any) -> FoodPickerItem:
+    return FoodPickerItem.model_validate(dict(zip(FoodPickerItem.model_fields, row, strict=True)))
+
+
+def _encode_picker_cursor(sort_name: str, item_id: UUID) -> str:
+    payload = json.dumps(
+        {"name": sort_name, "id": str(item_id)},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode()
+    return urlsafe_b64encode(payload).decode().rstrip("=")
+
+
+def _decode_picker_cursor(cursor: str) -> tuple[str, UUID]:
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        payload = json.loads(b64decode(cursor + padding, altchars=b"-_", validate=True))
+        if set(payload) != {"name", "id"} or not isinstance(payload["name"], str):
+            raise ValueError
+        return payload["name"], UUID(payload["id"])
+    except (
+        Base64Error,
+        KeyError,
+        TypeError,
+        UnicodeDecodeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_CURSOR", "message_ar": "مؤشر التصفح غير صالح."},
+        ) from error
+
+
+def list_food_picker(
+    session: Session,
+    principal: PrincipalContext,
+    *,
+    search: str = "",
+    limit: int = 30,
+    cursor: str | None = None,
+) -> FoodPickerResponse:
+    normalized_search = search.strip()
+    normalized_name = func.lower(Food.name)
+    catalog = select(normalized_name.label("sort_name"), *PICKER_COLUMNS).where(
+        Food.status == FoodStatus.active
+    )
+    if normalized_search:
+        pattern = f"%{normalized_search}%"
+        catalog = catalog.where(or_(Food.name.ilike(pattern), Food.brand.ilike(pattern)))
+    if cursor:
+        cursor_name, cursor_id = _decode_picker_cursor(cursor)
+        catalog = catalog.where(
+            or_(
+                normalized_name > cursor_name,
+                and_(normalized_name == cursor_name, Food.id > cursor_id),
+            )
+        )
+    rows = session.exec(catalog.order_by(normalized_name, Food.id).limit(limit + 1)).all()
+    has_more = len(rows) > limit
+    page_rows = rows[:limit]
+    items = [_picker_item(row[1:]) for row in page_rows]
+
+    recent_items: list[FoodPickerItem] = []
+    if not normalized_search:
+        ranked = (
+            select(
+                DiaryEntry.food_id.label("food_id"),
+                DiaryEntry.created_at.label("created_at"),
+                DiaryEntry.id.label("entry_id"),
+                func.row_number()
+                .over(
+                    partition_by=DiaryEntry.food_id,
+                    order_by=(DiaryEntry.created_at.desc(), DiaryEntry.id.desc()),
+                )
+                .label("recent_rank"),
+            )
+            .where(
+                DiaryEntry.principal_id == principal.principal_id,
+                DiaryEntry.food_id.is_not(None),
+            )
+            .subquery()
+        )
+        recent_rows = session.exec(
+            select(*PICKER_COLUMNS)
+            .join(ranked, ranked.c.food_id == Food.id)
+            .where(ranked.c.recent_rank == 1, Food.status == FoodStatus.active)
+            .order_by(ranked.c.created_at.desc(), ranked.c.entry_id.desc())
+            .limit(5)
+        ).all()
+        recent_items = [_picker_item(row) for row in recent_rows]
+
+    return FoodPickerResponse(
+        items=items,
+        recent_items=recent_items,
+        next_cursor=(
+            _encode_picker_cursor(page_rows[-1][0], page_rows[-1][1]) if has_more else None
+        ),
+    )
 
 
 def net_carbs(food: Food) -> float:

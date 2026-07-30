@@ -1,7 +1,7 @@
 import json
 import os
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import get_args
 from uuid import UUID, uuid4
 
@@ -38,6 +38,7 @@ from app.schemas import (
     OPTIONAL_NUTRIENT_MAX,
     FoodCreate,
     FoodGroupContributionInput,
+    FoodPickerItem,
     FoodResponse,
     FoodUpdate,
 )
@@ -48,6 +49,7 @@ from app.services.food import (
     create_food_response,
     delete_food,
     list_foods,
+    list_food_picker,
     list_foods_page,
     to_food_response,
     to_food_responses,
@@ -69,6 +71,8 @@ from app.services.food_validation_errors import (
 
 TEST_PRINCIPAL_ID = UUID("00000000-0000-0000-0000-000000000001")
 TEST_PRINCIPAL = PrincipalContext(TEST_PRINCIPAL_ID)
+OTHER_PRINCIPAL_ID = UUID("00000000-0000-0000-0000-000000000002")
+OTHER_PRINCIPAL = PrincipalContext(OTHER_PRINCIPAL_ID)
 
 
 def session_fixture() -> Session:
@@ -239,6 +243,202 @@ def create_plan013_representative_foods(session: Session) -> list[Food]:
     return [zero, multiple, archived]
 
 
+def create_plan014_food(session: Session, name: str, **overrides) -> Food:
+    return create_food(
+        session,
+        TEST_PRINCIPAL,
+        FoodCreate.model_validate(food_payload(name=name, **overrides)),
+    )
+
+
+def create_plan014_entry(
+    session: Session,
+    food: Food | None,
+    *,
+    principal_id: UUID = TEST_PRINCIPAL_ID,
+    created_at: datetime,
+) -> DiaryEntry:
+    entry = DiaryEntry(
+        principal_id=principal_id,
+        entry_date=created_at.date(),
+        food_id=food.id if food else None,
+        quantity=1,
+        meal_type="snack",
+        nutrition_snapshot={"food_id": str(food.id) if food else None, "name": food.name if food else "Deleted"},
+        created_at=created_at,
+    )
+    session.add(entry)
+    session.commit()
+    return entry
+
+
+@pytest.mark.plan014
+def test_plan014_picker_route_contract_limits_cursor_and_precedence(api_client: TestClient) -> None:
+    default = api_client.get("/foods/picker", headers=auth_headers())
+    assert default.status_code == 200
+    assert default.json() == {"items": [], "recent_items": [], "next_cursor": None}
+    assert (
+        api_client.get(
+            "/foods/picker", params={"limit": 30}, headers=auth_headers()
+        ).status_code
+        == 200
+    )
+
+    for limit in (0, 31):
+        invalid = api_client.get(
+            "/foods/picker", params={"limit": limit}, headers=auth_headers()
+        )
+        assert invalid.status_code == 422
+
+    for cursor in ("not-a-cursor", "e30", "eyJuYW1lIjoxLCJpZCI6ImJhZCJ9"):
+        malformed = api_client.get(
+            "/foods/picker", params={"cursor": cursor}, headers=auth_headers()
+        )
+        assert malformed.status_code == 422
+        assert malformed.json()["error"]["code"] == "INVALID_CURSOR"
+        assert malformed.json()["error"]["details"] == {}
+        assert UUID(malformed.json()["error"]["request_id"])
+
+
+@pytest.mark.plan014
+def test_plan014_picker_max_page_is_bounded_and_has_opaque_continuation() -> None:
+    with session_fixture() as session:
+        for index in range(31):
+            create_plan014_food(session, f"Bounded page {index:02}")
+
+        result = list_food_picker(session, TEST_PRINCIPAL, limit=30)
+
+        assert len(result.items) == 30
+        assert result.next_cursor is not None
+        assert "Bounded" not in result.next_cursor
+
+
+@pytest.mark.plan014
+def test_plan014_picker_closed_dto_search_and_stable_casefold_pagination() -> None:
+    with session_fixture() as session:
+        first = create_plan014_food(session, "ALPHA", brand="First Brand")
+        second = create_plan014_food(
+            session, "alpha", brand="Second Brand", unit_amount=171
+        )
+        create_plan014_food(session, "Beta", brand="Needle Brand")
+        archived = create_plan014_food(session, "Archived Needle")
+        archive_food_response(session, TEST_PRINCIPAL, archived.id)
+
+        page_one = list_food_picker(session, TEST_PRINCIPAL, limit=1)
+        page_two = list_food_picker(
+            session, TEST_PRINCIPAL, limit=1, cursor=page_one.next_cursor
+        )
+        expected_alpha_ids = sorted((first.id, second.id))
+        assert [page_one.items[0].id, page_two.items[0].id] == expected_alpha_ids
+        assert page_one.next_cursor is not None
+        assert page_two.next_cursor is not None
+
+        name_match = list_food_picker(session, TEST_PRINCIPAL, search="AlPhA")
+        brand_match = list_food_picker(session, TEST_PRINCIPAL, search="needle")
+        assert {item.id for item in name_match.items} == {first.id, second.id}
+        assert [item.name for item in brand_match.items] == ["Beta"]
+        assert name_match.recent_items == []
+        assert brand_match.recent_items == []
+
+        expected_fields = set(FoodPickerItem.model_fields)
+        assert set(name_match.items[0].model_dump()) == expected_fields
+        assert not expected_fields.intersection(
+            {
+                "status",
+                "food_category_key",
+                "nutrition_source",
+                "ingredients",
+                "group_contributions",
+                "analytical_traits",
+                "created_at",
+                "updated_at",
+            }
+        )
+
+
+@pytest.mark.plan014
+def test_plan014_picker_cursor_uses_database_normalized_sort_key() -> None:
+    with session_fixture() as session:
+        first = create_plan014_food(session, "Älpha")
+        second = create_plan014_food(session, "Ömega")
+
+        page_one = list_food_picker(session, TEST_PRINCIPAL, limit=1)
+        page_two = list_food_picker(
+            session, TEST_PRINCIPAL, limit=1, cursor=page_one.next_cursor
+        )
+
+        assert page_one.items[0].id == first.id
+        assert page_two.items[0].id == second.id
+
+
+@pytest.mark.plan014
+def test_plan014_picker_recents_are_latest_unique_owner_scoped_and_active_only() -> None:
+    with session_fixture() as session:
+        session.add(Principal(id=OTHER_PRINCIPAL_ID))
+        session.commit()
+        older = create_plan014_food(session, "Older")
+        newest = create_plan014_food(session, "Newest")
+        archived = create_plan014_food(session, "Archived recent")
+        other_owner = create_plan014_food(session, "Other owner recent")
+        base = datetime(2026, 7, 30, tzinfo=timezone.utc)
+        create_plan014_entry(session, older, created_at=base)
+        create_plan014_entry(session, newest, created_at=base + timedelta(minutes=1))
+        create_plan014_entry(session, older, created_at=base + timedelta(minutes=2))
+        create_plan014_entry(
+            session,
+            other_owner,
+            principal_id=OTHER_PRINCIPAL_ID,
+            created_at=base + timedelta(minutes=4),
+        )
+        create_plan014_entry(session, archived, created_at=base + timedelta(minutes=3))
+        archive_food_response(session, TEST_PRINCIPAL, archived.id)
+        create_plan014_entry(session, None, created_at=base + timedelta(minutes=5))
+
+        result = list_food_picker(session, TEST_PRINCIPAL)
+
+        assert [item.id for item in result.recent_items] == [older.id, newest.id]
+        assert len(result.items) <= 30
+        assert len(result.recent_items) <= 5
+
+
+def assert_plan014_picker_query_budget(session: Session, history_size: int) -> None:
+    food = create_plan014_food(session, f"Picker budget {history_size}")
+    base = datetime(2026, 7, 30, tzinfo=timezone.utc)
+    session.add_all(
+        [
+            DiaryEntry(
+                principal_id=TEST_PRINCIPAL_ID,
+                entry_date=base.date(),
+                food_id=food.id,
+                quantity=1,
+                meal_type="snack",
+                nutrition_snapshot={"food_id": str(food.id), "name": food.name},
+                created_at=base + timedelta(microseconds=index),
+            )
+            for index in range(history_size)
+        ]
+    )
+    session.commit()
+
+    with capture_application_selects(session) as empty_search_statements:
+        empty = list_food_picker(session, TEST_PRINCIPAL)
+    with capture_application_selects(session) as search_statements:
+        searched = list_food_picker(session, TEST_PRINCIPAL, search="budget")
+
+    assert len(empty_search_statements) == 2
+    assert len(search_statements) == 1
+    assert not any("diary_entry" in statement for statement in search_statements)
+    assert len(empty.recent_items) <= 5
+    assert len(searched.items) <= 30
+
+
+@pytest.mark.plan014
+@pytest.mark.parametrize("history_size", [10, 1000])
+def test_plan014_picker_query_budget_is_fixed_on_sqlite(history_size: int) -> None:
+    with session_fixture() as session:
+        assert_plan014_picker_query_budget(session, history_size)
+
+
 def test_plan013_batch_responses_preserve_single_item_semantics() -> None:
     with session_fixture() as session:
         foods = create_plan013_representative_foods(session)
@@ -375,14 +575,14 @@ def test_plan013_list_route_total_and_child_query_budgets(size: int) -> None:
 
 
 @pytest.fixture
-def plan013_postgresql_session():
+def isolated_postgresql_session():
     url = os.environ.get("TEST_DATABASE_URL", "")
     if not url:
-        pytest.skip("TEST_DATABASE_URL is required for Plan 013 PostgreSQL query budgets.")
+        pytest.skip("TEST_DATABASE_URL is required for PostgreSQL query budgets.")
     if make_url(url).get_backend_name() != "postgresql":
-        pytest.fail("Plan 013 PostgreSQL query budgets require a PostgreSQL TEST_DATABASE_URL.")
+        pytest.fail("PostgreSQL query budgets require a PostgreSQL TEST_DATABASE_URL.")
 
-    schema_name = f"plan013_{uuid4().hex}"
+    schema_name = f"isolated_foods_{uuid4().hex}"
     admin_engine = create_engine(url, isolation_level="AUTOCOMMIT")
     test_engine = None
     schema_created = False
@@ -408,11 +608,54 @@ def plan013_postgresql_session():
         admin_engine.dispose()
 
 
+@pytest.fixture
+def plan013_postgresql_session(isolated_postgresql_session: Session):
+    yield isolated_postgresql_session
+
+
+@pytest.fixture
+def plan014_postgresql_session(isolated_postgresql_session: Session):
+    yield isolated_postgresql_session
+
+
 @pytest.mark.parametrize("size", [0, 1, 20, 100])
 def test_plan013_postgresql_list_route_total_and_child_query_budgets(
     plan013_postgresql_session: Session, size: int
 ) -> None:
     assert_plan013_list_route_query_budgets(plan013_postgresql_session, size)
+
+
+@pytest.mark.plan014
+@pytest.mark.parametrize("history_size", [10, 1000])
+def test_plan014_postgresql_picker_query_budget(
+    plan014_postgresql_session: Session, history_size: int
+) -> None:
+    assert_plan014_picker_query_budget(plan014_postgresql_session, history_size)
+
+
+@pytest.mark.plan014
+def test_plan014_postgresql_recent_window_has_deterministic_tie_order(
+    plan014_postgresql_session: Session,
+) -> None:
+    first = create_plan014_food(plan014_postgresql_session, "Postgres tie first")
+    second = create_plan014_food(plan014_postgresql_session, "Postgres tie second")
+    created_at = datetime(2026, 7, 30, tzinfo=timezone.utc)
+    first_entry = create_plan014_entry(
+        plan014_postgresql_session, first, created_at=created_at
+    )
+    second_entry = create_plan014_entry(
+        plan014_postgresql_session, second, created_at=created_at
+    )
+
+    result = list_food_picker(plan014_postgresql_session, TEST_PRINCIPAL)
+
+    expected = [
+        food_id
+        for _, food_id in sorted(
+            ((first_entry.id, first.id), (second_entry.id, second.id)), reverse=True
+        )
+    ]
+    assert [item.id for item in result.recent_items] == expected
 
 
 def test_plan013_detail_endpoint_keeps_single_item_response_path() -> None:
