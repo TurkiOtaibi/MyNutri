@@ -92,17 +92,14 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     await input.fill("E2E Plan016 Draft");
     await page.clock.install({ time: new Date() });
     await page.clock.fastForward(20_001);
+    await page.context().setOffline(true);
     const refetched = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return url.origin === API_ORIGIN
         && url.pathname === foodApiPath
         && response.request().method() === "GET";
     });
-    const visibilityState = await page.evaluate(() => {
-      document.dispatchEvent(new Event("visibilitychange"));
-      return document.visibilityState;
-    });
-    expect(visibilityState).toBe("visible");
+    await page.context().setOffline(false);
     await refetched;
     expect(reads).toBe(2);
     await expect(page.getByText("توجد نسخة أحدث من هذا الطعام على الخادم. احتفظنا بتعديلاتك الحالية.")).toBeVisible();

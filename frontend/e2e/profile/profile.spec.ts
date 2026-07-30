@@ -446,11 +446,8 @@ test.describe("@profile Profile and targets redesign", () => {
     );
     await page.clock.install({ time: new Date() });
     await page.clock.fastForward(20_001);
-    const visibilityState = await page.evaluate(() => {
-      document.dispatchEvent(new Event("visibilitychange"));
-      return document.visibilityState;
-    });
-    expect(visibilityState).toBe("visible");
+    await page.context().setOffline(true);
+    await page.context().setOffline(false);
     await refetched;
     expect(profileRefetches).toBe(1);
     await expect(page.getByLabel("الوزن")).toHaveValue(heldDraft);
@@ -951,16 +948,13 @@ test.describe("@profile Profile and targets redesign", () => {
     });
     await page.clock.install({ time: new Date() });
     await page.clock.fastForward(20_001);
+    await page.context().setOffline(true);
     const refetched = page.waitForResponse((response) =>
       new URL(response.url()).origin === API_ORIGIN
         && profilePath(new URL(response.url()))
         && response.request().method() === "GET"
     );
-    const visibilityState = await page.evaluate(() => {
-      document.dispatchEvent(new Event("visibilitychange"));
-      return document.visibilityState;
-    });
-    expect(visibilityState).toBe("visible");
+    await page.context().setOffline(false);
     await refetched;
     expect(profileRefetches).toBe(1);
     await expect(page.getByText("توجد نسخة أحدث من بيانات الملف على الخادم. احتفظنا بتعديلاتك الحالية.")).toBeVisible();
@@ -1028,16 +1022,13 @@ test.describe("@profile Profile and targets redesign", () => {
     await input.fill(draft);
     await page.clock.install({ time: new Date() });
     await page.clock.fastForward(20_001);
+    await page.context().setOffline(true);
     const refetched = page.waitForResponse((response) =>
       new URL(response.url()).origin === API_ORIGIN
         && profilePath(new URL(response.url()))
         && response.request().method() === "GET"
     );
-    const visibilityState = await page.evaluate(() => {
-      document.dispatchEvent(new Event("visibilitychange"));
-      return document.visibilityState;
-    });
-    expect(visibilityState).toBe("visible");
+    await page.context().setOffline(false);
     await refetched;
     expect(reads).toBe(2);
     await expect(page.getByText("توجد نسخة أحدث من بيانات الملف على الخادم. احتفظنا بتعديلاتك الحالية.")).toBeVisible();
