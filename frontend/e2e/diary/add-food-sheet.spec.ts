@@ -49,14 +49,16 @@ async function selectFood(page: Page, name: string) {
 test.describe("@diary @add-food-sheet focused Add Food experience", () => {
   test("@plan014 @p0 picker reads are bounded and never use full Food or lifetime Diary endpoints", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Bounded picker") });
+    const apiOrigin = new URL(API_URL).origin;
     const pickerAudits: Array<Promise<void>> = [];
     const getUrls: URL[] = [];
     page.on("request", (request) => {
-      if (request.method() === "GET") getUrls.push(new URL(request.url()));
+      const url = new URL(request.url());
+      if (request.method() === "GET" && url.origin === apiOrigin) getUrls.push(url);
     });
     page.on("response", (response) => {
       const url = new URL(response.url());
-      if (url.pathname !== "/foods/picker" || !response.ok()) return;
+      if (url.origin !== apiOrigin || url.pathname !== "/foods/picker" || !response.ok()) return;
       pickerAudits.push((async () => {
         const requestedLimit = Number(url.searchParams.get("limit"));
         const body = await response.json() as { items: unknown[]; recent_items: unknown[] };
@@ -72,9 +74,9 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     await expect(dialog.getByRole("button", { name: new RegExp(food.name) })).toBeVisible();
     await Promise.all(pickerAudits);
 
-    expect(getUrls.some((url) => url.pathname === "/foods/picker")).toBe(true);
-    expect(getUrls.some((url) => url.pathname === "/foods" && !url.search)).toBe(false);
-    expect(getUrls.some((url) => url.pathname === "/diary" && !url.search)).toBe(false);
+    expect(getUrls.filter((url) => url.pathname === "/foods/picker").length).toBeGreaterThan(0);
+    expect(getUrls.filter((url) => url.pathname === "/foods" && !url.search)).toHaveLength(0);
+    expect(getUrls.filter((url) => url.pathname === "/diary" && !url.search)).toHaveLength(0);
   });
 
   test("@plan014 @p0 pagination appends stable bounded pages without duplicate Food IDs", async ({ page }) => {
@@ -95,10 +97,20 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     });
 
     const dialog = await openGeneral(page);
-    await expect(dialog.getByRole("button", { name: /Picker Food 1/ })).toBeVisible();
+    const options = dialog.locator(".diary-food-option");
+    await expect(dialog.getByRole("button", { name: /^Picker Food 1،/ })).toHaveCount(1);
+    await expect(options).toHaveCount(30);
     await dialog.getByRole("button", { name: "عرض المزيد" }).click();
-    await expect(dialog.getByRole("button", { name: /Picker Food 31/ })).toBeVisible();
-    await expect(dialog.locator(".diary-food-option")).toHaveCount(31);
+    await expect(dialog.getByRole("button", { name: /^Picker Food 31،/ })).toHaveCount(1);
+    await expect(options).toHaveCount(31);
+    for (let index = 1; index <= 31; index += 1) {
+      await expect(dialog.getByRole("button", { name: new RegExp(`^Picker Food ${index}،`) })).toHaveCount(1);
+    }
+    expect(
+      await options.evaluateAll((elements) =>
+        elements.map((element) => element.getAttribute("aria-label")?.split("،", 1)[0])
+      )
+    ).toEqual([...firstPage, ...secondPage].map((food) => food.name));
     expect(cursors).toEqual([null, "opaque-next"]);
   });
 
