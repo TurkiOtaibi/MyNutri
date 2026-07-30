@@ -2,8 +2,7 @@
 
 import { ArrowRight, ChevronDown, Plus, Save, Trash2, X } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Dispatch, FormEvent, MouseEvent, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
+import { Dispatch, FormEvent, SetStateAction, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, createFood, getAdminFood, getNutritionRegistry, updateFood } from "@/lib/api";
@@ -27,6 +26,7 @@ import { FoodDeleteDialog } from "./FoodDeleteDialog";
 import { useFoodDelete } from "./useFoodDelete";
 import { useAuth } from "./AuthProvider";
 import { useSessionAbortSignal } from "./SessionQueryProvider";
+import { useUnsavedChanges } from "./UnsavedChangesProvider";
 
 const FOOD_READ_ERROR = "تعذر تحميل تفاصيل الطعام. تحقق من الاتصال وحاول مرة أخرى.";
 const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
@@ -56,18 +56,21 @@ const optionalFields: (keyof FoodFormValues)[] = [
 ];
 
 export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId?: string }) {
-  const router = useRouter();
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FoodFormValues>(emptyFoodForm);
   const [errors, setErrors] = useState<FoodFormErrors>({});
   const [note, setNote] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<FoodResponse | null>(null);
   const [hydratedFoodId, setHydratedFoodId] = useState<string | null>(null);
+  const [pendingServerFood, setPendingServerFood] = useState<FoodResponse | null>(null);
   const initialForm = useRef(JSON.stringify(emptyFoodForm));
   const isEdit = mode === "edit";
   const { account, session, loading: authLoading } = useAuth();
   const accessToken = session?.access_token;
+  const subjectId = session?.user.id ?? null;
+  const formSubjectRef = useRef(subjectId);
   const sessionSignal = useSessionAbortSignal();
+  const dirty = JSON.stringify(form) !== initialForm.current;
 
   const foodQuery = useQuery({
     queryKey: ["food", foodId],
@@ -83,22 +86,34 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   useEffect(() => {
     if (foodQuery.data) {
       const loaded = foodToForm(foodQuery.data);
+      if (dirty && hydratedFoodId === foodQuery.data.id) {
+        if (JSON.stringify(loaded) !== initialForm.current) setPendingServerFood(foodQuery.data);
+        return;
+      }
+      if (dirty) {
+        setPendingServerFood(foodQuery.data);
+        return;
+      }
       setForm(loaded);
       initialForm.current = JSON.stringify(loaded);
       setHydratedFoodId(foodQuery.data.id);
+      setPendingServerFood(null);
     }
+    // Dirty state is intentionally observed at response time so a refetch cannot
+    // replace a user's in-progress values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [foodQuery.data]);
 
-  const dirty = JSON.stringify(form) !== initialForm.current;
-  useEffect(() => {
-    const protect = (event: BeforeUnloadEvent) => {
-      if (!dirty) return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", protect);
-    return () => window.removeEventListener("beforeunload", protect);
-  }, [dirty]);
+  useLayoutEffect(() => {
+    if (formSubjectRef.current === subjectId) return;
+    formSubjectRef.current = subjectId;
+    setForm(emptyFoodForm);
+    initialForm.current = JSON.stringify(emptyFoodForm);
+    setHydratedFoodId(null);
+    setPendingServerFood(null);
+    setErrors({});
+    setNote("");
+  }, [subjectId]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -108,11 +123,15 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     },
     onSuccess: async (food) => {
       if (sessionSignal.aborted) return;
+      const saved = foodToForm(food);
+      initialForm.current = JSON.stringify(saved);
+      setForm(saved);
+      setPendingServerFood(null);
       await queryClient.invalidateQueries({ queryKey: ["foods"] });
       if (sessionSignal.aborted) return;
       await queryClient.invalidateQueries({ queryKey: ["food", food.id] });
       if (sessionSignal.aborted) return;
-      router.push(`/foods/${food.id}`);
+      completeAndNavigate(`/foods/${food.id}`);
     },
     onError: (error) => {
       if (sessionSignal.aborted) return;
@@ -128,10 +147,23 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
 
   const deleteMutation = useFoodDelete({
     onDeleted: () => {
-      if (!sessionSignal.aborted) router.push("/foods");
+      if (!sessionSignal.aborted) {
+        initialForm.current = JSON.stringify(form);
+        completeAndNavigate("/foods");
+      }
     },
     onError: (message) => {
       if (!sessionSignal.aborted) setNote(message);
+    }
+  });
+
+  const { completeAndNavigate, requestDiscard } = useUnsavedChanges({
+    identity: `food:${mode}:${foodId ?? "new"}`,
+    dirty,
+    enabled: !saveMutation.isPending && !deleteMutation.isPending,
+    discard: () => {
+      initialForm.current = JSON.stringify(form);
+      setPendingServerFood(null);
     }
   });
 
@@ -187,13 +219,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     return <div className="state-note" role="alert">إدارة الأطعمة متاحة للمشرف فقط.</div>;
   }
 
-  function protectUnsaved(event: MouseEvent<HTMLAnchorElement>) {
-    if (dirty && !window.confirm("لديك تغييرات غير محفوظة. هل تريد المغادرة؟")) {
-      event.preventDefault();
-    }
-  }
-
-  if (isEdit && (foodQuery.isPending || (foodQuery.data && hydratedFoodId !== foodQuery.data.id))) {
+  if (isEdit && (foodQuery.isPending || (foodQuery.data && hydratedFoodId !== foodQuery.data.id && !dirty))) {
     return <div className="state-note">جاري تحميل تفاصيل الطعام.</div>;
   }
 
@@ -253,7 +279,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
           <p className="page-kicker">القيم الغذائية تحفظ لكل 100 جم أو 100 مل، والوحدة الافتراضية تستخدم للتسجيل اليومي.</p>
         </div>
         <div className="actions" style={{ marginTop: 0 }}>
-          <Link className="btn" href={isEdit && foodId ? `/foods/${foodId}` : "/foods"} onClick={protectUnsaved}>
+          <Link className="btn" href={isEdit && foodId ? `/foods/${foodId}` : "/foods"}>
             <ArrowRight size={18} />
             رجوع
           </Link>
@@ -261,6 +287,21 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
       </div>
 
       <form className="food-form-layout" onSubmit={submit} noValidate>
+        {pendingServerFood ? (
+          <div className="unsaved-conflict" role="status">
+            <p>توجد نسخة أحدث من هذا الطعام على الخادم. احتفظنا بتعديلاتك الحالية.</p>
+            <div className="actions">
+              <button className="btn" type="button" onClick={() => setPendingServerFood(null)}>الاحتفاظ بتعديلاتي</button>
+              <button className="btn danger" type="button" onClick={() => requestDiscard(() => {
+                const loaded = foodToForm(pendingServerFood);
+                setForm(loaded);
+                initialForm.current = JSON.stringify(loaded);
+                setHydratedFoodId(pendingServerFood.id);
+                setPendingServerFood(null);
+              })}>تحميل نسخة الخادم</button>
+            </div>
+          </div>
+        ) : null}
         {note ? (
           <div className="state-note" role={hasFoodErrors(errors) ? "alert" : "status"} aria-live="polite">
             {note}
@@ -411,7 +452,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
             <Save size={18} />
             {saveMutation.isPending ? "جاري الحفظ..." : isEdit ? "حفظ التعديل" : "حفظ الطعام"}
           </button>
-          <Link className="btn" href={isEdit && foodId ? `/foods/${foodId}` : "/foods"} onClick={protectUnsaved}>
+          <Link className="btn" href={isEdit && foodId ? `/foods/${foodId}` : "/foods"}>
             <X size={18} />
             إلغاء
           </Link>

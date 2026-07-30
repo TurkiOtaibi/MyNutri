@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { InstallPrompt } from "./InstallPrompt";
 import { AuthProvider } from "./AuthProvider";
 import { SessionQueryProvider } from "./SessionQueryProvider";
+import { UnsavedChangesProvider } from "./UnsavedChangesProvider";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -17,10 +18,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <DirectionProvider direction="rtl">
       <AuthProvider>
-        <SessionQueryProvider>
-          {children}
-          <InstallPrompt />
-        </SessionQueryProvider>
+        <UnsavedChangesProvider>
+          <SessionQueryProvider>
+            {children}
+            <InstallPrompt />
+          </SessionQueryProvider>
+        </UnsavedChangesProvider>
       </AuthProvider>
     </DirectionProvider>
   );

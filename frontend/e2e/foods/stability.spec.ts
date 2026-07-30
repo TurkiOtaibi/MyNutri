@@ -116,13 +116,14 @@ test.describe("Add Food form stability @foods @stability", () => {
     await expect(page.getByLabel(/السعرات/)).toHaveAttribute("aria-invalid", "true");
   });
 
-  test("successful Save is the only tested path that leaves and clears the form", async ({ page, foodsApi }) => {
+  test("@plan016 successful Save leaves once without an unsaved dialog", async ({ page, foodsApi }) => {
     const name = `E2E-Stability-Success-${Date.now()}`;
     await page.goto("/foods/new");
     await fillRequiredFoodForm(page, { name });
     await submitFoodForm(page);
 
     await expect(page).toHaveURL(/\/foods\/[0-9a-f-]+$/);
+    await expect(page.getByRole("dialog", { name: "تغييرات غير محفوظة" })).toHaveCount(0);
     await expect(page.locator("form.food-form-layout")).toHaveCount(0);
     const id = page.url().split("/").pop()!;
     expect((await foodsApi.get(id)).name).toBe(name);

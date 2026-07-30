@@ -18,12 +18,12 @@ import {
   X
 } from "lucide-react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
 import {
   type FormEvent,
   type ReactNode,
   type RefObject,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState
@@ -35,6 +35,7 @@ import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels } from "
 import type { ActivityLevel, CutIntensity, Goal, NutritionRegistryResponse, ProfileInput, ProfileResponse, Sex, TargetPlanActivationResponse, TargetPlanSummary, TargetResponse } from "@/lib/types";
 import { useAuth } from "./AuthProvider";
 import { useSessionAbortSignal } from "./SessionQueryProvider";
+import { useUnsavedChanges } from "./UnsavedChangesProvider";
 
 const PROFILE_READ_ERROR = "تعذر تحميل بياناتك";
 const PROFILE_READ_HELP = "تحقق من الاتصال ثم أعد المحاولة";
@@ -231,9 +232,9 @@ function profileMatchesAcceptedActivation(
 
 export function ProfilePage() {
   const { session } = useAuth();
+  const subjectId = session?.user.id ?? null;
   const accessToken = session?.access_token;
   const sessionSignal = useSessionAbortSignal();
-  const router = useRouter();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<DraftProfile>(blankDraft);
   const [savedDraft, setSavedDraft] = useState<DraftProfile | null>(null);
@@ -247,7 +248,7 @@ export function ProfilePage() {
   const [activeSheet, setActiveSheet] = useState<SheetKind>(null);
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [activationPhase, setActivationPhase] = useState<ActivationPhase>({ kind: "idle" });
-  const [discardHref, setDiscardHref] = useState<string | null>(null);
+  const [pendingServerProfile, setPendingServerProfile] = useState<ProfileResponse | null | undefined>(undefined);
   const [activationErrorCode, setActivationErrorCode] = useState<string | null>(null);
   const [activationSafetyOutcome, setActivationSafetyOutcome] = useState<BlockingSafetyOutcome | null>(null);
   const [safetyAttemptSequence, setSafetyAttemptSequence] = useState(0);
@@ -261,6 +262,7 @@ export function ProfilePage() {
   const restoreActivationFocusRef = useRef(true);
   const activationPhaseRef = useRef<ActivationPhase>(activationPhase);
   const mountedRef = useRef(true);
+  const formSubjectRef = useRef(subjectId);
 
   function transitionActivation(next: ActivationPhase) {
     activationPhaseRef.current = next;
@@ -289,20 +291,52 @@ export function ProfilePage() {
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined
   });
   const registryReady = registryQuery.data?.registry_schema_version === 2;
+  const dirty = savedDraft != null && normalizeDraft(draft) !== normalizeDraft(savedDraft);
+  const activationOwnsAuthority = ["reconciling", "recovery", "committed"].includes(activationPhase.kind);
 
   useEffect(() => {
     if (profileQuery.data === undefined) return;
     if (["reconciling", "recovery"].includes(activationPhaseRef.current.kind)) return;
     const nextDraft = profileQuery.data ? toDraft(profileQuery.data) : blankDraft();
+    const responsePhaseOwnsAuthority = ["reconciling", "recovery", "committed"].includes(activationPhaseRef.current.kind);
+    if (dirty && !responsePhaseOwnsAuthority) {
+      if (normalizeDraft(nextDraft) !== normalizeDraft(savedDraft ?? blankDraft())) {
+        setPendingServerProfile(profileQuery.data);
+      }
+      return;
+    }
     setDraft(nextDraft);
     setSavedDraft(nextDraft);
     setSavedTargets(profileQuery.data?.targets ?? null);
     setPreview(null);
     setPreviewDraftHash(null);
     setErrors({});
+    setPendingServerProfile(undefined);
+    // Dirty state is intentionally observed when a response arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileQuery.data]);
 
-  const dirty = savedDraft != null && normalizeDraft(draft) !== normalizeDraft(savedDraft);
+  const { requestDiscard } = useUnsavedChanges({
+    identity: "profile",
+    dirty,
+    enabled: !activationOwnsAuthority,
+    discard: () => {
+      setSavedDraft(draft);
+      setPendingServerProfile(undefined);
+    }
+  });
+
+  useLayoutEffect(() => {
+    if (formSubjectRef.current === subjectId) return;
+    formSubjectRef.current = subjectId;
+    setDraft(blankDraft());
+    setSavedDraft(null);
+    setSavedTargets(null);
+    setPendingServerProfile(undefined);
+    setPreview(null);
+    setPreviewDraftHash(null);
+    setErrors({});
+  }, [subjectId]);
   const authoritativeDate = authorityQuery.data?.current_diary_date ?? null;
   const validation = useMemo(
     () => validateDraft(draft, authoritativeDate),
@@ -374,28 +408,6 @@ export function ProfilePage() {
     return () => window.clearTimeout(timer);
   }, [activationPhase.kind]);
 
-  useEffect(() => {
-    const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (!dirty) return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    const interceptNavigation = (event: MouseEvent) => {
-      if (!dirty || event.defaultPrevented || event.button !== 0) return;
-      const anchor = (event.target as Element | null)?.closest("a[href]") as HTMLAnchorElement | null;
-      if (!anchor || anchor.target || anchor.origin !== window.location.origin || anchor.pathname === window.location.pathname) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setDiscardHref(`${anchor.pathname}${anchor.search}${anchor.hash}`);
-    };
-    window.addEventListener("beforeunload", beforeUnload);
-    document.addEventListener("click", interceptNavigation, true);
-    return () => {
-      window.removeEventListener("beforeunload", beforeUnload);
-      document.removeEventListener("click", interceptNavigation, true);
-    };
-  }, [dirty]);
-
   async function reconcileAcceptedActivation(
     submission: ActivationSubmission,
     accepted: TargetPlanActivationResponse
@@ -414,6 +426,7 @@ export function ProfilePage() {
       setDraft(confirmed);
       setSavedDraft(confirmed);
       setSavedTargets(profile.targets ?? accepted.plan.targets);
+      setPendingServerProfile(undefined);
       transitionActivation({ kind: "committed", accepted });
     } catch {
       if (!sessionSignal.aborted && mountedRef.current) {
@@ -448,6 +461,7 @@ export function ProfilePage() {
       setDraft(committedDraft);
       setSavedDraft(committedDraft);
       setSavedTargets(accepted.plan.targets);
+      setPendingServerProfile(undefined);
       setPreview(null);
       setPreviewDraftHash(null);
       setPreviewFailed(false);
@@ -584,6 +598,24 @@ export function ProfilePage() {
       </header>
 
       <form className="profile-form" onSubmit={submit} noValidate>
+        {pendingServerProfile !== undefined ? (
+          <div className="unsaved-conflict" role="status">
+            <p>توجد نسخة أحدث من بيانات الملف على الخادم. احتفظنا بتعديلاتك الحالية.</p>
+            <div className="actions">
+              <button className="btn" type="button" onClick={() => setPendingServerProfile(undefined)}>الاحتفاظ بتعديلاتي</button>
+              <button className="btn danger" type="button" onClick={() => requestDiscard(() => {
+                const nextDraft = pendingServerProfile ? toDraft(pendingServerProfile) : blankDraft();
+                setDraft(nextDraft);
+                setSavedDraft(nextDraft);
+                setSavedTargets(pendingServerProfile?.targets ?? null);
+                setPreview(null);
+                setPreviewDraftHash(null);
+                setErrors({});
+                setPendingServerProfile(undefined);
+              })}>تحميل نسخة الخادم</button>
+            </div>
+          </div>
+        ) : null}
         <section className="profile-settings-card body-data-card" aria-labelledby="body-data-title">
           <h2 id="body-data-title">بيانات الجسم</h2>
           <SettingsButton
@@ -830,17 +862,6 @@ export function ProfilePage() {
         />
       ) : null}
 
-      {discardHref ? (
-        <ProfileConfirm
-          title="تجاهل التغييرات؟"
-          description="لم يتم حفظ تعديلاتك الحالية."
-          safeLabel="متابعة التعديل"
-          confirmLabel="تجاهل التغييرات"
-          destructive
-          onClose={() => setDiscardHref(null)}
-          onConfirm={() => { const href = discardHref; setDiscardHref(null); router.push(href); }}
-        />
-      ) : null}
     </main>
   );
 }

@@ -4,6 +4,7 @@ import { CalendarDays, LogOut, Salad, Shield, UserRound, Utensils } from "lucide
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "./AuthProvider";
+import { useUnsavedChanges } from "./UnsavedChangesProvider";
 
 const links = [
   { href: "/diary", label: "اليوميات", icon: CalendarDays },
@@ -14,6 +15,7 @@ const links = [
 export function AppNav() {
   const pathname = usePathname();
   const { account, loading, signOut } = useAuth();
+  const { requestGuardedAction } = useUnsavedChanges();
   if (pathname.startsWith("/auth/")) return null;
   const visibleLinks = account?.role === "admin"
     ? [...links, { href: "/admin", label: "الإدارة", icon: Shield }]
@@ -45,7 +47,12 @@ export function AppNav() {
             );
           })}
           {!loading ? (
-            <button className="nav-link nav-signout" type="button" onClick={() => void signOut()} title="تسجيل الخروج">
+            <button
+              className="nav-link nav-signout"
+              type="button"
+              onClick={() => requestGuardedAction(() => void signOut(), { discardOnConfirm: false })}
+              title="تسجيل الخروج"
+            >
               <LogOut size={18} />
               <span className="sr-only">تسجيل الخروج</span>
             </button>
