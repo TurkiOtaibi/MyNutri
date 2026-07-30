@@ -1,4 +1,6 @@
-import { test, expect, expectNoHorizontalOverflow } from "./helpers";
+import { test, expect, expectNoHorizontalOverflow, API_URL } from "./helpers";
+
+const API_ORIGIN = new URL(API_URL).origin;
 
 test.describe("Foods navigation and standalone pages @foods", () => {
   test("[FOOD-TC-001] @p0 navigates list, add, details, and edit routes", async ({ page, foodsApi }) => {
@@ -66,7 +68,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
   test("[FOOD-TC-008] @plan016 dirty edit keeps draft across refetch and loads server only after discard", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: "E2E Plan016 Original" });
     let reads = 0;
-    await page.route((url) => url.pathname === `/foods/${food.id}`, async (route) => {
+    await page.route((url) => url.origin === API_ORIGIN && url.pathname === `/foods/${food.id}`, async (route) => {
       if (route.request().method() !== "GET") return route.continue();
       reads += 1;
       if (reads === 1) return route.continue();
@@ -78,8 +80,23 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     });
     await page.goto(`/foods/${food.id}/edit`);
     const input = page.getByLabel(/اسم الطعام/);
+    expect(reads).toBe(1);
     await input.fill("E2E Plan016 Draft");
-    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await page.clock.install({ time: new Date() });
+    await page.clock.fastForward(20_001);
+    const refetched = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.origin === API_ORIGIN
+        && url.pathname === `/foods/${food.id}`
+        && response.request().method() === "GET";
+    });
+    const visibilityState = await page.evaluate(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      return document.visibilityState;
+    });
+    expect(visibilityState).toBe("visible");
+    await refetched;
+    expect(reads).toBe(2);
     await expect(page.getByText("توجد نسخة أحدث من هذا الطعام على الخادم. احتفظنا بتعديلاتك الحالية.")).toBeVisible();
     await expect(input).toHaveValue("E2E Plan016 Draft");
     await page.getByRole("button", { name: "تحميل نسخة الخادم" }).click();

@@ -6,13 +6,14 @@ import { API_TOKEN, API_URL } from "../foods/helpers";
 
 const apiHeaders = () => ({ Authorization: `Bearer ${API_TOKEN}` });
 const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
+const API_ORIGIN = new URL(API_URL).origin;
 const LOCAL_TEST_PASSWORD = "Acceptance-only-password-2026!";
 const SPECIALIST_REVIEW_REQUIRED =
   "لا يمكن تفعيل هذا الهدف لأنه غير مناسب لحالتك الحالية. إذا رغبت في اتباع هذا الهدف، فاستشر أخصائي تغذية قبل اعتماده.";
 const VERY_LOW_ENERGY_TARGET_BLOCKED =
   "لا يمكن تفعيل هذا الهدف لأن السعرات المستهدفة منخفضة جدًا ولا تحقق الحد الأدنى الآمن المعتمد في النظام.";
 const BLOCKED_PREVIEW_DESCRIPTION = "هذه معاينة توضيحية فقط، ولا يمكن تفعيل هذا الهدف.";
-const profilePath = (url: URL) => url.pathname === "/profile";
+const profilePath = (url: URL) => url.origin === API_ORIGIN && url.pathname === "/profile";
 const previewPath = (url: URL) => url.pathname === "/profile/preview";
 const calendarPath = (url: URL) => url.pathname === "/account/calendar";
 const activationPath = (url: URL) =>
@@ -428,8 +429,10 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(dialog).toBeFocused();
     await expect(dialog.getByRole("button", { name: /إغلاق/ })).toBeDisabled();
     await expect(dialog.getByRole("button", { name: "متابعة المراجعة" })).toBeDisabled();
+    let profileRefetches = 0;
     await page.route(profilePath, async (route) => {
       if (route.request().method() !== "GET") return route.continue();
+      profileRefetches += 1;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -437,10 +440,19 @@ test.describe("@profile Profile and targets redesign", () => {
       });
     });
     const refetched = page.waitForResponse((response) =>
-      profilePath(new URL(response.url())) && response.request().method() === "GET"
+      new URL(response.url()).origin === API_ORIGIN
+        && profilePath(new URL(response.url()))
+        && response.request().method() === "GET"
     );
-    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await page.clock.install({ time: new Date() });
+    await page.clock.fastForward(20_001);
+    const visibilityState = await page.evaluate(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      return document.visibilityState;
+    });
+    expect(visibilityState).toBe("visible");
     await refetched;
+    expect(profileRefetches).toBe(1);
     await expect(page.getByLabel("الوزن")).toHaveValue(heldDraft);
     await expect(page.getByText("توجد نسخة أحدث من بيانات الملف على الخادم. احتفظنا بتعديلاتك الحالية.")).toBeVisible();
     await page.getByRole("link", { name: "اليوميات" }).dispatchEvent("click");
@@ -927,15 +939,30 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.getByRole("dialog").getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
     await expect(page.getByText("تعذر حفظ التغييرات")).toBeVisible();
     await expect(page.getByLabel("الطول")).toHaveValue(String(nextHeight));
+    let profileRefetches = 0;
     await page.route(profilePath, async (route) => {
       if (route.request().method() !== "GET") return route.continue();
+      profileRefetches += 1;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         json: { ...originalProfile, height_cm: originalProfile.height_cm + 8 }
       });
     });
-    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await page.clock.install({ time: new Date() });
+    await page.clock.fastForward(20_001);
+    const refetched = page.waitForResponse((response) =>
+      new URL(response.url()).origin === API_ORIGIN
+        && profilePath(new URL(response.url()))
+        && response.request().method() === "GET"
+    );
+    const visibilityState = await page.evaluate(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      return document.visibilityState;
+    });
+    expect(visibilityState).toBe("visible");
+    await refetched;
+    expect(profileRefetches).toBe(1);
     await expect(page.getByText("توجد نسخة أحدث من بيانات الملف على الخادم. احتفظنا بتعديلاتك الحالية.")).toBeVisible();
     await expect(page.getByLabel("الطول")).toHaveValue(String(nextHeight));
     await page.getByRole("link", { name: "اليوميات" }).click();
@@ -993,8 +1020,22 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.goto("/profile?plan016-refetch=1");
     const input = page.getByLabel("الوزن");
     const draft = String(originalProfile.weight_kg + 1);
+    expect(reads).toBe(1);
     await input.fill(draft);
-    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await page.clock.install({ time: new Date() });
+    await page.clock.fastForward(20_001);
+    const refetched = page.waitForResponse((response) =>
+      new URL(response.url()).origin === API_ORIGIN
+        && profilePath(new URL(response.url()))
+        && response.request().method() === "GET"
+    );
+    const visibilityState = await page.evaluate(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      return document.visibilityState;
+    });
+    expect(visibilityState).toBe("visible");
+    await refetched;
+    expect(reads).toBe(2);
     await expect(page.getByText("توجد نسخة أحدث من بيانات الملف على الخادم. احتفظنا بتعديلاتك الحالية.")).toBeVisible();
     await expect(input).toHaveValue(draft);
     await page.getByRole("button", { name: "تحميل نسخة الخادم" }).click();
