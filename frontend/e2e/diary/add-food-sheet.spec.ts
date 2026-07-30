@@ -245,16 +245,61 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
   });
 
   test("@p1 loading, search error, and Retry are explicit without blank alerts", async ({ page }) => {
-    let fail = true;
-    await page.route("**/foods*", async (route) => {
-      if (fail) return route.abort("failed");
-      return route.continue();
+    const apiOrigin = new URL(API_URL).origin;
+    const firstRequestStarted = deferred();
+    const releaseFirstRequest = deferred();
+    const pickerRequests: Array<{ method: string; origin: string; pathname: string }> = [];
+    await page.route((url) => url.origin === apiOrigin && url.pathname === "/foods/picker", async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      pickerRequests.push({ method: request.method(), origin: url.origin, pathname: url.pathname });
+      if (pickerRequests.length === 1) {
+        firstRequestStarted.resolve();
+        await releaseFirstRequest.promise;
+      }
+      if (pickerRequests.length <= 2) {
+        return route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({
+            error: {
+              code: "INTERNAL_ERROR",
+              message_ar: "تعذر تحميل الأطعمة",
+              details: {},
+              request_id: "00000000-0000-4000-8000-000000000500"
+            }
+          })
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [pickerItem(500, "Retry picker result")],
+          recent_items: [],
+          next_cursor: null
+        })
+      });
     });
     const dialog = await openGeneral(page);
+    await firstRequestStarted.promise;
+    const loading = dialog.getByRole("status", { name: "جارٍ تحميل الأطعمة" });
+    await expect(loading).toBeVisible();
+    await expect(dialog.locator('[role="alert"]:empty')).toHaveCount(0);
+    releaseFirstRequest.resolve();
     await expect(dialog.getByText("تعذر تحميل الأطعمة", { exact: true })).toBeVisible();
-    fail = false;
+    await expect(loading).toHaveCount(0);
+    await expect(dialog.locator(".diary-food-option")).toHaveCount(0);
+    expect(pickerRequests).toHaveLength(2);
     await dialog.getByRole("button", { name: "إعادة المحاولة" }).click();
-    await expect(dialog.getByText("جميع الأطعمة", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /^Retry picker result،/ })).toHaveCount(1);
+    await expect(dialog.getByText("تعذر تحميل الأطعمة", { exact: true })).toHaveCount(0);
+    await expect(dialog.locator(".diary-food-option")).toHaveCount(1);
+    expect(pickerRequests).toEqual([
+      { method: "GET", origin: apiOrigin, pathname: "/foods/picker" },
+      { method: "GET", origin: apiOrigin, pathname: "/foods/picker" },
+      { method: "GET", origin: apiOrigin, pathname: "/foods/picker" }
+    ]);
     await expect(dialog.locator('[role="alert"]:empty')).toHaveCount(0);
   });
 
