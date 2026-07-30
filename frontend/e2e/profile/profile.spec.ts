@@ -1017,7 +1017,11 @@ test.describe("@profile Profile and targets redesign", () => {
         json: { ...originalProfile, weight_kg: originalProfile.weight_kg + 9 }
       });
     });
+    const initialRead = page.waitForResponse((response) =>
+      profilePath(new URL(response.url())) && response.request().method() === "GET"
+    );
     await page.goto("/profile?plan016-refetch=1");
+    await initialRead;
     const input = page.getByLabel("الوزن");
     const draft = String(originalProfile.weight_kg + 1);
     expect(reads).toBe(1);

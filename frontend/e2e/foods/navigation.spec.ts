@@ -78,7 +78,14 @@ test.describe("Foods navigation and standalone pages @foods", () => {
         json: { ...food, name: "E2E Plan016 Server" }
       });
     });
+    const initialRead = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.origin === API_ORIGIN
+        && url.pathname === `/foods/${food.id}`
+        && response.request().method() === "GET";
+    });
     await page.goto(`/foods/${food.id}/edit`);
+    await initialRead;
     const input = page.getByLabel(/اسم الطعام/);
     expect(reads).toBe(1);
     await input.fill("E2E Plan016 Draft");
