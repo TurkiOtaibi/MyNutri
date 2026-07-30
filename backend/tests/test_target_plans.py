@@ -1,10 +1,11 @@
 from datetime import date, datetime, timedelta, timezone
 import json
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from fastapi import Request
+from sqlalchemy import event
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -23,7 +24,11 @@ from app.models import (
     TargetPlanStatus,
     TargetProvenance,
 )
-from app.services.target_plans import project_targets
+from app.services.target_plans import (
+    project_targets,
+    project_week_target_context,
+    target_for_date,
+)
 from app.schemas import ProfileResponse, ProfileUpsert
 from app.services.profile import upsert_profile
 
@@ -471,6 +476,215 @@ def test_project_targets_selects_due_plan_without_lifecycle_dml(
     )
     assert no_source.target_provenance == "no_target_source"
     assert no_source.targets is None
+
+
+def test_plan015_bulk_context_matches_single_date_projection(
+    target_plan_context,
+) -> None:
+    client, session = target_plan_context
+    created = client.put(
+        "/profile", json=profile_payload(weight=80), headers=headers("token-a")
+    )
+    assert created.status_code == 200
+    fallback_context = project_week_target_context(
+        session,
+        PrincipalContext(PRINCIPAL_A),
+        TODAY,
+        TOMORROW,
+    )
+    fallback_today = target_for_date(fallback_context, TODAY)
+    fallback_tomorrow = target_for_date(fallback_context, TOMORROW)
+    assert fallback_today.target_source_detail == "no_preserved_target_source"
+    assert fallback_today.targets is not None
+    assert fallback_today.targets.model_dump(mode="json") == created.json()["targets"]
+    assert fallback_tomorrow.target_provenance == "no_target_source"
+
+    activation = activate(client, profile_payload(weight=82), "plan015-bulk")
+    assert activation.status_code == 201, activation.text
+
+    week_start = TODAY - timedelta(days=2)
+    week_end = week_start + timedelta(days=6)
+    dates = [week_start + timedelta(days=offset) for offset in range(7)]
+    expected = {
+        requested: project_targets(
+            session, PrincipalContext(PRINCIPAL_A), requested
+        ).model_dump(mode="json")
+        for requested in dates
+    }
+
+    context = project_week_target_context(
+        session,
+        PrincipalContext(PRINCIPAL_A),
+        week_start,
+        week_end,
+    )
+    actual = {
+        requested: target_for_date(context, requested).model_dump(mode="json")
+        for requested in dates
+    }
+
+    assert actual == expected
+    assert actual[TODAY]["target_source_detail"] == "legacy_transition_snapshot"
+    assert actual[TOMORROW]["target_source_detail"] == "effective_target_plan"
+    assert actual[week_start]["target_provenance"] == "no_target_source"
+
+
+def test_plan015_out_of_week_transition_blocks_profile_fallback_without_loading_history(
+    target_plan_context,
+) -> None:
+    client, session = target_plan_context
+    created = client.put(
+        "/profile", json=profile_payload(weight=80), headers=headers("token-a")
+    )
+    assert created.status_code == 200
+    activation = activate(client, profile_payload(weight=82), "plan015-history")
+    assert activation.status_code == 201, activation.text
+    template_profile = session.exec(
+        select(Profile).where(Profile.principal_id == PRINCIPAL_A)
+    ).one()
+    template_transition = session.exec(
+        select(LegacyTargetTransitionSnapshot).where(
+            LegacyTargetTransitionSnapshot.principal_id == PRINCIPAL_A
+        )
+    ).one()
+
+    # The schema permits one transition per Profile. Extra historical rows for
+    # other Principals verify that neither result size nor query count grows.
+    extra_profiles = []
+    for _ in range(20):
+        principal_id = uuid4()
+        session.add(Principal(id=principal_id))
+        extra_profiles.append(
+            Profile(
+                principal_id=principal_id,
+                sex=template_profile.sex,
+                birth_date=template_profile.birth_date,
+                height_cm=template_profile.height_cm,
+                weight_kg=template_profile.weight_kg,
+                activity_level=template_profile.activity_level,
+                goal=template_profile.goal,
+                protein_per_kg=template_profile.protein_per_kg,
+                fat_pct=template_profile.fat_pct,
+                cut_intensity=template_profile.cut_intensity,
+            )
+        )
+    session.flush()
+    session.add_all(extra_profiles)
+    session.flush()
+    for offset, profile in enumerate(extra_profiles, start=30):
+        session.add(
+            LegacyTargetTransitionSnapshot(
+                principal_id=profile.principal_id,
+                profile_id=profile.id,
+                transition_date=TODAY - timedelta(days=offset),
+                calendar_timezone="Asia/Riyadh",
+                target_document_schema_version=1,
+                legacy_target_document=template_transition.legacy_target_document,
+            )
+        )
+    session.commit()
+
+    week_start = TODAY - timedelta(days=14)
+    week_end = week_start + timedelta(days=6)
+    statements: list[str] = []
+    engine = session.get_bind()
+
+    def capture(
+        _connection, _cursor, statement, _parameters, _context, _executemany
+    ) -> None:
+        if statement.lstrip().lower().startswith("select "):
+            statements.append(" ".join(statement.split()))
+
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        context = project_week_target_context(
+            session,
+            PrincipalContext(PRINCIPAL_A),
+            week_start,
+            week_end,
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+    assert len(statements) == 4
+    assert context.transitions_by_date == {}
+    assert context.has_transition is True
+    for offset in range(7):
+        requested = week_start + timedelta(days=offset)
+        bulk = target_for_date(context, requested)
+        single = project_targets(
+            session, PrincipalContext(PRINCIPAL_A), requested
+        )
+        assert bulk.model_dump(mode="json") == single.model_dump(mode="json")
+        assert bulk.target_provenance == "no_target_source"
+        assert bulk.targets is None
+
+
+def test_plan015_bulk_context_matches_active_closed_and_scheduled_boundaries(
+    target_plan_context,
+) -> None:
+    client, session = target_plan_context
+    active_response = activate(
+        client,
+        profile_payload(weight=75),
+        "plan015-active",
+        token="token-b",
+    )
+    assert active_response.status_code == 201, active_response.text
+
+    active_context = project_week_target_context(
+        session,
+        PrincipalContext(PRINCIPAL_B),
+        TODAY,
+        TODAY + timedelta(days=6),
+    )
+    active_source = target_for_date(active_context, TODAY)
+    assert active_source.plan is not None
+    assert str(active_source.plan.id) == active_response.json()["plan"]["id"]
+
+    scheduled_response = activate(
+        client,
+        profile_payload(weight=77),
+        "plan015-scheduled",
+        token="token-b",
+    )
+    assert scheduled_response.status_code == 201, scheduled_response.text
+    plans = session.exec(
+        select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_B)
+    ).all()
+    closed = next(plan for plan in plans if plan.status == TargetPlanStatus.active)
+    scheduled = next(
+        plan for plan in plans if plan.status == TargetPlanStatus.scheduled
+    )
+    closed.status = TargetPlanStatus.closed
+    closed.effective_from = TODAY - timedelta(days=2)
+    closed.effective_to = TOMORROW
+    closed.closed_at = datetime.now(timezone.utc)
+    session.add(closed)
+    session.commit()
+
+    week_start = TODAY - timedelta(days=2)
+    week_end = week_start + timedelta(days=6)
+    context = project_week_target_context(
+        session,
+        PrincipalContext(PRINCIPAL_B),
+        week_start,
+        week_end,
+    )
+    actual = {
+        requested: target_for_date(context, requested).model_dump(mode="json")
+        for requested in (week_start, TODAY, TOMORROW, week_end)
+    }
+    expected = {
+        requested: project_targets(
+            session, PrincipalContext(PRINCIPAL_B), requested
+        ).model_dump(mode="json")
+        for requested in actual
+    }
+
+    assert actual == expected
+    assert actual[TODAY]["plan"]["id"] == str(closed.id)
+    assert actual[TOMORROW]["plan"]["id"] == str(scheduled.id)
 
 
 def test_owner_current_get_advances_due_target_lifecycle(

@@ -198,13 +198,18 @@ def _install_admin_read_guards(monkeypatch, session: Session):
     ) -> None:
         statements.append(" ".join(statement.split()))
 
+    def reject_flush(*_args, **_kwargs) -> None:
+        raise AssertionError("admin monitoring flushed its transaction")
+
     monkeypatch.setattr("app.services.target_plans._advance_lifecycle", fail_lifecycle)
     event.listen(engine, "before_execute", reject_writes)
     event.listen(engine, "before_cursor_execute", capture_cursor)
+    event.listen(session, "before_flush", reject_flush)
 
     def cleanup() -> None:
         event.remove(engine, "before_execute", reject_writes)
         event.remove(engine, "before_cursor_execute", capture_cursor)
+        event.remove(session, "before_flush", reject_flush)
 
     return engine, statements, cleanup
 

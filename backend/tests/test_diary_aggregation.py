@@ -1,8 +1,12 @@
-from datetime import date
-from uuid import UUID
+from contextlib import contextmanager
+from datetime import date, timedelta
+import os
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import event, text
+from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -10,7 +14,12 @@ from app.core.auth import PrincipalContext
 from app.models import DiaryEntry, Principal
 from app.nutrition_rules.registry import NUTRIENTS
 from app.schemas import DiaryNutrientTarget
-from app.services.aggregation import aggregate_nutrient, weekly_summary
+from app.services.aggregation import (
+    aggregate_nutrient,
+    weekly_summary,
+    weekly_summary_read_only,
+)
+from app.services import target_plans as target_plan_service
 
 
 PRINCIPAL_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -117,7 +126,9 @@ def test_complete_evaluation_never_returns_negative_remaining_or_available() -> 
     assert monitor.available is None
 
 
-def test_week_summary_rejects_malformed_snapshot_without_understating_totals() -> None:
+def test_week_summary_rejects_malformed_snapshot_without_understating_totals(
+    monkeypatch,
+) -> None:
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -136,10 +147,198 @@ def test_week_summary_rejects_malformed_snapshot_without_understating_totals() -
             )
         )
         session.commit()
+        advance_calls = 0
+        commit_calls = 0
+        real_commit = session.commit
+
+        def capture_advance(*_args, **_kwargs) -> None:
+            nonlocal advance_calls
+            advance_calls += 1
+
+        def capture_commit() -> None:
+            nonlocal commit_calls
+            commit_calls += 1
+            real_commit()
+
+        monkeypatch.setattr(
+            "app.services.target_plans._advance_lifecycle", capture_advance
+        )
+        monkeypatch.setattr(session, "commit", capture_commit)
 
         with pytest.raises(HTTPException) as raised:
             weekly_summary(session, PRINCIPAL, date(2026, 7, 12))
 
+    assert advance_calls == 1
+    assert commit_calls == 1
     assert raised.value.status_code == 409
     assert raised.value.detail["code"] == "DIARY_SUMMARY_DATA_INTEGRITY_ERROR"
     assert raised.value.detail["entries"][0]["cause"] == "INVALID_DIARY_SNAPSHOT_DATA"
+
+
+@contextmanager
+def _capture_selects(engine: Engine):
+    statements: list[str] = []
+
+    def capture(
+        _connection, _cursor, statement, _parameters, _context, _executemany
+    ) -> None:
+        normalized = " ".join(statement.split())
+        if normalized.lower().startswith("select "):
+            statements.append(normalized)
+
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        yield statements
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+
+def _seed_plan015_entries(session: Session, count: int, week_start: date) -> None:
+    for offset in range(count):
+        session.add(
+            DiaryEntry(
+                principal_id=PRINCIPAL_ID,
+                entry_date=week_start + timedelta(days=offset),
+                quantity=1,
+                nutrition_snapshot={
+                    "name": f"Plan 015 entry {offset}",
+                    "calories": 100,
+                    "protein_g": 10,
+                    "carb_g": 15,
+                    "fat_g": 4,
+                },
+            )
+        )
+    session.commit()
+
+
+def _assert_plan015_read_only_query_budget(session: Session, count: int) -> None:
+    week_start = date(2026, 7, 12)
+    _seed_plan015_entries(session, count, week_start)
+    engine = session.get_bind()
+    with _capture_selects(engine) as statements:
+        summary = weekly_summary_read_only(session, PRINCIPAL, week_start)
+
+    assert len(summary.days) == 7
+    assert sum(len(day.nutrient_aggregates) > 0 for day in summary.days) == 7
+    assert len(statements) == 5
+
+
+@pytest.mark.parametrize("entry_count", [0, 1, 7])
+def test_plan015_admin_week_query_budget_is_fixed(entry_count: int) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(Principal(id=PRINCIPAL_ID))
+        session.commit()
+        _assert_plan015_read_only_query_budget(session, entry_count)
+
+
+@pytest.mark.parametrize("entry_count", [0, 1, 7])
+def test_plan015_owner_week_advances_and_commits_once(
+    monkeypatch, entry_count: int
+) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(Principal(id=PRINCIPAL_ID))
+        session.commit()
+        week_start = date(2026, 7, 12)
+        _seed_plan015_entries(session, entry_count, week_start)
+        advance_calls = 0
+        authority_calls = 0
+        commit_calls = 0
+        real_advance = target_plan_service._advance_lifecycle
+        real_authority = target_plan_service.diary_calendar_authority
+        real_commit = session.commit
+
+        def capture_advance(*args, **kwargs) -> None:
+            nonlocal advance_calls
+            advance_calls += 1
+            real_advance(*args, **kwargs)
+
+        def capture_authority():
+            nonlocal authority_calls
+            authority_calls += 1
+            return real_authority()
+
+        def capture_commit() -> None:
+            nonlocal commit_calls
+            commit_calls += 1
+            real_commit()
+
+        monkeypatch.setattr(
+            "app.services.target_plans._advance_lifecycle", capture_advance
+        )
+        monkeypatch.setattr(
+            "app.services.target_plans.diary_calendar_authority",
+            capture_authority,
+        )
+        monkeypatch.setattr(session, "commit", capture_commit)
+
+        with _capture_selects(engine) as statements:
+            weekly_summary(session, PRINCIPAL, week_start)
+
+    assert advance_calls == 1
+    assert authority_calls == 1
+    assert commit_calls == 1
+    assert len(statements) == 6
+
+
+@pytest.fixture
+def plan015_postgresql_session():
+    url = os.environ.get("TEST_DATABASE_URL", "")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL is required for PostgreSQL Plan 015 budgets.")
+    if make_url(url).get_backend_name() != "postgresql":
+        pytest.fail("Plan 015 query budgets require PostgreSQL TEST_DATABASE_URL.")
+
+    schema_name = f"isolated_plan015_{uuid4().hex}"
+    admin_engine = create_engine(url, isolation_level="AUTOCOMMIT")
+    test_engine = None
+    schema_created = False
+    try:
+        with admin_engine.connect() as connection:
+            connection.execute(text(f'CREATE SCHEMA "{schema_name}"'))
+            schema_created = True
+        test_engine = create_engine(
+            url,
+            connect_args={"options": f"-csearch_path={schema_name}"},
+        )
+        SQLModel.metadata.create_all(test_engine)
+        with Session(test_engine) as session:
+            session.add(Principal(id=PRINCIPAL_ID))
+            session.commit()
+            yield session
+    finally:
+        if test_engine is not None:
+            test_engine.dispose()
+        if schema_created:
+            with admin_engine.connect() as connection:
+                connection.execute(text(f'DROP SCHEMA "{schema_name}" CASCADE'))
+        admin_engine.dispose()
+
+
+@pytest.mark.parametrize("entry_count", [0, 1, 7])
+def test_plan015_postgresql_admin_week_query_budget_is_fixed(
+    plan015_postgresql_session: Session, entry_count: int
+) -> None:
+    _assert_plan015_read_only_query_budget(
+        plan015_postgresql_session, entry_count
+    )
+    engine = plan015_postgresql_session.get_bind()
+    with _capture_selects(engine) as statements:
+        weekly_summary(
+            plan015_postgresql_session,
+            PRINCIPAL,
+            date(2026, 7, 12),
+        )
+    assert len(statements) == 6

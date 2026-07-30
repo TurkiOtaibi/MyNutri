@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from datetime import date, timedelta
 
 from fastapi import HTTPException
@@ -12,15 +11,16 @@ from app.schemas import (
     DiaryNutrientAggregate,
     DiaryNutrientTarget,
     TargetResponse,
-    TargetSourceResponse,
     WeekSummary,
 )
 from app.services.diary import add_totals, empty_totals, totals_for_entry
-from app.services.profile import get_profile, to_target_response
-from app.services.target_plans import project_targets, resolve_targets
-
-
-TargetResolver = Callable[[Session, PrincipalContext, date], TargetSourceResponse]
+from app.services.profile import to_target_response
+from app.services.target_plans import (
+    WeekTargetContext,
+    project_week_target_context,
+    resolve_week_target_context,
+    target_for_date,
+)
 
 
 def sunday_start(day: date) -> date:
@@ -172,11 +172,9 @@ def _summary_integrity_error(entry: DiaryEntry, error: HTTPException) -> HTTPExc
 
 
 def _day_summary(
-    session: Session,
-    principal: PrincipalContext,
     current: date,
     entries: list[DiaryEntry],
-    target_resolver: TargetResolver,
+    target_context: WeekTargetContext,
 ) -> DaySummary:
     totals = empty_totals()
     entry_totals = []
@@ -188,7 +186,7 @@ def _day_summary(
         entry_totals.append(resolved)
         totals = add_totals(totals, resolved)
 
-    source = target_resolver(session, principal, current)
+    source = target_for_date(target_context, current)
     aggregates = []
     for definition in NUTRIENTS:
         if not definition.diary_coverage_participation:
@@ -215,10 +213,16 @@ def _weekly_summary(
     session: Session,
     principal: PrincipalContext,
     start: date,
-    target_resolver: TargetResolver,
+    *,
+    read_only: bool,
 ) -> WeekSummary:
     week_start = sunday_start(start)
     week_end = week_start + timedelta(days=6)
+    target_context = (
+        project_week_target_context(session, principal, week_start, week_end)
+        if read_only
+        else resolve_week_target_context(session, principal, week_start, week_end)
+    )
     entries = session.exec(
         select(DiaryEntry).where(
             DiaryEntry.principal_id == principal.principal_id,
@@ -227,21 +231,23 @@ def _weekly_summary(
         )
     ).all()
 
-    targets = None
-    profile = get_profile(session, principal)
-    if profile is not None:
-        targets = to_target_response(profile)
+    targets = (
+        to_target_response(target_context.profile)
+        if target_context.profile is not None
+        else None
+    )
 
     days: list[DaySummary] = []
     weekly_totals = empty_totals()
+    entries_by_date: dict[date, list[DiaryEntry]] = {}
+    for entry in entries:
+        entries_by_date.setdefault(entry.entry_date, []).append(entry)
     for offset in range(7):
         current = week_start + timedelta(days=offset)
         day = _day_summary(
-            session,
-            principal,
             current,
-            [entry for entry in entries if entry.entry_date == current],
-            target_resolver,
+            entries_by_date.get(current, []),
+            target_context,
         )
         weekly_totals = add_totals(weekly_totals, day.totals)
         days.append(day)
@@ -250,10 +256,10 @@ def _weekly_summary(
 
 
 def weekly_summary(session: Session, principal: PrincipalContext, start: date) -> WeekSummary:
-    return _weekly_summary(session, principal, start, resolve_targets)
+    return _weekly_summary(session, principal, start, read_only=False)
 
 
 def weekly_summary_read_only(
     session: Session, principal: PrincipalContext, start: date
 ) -> WeekSummary:
-    return _weekly_summary(session, principal, start, project_targets)
+    return _weekly_summary(session, principal, start, read_only=True)
