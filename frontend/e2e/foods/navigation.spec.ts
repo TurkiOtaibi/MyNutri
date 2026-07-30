@@ -67,8 +67,9 @@ test.describe("Foods navigation and standalone pages @foods", () => {
 
   test("[FOOD-TC-008] @plan016 dirty edit keeps draft across refetch and loads server only after discard", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: "E2E Plan016 Original" });
+    const foodApiPath = `/admin/foods/${food.id}`;
     let reads = 0;
-    await page.route((url) => url.origin === API_ORIGIN && url.pathname === `/foods/${food.id}`, async (route) => {
+    await page.route((url) => url.origin === API_ORIGIN && url.pathname === foodApiPath, async (route) => {
       if (route.request().method() !== "GET") return route.continue();
       reads += 1;
       if (reads === 1) return route.continue();
@@ -81,7 +82,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     const initialRead = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return url.origin === API_ORIGIN
-        && url.pathname === `/foods/${food.id}`
+        && url.pathname === foodApiPath
         && response.request().method() === "GET";
     });
     await page.goto(`/foods/${food.id}/edit`);
@@ -94,7 +95,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     const refetched = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return url.origin === API_ORIGIN
-        && url.pathname === `/foods/${food.id}`
+        && url.pathname === foodApiPath
         && response.request().method() === "GET";
     });
     const visibilityState = await page.evaluate(() => {
