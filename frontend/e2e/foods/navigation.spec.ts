@@ -154,6 +154,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     await expect(input).toHaveValue("E2E Plan016 Back draft");
     let dialogAppearances = 1;
     let destinationTraversals = 0;
+    let expectedDestinationTraversals = 0;
     page.on("framenavigated", (frame) => {
       if (frame === page.mainFrame() && new URL(frame.url()).pathname === "/admin/foods") {
         destinationTraversals += 1;
@@ -161,23 +162,32 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     });
     for (let attempt = 0; attempt < 2; attempt += 1) {
       await page.goBack();
+      expectedDestinationTraversals += 1;
       await expect(page).toHaveURL(/\/foods\/new$/);
       await expect(dialog).toBeVisible();
       await expect(dialog).toHaveCount(1);
       dialogAppearances += 1;
+      if (attempt === 0) {
+        await page.goBack();
+        expectedDestinationTraversals += 1;
+        await expect(page).toHaveURL(/\/foods\/new$/);
+        await expect(dialog).toHaveCount(1);
+      }
       await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
       await expect(page).toHaveURL(/\/foods\/new$/);
       await expect(input).toHaveValue("E2E Plan016 Back draft");
       await expect(dialog).toHaveCount(0);
-      expect(destinationTraversals).toBe(attempt + 1);
+      expect(destinationTraversals).toBe(expectedDestinationTraversals);
     }
     await page.goBack();
+    expectedDestinationTraversals += 1;
     await expect(page).toHaveURL(/\/foods\/new$/);
     await expect(dialog).toBeVisible();
     await expect(dialog).toHaveCount(1);
     dialogAppearances += 1;
-    expect(destinationTraversals).toBe(3);
+    expect(destinationTraversals).toBe(expectedDestinationTraversals);
     await dialog.getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
+    expectedDestinationTraversals += 1;
     await expect(page).toHaveURL(/\/admin\/foods$/);
     await expect(page.getByRole("heading", { name: "الأطعمة", exact: true })).toBeVisible();
     await expect(page.getByRole("region", { name: "كتالوج الأطعمة" })).toBeVisible();
@@ -185,10 +195,10 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     await expect(page.locator("form.food-form-layout")).toHaveCount(0);
     await expect(dialog).toHaveCount(0);
     expect(dialogAppearances).toBe(4);
-    expect(destinationTraversals).toBe(4);
+    expect(destinationTraversals).toBe(expectedDestinationTraversals);
     await page.goForward();
     await expect(page).toHaveURL(/\/foods\/new$/);
-    expect(destinationTraversals).toBe(4);
+    expect(destinationTraversals).toBe(expectedDestinationTraversals);
   });
 
   test("[FOOD-TC-011] @plan016 Food Forward cancel has no destination exposure and discard preserves order", async ({ page }) => {

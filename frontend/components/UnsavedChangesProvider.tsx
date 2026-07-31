@@ -27,6 +27,12 @@ type PendingDecision = {
   discardOnConfirm: boolean;
 };
 
+type HistoryTraversalState =
+  | { kind: "idle" }
+  | { kind: "restoring"; replayDelta: number; promptAfterRestore: boolean }
+  | { kind: "awaiting"; replayDelta: number }
+  | { kind: "replaying" };
+
 type UnsavedChangesContextValue = {
   register: (registration: GuardRegistration) => () => void;
   requestDiscard: (continueAction: () => void) => void;
@@ -48,8 +54,7 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
   const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const historyPositionRef = useRef(0);
-  const suppressPopRef = useRef(false);
-  const revertedTraversalRef = useRef<number | null>(null);
+  const historyTraversalRef = useRef<HistoryTraversalState>({ kind: "idle" });
 
   const register = useCallback((registration: GuardRegistration) => {
     const token = Symbol(registration.identity);
@@ -59,6 +64,7 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
       if (registrationTokenRef.current !== token) return;
       registrationTokenRef.current = null;
       registrationRef.current = null;
+      historyTraversalRef.current = { kind: "idle" };
       setPending(null);
     };
   }, []);
@@ -101,6 +107,7 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
     registrationRef.current?.discard();
     registrationRef.current = null;
     registrationTokenRef.current = null;
+    historyTraversalRef.current = { kind: "idle" };
     setPending(null);
   }, [session?.user.id]);
 
@@ -153,24 +160,30 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
     };
 
     const onPopState = (event: PopStateEvent) => {
-      if (suppressPopRef.current) {
-        suppressPopRef.current = false;
+      const traversal = historyTraversalRef.current;
+      if (traversal.kind === "replaying") {
         const position = event.state?.[HISTORY_POSITION];
         if (typeof position === "number") historyPositionRef.current = position;
-        const revertedDelta = revertedTraversalRef.current;
-        revertedTraversalRef.current = null;
-        if (revertedDelta != null) {
+        historyTraversalRef.current = { kind: "idle" };
+        return;
+      }
+      if (traversal.kind === "restoring") {
+        event.stopImmediatePropagation();
+        const position = event.state?.[HISTORY_POSITION];
+        if (typeof position === "number") historyPositionRef.current = position;
+        historyTraversalRef.current = { kind: "awaiting", replayDelta: traversal.replayDelta };
+        if (traversal.promptAfterRestore) {
           requestDiscard(() => {
             registrationRef.current?.discard();
             registrationRef.current = null;
-            suppressPopRef.current = true;
-            history.go(revertedDelta);
+            historyTraversalRef.current = { kind: "replaying" };
+            history.go(traversal.replayDelta);
           });
         }
         return;
       }
       const registration = registrationRef.current;
-      if (!registration?.enabled || !registration.dirty) {
+      if (traversal.kind === "idle" && (!registration?.enabled || !registration.dirty)) {
         const position = event.state?.[HISTORY_POSITION];
         if (typeof position === "number") historyPositionRef.current = position;
         return;
@@ -179,13 +192,17 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
       const delta = typeof destinationPosition === "number"
         ? destinationPosition - historyPositionRef.current
         : -1;
-      revertedTraversalRef.current = delta;
-      suppressPopRef.current = true;
+      event.stopImmediatePropagation();
+      historyTraversalRef.current = {
+        kind: "restoring",
+        replayDelta: traversal.kind === "awaiting" ? traversal.replayDelta : delta,
+        promptAfterRestore: traversal.kind === "idle"
+      };
       history.go(-delta);
     };
-    window.addEventListener("popstate", onPopState);
+    window.addEventListener("popstate", onPopState, true);
     return () => {
-      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("popstate", onPopState, true);
       history.pushState = originalPushState;
       history.replaceState = originalReplaceState;
     };
@@ -198,6 +215,9 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
       if (event.key === "Escape") {
         event.preventDefault();
         const opener = pending.opener;
+        if (historyTraversalRef.current.kind === "awaiting") {
+          historyTraversalRef.current = { kind: "idle" };
+        }
         setPending(null);
         window.requestAnimationFrame(() => opener?.focus());
         return;
@@ -225,6 +245,9 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
   );
   const cancel = () => {
     const opener = pending?.opener;
+    if (historyTraversalRef.current.kind === "awaiting") {
+      historyTraversalRef.current = { kind: "idle" };
+    }
     setPending(null);
     window.requestAnimationFrame(() => opener?.focus());
   };
@@ -273,7 +296,7 @@ export function useUnsavedChanges(registration?: GuardRegistration) {
   const registrationRef = useRef(registration);
   registrationRef.current = registration;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!registration) return;
     return context.register({
       ...registration,
