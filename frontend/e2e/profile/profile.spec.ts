@@ -7,6 +7,9 @@ import { API_TOKEN, API_URL } from "../foods/helpers";
 const apiHeaders = () => ({ Authorization: `Bearer ${API_TOKEN}` });
 const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
 const API_ORIGIN = new URL(API_URL).origin;
+const AUTH_ORIGIN = new URL(AUTH_URL).origin;
+const ADMIN_EMAIL = "admin.e2e@example.test";
+const ADMIN_PASSWORD = "E2e-only-password-2026!";
 const LOCAL_TEST_PASSWORD = "Acceptance-only-password-2026!";
 const SPECIALIST_REVIEW_REQUIRED =
   "لا يمكن تفعيل هذا الهدف لأنه غير مناسب لحالتك الحالية. إذا رغبت في اتباع هذا الهدف، فاستشر أخصائي تغذية قبل اعتماده.";
@@ -1077,35 +1080,49 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(page).toHaveURL(/\/diary$/);
   });
 
-  test("@plan016 sign-out cancel makes zero calls, failure retains guard, and each confirm calls once", async ({ page, originalProfile }) => {
+  test("@plan016 sign-out cancel retains the draft and confirmed remote failure signs out locally", async ({ page, originalProfile }) => {
     let logoutCalls = 0;
-    await page.route("**/auth/v1/logout**", async (route) => {
+    await page.route((url) => url.origin === AUTH_ORIGIN && url.pathname === "/auth/v1/logout", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
       logoutCalls += 1;
-      if (logoutCalls === 1) {
-        await route.fulfill({ status: 500, contentType: "application/json", json: { message: "forced sign-out failure" } });
-        return;
-      }
-      await route.continue();
+      await route.fulfill({ status: 500, contentType: "application/json", json: { message: "forced remote revocation failure" } });
     });
     await page.goto("/profile");
-    await page.getByLabel("الوزن").fill(String(originalProfile.weight_kg + 3));
+    const weight = page.getByLabel("الوزن");
+    const draft = String(originalProfile.weight_kg + 3);
+    await weight.fill(draft);
     await page.locator(".nav-signout").click();
     const dialog = page.getByRole("dialog", { name: "تغييرات غير محفوظة" });
     await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
     expect(logoutCalls).toBe(0);
     await expect(page).toHaveURL(/\/profile$/);
-    await page.locator(".nav-signout").click();
-    await dialog.getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
-    await expect(page).toHaveURL(/\/profile$/);
-    await expect(page.getByLabel("الوزن")).toHaveValue(String(originalProfile.weight_kg + 3));
-    expect(logoutCalls).toBe(1);
+    await expect(page.locator(".nav-signout")).toBeVisible();
+    await expect(weight).toHaveValue(draft);
+
     await page.getByRole("link", { name: "اليوميات" }).click();
     await expect(dialog).toBeVisible();
+    await expect(page).toHaveURL(/\/profile$/);
+    await expect(weight).toHaveValue(draft);
     await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
+    expect(logoutCalls).toBe(0);
+
     await page.locator(".nav-signout").click();
     await dialog.getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
-    await expect(page).toHaveURL(/\/auth\/login/);
-    expect(logoutCalls).toBe(2);
+    await expect(page).toHaveURL(/\/auth\/login(?:\?.*)?$/);
+    expect(logoutCalls).toBe(1);
+    await expect(page.locator(".profile-form")).toHaveCount(0);
+    await expect(page.getByLabel("الوزن")).toHaveCount(0);
+    await expect(page.locator(".nav-signout")).toHaveCount(0);
+    await expect(dialog).toHaveCount(0);
+
+    await page.locator('input[type="email"]').fill(ADMIN_EMAIL);
+    await page.locator('input[type="password"]').fill(ADMIN_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL(/\/(diary|profile)$/);
+    await page.goto("/profile");
+    await expect(page.getByLabel("الوزن")).toHaveValue(String(originalProfile.weight_kg));
+    await expect(page.getByLabel("الوزن")).not.toHaveValue(draft);
+    await expect(dialog).toHaveCount(0);
   });
 
   test("@p1 calculation sheet is user-facing and targets are unified read-only values", async ({ page, originalProfile }) => {
