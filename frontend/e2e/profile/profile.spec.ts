@@ -1000,11 +1000,15 @@ test.describe("@profile Profile and targets redesign", () => {
   });
 
   test("@plan016 dirty Profile keeps its exact draft when a same-resource refetch arrives", async ({ page, originalProfile }) => {
-    let reads = 0;
+    await page.goto("/diary");
+    await expect(page.getByRole("link", { name: "الإدارة" })).toBeVisible();
+
+    let requestPhase: "initial" | "refetch" = "initial";
+    const reads = { initial: 0, refetch: 0 };
     await page.route(profilePath, async (route) => {
       if (route.request().method() !== "GET") return route.continue();
-      reads += 1;
-      if (reads === 1) return route.continue();
+      reads[requestPhase] += 1;
+      if (requestPhase === "initial") return route.continue();
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1014,12 +1018,15 @@ test.describe("@profile Profile and targets redesign", () => {
     const initialRead = page.waitForResponse((response) =>
       profilePath(new URL(response.url())) && response.request().method() === "GET"
     );
-    await page.goto("/profile?plan016-refetch=1");
+    await page.getByRole("link", { name: "الملف" }).click();
     await initialRead;
+    await expect(page).toHaveURL(/\/profile$/);
     const input = page.getByLabel("الوزن");
     const draft = String(originalProfile.weight_kg + 1);
-    expect(reads).toBe(1);
+    expect(reads).toEqual({ initial: 1, refetch: 0 });
     await input.fill(draft);
+    await expect(page.getByText("تغييرات غير محفوظة")).toBeVisible();
+    requestPhase = "refetch";
     await page.clock.install({ time: new Date() });
     await page.clock.fastForward(20_001);
     await page.context().setOffline(true);
@@ -1030,7 +1037,7 @@ test.describe("@profile Profile and targets redesign", () => {
     );
     await page.context().setOffline(false);
     await refetched;
-    expect(reads).toBe(2);
+    expect(reads).toEqual({ initial: 1, refetch: 1 });
     await expect(page.getByText("توجد نسخة أحدث من بيانات الملف على الخادم. احتفظنا بتعديلاتك الحالية.")).toBeVisible();
     await expect(input).toHaveValue(draft);
     await page.getByRole("button", { name: "تحميل نسخة الخادم" }).click();
