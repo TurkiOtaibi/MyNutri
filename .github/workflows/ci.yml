@@ -239,7 +239,7 @@ jobs:
 
           if ! npx playwright test e2e/auth-session-isolation.spec.ts \
             --project=foods-chromium \
-            --grep "development StrictMode replay keeps the anonymous session boundary signal live"; then
+            --grep "@strictmode"; then
             cat /tmp/mynutri-web-dev.log
             exit 1
           fi

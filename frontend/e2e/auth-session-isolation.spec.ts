@@ -230,7 +230,7 @@ async function e2eAuthAction(page: Page, action: "refresh" | "signOut" | "signIn
   expect(result.error).toBeNull();
 }
 
-test("@plan016 development StrictMode replay keeps one session and History API owner live", async ({ browser }) => {
+test("@plan016 @strictmode development StrictMode replay keeps one session and History API owner live", async ({ browser }) => {
   const context = await browser.newContext({ storageState: undefined });
   const page = await context.newPage();
   await page.goto("/auth/login");
