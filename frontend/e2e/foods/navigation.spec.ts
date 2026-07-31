@@ -143,7 +143,16 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     await input.fill("E2E Plan016 Back draft");
     await expect(input).toHaveValue("E2E Plan016 Back draft");
     const dialog = page.getByRole("dialog", { name: "تغييرات غير محفوظة" });
-    let dialogAppearances = 0;
+    await page.getByRole("link", { name: "اليوميات" }).click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveCount(1);
+    await expect(page).toHaveURL(/\/foods\/new$/);
+    await expect(input).toHaveValue("E2E Plan016 Back draft");
+    await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page).toHaveURL(/\/foods\/new$/);
+    await expect(input).toHaveValue("E2E Plan016 Back draft");
+    let dialogAppearances = 1;
     let destinationTraversals = 0;
     page.on("framenavigated", (frame) => {
       if (frame === page.mainFrame() && new URL(frame.url()).pathname === "/admin/foods") {
@@ -152,6 +161,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     });
     for (let attempt = 0; attempt < 2; attempt += 1) {
       await page.goBack();
+      await expect(page).toHaveURL(/\/foods\/new$/);
       await expect(dialog).toBeVisible();
       await expect(dialog).toHaveCount(1);
       dialogAppearances += 1;
@@ -162,6 +172,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
       expect(destinationTraversals).toBe(attempt + 1);
     }
     await page.goBack();
+    await expect(page).toHaveURL(/\/foods\/new$/);
     await expect(dialog).toBeVisible();
     await expect(dialog).toHaveCount(1);
     dialogAppearances += 1;
@@ -173,7 +184,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     await expect(page.getByRole("link", { name: "إضافة طعام" })).toBeVisible();
     await expect(page.locator("form.food-form-layout")).toHaveCount(0);
     await expect(dialog).toHaveCount(0);
-    expect(dialogAppearances).toBe(3);
+    expect(dialogAppearances).toBe(4);
     expect(destinationTraversals).toBe(4);
     await page.goForward();
     await expect(page).toHaveURL(/\/foods\/new$/);
@@ -196,12 +207,23 @@ test.describe("Foods navigation and standalone pages @foods", () => {
       (window as Window & { __plan016DestinationExposures?: string[] }).__plan016DestinationExposures = exposures;
     });
     const dialog = page.getByRole("dialog", { name: "تغييرات غير محفوظة" });
+    await page.getByRole("link", { name: "اليوميات" }).click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveCount(1);
+    await expect(page).toHaveURL(/\/foods\/new$/);
+    await expect(input).toHaveValue("E2E Plan016 Forward draft");
+    await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page).toHaveURL(/\/foods\/new$/);
+    await expect(input).toHaveValue("E2E Plan016 Forward draft");
     await page.goForward();
+    await expect(page).toHaveURL(/\/foods\/new$/);
     await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
     await expect(page).toHaveURL(/\/foods\/new$/);
     await expect(input).toHaveValue("E2E Plan016 Forward draft");
     expect(await page.evaluate(() => (window as Window & { __plan016DestinationExposures?: string[] }).__plan016DestinationExposures ?? [])).toEqual([]);
     await page.goForward();
+    await expect(page).toHaveURL(/\/foods\/new$/);
     await dialog.getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
     await expect(page).toHaveURL(/\/diary$/);
     await page.goBack();
