@@ -130,7 +130,8 @@ test.describe("Foods navigation and standalone pages @foods", () => {
   test("[FOOD-TC-010] @plan016 Food Back repeatedly cancels without a loop and discards once", async ({ page }) => {
     await page.goto("/diary");
     await page.getByRole("link", { name: "الأطعمة" }).click();
-    await page.getByRole("link", { name: "إضافة طعام" }).click();
+    await expect(page).toHaveURL(/\/foods$/);
+    await page.goto("/foods/new");
     const input = page.getByLabel(/اسم الطعام/);
     await input.fill("E2E Plan016 Back draft");
     const dialog = page.getByRole("dialog", { name: "تغييرات غير محفوظة" });
@@ -139,17 +140,23 @@ test.describe("Foods navigation and standalone pages @foods", () => {
       await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
       await expect(page).toHaveURL(/\/foods\/new$/);
       await expect(input).toHaveValue("E2E Plan016 Back draft");
+      await expect(dialog).toHaveCount(0);
     }
     await page.evaluate(() => history.back());
     await dialog.getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
     await expect(page).toHaveURL(/\/foods$/);
+    await expect(page.getByRole("heading", { name: "الأطعمة", exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "كتالوج الأطعمة" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "الأطعمة" })).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("form.food-form-layout")).toHaveCount(0);
+    await expect(dialog).toHaveCount(0);
     await page.goBack();
     await expect(page).toHaveURL(/\/diary$/);
   });
 
   test("[FOOD-TC-011] @plan016 Food Forward cancel has no destination exposure and discard preserves order", async ({ page }) => {
     await page.goto("/foods");
-    await page.getByRole("link", { name: "إضافة طعام" }).click();
+    await page.goto("/foods/new");
     await page.getByRole("link", { name: "اليوميات" }).click();
     await page.goBack();
     const input = page.getByLabel(/اسم الطعام/);
