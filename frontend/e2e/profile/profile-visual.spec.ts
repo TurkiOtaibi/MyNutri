@@ -85,9 +85,9 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
     await page.keyboard.press("Escape");
 
     await page.getByRole("link", { name: "اليوميات" }).click();
-    await expect(page.getByRole("dialog", { name: "تجاهل التغييرات؟" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "تغييرات غير محفوظة", exact: true })).toBeVisible();
     await page.screenshot({ path: resolve(output, "22-unsaved-navigation-confirmation-390.png") });
-    await page.getByRole("dialog", { name: "تجاهل التغييرات؟" }).getByRole("button", { name: "متابعة التعديل" }).click();
+    await page.getByRole("dialog", { name: "تغييرات غير محفوظة", exact: true }).getByRole("button", { name: "متابعة التعديل" }).click();
 
     for (const width of [320, 390, 430]) {
       await page.setViewportSize({ width, height: 844 });
