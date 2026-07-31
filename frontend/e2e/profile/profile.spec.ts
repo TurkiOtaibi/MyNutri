@@ -1149,16 +1149,31 @@ test.describe("@profile Profile and targets redesign", () => {
     await firstProfileFulfilled;
     await navigation;
     await expect(page.getByLabel("الوزن")).toBeVisible();
-    await page.unroute(profileApiPattern);
-    await page.route(profileApiPattern, (route) =>
-      route.request().method() === "GET" && route.request().resourceType() === "fetch"
+    const errorPage = await page.context().newPage();
+    await errorPage.goto("/diary");
+    await expect(errorPage.getByRole("link", { name: "الإدارة" })).toBeVisible();
+    let errorProfileRequests = 0;
+    let failProfileRequests = true;
+    await errorPage.route(profilePath, (route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      errorProfileRequests += 1;
+      return failProfileRequests
         ? route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "unavailable" }) })
-        : route.continue()
-    );
-    await page.goto("/profile?load-error=1");
-    await expect(page.getByText("تعذر تحميل بياناتك")).toBeVisible();
-    await expect(page.getByRole("button", { name: "إعادة المحاولة" })).toBeVisible();
-    await expect(page.getByLabel("الوزن")).toHaveCount(0);
+        : route.continue();
+    });
+    await errorPage.getByRole("link", { name: "الملف" }).click();
+    const errorAlert = errorPage.getByRole("alert").filter({ hasText: "تعذر تحميل بياناتك" });
+    await expect(errorAlert).toBeVisible();
+    await expect(errorAlert).toHaveCount(1);
+    await expect(errorAlert).toContainText("تحقق من الاتصال ثم أعد المحاولة");
+    expect(errorProfileRequests).toBe(2);
+    await expect(errorPage.getByLabel("الوزن")).toHaveCount(0);
+    failProfileRequests = false;
+    await errorPage.getByRole("button", { name: "إعادة المحاولة" }).click();
+    await expect(errorPage.getByLabel("الوزن")).toBeVisible();
+    await expect(errorAlert).toHaveCount(0);
+    expect(errorProfileRequests).toBe(3);
+    await errorPage.close();
   });
 
   test("@p1 Registry unavailable and incompatible states block activation without fabricated metadata", async ({ page, originalProfile }) => {

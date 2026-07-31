@@ -8,7 +8,8 @@ import { API_TOKEN, API_URL } from "../foods/helpers";
 
 const output = resolve("..", "docs", "ui-ux", "screenshots", "profile-targets-redesign");
 const headers = { Authorization: `Bearer ${API_TOKEN}` };
-const profileApiPattern = "**/profile";
+const API_ORIGIN = new URL(API_URL).origin;
+const profileApiPattern = (url: URL) => url.origin === API_ORIGIN && url.pathname === "/profile";
 const targetPlanApiPattern = "**/target-plans/**";
 
 function inputFrom(profile: ProfileResponse): ProfileInput {
@@ -116,11 +117,21 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
 
     const errorPage = await page.context().newPage();
     await errorPage.setViewportSize({ width: 390, height: 844 });
-    await errorPage.route(profileApiPattern, (route) => route.request().resourceType() === "document"
-      ? route.continue()
-      : route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "unavailable" }) }));
-    await errorPage.goto("/profile");
-    await expect(errorPage.getByText("تعذر تحميل بياناتك")).toBeVisible();
+    await errorPage.goto("/diary");
+    await expect(errorPage.getByRole("link", { name: "الإدارة" })).toBeVisible();
+    let failedProfileRequests = 0;
+    await errorPage.route(profileApiPattern, (route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      failedProfileRequests += 1;
+      return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "unavailable" }) });
+    });
+    await errorPage.getByRole("link", { name: "الملف" }).click();
+    const errorAlert = errorPage.getByRole("alert").filter({ hasText: "تعذر تحميل بياناتك" });
+    await expect(errorAlert).toBeVisible();
+    await expect(errorAlert).toHaveCount(1);
+    await expect(errorAlert).toContainText("تحقق من الاتصال ثم أعد المحاولة");
+    expect(failedProfileRequests).toBe(2);
+    await expect(errorPage.getByLabel("الوزن")).toHaveCount(0);
     await errorPage.screenshot({ path: resolve(output, "17-initial-load-error-390.png"), fullPage: true });
     await errorPage.close();
   } finally {
