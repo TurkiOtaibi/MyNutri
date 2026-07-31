@@ -129,12 +129,17 @@ test.describe("Foods navigation and standalone pages @foods", () => {
 
   test("[FOOD-TC-010] @plan016 Food Back repeatedly cancels without a loop and discards once", async ({ page }) => {
     let createDocumentRequests = 0;
+    let destinationDocumentRequests = 0;
     page.on("request", (request) => {
-      if (request.resourceType() === "document" && new URL(request.url()).pathname === "/foods/new") {
+      if (request.resourceType() !== "document") return;
+      const pathname = new URL(request.url()).pathname;
+      if (pathname === "/foods/new") {
         createDocumentRequests += 1;
       }
+      if (pathname === "/admin/foods") destinationDocumentRequests += 1;
     });
     await page.goto("/admin/foods");
+    const initialDestinationDocumentRequests = destinationDocumentRequests;
     await page.getByRole("link", { name: "إضافة طعام" }).click();
     await expect(page).toHaveURL(/\/foods\/new$/);
     await expect(page.locator("form.food-form-layout")).toBeVisible();
@@ -152,24 +157,43 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     await expect(dialog).toHaveCount(0);
     await expect(page).toHaveURL(/\/foods\/new$/);
     await expect(input).toHaveValue("E2E Plan016 Back draft");
+    await page.evaluate(() => {
+      const selector = 'section.foods-catalog[aria-label="كتالوج الأطعمة"]';
+      const probe = {
+        mounted: document.querySelector(selector) !== null,
+        mounts: 0,
+        unmounts: 0,
+        observer: null as MutationObserver | null
+      };
+      const observeMountState = () => {
+        const mounted = document.querySelector(selector) !== null;
+        if (mounted === probe.mounted) return;
+        probe.mounted = mounted;
+        if (mounted) probe.mounts += 1;
+        else probe.unmounts += 1;
+      };
+      probe.observer = new MutationObserver(observeMountState);
+      probe.observer.observe(document.body, { childList: true, subtree: true });
+      (window as Window & { __plan016FoodsMountProbe?: typeof probe }).__plan016FoodsMountProbe = probe;
+    });
     let dialogAppearances = 1;
-    let destinationTraversals = 0;
-    let expectedDestinationTraversals = 0;
+    let lastObservedPathname = new URL(page.url()).pathname;
+    let destinationPathnameTransitions = 0;
     page.on("framenavigated", (frame) => {
-      if (frame === page.mainFrame() && new URL(frame.url()).pathname === "/admin/foods") {
-        destinationTraversals += 1;
-      }
+      if (frame !== page.mainFrame()) return;
+      const pathname = new URL(frame.url()).pathname;
+      if (pathname === lastObservedPathname) return;
+      lastObservedPathname = pathname;
+      if (pathname === "/admin/foods") destinationPathnameTransitions += 1;
     });
     for (let attempt = 0; attempt < 2; attempt += 1) {
       await page.goBack();
-      expectedDestinationTraversals += 1;
       await expect(page).toHaveURL(/\/foods\/new$/);
       await expect(dialog).toBeVisible();
       await expect(dialog).toHaveCount(1);
       dialogAppearances += 1;
       if (attempt === 0) {
         await page.goBack();
-        expectedDestinationTraversals += 1;
         await expect(page).toHaveURL(/\/foods\/new$/);
         await expect(dialog).toHaveCount(1);
       }
@@ -177,17 +201,19 @@ test.describe("Foods navigation and standalone pages @foods", () => {
       await expect(page).toHaveURL(/\/foods\/new$/);
       await expect(input).toHaveValue("E2E Plan016 Back draft");
       await expect(dialog).toHaveCount(0);
-      expect(destinationTraversals).toBe(expectedDestinationTraversals);
+      expect(destinationPathnameTransitions).toBe(attempt + 2);
     }
     await page.goBack();
-    expectedDestinationTraversals += 1;
     await expect(page).toHaveURL(/\/foods\/new$/);
     await expect(dialog).toBeVisible();
     await expect(dialog).toHaveCount(1);
     dialogAppearances += 1;
-    expect(destinationTraversals).toBe(expectedDestinationTraversals);
+    expect(destinationPathnameTransitions).toBe(4);
+    expect(await page.evaluate(() => {
+      const probe = (window as Window & { __plan016FoodsMountProbe?: { mounts: number } }).__plan016FoodsMountProbe;
+      return probe?.mounts ?? -1;
+    })).toBe(0);
     await dialog.getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
-    expectedDestinationTraversals += 1;
     await expect(page).toHaveURL(/\/admin\/foods$/);
     await expect(page.getByRole("heading", { name: "الأطعمة", exact: true })).toBeVisible();
     await expect(page.getByRole("region", { name: "كتالوج الأطعمة" })).toBeVisible();
@@ -195,10 +221,24 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     await expect(page.locator("form.food-form-layout")).toHaveCount(0);
     await expect(dialog).toHaveCount(0);
     expect(dialogAppearances).toBe(4);
-    expect(destinationTraversals).toBe(expectedDestinationTraversals);
+    expect(destinationPathnameTransitions).toBe(5);
+    expect(destinationDocumentRequests).toBe(initialDestinationDocumentRequests);
+    expect(await page.evaluate(() => {
+      const probe = (window as Window & { __plan016FoodsMountProbe?: { mounts: number } }).__plan016FoodsMountProbe;
+      return probe?.mounts ?? -1;
+    })).toBe(1);
     await page.goForward();
     await expect(page).toHaveURL(/\/foods\/new$/);
-    expect(destinationTraversals).toBe(expectedDestinationTraversals);
+    expect(destinationPathnameTransitions).toBe(5);
+    expect(await page.evaluate(() => {
+      const target = window as Window & {
+        __plan016FoodsMountProbe?: { mounts: number; unmounts: number; observer: MutationObserver | null };
+      };
+      const probe = target.__plan016FoodsMountProbe;
+      probe?.observer?.disconnect();
+      delete target.__plan016FoodsMountProbe;
+      return probe ? { mounts: probe.mounts, unmounts: probe.unmounts } : null;
+    })).toEqual({ mounts: 1, unmounts: 1 });
   });
 
   test("[FOOD-TC-011] @plan016 Food Forward cancel has no destination exposure and discard preserves order", async ({ page }) => {
