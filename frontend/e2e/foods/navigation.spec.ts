@@ -242,13 +242,30 @@ test.describe("Foods navigation and standalone pages @foods", () => {
   });
 
   test("[FOOD-TC-011] @plan016 Food Forward cancel has no destination exposure and discard preserves order", async ({ page }) => {
+    let createDocumentRequests = 0;
+    page.on("request", (request) => {
+      if (request.resourceType() === "document" && new URL(request.url()).pathname === "/foods/new") {
+        createDocumentRequests += 1;
+      }
+    });
     await page.goto("/admin/foods");
     await page.getByRole("link", { name: "إضافة طعام" }).click();
     await expect(page).toHaveURL(/\/foods\/new$/);
+    expect(createDocumentRequests).toBe(0);
     await page.getByRole("link", { name: "اليوميات" }).click();
+    await expect(page).toHaveURL(/\/diary$/);
     await page.goBack();
+    await expect(page).toHaveURL(/\/foods\/new$/);
+    await expect(page.locator("form.food-form-layout")).toBeVisible();
+    expect(createDocumentRequests).toBe(0);
     const input = page.getByLabel(/اسم الطعام/);
     await input.fill("E2E Plan016 Forward draft");
+    const category = page.getByLabel("فئة الطعام");
+    await category.selectOption("baked_goods");
+    await expect(page.getByLabel("نوع المخبوزات")).toBeVisible();
+    await category.selectOption("other");
+    await expect(page.getByLabel("نوع المخبوزات")).toHaveCount(0);
+    await expect(input).toHaveValue("E2E Plan016 Forward draft");
     await page.evaluate(() => {
       const exposures: string[] = [];
       new MutationObserver(() => {
