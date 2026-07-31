@@ -128,35 +128,62 @@ test.describe("Foods navigation and standalone pages @foods", () => {
   });
 
   test("[FOOD-TC-010] @plan016 Food Back repeatedly cancels without a loop and discards once", async ({ page }) => {
-    await page.goto("/diary");
-    await page.getByRole("link", { name: "الأطعمة" }).click();
-    await expect(page).toHaveURL(/\/foods$/);
-    await page.goto("/foods/new");
+    let createDocumentRequests = 0;
+    page.on("request", (request) => {
+      if (request.resourceType() === "document" && new URL(request.url()).pathname === "/foods/new") {
+        createDocumentRequests += 1;
+      }
+    });
+    await page.goto("/admin/foods");
+    await page.getByRole("link", { name: "إضافة طعام" }).click();
+    await expect(page).toHaveURL(/\/foods\/new$/);
+    await expect(page.locator("form.food-form-layout")).toBeVisible();
+    expect(createDocumentRequests).toBe(0);
     const input = page.getByLabel(/اسم الطعام/);
     await input.fill("E2E Plan016 Back draft");
+    await expect(input).toHaveValue("E2E Plan016 Back draft");
     const dialog = page.getByRole("dialog", { name: "تغييرات غير محفوظة" });
+    let dialogAppearances = 0;
+    let destinationTraversals = 0;
+    page.on("framenavigated", (frame) => {
+      if (frame === page.mainFrame() && new URL(frame.url()).pathname === "/admin/foods") {
+        destinationTraversals += 1;
+      }
+    });
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      await page.evaluate(() => history.back());
+      await page.goBack();
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toHaveCount(1);
+      dialogAppearances += 1;
       await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
       await expect(page).toHaveURL(/\/foods\/new$/);
       await expect(input).toHaveValue("E2E Plan016 Back draft");
       await expect(dialog).toHaveCount(0);
+      expect(destinationTraversals).toBe(attempt + 1);
     }
-    await page.evaluate(() => history.back());
+    await page.goBack();
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveCount(1);
+    dialogAppearances += 1;
+    expect(destinationTraversals).toBe(3);
     await dialog.getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
-    await expect(page).toHaveURL(/\/foods$/);
+    await expect(page).toHaveURL(/\/admin\/foods$/);
     await expect(page.getByRole("heading", { name: "الأطعمة", exact: true })).toBeVisible();
     await expect(page.getByRole("region", { name: "كتالوج الأطعمة" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "الأطعمة" })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("link", { name: "إضافة طعام" })).toBeVisible();
     await expect(page.locator("form.food-form-layout")).toHaveCount(0);
     await expect(dialog).toHaveCount(0);
-    await page.goBack();
-    await expect(page).toHaveURL(/\/diary$/);
+    expect(dialogAppearances).toBe(3);
+    expect(destinationTraversals).toBe(4);
+    await page.goForward();
+    await expect(page).toHaveURL(/\/foods\/new$/);
+    expect(destinationTraversals).toBe(4);
   });
 
   test("[FOOD-TC-011] @plan016 Food Forward cancel has no destination exposure and discard preserves order", async ({ page }) => {
-    await page.goto("/foods");
-    await page.goto("/foods/new");
+    await page.goto("/admin/foods");
+    await page.getByRole("link", { name: "إضافة طعام" }).click();
+    await expect(page).toHaveURL(/\/foods\/new$/);
     await page.getByRole("link", { name: "اليوميات" }).click();
     await page.goBack();
     const input = page.getByLabel(/اسم الطعام/);
@@ -169,12 +196,12 @@ test.describe("Foods navigation and standalone pages @foods", () => {
       (window as Window & { __plan016DestinationExposures?: string[] }).__plan016DestinationExposures = exposures;
     });
     const dialog = page.getByRole("dialog", { name: "تغييرات غير محفوظة" });
-    await page.evaluate(() => history.forward());
+    await page.goForward();
     await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
     await expect(page).toHaveURL(/\/foods\/new$/);
     await expect(input).toHaveValue("E2E Plan016 Forward draft");
     expect(await page.evaluate(() => (window as Window & { __plan016DestinationExposures?: string[] }).__plan016DestinationExposures ?? [])).toEqual([]);
-    await page.evaluate(() => history.forward());
+    await page.goForward();
     await dialog.getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
     await expect(page).toHaveURL(/\/diary$/);
     await page.goBack();
