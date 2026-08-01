@@ -210,22 +210,26 @@ test("@plan017 deep navigations return the exact generic offline document", asyn
 
 test("@plan017 CacheStorage contains only generic and immutable static resources", async ({ page }) => {
   const profileRequests: ProfileRequestObservation[] = [];
-  const dynamicProfileResponses: Array<{ url: string; fromServiceWorker: boolean }> = [];
+  const dynamicProfileOutcomes = new Map<Request, "pending" | "network" | "service-worker" | "failed">();
   const onRequest = (request: Request) => {
     const observation = observeProfileRequest(request);
-    if (observation) profileRequests.push(observation);
+    if (!observation) return;
+    profileRequests.push(observation);
+    if (observation.isRsc || observation.isPrefetch) dynamicProfileOutcomes.set(request, "pending");
   };
   const onResponse = (response: Response) => {
     const observation = observeProfileRequest(response.request());
     if (observation?.isRsc || observation?.isPrefetch) {
-      dynamicProfileResponses.push({
-        url: response.url(),
-        fromServiceWorker: response.fromServiceWorker()
-      });
+      dynamicProfileOutcomes.set(response.request(), response.fromServiceWorker() ? "service-worker" : "network");
     }
+  };
+  const onRequestFailed = (request: Request) => {
+    const observation = observeProfileRequest(request);
+    if (observation?.isRsc || observation?.isPrefetch) dynamicProfileOutcomes.set(request, "failed");
   };
   page.on("request", onRequest);
   page.on("response", onResponse);
+  page.on("requestfailed", onRequestFailed);
 
   try {
     await waitForWorkerControl(page);
@@ -235,6 +239,7 @@ test("@plan017 CacheStorage contains only generic and immutable static resources
   } finally {
     page.off("request", onRequest);
     page.off("response", onResponse);
+    page.off("requestfailed", onRequestFailed);
   }
 
   const documentNavigations = profileRequests.filter(
@@ -262,8 +267,9 @@ test("@plan017 CacheStorage contains only generic and immutable static resources
   expect(rscRequests.length).toBeGreaterThan(0);
   expect(prefetchRequests.every((request) => request.resourceType !== "document")).toBe(true);
   expect(unclassifiedRequests, JSON.stringify(profileRequests, null, 2)).toEqual([]);
-  expect(dynamicProfileResponses).toHaveLength(dynamicProfileRequests.length);
-  expect(dynamicProfileResponses.every((response) => !response.fromServiceWorker)).toBe(true);
+  expect(dynamicProfileOutcomes.size).toBe(dynamicProfileRequests.length);
+  expect([...dynamicProfileOutcomes.values()]).not.toContain("pending");
+  expect([...dynamicProfileOutcomes.values()]).not.toContain("service-worker");
 
   const entries = await appCacheEntries(page);
   expect(entries.length).toBeGreaterThanOrEqual(3);
