@@ -3,6 +3,7 @@ import { expect, test, type Page, type Request, type Route } from "@playwright/t
 const APP_CACHE_PREFIX = "mynutri-shell-";
 const CURRENT_CACHE = "mynutri-shell-v3";
 const GENERIC_PATHS = new Set(["/offline", "/manifest.json", "/icon.svg"]);
+const APP_ORIGIN = "http://127.0.0.1:3000";
 
 async function waitForWorkerControl(page: Page): Promise<void> {
   await page.goto("/offline");
@@ -32,7 +33,7 @@ async function appCacheEntries(page: Page): Promise<Array<{ url: string; body: s
 
 function isExactRequest(request: Request, pathname: string, method = "GET"): boolean {
   const url = new URL(request.url());
-  return request.method() === method && url.origin === "http://127.0.0.1:3000" && url.pathname === pathname;
+  return request.method() === method && url.origin === APP_ORIGIN && url.pathname === pathname;
 }
 
 type ProfileRequestObservation = {
@@ -120,43 +121,225 @@ test("@plan017 worker activation awaits shell population and removes only obsole
 
 test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic", async ({ page }) => {
   await waitForWorkerControl(page);
-  const observed: string[] = [];
-  const fulfill = async (route: Route) => {
-    observed.push(`${route.request().method()} ${route.request().url()}`);
+  type BypassCase = {
+    name: string;
+    url: string;
+    method: "GET" | "POST";
+    headers: Record<string, string>;
+    body?: string;
+    mode: "same-origin" | "cors";
+    credentials: "same-origin" | "omit";
+  };
+  type BypassObservation = {
+    requests: Array<{
+      url: string;
+      method: string;
+      resourceType: string;
+      headers: Record<string, string>;
+      postData: string | null;
+    }>;
+    responses: Array<{ url: string; status: number; fromServiceWorker: boolean }>;
+    failures: Array<string | null>;
+    fixtureMatches: number;
+  };
+
+  const cases: BypassCase[] = [
+    {
+      name: "api-get",
+      url: `${APP_ORIGIN}/api/plan017?account=private`,
+      method: "GET",
+      headers: {},
+      mode: "same-origin",
+      credentials: "same-origin"
+    },
+    {
+      name: "auth-get",
+      url: "http://127.0.0.1:8765/auth/v1/plan017?token=private",
+      method: "GET",
+      headers: {},
+      mode: "cors",
+      credentials: "omit"
+    },
+    {
+      name: "rsc-get",
+      url: `${APP_ORIGIN}/diary?_rsc=plan017`,
+      method: "GET",
+      headers: { RSC: "1" },
+      mode: "same-origin",
+      credentials: "same-origin"
+    },
+    {
+      name: "prefetch-get",
+      url: `${APP_ORIGIN}/foods?prefetch=plan017`,
+      method: "GET",
+      headers: { "Next-Router-Prefetch": "1", Purpose: "prefetch" },
+      mode: "same-origin",
+      credentials: "same-origin"
+    },
+    {
+      name: "next-data-get",
+      url: `${APP_ORIGIN}/_next/data/plan017/page.json`,
+      method: "GET",
+      headers: {},
+      mode: "same-origin",
+      credentials: "same-origin"
+    },
+    {
+      name: "cross-origin-get",
+      url: "http://127.0.0.1:9876/plan017-cross-origin",
+      method: "GET",
+      headers: {},
+      mode: "cors",
+      credentials: "omit"
+    },
+    {
+      name: "non-get-post",
+      url: `${APP_ORIGIN}/offline`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ marker: "plan017-private-post" }),
+      mode: "same-origin",
+      credentials: "same-origin"
+    }
+  ];
+  const caseByRequest = new Map(cases.map((item) => [`${item.method} ${item.url}`, item]));
+  const observations = new Map<string, BypassObservation>(
+    cases.map((item) => [
+      item.name,
+      { requests: [], responses: [], failures: [], fixtureMatches: 0 }
+    ])
+  );
+  const findCase = (request: Request) => caseByRequest.get(`${request.method()} ${request.url()}`);
+  const onRequest = (request: Request) => {
+    const item = findCase(request);
+    if (!item) return;
+    observations.get(item.name)!.requests.push({
+      url: request.url(),
+      method: request.method(),
+      resourceType: request.resourceType(),
+      headers: request.headers(),
+      postData: request.postData()
+    });
+  };
+  const onResponse = (response: Awaited<ReturnType<Request["response"]>>) => {
+    if (!response) return;
+    const item = findCase(response.request());
+    if (!item) return;
+    observations.get(item.name)!.responses.push({
+      url: response.url(),
+      status: response.status(),
+      fromServiceWorker: response.fromServiceWorker()
+    });
+  };
+  const onRequestFailed = (request: Request) => {
+    const item = findCase(request);
+    if (!item) return;
+    observations.get(item.name)!.failures.push(request.failure()?.errorText ?? null);
+  };
+  const fulfillBypassCase = async (route: Route) => {
+    const item = findCase(route.request());
+    if (!item) {
+      await route.continue();
+      return;
+    }
+    observations.get(item.name)!.fixtureMatches += 1;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ marker: "plan017-personal-marker" })
+      headers: { "Access-Control-Allow-Origin": APP_ORIGIN },
+      body: JSON.stringify({ marker: "plan017-personal-marker", case: item.name })
     });
   };
-  await page.route("**/api/plan017**", fulfill);
-  await page.route("**/auth/v1/plan017**", fulfill);
-  await page.route("**/diary?_rsc=plan017", fulfill);
-  await page.route("**/foods?prefetch=plan017", fulfill);
-  await page.route("**/_next/data/plan017/page.json", fulfill);
-  await page.route("https://cross-origin.example/plan017", fulfill);
-  await page.route("**/offline", async (route) => {
-    if (route.request().method() === "POST") await fulfill(route);
-    else await route.continue();
-  });
+  page.on("request", onRequest);
+  page.on("response", onResponse);
+  page.on("requestfailed", onRequestFailed);
+  await page.route("**/*", fulfillBypassCase);
 
-  await page.evaluate(async () => {
-    await fetch("/api/plan017?account=private");
-    await fetch("/auth/v1/plan017?token=private");
-    await fetch("/diary?_rsc=plan017", { headers: { RSC: "1" } });
-    await fetch("/foods?prefetch=plan017", {
-      headers: { "Next-Router-Prefetch": "1", Purpose: "prefetch" }
-    });
-    await fetch("/_next/data/plan017/page.json");
-    await fetch("https://cross-origin.example/plan017");
-    await fetch("/offline", { method: "POST", body: "private" });
-  });
+  let browserResults: Array<{
+    name: string;
+    outcome: "fulfilled" | "rejected";
+    status?: number;
+    responseUrl?: string;
+    errorName?: string;
+    errorMessage?: string;
+  }> = [];
+  try {
+    browserResults = await page.evaluate(async (requestCases) => {
+      const results: Array<{
+        name: string;
+        outcome: "fulfilled" | "rejected";
+        status?: number;
+        responseUrl?: string;
+        errorName?: string;
+        errorMessage?: string;
+      }> = [];
+      for (const item of requestCases) {
+        try {
+          const response = await fetch(item.url, {
+            method: item.method,
+            headers: item.headers,
+            body: item.body,
+            mode: item.mode,
+            credentials: item.credentials,
+            redirect: "follow"
+          });
+          results.push({
+            name: item.name,
+            outcome: "fulfilled",
+            status: response.status,
+            responseUrl: response.url
+          });
+        } catch (error) {
+          results.push({
+            name: item.name,
+            outcome: "rejected",
+            errorName: error instanceof Error ? error.name : "UnknownError",
+            errorMessage: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+      return results;
+    }, cases);
+  } finally {
+    await page.unroute("**/*", fulfillBypassCase);
+    page.off("request", onRequest);
+    page.off("response", onResponse);
+    page.off("requestfailed", onRequestFailed);
+  }
 
-  expect(observed).toHaveLength(7);
   const entries = await appCacheEntries(page);
-  expect(entries.some(({ url }) => /\/api\/|\/auth\/|_rsc|\/_next\/data\//.test(url))).toBe(false);
+  for (const item of cases) {
+    const observation = observations.get(item.name)!;
+    const browserResult = browserResults.find((result) => result.name === item.name);
+    const diagnostics = JSON.stringify({ item, browserResult, observation }, null, 2);
+    expect(browserResult, diagnostics).toMatchObject({
+      name: item.name,
+      outcome: "fulfilled",
+      status: 200,
+      responseUrl: item.url
+    });
+    expect(observation.fixtureMatches, diagnostics).toBe(1);
+    expect(observation.requests, diagnostics).toHaveLength(1);
+    expect(observation.responses, diagnostics).toHaveLength(1);
+    expect(observation.failures, diagnostics).toEqual([]);
+    expect(observation.requests[0], diagnostics).toMatchObject({
+      url: item.url,
+      method: item.method,
+      resourceType: "fetch"
+    });
+    expect(observation.responses[0], diagnostics).toMatchObject({
+      url: item.url,
+      status: 200,
+      fromServiceWorker: false
+    });
+    for (const [name, value] of Object.entries(item.headers)) {
+      expect(observation.requests[0].headers[name.toLowerCase()], diagnostics).toBe(value);
+    }
+    expect(observation.requests[0].postData, diagnostics).toBe(item.body ?? null);
+    expect(entries.filter(({ url }) => url === item.url), diagnostics).toEqual([]);
+  }
   expect(entries.some(({ body }) => body.includes("plan017-personal-marker"))).toBe(false);
+  expect(entries.some(({ body }) => body.includes("plan017-private-post"))).toBe(false);
 });
 
 test("@plan017 reuses only immutable Next static assets while offline", async ({ page, context }) => {
