@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Request, type Response, type Route } from "@playwright/test";
+import { expect, test, type Page, type Request, type Route } from "@playwright/test";
 
 const APP_CACHE_PREFIX = "mynutri-shell-";
 const CURRENT_CACHE = "mynutri-shell-v3";
@@ -210,26 +210,14 @@ test("@plan017 deep navigations return the exact generic offline document", asyn
 
 test("@plan017 CacheStorage contains only generic and immutable static resources", async ({ page }) => {
   const profileRequests: ProfileRequestObservation[] = [];
-  const dynamicProfileOutcomes = new Map<Request, "pending" | "network" | "service-worker" | "failed">();
+  const dynamicProfileRequests: Request[] = [];
   const onRequest = (request: Request) => {
     const observation = observeProfileRequest(request);
     if (!observation) return;
     profileRequests.push(observation);
-    if (observation.isRsc || observation.isPrefetch) dynamicProfileOutcomes.set(request, "pending");
-  };
-  const onResponse = (response: Response) => {
-    const observation = observeProfileRequest(response.request());
-    if (observation?.isRsc || observation?.isPrefetch) {
-      dynamicProfileOutcomes.set(response.request(), response.fromServiceWorker() ? "service-worker" : "network");
-    }
-  };
-  const onRequestFailed = (request: Request) => {
-    const observation = observeProfileRequest(request);
-    if (observation?.isRsc || observation?.isPrefetch) dynamicProfileOutcomes.set(request, "failed");
+    if (observation.isRsc || observation.isPrefetch) dynamicProfileRequests.push(request);
   };
   page.on("request", onRequest);
-  page.on("response", onResponse);
-  page.on("requestfailed", onRequestFailed);
 
   try {
     await waitForWorkerControl(page);
@@ -238,16 +226,22 @@ test("@plan017 CacheStorage contains only generic and immutable static resources
     }
   } finally {
     page.off("request", onRequest);
-    page.off("response", onResponse);
-    page.off("requestfailed", onRequestFailed);
   }
+
+  const dynamicProfileOutcomes = await Promise.all(
+    dynamicProfileRequests.map(async (request) => {
+      const response = await request.response();
+      if (!response) return "failed" as const;
+      return response.fromServiceWorker() ? "service-worker" as const : "network" as const;
+    })
+  );
 
   const documentNavigations = profileRequests.filter(
     (request) => request.resourceType === "document" && request.isNavigation && !request.isRsc && !request.isPrefetch
   );
   const rscRequests = profileRequests.filter((request) => request.isRsc);
   const prefetchRequests = profileRequests.filter((request) => request.isPrefetch);
-  const dynamicProfileRequests = profileRequests.filter((request) => request.isRsc || request.isPrefetch);
+  const dynamicProfileObservations = profileRequests.filter((request) => request.isRsc || request.isPrefetch);
   const unclassifiedRequests = profileRequests.filter(
     (request) =>
       !(request.resourceType === "document" && request.isNavigation && !request.isRsc && !request.isPrefetch) &&
@@ -267,9 +261,8 @@ test("@plan017 CacheStorage contains only generic and immutable static resources
   expect(rscRequests.length).toBeGreaterThan(0);
   expect(prefetchRequests.every((request) => request.resourceType !== "document")).toBe(true);
   expect(unclassifiedRequests, JSON.stringify(profileRequests, null, 2)).toEqual([]);
-  expect(dynamicProfileOutcomes.size).toBe(dynamicProfileRequests.length);
-  expect([...dynamicProfileOutcomes.values()]).not.toContain("pending");
-  expect([...dynamicProfileOutcomes.values()]).not.toContain("service-worker");
+  expect(dynamicProfileOutcomes).toHaveLength(dynamicProfileObservations.length);
+  expect(dynamicProfileOutcomes).not.toContain("service-worker");
 
   const entries = await appCacheEntries(page);
   expect(entries.length).toBeGreaterThanOrEqual(3);
