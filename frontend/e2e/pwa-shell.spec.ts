@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Request, type Route } from "@playwright/test";
+import { expect, test, type Page, type Request, type Response, type Route } from "@playwright/test";
 
 const APP_CACHE_PREFIX = "mynutri-shell-";
 const CURRENT_CACHE = "mynutri-shell-v3";
@@ -33,6 +33,43 @@ async function appCacheEntries(page: Page): Promise<Array<{ url: string; body: s
 function isExactRequest(request: Request, pathname: string, method = "GET"): boolean {
   const url = new URL(request.url());
   return request.method() === method && url.origin === "http://127.0.0.1:3000" && url.pathname === pathname;
+}
+
+type ProfileRequestObservation = {
+  url: string;
+  method: string;
+  resourceType: string;
+  isNavigation: boolean;
+  query: string;
+  isRsc: boolean;
+  isPrefetch: boolean;
+};
+
+function observeProfileRequest(request: Request): ProfileRequestObservation | null {
+  if (!isExactRequest(request, "/profile")) return null;
+
+  const url = new URL(request.url());
+  const headers = request.headers();
+  const purpose = `${headers.purpose ?? ""} ${headers["sec-purpose"] ?? ""}`.toLowerCase();
+  const isPrefetch =
+    headers["next-router-prefetch"] === "1" ||
+    "next-router-segment-prefetch" in headers ||
+    purpose.includes("prefetch");
+  const isRsc =
+    url.searchParams.has("_rsc") ||
+    headers.rsc === "1" ||
+    "next-router-state-tree" in headers ||
+    "next-router-segment-prefetch" in headers;
+
+  return {
+    url: request.url(),
+    method: request.method(),
+    resourceType: request.resourceType(),
+    isNavigation: request.isNavigationRequest(),
+    query: url.search,
+    isRsc,
+    isPrefetch
+  };
 }
 
 test("@plan017 worker activation awaits shell population and removes only obsolete app caches", async ({ page }) => {
@@ -172,18 +209,65 @@ test("@plan017 deep navigations return the exact generic offline document", asyn
 });
 
 test("@plan017 CacheStorage contains only generic and immutable static resources", async ({ page }) => {
-  const profileRequests: string[] = [];
-  page.on("request", (request) => {
-    if (isExactRequest(request, "/profile")) profileRequests.push(request.url());
-  });
-  await waitForWorkerControl(page);
-  for (const path of ["/profile", "/diary", "/foods", "/admin/users/00000000-0000-0000-0000-000000000001"]) {
-    await page.goto(path);
+  const profileRequests: ProfileRequestObservation[] = [];
+  const dynamicProfileResponses: Array<{ url: string; fromServiceWorker: boolean }> = [];
+  const onRequest = (request: Request) => {
+    const observation = observeProfileRequest(request);
+    if (observation) profileRequests.push(observation);
+  };
+  const onResponse = (response: Response) => {
+    const observation = observeProfileRequest(response.request());
+    if (observation?.isRsc || observation?.isPrefetch) {
+      dynamicProfileResponses.push({
+        url: response.url(),
+        fromServiceWorker: response.fromServiceWorker()
+      });
+    }
+  };
+  page.on("request", onRequest);
+  page.on("response", onResponse);
+
+  try {
+    await waitForWorkerControl(page);
+    for (const path of ["/profile", "/diary", "/foods", "/admin/users/00000000-0000-0000-0000-000000000001"]) {
+      await page.goto(path);
+    }
+  } finally {
+    page.off("request", onRequest);
+    page.off("response", onResponse);
   }
-  expect(profileRequests).toHaveLength(1);
+
+  const documentNavigations = profileRequests.filter(
+    (request) => request.resourceType === "document" && request.isNavigation && !request.isRsc && !request.isPrefetch
+  );
+  const rscRequests = profileRequests.filter((request) => request.isRsc);
+  const prefetchRequests = profileRequests.filter((request) => request.isPrefetch);
+  const dynamicProfileRequests = profileRequests.filter((request) => request.isRsc || request.isPrefetch);
+  const unclassifiedRequests = profileRequests.filter(
+    (request) =>
+      !(request.resourceType === "document" && request.isNavigation && !request.isRsc && !request.isPrefetch) &&
+      !request.isRsc &&
+      !request.isPrefetch
+  );
+
+  expect(documentNavigations, JSON.stringify(profileRequests, null, 2)).toHaveLength(1);
+  expect(documentNavigations[0]).toMatchObject({
+    method: "GET",
+    resourceType: "document",
+    isNavigation: true,
+    query: "",
+    isRsc: false,
+    isPrefetch: false
+  });
+  expect(rscRequests.length).toBeGreaterThan(0);
+  expect(prefetchRequests.every((request) => request.resourceType !== "document")).toBe(true);
+  expect(unclassifiedRequests, JSON.stringify(profileRequests, null, 2)).toEqual([]);
+  expect(dynamicProfileResponses).toHaveLength(dynamicProfileRequests.length);
+  expect(dynamicProfileResponses.every((response) => !response.fromServiceWorker)).toBe(true);
 
   const entries = await appCacheEntries(page);
   expect(entries.length).toBeGreaterThanOrEqual(3);
+  expect(entries.some(({ url }) => new URL(url).pathname === "/profile")).toBe(false);
   for (const entry of entries) {
     const url = new URL(entry.url);
     expect(
