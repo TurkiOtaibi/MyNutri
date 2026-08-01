@@ -16,18 +16,41 @@ async function waitForWorkerControl(page: Page): Promise<void> {
   });
 }
 
-async function appCacheEntries(page: Page): Promise<Array<{ url: string; body: string }>> {
+type AppCacheEntry = {
+  cacheName: string;
+  method: string;
+  url: string;
+  origin: string;
+  pathname: string;
+  query: string;
+  body: string;
+};
+
+async function appCacheEntries(page: Page): Promise<AppCacheEntry[]> {
   return page.evaluate(async ({ prefix }) => {
-    const entries: Array<{ url: string; body: string }> = [];
+    const entries: AppCacheEntry[] = [];
     for (const key of await caches.keys()) {
       if (!key.startsWith(prefix)) continue;
       const cache = await caches.open(key);
       for (const request of await cache.keys()) {
         const response = await cache.match(request);
-        entries.push({ url: request.url, body: response ? await response.clone().text() : "" });
+        const url = new URL(request.url);
+        entries.push({
+          cacheName: key,
+          method: request.method,
+          url: request.url,
+          origin: url.origin,
+          pathname: url.pathname,
+          query: url.search,
+          body: response ? await response.clone().text() : ""
+        });
       }
     }
-    return entries;
+    return entries.sort((left, right) =>
+      `${left.cacheName}\u0000${left.method}\u0000${left.url}`.localeCompare(
+        `${right.cacheName}\u0000${right.method}\u0000${right.url}`
+      )
+    );
   }, { prefix: APP_CACHE_PREFIX });
 }
 
@@ -255,7 +278,7 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
   page.on("requestfailed", onRequestFailed);
   await page.route("**/*", fulfillBypassCase);
 
-  let browserResults: Array<{
+  const browserResults: Array<{
     name: string;
     outcome: "fulfilled" | "rejected";
     status?: number;
@@ -263,43 +286,39 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
     errorName?: string;
     errorMessage?: string;
   }> = [];
+  let postCacheBefore: AppCacheEntry[] = [];
+  let postCacheAfter: AppCacheEntry[] = [];
   try {
-    browserResults = await page.evaluate(async (requestCases) => {
-      const results: Array<{
-        name: string;
-        outcome: "fulfilled" | "rejected";
-        status?: number;
-        responseUrl?: string;
-        errorName?: string;
-        errorMessage?: string;
-      }> = [];
-      for (const item of requestCases) {
+    for (const item of cases) {
+      if (item.name === "non-get-post") postCacheBefore = await appCacheEntries(page);
+      const result = await page.evaluate(async (requestCase) => {
         try {
-          const response = await fetch(item.url, {
-            method: item.method,
-            headers: item.headers,
-            body: item.body,
-            mode: item.mode,
-            credentials: item.credentials,
+          const response = await fetch(requestCase.url, {
+            method: requestCase.method,
+            headers: requestCase.headers,
+            body: requestCase.body,
+            mode: requestCase.mode,
+            credentials: requestCase.credentials,
             redirect: "follow"
           });
-          results.push({
-            name: item.name,
-            outcome: "fulfilled",
+          return {
+            name: requestCase.name,
+            outcome: "fulfilled" as const,
             status: response.status,
             responseUrl: response.url
-          });
+          };
         } catch (error) {
-          results.push({
-            name: item.name,
-            outcome: "rejected",
+          return {
+            name: requestCase.name,
+            outcome: "rejected" as const,
             errorName: error instanceof Error ? error.name : "UnknownError",
             errorMessage: error instanceof Error ? error.message : String(error)
-          });
+          };
         }
-      }
-      return results;
-    }, cases);
+      }, item);
+      browserResults.push(result);
+      if (item.name === "non-get-post") postCacheAfter = await appCacheEntries(page);
+    }
   } finally {
     await page.unroute("**/*", fulfillBypassCase);
     page.off("request", onRequest);
@@ -336,8 +355,20 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
       expect(observation.requests[0].headers[name.toLowerCase()], diagnostics).toBe(value);
     }
     expect(observation.requests[0].postData, diagnostics).toBe(item.body ?? null);
-    expect(entries.filter(({ url }) => url === item.url), diagnostics).toEqual([]);
+    expect(entries.filter(({ method, url }) => method === item.method && url === item.url), diagnostics).toEqual([]);
   }
+  expect(postCacheAfter).toEqual(postCacheBefore);
+  expect(
+    postCacheAfter.filter(
+      ({ cacheName, method, origin, pathname, query }) =>
+        cacheName === CURRENT_CACHE &&
+        method === "GET" &&
+        origin === APP_ORIGIN &&
+        pathname === "/offline" &&
+        query === ""
+    )
+  ).toHaveLength(1);
+  expect(postCacheAfter.some(({ method, url }) => method === "POST" && url === `${APP_ORIGIN}/offline`)).toBe(false);
   expect(entries.some(({ body }) => body.includes("plan017-personal-marker"))).toBe(false);
   expect(entries.some(({ body }) => body.includes("plan017-private-post"))).toBe(false);
 });
