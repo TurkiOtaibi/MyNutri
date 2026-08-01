@@ -1033,6 +1033,48 @@ a {
   box-shadow: var(--shadow);
 }
 
+.unsaved-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(13, 31, 27, 0.55);
+}
+
+.unsaved-dialog {
+  width: min(100%, 460px);
+  padding: 22px;
+  border-radius: 18px;
+  background: var(--surface, #fff);
+  box-shadow: 0 22px 60px rgba(13, 31, 27, 0.24);
+}
+
+.unsaved-dialog h2,
+.unsaved-dialog p {
+  margin-top: 0;
+}
+
+.unsaved-dialog .actions,
+.unsaved-conflict .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.unsaved-conflict {
+  padding: 14px;
+  border: 1px solid #d9a441;
+  border-radius: 14px;
+  background: #fff8e8;
+  color: #493817;
+}
+
+.unsaved-conflict p {
+  margin: 0 0 10px;
+}
+
 .dialog-title-row {
   display: flex;
   align-items: center;

@@ -230,7 +230,7 @@ async function e2eAuthAction(page: Page, action: "refresh" | "signOut" | "signIn
   expect(result.error).toBeNull();
 }
 
-test("development StrictMode replay keeps the anonymous session boundary signal live", async ({ browser }) => {
+test("@plan016 @strictmode development StrictMode replay keeps one session and History API owner live", async ({ browser }) => {
   const context = await browser.newContext({ storageState: undefined });
   const page = await context.newPage();
   await page.goto("/auth/login");
@@ -241,6 +241,17 @@ test("development StrictMode replay keeps the anonymous session boundary signal 
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   expect(await sessionSignalAborted(page)).toBe(false);
   expect(await sessionBoundaryRotations(page)).toEqual([]);
+  const historyOwnership = await page.evaluate(() => {
+    const marker = "__mynutriHistoryPosition";
+    const before = Number((history.state as Record<string, unknown> | null)?.[marker] ?? 0);
+    history.pushState({ strictModeProbe: true }, "", window.location.href);
+    const afterPush = Number((history.state as Record<string, unknown> | null)?.[marker] ?? -1);
+    history.replaceState({ strictModeProbe: "replaced" }, "", window.location.href);
+    const afterReplace = Number((history.state as Record<string, unknown> | null)?.[marker] ?? -1);
+    return { before, afterPush, afterReplace };
+  });
+  expect(historyOwnership.afterPush - historyOwnership.before).toBe(1);
+  expect(historyOwnership.afterReplace).toBe(historyOwnership.afterPush);
   await context.close();
 });
 
@@ -432,6 +443,49 @@ test("same browser context isolates cached profile and diary data across A to B 
   await expect(page.locator('input[type="email"]')).toBeVisible();
   await signIn(page, emailA, PASSWORD, "/profile");
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("71");
+  await context.close();
+});
+
+test("@plan016 external A to B subject change clears A's dirty Profile registration synchronously", async ({ browser, request }) => {
+  const suffix = Date.now();
+  const emailA = `plan016-a-${suffix}@example.test`;
+  const emailB = `plan016-b-${suffix}@example.test`;
+  const tokenA = await token(emailA);
+  const tokenB = await token(emailB);
+  expect((await request.put(`${API_URL}/profile`, { headers: headers(tokenA), data: profile(71) })).status()).toBe(200);
+  expect((await request.put(`${API_URL}/profile`, { headers: headers(tokenB), data: profile(89) })).status()).toBe(200);
+
+  const context = await browser.newContext({ storageState: undefined });
+  const page = await context.newPage();
+  await signIn(page, emailA, PASSWORD, "/profile");
+  const weight = page.locator('input[aria-label="الوزن"]');
+  await expect(weight).toHaveValue("71");
+  await weight.fill("72");
+  await installLeakObserver(page, [], ["72"], true);
+  await e2eAuthAction(page, "signOut");
+  await e2eAuthAction(page, "signIn", { email: emailB, password: PASSWORD });
+  await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("89");
+  await expect(page.getByRole("dialog", { name: "تغييرات غير محفوظة" })).toHaveCount(0);
+  await expect(page.getByText("توجد نسخة أحدث من بيانات الملف على الخادم. احتفظنا بتعديلاتك الحالية.")).toHaveCount(0);
+  expect(await leakRecords(page)).toEqual([]);
+  await context.close();
+});
+
+test("@plan016 external Admin to User subject change clears a dirty Food draft before exposure", async ({ browser }) => {
+  const emailB = `plan016-food-b-${Date.now()}@example.test`;
+  await token(emailB);
+  const marker = `Plan016 Admin-only draft ${Date.now()}`;
+  const context = await browser.newContext({ storageState: undefined });
+  const page = await context.newPage();
+  await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/foods/new");
+  const name = page.locator("form.food-form-layout input").first();
+  await name.fill(marker);
+  await installLeakObserver(page, [marker], [marker], true);
+  await e2eAuthAction(page, "signOut");
+  await e2eAuthAction(page, "signIn", { email: emailB, password: PASSWORD });
+  await expect(page.locator("form.food-form-layout")).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "تغييرات غير محفوظة" })).toHaveCount(0);
+  expect(await leakRecords(page)).toEqual([]);
   await context.close();
 });
 

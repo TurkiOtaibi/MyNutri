@@ -6,13 +6,17 @@ import { API_TOKEN, API_URL } from "../foods/helpers";
 
 const apiHeaders = () => ({ Authorization: `Bearer ${API_TOKEN}` });
 const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
+const API_ORIGIN = new URL(API_URL).origin;
+const AUTH_ORIGIN = new URL(AUTH_URL).origin;
+const ADMIN_EMAIL = "admin.e2e@example.test";
+const ADMIN_PASSWORD = "E2e-only-password-2026!";
 const LOCAL_TEST_PASSWORD = "Acceptance-only-password-2026!";
 const SPECIALIST_REVIEW_REQUIRED =
   "لا يمكن تفعيل هذا الهدف لأنه غير مناسب لحالتك الحالية. إذا رغبت في اتباع هذا الهدف، فاستشر أخصائي تغذية قبل اعتماده.";
 const VERY_LOW_ENERGY_TARGET_BLOCKED =
   "لا يمكن تفعيل هذا الهدف لأن السعرات المستهدفة منخفضة جدًا ولا تحقق الحد الأدنى الآمن المعتمد في النظام.";
 const BLOCKED_PREVIEW_DESCRIPTION = "هذه معاينة توضيحية فقط، ولا يمكن تفعيل هذا الهدف.";
-const profilePath = (url: URL) => url.pathname === "/profile";
+const profilePath = (url: URL) => url.origin === API_ORIGIN && url.pathname === "/profile";
 const previewPath = (url: URL) => url.pathname === "/profile/preview";
 const calendarPath = (url: URL) => url.pathname === "/account/calendar";
 const activationPath = (url: URL) =>
@@ -367,7 +371,7 @@ test.describe("@profile Profile and targets redesign", () => {
     expect(stored.fat_pct).toBe(0.15);
   });
 
-  test("@p0 @plan011 successful activation adopts the accepted response", async ({ page, originalProfile }) => {
+  test("@p0 @plan011 @plan016 successful activation adopts the accepted response and clears navigation guard", async ({ page, originalProfile }) => {
     await page.goto("/profile");
     const nextWeight = originalProfile.weight_kg + 1;
     let previewRequests = 0;
@@ -392,9 +396,12 @@ test.describe("@profile Profile and targets redesign", () => {
     expect(activationRequests).toBe(1);
     await expect(page.locator(".profile-save-bar")).toHaveCount(0);
     await expect(preview).toHaveCount(0);
+    await page.getByRole("link", { name: "اليوميات" }).click();
+    await expect(page.getByRole("dialog", { name: "تغييرات غير محفوظة" })).toHaveCount(0);
+    await expect(page).toHaveURL(/\/diary$/);
   });
 
-  test("@plan011 pending activation is non-dismissible and sends one request", async ({ page, originalProfile }) => {
+  test("@plan011 @plan016 pending activation keeps its draft and guard until acceptance", async ({ page, originalProfile }) => {
     const targets = await mockPlan011Preview(page, originalProfile);
     let activationRequests = 0;
     let releaseActivation!: () => void;
@@ -411,7 +418,7 @@ test.describe("@profile Profile and targets redesign", () => {
     });
 
     await page.goto("/profile?plan011-pending=1");
-    await changedWeight(page, originalProfile);
+    const heldDraft = await changedWeight(page, originalProfile);
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
     const dialog = page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ });
     const confirm = dialog.getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ });
@@ -425,11 +432,41 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(dialog).toBeFocused();
     await expect(dialog.getByRole("button", { name: /إغلاق/ })).toBeDisabled();
     await expect(dialog.getByRole("button", { name: "متابعة المراجعة" })).toBeDisabled();
+    let profileRefetches = 0;
+    await page.route(profilePath, async (route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      profileRefetches += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        json: { ...originalProfile, weight_kg: originalProfile.weight_kg + 9 }
+      });
+    });
+    const refetched = page.waitForResponse((response) =>
+      new URL(response.url()).origin === API_ORIGIN
+        && profilePath(new URL(response.url()))
+        && response.request().method() === "GET"
+    );
+    await page.clock.install({ time: new Date() });
+    await page.clock.fastForward(20_001);
+    await page.context().setOffline(true);
+    await page.context().setOffline(false);
+    await refetched;
+    expect(profileRefetches).toBe(1);
+    await expect(page.getByLabel("الوزن")).toHaveValue(heldDraft);
+    await expect(page.getByText("توجد نسخة أحدث من بيانات الملف على الخادم. احتفظنا بتعديلاتك الحالية.")).toBeVisible();
+    await page.getByRole("link", { name: "اليوميات" }).dispatchEvent("click");
+    const unsaved = page.getByRole("dialog", { name: "تغييرات غير محفوظة" });
+    await expect(unsaved).toBeVisible();
+    await unsaved.getByRole("button", { name: "متابعة التعديل" }).click();
+    await expect(page).toHaveURL(/\/profile\?plan011-pending=1$/);
+    await expect(page.getByLabel("الوزن")).toHaveValue(heldDraft);
     await page.keyboard.press("Escape");
     await page.locator(".profile-sheet-backdrop").dispatchEvent("mousedown");
     await expect(dialog).toBeVisible();
     expect(activationRequests).toBe(1);
 
+    await page.unroute(profilePath);
     releaseActivation();
     await expect(dialog).toHaveCount(0);
     await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
@@ -902,6 +939,34 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.getByRole("dialog").getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
     await expect(page.getByText("تعذر حفظ التغييرات")).toBeVisible();
     await expect(page.getByLabel("الطول")).toHaveValue(String(nextHeight));
+    let profileRefetches = 0;
+    await page.route(profilePath, async (route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      profileRefetches += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        json: { ...originalProfile, height_cm: originalProfile.height_cm + 8 }
+      });
+    });
+    await page.clock.install({ time: new Date() });
+    await page.clock.fastForward(20_001);
+    await page.context().setOffline(true);
+    const refetched = page.waitForResponse((response) =>
+      new URL(response.url()).origin === API_ORIGIN
+        && profilePath(new URL(response.url()))
+        && response.request().method() === "GET"
+    );
+    await page.context().setOffline(false);
+    await refetched;
+    expect(profileRefetches).toBe(1);
+    await expect(page.getByText("توجد نسخة أحدث من بيانات الملف على الخادم. احتفظنا بتعديلاتك الحالية.")).toBeVisible();
+    await expect(page.getByLabel("الطول")).toHaveValue(String(nextHeight));
+    await page.getByRole("link", { name: "اليوميات" }).click();
+    await page.getByRole("dialog", { name: "تغييرات غير محفوظة" }).getByRole("button", { name: "متابعة التعديل" }).click();
+    await expect(page).toHaveURL(/\/profile$/);
+    await expect(page.getByLabel("الطول")).toHaveValue(String(nextHeight));
+    await page.unroute(profilePath);
     fail = false;
     await page.getByRole("button", { name: "إعادة المحاولة" }).click();
     await page.getByRole("dialog").getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
@@ -910,18 +975,154 @@ test.describe("@profile Profile and targets redesign", () => {
     expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
   });
 
-  test("@p0 navigation guard preserves or discards dirty draft", async ({ page, originalProfile }) => {
+  test("@p0 @plan016 navigation guard preserves or discards dirty draft", async ({ page, originalProfile }) => {
     await page.goto("/profile");
     await page.getByLabel("الوزن").fill(String(originalProfile.weight_kg + 1));
-    await page.getByRole("link", { name: "اليوميات" }).click();
-    const dialog = page.getByRole("dialog", { name: "تجاهل التغييرات؟" });
+    const opener = page.getByRole("link", { name: "اليوميات" });
+    await opener.focus();
+    await opener.click();
+    const dialog = page.getByRole("dialog", { name: "تغييرات غير محفوظة" });
     await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute("aria-labelledby", "unsaved-dialog-title");
+    await expect(dialog).toHaveAttribute("aria-describedby", "unsaved-dialog-description");
+    await expect(dialog.getByRole("button", { name: "متابعة التعديل" })).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(dialog.getByRole("button", { name: "تجاهل التغييرات والمغادرة" })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(dialog.getByRole("button", { name: "متابعة التعديل" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(opener).toBeFocused();
+    await opener.click();
     await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
     await expect(page).toHaveURL(/\/profile$/);
     await expect(page.getByLabel("الوزن")).toHaveValue(String(originalProfile.weight_kg + 1));
     await page.getByRole("link", { name: "اليوميات" }).click();
-    await page.getByRole("dialog", { name: "تجاهل التغييرات؟" }).getByRole("button", { name: "تجاهل التغييرات", exact: true }).click();
+    await page.getByRole("dialog", { name: "تغييرات غير محفوظة" }).getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
     await expect(page).toHaveURL(/\/diary$/);
+  });
+
+  test("@plan016 dirty Profile keeps its exact draft when a same-resource refetch arrives", async ({ page, originalProfile }) => {
+    await page.goto("/diary");
+    await expect(page.getByRole("link", { name: "الإدارة" })).toBeVisible();
+
+    let requestPhase: "initial" | "refetch" = "initial";
+    const reads = { initial: 0, refetch: 0 };
+    await page.route(profilePath, async (route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      reads[requestPhase] += 1;
+      if (requestPhase === "initial") return route.continue();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        json: { ...originalProfile, weight_kg: originalProfile.weight_kg + 9 }
+      });
+    });
+    const initialRead = page.waitForResponse((response) =>
+      profilePath(new URL(response.url())) && response.request().method() === "GET"
+    );
+    await page.getByRole("link", { name: "الملف" }).click();
+    await initialRead;
+    await expect(page).toHaveURL(/\/profile$/);
+    const input = page.getByLabel("الوزن");
+    const draft = String(originalProfile.weight_kg + 1);
+    expect(reads).toEqual({ initial: 1, refetch: 0 });
+    await input.fill(draft);
+    await expect(page.getByText("تغييرات غير محفوظة")).toBeVisible();
+    requestPhase = "refetch";
+    await page.clock.install({ time: new Date() });
+    await page.clock.fastForward(20_001);
+    await page.context().setOffline(true);
+    const refetched = page.waitForResponse((response) =>
+      new URL(response.url()).origin === API_ORIGIN
+        && profilePath(new URL(response.url()))
+        && response.request().method() === "GET"
+    );
+    await page.context().setOffline(false);
+    await refetched;
+    expect(reads).toEqual({ initial: 1, refetch: 1 });
+    await expect(page.getByText("توجد نسخة أحدث من بيانات الملف على الخادم. احتفظنا بتعديلاتك الحالية.")).toBeVisible();
+    await expect(input).toHaveValue(draft);
+    await page.getByRole("button", { name: "تحميل نسخة الخادم" }).click();
+    await page.getByRole("dialog", { name: "تغييرات غير محفوظة" }).getByRole("button", { name: "متابعة التعديل" }).click();
+    await expect(input).toHaveValue(draft);
+    await page.getByRole("button", { name: "تحميل نسخة الخادم" }).click();
+    await page.getByRole("dialog", { name: "تغييرات غير محفوظة" }).getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
+    await expect(input).toHaveValue(String(originalProfile.weight_kg + 9));
+  });
+
+  test("@plan016 browser Back cancel preserves the Profile draft and discard traverses once", async ({ page, originalProfile }) => {
+    await page.goto("/diary");
+    await page.getByRole("link", { name: "الملف" }).click();
+    const input = page.getByLabel("الوزن");
+    const draft = String(originalProfile.weight_kg + 2);
+    await input.fill(draft);
+    const dialog = page.getByRole("dialog", { name: "تغييرات غير محفوظة" });
+    await page.getByRole("link", { name: "اليوميات" }).click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveCount(1);
+    await expect(page).toHaveURL(/\/profile$/);
+    await expect(input).toHaveValue(draft);
+    await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page).toHaveURL(/\/profile$/);
+    await expect(input).toHaveValue(draft);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/profile$/);
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
+    await expect(page).toHaveURL(/\/profile$/);
+    await expect(input).toHaveValue(draft);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/profile$/);
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
+    await expect(page).toHaveURL(/\/diary$/);
+  });
+
+  test("@plan016 sign-out cancel retains the draft and confirmed remote failure signs out locally", async ({ page, originalProfile }) => {
+    let logoutCalls = 0;
+    await page.route((url) => url.origin === AUTH_ORIGIN && url.pathname === "/auth/v1/logout", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      logoutCalls += 1;
+      await route.fulfill({ status: 500, contentType: "application/json", json: { message: "forced remote revocation failure" } });
+    });
+    await page.goto("/profile");
+    const weight = page.getByLabel("الوزن");
+    const draft = String(originalProfile.weight_kg + 3);
+    await weight.fill(draft);
+    await page.locator(".nav-signout").click();
+    const dialog = page.getByRole("dialog", { name: "تغييرات غير محفوظة" });
+    await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
+    expect(logoutCalls).toBe(0);
+    await expect(page).toHaveURL(/\/profile$/);
+    await expect(page.locator(".nav-signout")).toBeVisible();
+    await expect(weight).toHaveValue(draft);
+
+    await page.getByRole("link", { name: "اليوميات" }).click();
+    await expect(dialog).toBeVisible();
+    await expect(page).toHaveURL(/\/profile$/);
+    await expect(weight).toHaveValue(draft);
+    await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
+    expect(logoutCalls).toBe(0);
+
+    await page.locator(".nav-signout").click();
+    await dialog.getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
+    await expect(page).toHaveURL(/\/auth\/login(?:\?.*)?$/);
+    expect(logoutCalls).toBe(1);
+    await expect(page.locator(".profile-form")).toHaveCount(0);
+    await expect(page.getByLabel("الوزن")).toHaveCount(0);
+    await expect(page.locator(".nav-signout")).toHaveCount(0);
+    await expect(dialog).toHaveCount(0);
+
+    await page.locator('input[type="email"]').fill(ADMIN_EMAIL);
+    await page.locator('input[type="password"]').fill(ADMIN_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL(/\/(diary|profile)$/);
+    await page.goto("/profile");
+    await expect(page.getByLabel("الوزن")).toHaveValue(String(originalProfile.weight_kg));
+    await expect(page.getByLabel("الوزن")).not.toHaveValue(draft);
+    await expect(dialog).toHaveCount(0);
   });
 
   test("@p1 calculation sheet is user-facing and targets are unified read-only values", async ({ page, originalProfile }) => {
@@ -972,16 +1173,31 @@ test.describe("@profile Profile and targets redesign", () => {
     await firstProfileFulfilled;
     await navigation;
     await expect(page.getByLabel("الوزن")).toBeVisible();
-    await page.unroute(profileApiPattern);
-    await page.route(profileApiPattern, (route) =>
-      route.request().method() === "GET" && route.request().resourceType() === "fetch"
+    const errorPage = await page.context().newPage();
+    await errorPage.goto("/diary");
+    await expect(errorPage.getByRole("link", { name: "الإدارة" })).toBeVisible();
+    let errorProfileRequests = 0;
+    let failProfileRequests = true;
+    await errorPage.route(profilePath, (route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      errorProfileRequests += 1;
+      return failProfileRequests
         ? route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "unavailable" }) })
-        : route.continue()
-    );
-    await page.goto("/profile?load-error=1");
-    await expect(page.getByText("تعذر تحميل بياناتك")).toBeVisible();
-    await expect(page.getByRole("button", { name: "إعادة المحاولة" })).toBeVisible();
-    await expect(page.getByLabel("الوزن")).toHaveCount(0);
+        : route.continue();
+    });
+    await errorPage.getByRole("link", { name: "الملف" }).click();
+    const errorAlert = errorPage.getByRole("alert").filter({ hasText: "تعذر تحميل بياناتك" });
+    await expect(errorAlert).toBeVisible();
+    await expect(errorAlert).toHaveCount(1);
+    await expect(errorAlert).toContainText("تحقق من الاتصال ثم أعد المحاولة");
+    expect(errorProfileRequests).toBe(2);
+    await expect(errorPage.getByLabel("الوزن")).toHaveCount(0);
+    failProfileRequests = false;
+    await errorPage.getByRole("button", { name: "إعادة المحاولة" }).click();
+    await expect(errorPage.getByLabel("الوزن")).toBeVisible();
+    await expect(errorAlert).toHaveCount(0);
+    expect(errorProfileRequests).toBe(3);
+    await errorPage.close();
   });
 
   test("@p1 Registry unavailable and incompatible states block activation without fabricated metadata", async ({ page, originalProfile }) => {
