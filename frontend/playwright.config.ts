@@ -49,7 +49,13 @@ export default defineConfig({
   projects: [
     {
       name: "foods-chromium",
+      testIgnore: /pwa-shell\.spec\.ts/,
       use: { ...devices["Desktop Chrome"] }
+    },
+    {
+      name: "pwa-chromium",
+      testMatch: /pwa-shell\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"], serviceWorkers: "allow" }
     }
   ]
 });
