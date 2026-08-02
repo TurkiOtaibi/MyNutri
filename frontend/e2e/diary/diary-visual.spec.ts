@@ -1,9 +1,36 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import type { Locator, Page } from "@playwright/test";
 
 import { diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
 
 const output = resolve("..", "docs", "ui-ux", "screenshots", "diary-quantity-refinement");
+
+async function discardPortaledAddFoodDraft(page: Page, opener: Locator) {
+  const discardDialog = page.getByRole("alertdialog", {
+    name: "إلغاء إضافة الطعام؟",
+    exact: true
+  });
+  const parentPanel = page.locator(".entry-sheet .diary-modal-panel");
+
+  await expect(discardDialog).toHaveCount(1);
+  await expect(discardDialog).toBeVisible();
+  await expect(discardDialog.getByRole("button", { name: "متابعة التعديل", exact: true })).toBeFocused();
+  await expect(parentPanel).toHaveCount(1);
+  await expect(parentPanel).toBeVisible();
+  await expect(parentPanel).toHaveAttribute("inert", "");
+  await expect(parentPanel).toHaveAttribute("aria-hidden", "true");
+  expect(await discardDialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+  expect(await parentPanel.evaluate((element) => element.contains(document.activeElement))).toBe(false);
+  await expect(opener).not.toBeFocused();
+  await expect(page.locator("body")).toHaveClass(/modal-open/);
+
+  await discardDialog.getByRole("button", { name: "إلغاء الإضافة", exact: true }).click();
+
+  await expect(discardDialog).toHaveCount(0);
+  await expect(parentPanel).toHaveCount(0);
+  await expect(opener).toBeFocused();
+}
 
 test.describe("@diary @visual Diary redesign screenshots", () => {
   test("capture mobile and desktop Diary states with temporary local fixtures", async ({ page, foodsApi }) => {
@@ -43,7 +70,8 @@ test.describe("@diary @visual Diary redesign screenshots", () => {
     await page.getByRole("heading", { name: longName.name }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: resolve(output, "diary-mobile-long-name-390.png") });
 
-    await page.getByRole("button", { name: "إضافة طعام إلى فطور" }).click();
+    const breakfastAdd = page.getByRole("button", { name: "إضافة طعام إلى فطور" });
+    await breakfastAdd.click();
     await expect(page.getByRole("dialog", { name: "إضافة طعام" })).toBeVisible();
     await page.screenshot({ path: resolve(output, "diary-mobile-add-search-390.png") });
     let dialog = page.getByRole("dialog", { name: "إضافة طعام" });
@@ -55,7 +83,7 @@ test.describe("@diary @visual Diary redesign screenshots", () => {
     await dialog.getByRole("textbox", { name: "الكمية", exact: true }).fill("1.5");
     await page.screenshot({ path: resolve(output, "diary-mobile-quantity-1.5-390.png") });
     await page.keyboard.press("Escape");
-    await dialog.getByRole("button", { name: "إلغاء الإضافة" }).click();
+    await discardPortaledAddFoodDraft(page, breakfastAdd);
 
     await page.getByRole("button", { name: new RegExp(`خيارات ${standard.name}`) }).click();
     await page.getByRole("menuitem", { name: "تعديل" }).click();
@@ -72,7 +100,7 @@ test.describe("@diary @visual Diary redesign screenshots", () => {
     await expect(page.getByRole("heading", { name: longName.name })).toBeVisible();
     await page.screenshot({ path: resolve(output, "diary-desktop-populated-1440.png") });
 
-    await page.getByRole("button", { name: "إضافة طعام إلى فطور" }).click();
+    await breakfastAdd.click();
     dialog = page.getByRole("dialog", { name: "إضافة طعام" });
     await expect(dialog).toBeVisible();
     await dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية").fill(standard.name);
@@ -80,7 +108,7 @@ test.describe("@diary @visual Diary redesign screenshots", () => {
     await dialog.getByRole("textbox", { name: "الكمية", exact: true }).fill("2");
     await page.screenshot({ path: resolve(output, "diary-desktop-add-stepper-1440.png") });
     await page.keyboard.press("Escape");
-    await dialog.getByRole("button", { name: "إلغاء الإضافة" }).click();
+    await discardPortaledAddFoodDraft(page, breakfastAdd);
 
     await page.getByRole("button", { name: new RegExp(`خيارات ${standard.name}`) }).click();
     await page.getByRole("menuitem", { name: "تعديل" }).click();
