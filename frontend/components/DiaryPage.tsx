@@ -20,7 +20,7 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import { CSSProperties, FormEvent, MouseEvent as ReactMouseEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, FormEvent, MouseEvent as ReactMouseEvent, ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -1275,8 +1275,32 @@ function ModalFrame({
     return () => unregisterModalFocusScope(scope);
   }, []);
 
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!pending || !panel || topModalScope()?.panel !== panel) return;
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const activeRemainsUsable = Boolean(
+      active
+      && active.isConnected
+      && panel.contains(active)
+      && active.getClientRects().length > 0
+      && !active.matches(":disabled")
+      && active.getAttribute("aria-disabled") !== "true"
+      && !active.closest("[inert]")
+      && !active.closest('[aria-hidden="true"]')
+    );
+    if (!activeRemainsUsable) panel.focus();
+  }, [pending]);
+
   return createPortal(
-    <div className={`diary-modal-backdrop ${className}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !pendingRef.current) onCloseRef.current(); }}>
+    <div className={`diary-modal-backdrop ${className}`} role="presentation" onMouseDown={(event) => {
+      if (event.target !== event.currentTarget) return;
+      if (pendingRef.current) {
+        event.preventDefault();
+        return;
+      }
+      onCloseRef.current();
+    }}>
       <div
         ref={panelRef}
         className={`diary-modal-panel ${panelClassName}`}
