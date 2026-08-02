@@ -21,6 +21,7 @@ import {
   X
 } from "lucide-react";
 import { CSSProperties, FormEvent, MouseEvent as ReactMouseEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -96,7 +97,6 @@ export function DiaryPage() {
   const [nutritionDetailsOpen, setNutritionDetailsOpen] = useState(false);
   const [expandedMeals, setExpandedMeals] = useState<Set<MealType>>(new Set());
   const expandedMealsByDateRef = useRef(new Map<string, Set<MealType>>());
-  const addTriggerKindRef = useRef("desktop");
   const previousAuthoritativeDateRef = useRef<string | null>(null);
 
   const authorityQuery = useQuery({
@@ -255,19 +255,14 @@ export function DiaryPage() {
       : <DiaryEntriesSkeleton />;
   }
 
-  function openAdd(event: ReactMouseEvent<HTMLButtonElement>, meal: MealType | null = null) {
-    addTriggerKindRef.current = event.currentTarget.dataset.diaryAddTrigger ?? "desktop";
+  function openAdd(_event: ReactMouseEvent<HTMLButtonElement>, meal: MealType | null = null) {
     setStatusMessage("");
     setAddMeal(meal);
     setAddOpen(true);
   }
 
   function closeAdd() {
-    const triggerKind = addTriggerKindRef.current;
     setAddOpen(false);
-    requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>(`[data-diary-add-trigger="${triggerKind}"]`)?.focus();
-    });
   }
 
   return (
@@ -783,11 +778,6 @@ function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { select
   const visibleFoods = debouncedSearch.trim() ? allFoods : allFoods.filter((food) => !recentIds.has(food.id));
   const hasMeaningfulChanges = Boolean(selectedFood) || quantity !== "1" || mealType !== initialMeal;
 
-  useEffect(() => {
-    if (!discardOpen) return;
-    requestAnimationFrame(() => document.querySelector<HTMLElement>(".discard-confirm [data-initial-focus]")?.focus());
-  }, [discardOpen]);
-
   function requestClose() {
     if (mutation.isPending || saveSucceeded) return;
     if (hasMeaningfulChanges) {
@@ -823,7 +813,7 @@ function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { select
   }
 
   return (
-    <ModalFrame className="entry-sheet" labelledBy="add-entry-title" onClose={requestClose} pending={mutation.isPending || saveSucceeded}>
+    <ModalFrame className="entry-sheet" labelledBy="add-entry-title" describedBy="add-entry-description" onClose={requestClose} pending={mutation.isPending || saveSucceeded}>
       <form className="add-food-sheet-form" onSubmit={submit}>
         <div className="add-sheet-header">
           <button
@@ -840,7 +830,7 @@ function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { select
           <div className="add-sheet-title-row">
             <div>
               <h2 id="add-entry-title">إضافة طعام</h2>
-              <p>{formatLongArabicDate(selectedDate)}</p>
+              <p id="add-entry-description">{formatLongArabicDate(selectedDate)}</p>
             </div>
             <button className="btn icon add-sheet-close" type="button" onClick={requestClose} aria-label="إغلاق إضافة الطعام"><X size={19} /></button>
           </div>
@@ -931,14 +921,20 @@ function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { select
         </div>
 
         {discardOpen ? (
-          <div className="discard-confirm-backdrop" role="presentation">
-            <section className="discard-confirm" role="alertdialog" aria-modal="true" aria-labelledby="discard-title" aria-describedby="discard-description">
-              <h3 id="discard-title">إلغاء إضافة الطعام؟</h3>
-              <p id="discard-description">ستفقد التغييرات الحالية.</p>
-              <button data-initial-focus className="btn primary" type="button" onClick={() => setDiscardOpen(false)}>متابعة التعديل</button>
-              <button className="btn" type="button" onClick={onClose}>إلغاء الإضافة</button>
-            </section>
-          </div>
+          <ModalFrame
+            className="discard-confirm-backdrop"
+            panelClassName="discard-confirm"
+            role="alertdialog"
+            labelledBy="discard-title"
+            describedBy="discard-description"
+            onClose={() => setDiscardOpen(false)}
+            pending={false}
+          >
+            <h3 id="discard-title">إلغاء إضافة الطعام؟</h3>
+            <p id="discard-description">ستفقد التغييرات الحالية.</p>
+            <button data-initial-focus className="btn primary" type="button" onClick={() => setDiscardOpen(false)}>متابعة التعديل</button>
+            <button className="btn" type="button" onClick={onClose}>إلغاء الإضافة</button>
+          </ModalFrame>
         ) : null}
       </form>
     </ModalFrame>
@@ -1149,36 +1145,151 @@ function ConfirmDialog({ title, description, confirmLabel, cancelLabel = "إلغ
   );
 }
 
-function ModalFrame({ children, labelledBy, onClose, pending, className = "" }: { children: ReactNode; labelledBy: string; onClose: () => void; pending: boolean; className?: string }) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    const panel = panelRef.current;
-    const focusable = () => Array.from(panel?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? []);
-    (panel?.querySelector<HTMLElement>("[data-initial-focus]") ?? focusable()[0])?.focus();
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !pending) onClose();
-      if (event.key !== "Tab") return;
-      const items = focusable();
-      if (!items.length) return;
-      const first = items[0];
-      const last = items[items.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    };
-    document.addEventListener("keydown", handleKey);
-    document.body.classList.add("modal-open");
-    return () => {
-      document.removeEventListener("keydown", handleKey);
-      document.body.classList.remove("modal-open");
-      previous?.focus();
-    };
-  }, [onClose, pending]);
+type ModalFocusScope = {
+  panel: HTMLDivElement;
+  opener: HTMLElement | null;
+  fallbackOpener: HTMLElement | null;
+  onCloseRef: { current: () => void };
+  pendingRef: { current: boolean };
+};
 
-  return (
-    <div className={`diary-modal-backdrop ${className}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) onClose(); }}>
-      <div ref={panelRef} className="diary-modal-panel" role="dialog" aria-modal="true" aria-labelledby={labelledBy}>{children}</div>
-    </div>
+const modalFocusScopes: ModalFocusScope[] = [];
+
+function focusableElements(panel: HTMLElement): HTMLElement[] {
+  return Array.from(panel.querySelectorAll<HTMLElement>(
+    'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )).filter((element) => element.getClientRects().length > 0 && !element.closest("[inert]"));
+}
+
+function topModalScope(): ModalFocusScope | undefined {
+  return modalFocusScopes[modalFocusScopes.length - 1];
+}
+
+function syncModalFocusOwnership() {
+  const top = topModalScope();
+  for (const scope of modalFocusScopes) {
+    if (scope === top) {
+      scope.panel.removeAttribute("inert");
+      scope.panel.removeAttribute("aria-hidden");
+    } else {
+      scope.panel.setAttribute("inert", "");
+      scope.panel.setAttribute("aria-hidden", "true");
+    }
+  }
+}
+
+function handleModalKeyDown(event: KeyboardEvent) {
+  const scope = topModalScope();
+  if (!scope) return;
+  if (event.key === "Escape") {
+    if (!scope.pendingRef.current) {
+      event.preventDefault();
+      scope.onCloseRef.current();
+    }
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const items = focusableElements(scope.panel);
+  if (!items.length) {
+    event.preventDefault();
+    scope.panel.focus();
+    return;
+  }
+  const first = items[0];
+  const last = items[items.length - 1];
+  const active = document.activeElement;
+  if (!scope.panel.contains(active)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+  } else if (event.shiftKey && active === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function registerModalFocusScope(scope: ModalFocusScope) {
+  if (modalFocusScopes.length === 0) {
+    document.addEventListener("keydown", handleModalKeyDown);
+    document.body.classList.add("modal-open");
+  }
+  modalFocusScopes.push(scope);
+  syncModalFocusOwnership();
+  (scope.panel.querySelector<HTMLElement>("[data-initial-focus]") ?? focusableElements(scope.panel)[0] ?? scope.panel).focus();
+}
+
+function unregisterModalFocusScope(scope: ModalFocusScope) {
+  const wasTop = topModalScope() === scope;
+  const index = modalFocusScopes.indexOf(scope);
+  if (index >= 0) modalFocusScopes.splice(index, 1);
+  syncModalFocusOwnership();
+  if (modalFocusScopes.length === 0) {
+    document.removeEventListener("keydown", handleModalKeyDown);
+    document.body.classList.remove("modal-open");
+  }
+  if (!wasTop) return;
+  const restoreTarget = scope.opener?.isConnected && !scope.opener.closest("[inert]") ? scope.opener : scope.fallbackOpener;
+  if (restoreTarget?.isConnected && !restoreTarget.closest("[inert]")) restoreTarget.focus();
+}
+
+function ModalFrame({
+  children,
+  labelledBy,
+  describedBy,
+  onClose,
+  pending,
+  className = "",
+  panelClassName = "",
+  role = "dialog"
+}: {
+  children: ReactNode;
+  labelledBy: string;
+  describedBy?: string;
+  onClose: () => void;
+  pending: boolean;
+  className?: string;
+  panelClassName?: string;
+  role?: "dialog" | "alertdialog";
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  const pendingRef = useRef(pending);
+  onCloseRef.current = onClose;
+  pendingRef.current = pending;
+
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const parentScope = topModalScope();
+    const opener = document.activeElement as HTMLElement | null;
+    const scope: ModalFocusScope = {
+      panel,
+      opener,
+      fallbackOpener: parentScope?.fallbackOpener ?? parentScope?.opener ?? opener,
+      onCloseRef,
+      pendingRef
+    };
+    registerModalFocusScope(scope);
+    return () => unregisterModalFocusScope(scope);
+  }, []);
+
+  return createPortal(
+    <div className={`diary-modal-backdrop ${className}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !pendingRef.current) onCloseRef.current(); }}>
+      <div
+        ref={panelRef}
+        className={`diary-modal-panel ${panelClassName}`}
+        role={role}
+        aria-modal="true"
+        aria-labelledby={labelledBy}
+        aria-describedby={describedBy}
+        tabIndex={-1}
+      >
+        {children}
+      </div>
+    </div>,
+    document.body
   );
 }
 

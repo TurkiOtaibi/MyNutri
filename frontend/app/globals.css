@@ -2557,8 +2557,8 @@ a {
 }
 
 .discard-confirm-backdrop {
-  position: absolute;
-  z-index: 10;
+  position: fixed;
+  z-index: 100;
   inset: 0;
   display: grid;
   align-items: end;
