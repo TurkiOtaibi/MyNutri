@@ -1,4 +1,10 @@
-import { API_TOKEN, API_URL, diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
+import { API_TOKEN, API_URL, diaryDate as localDate, expect, offsetIsoDate, test, uniqueName } from "../foods/helpers";
+
+function sundayStart(input: string): string {
+  const [year, month, day] = input.split("-").map(Number);
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return offsetIsoDate(input, -weekday);
+}
 
 async function selectDate(page: import("@playwright/test").Page, value: string) {
   const picker = page.getByLabel("اختيار تاريخ اليوميات");
@@ -19,6 +25,59 @@ async function targetsForDate(request: import("@playwright/test").APIRequestCont
 }
 
 test.describe("@diary @page-refinement compact Diary page", () => {
+  test("@plan019 week markers use each day's target and stay independent of selection", async ({ page }) => {
+    const selectedDate = localDate(-14);
+    const mockedWeekStart = sundayStart(selectedDate);
+
+    await page.route("**/diary/week?**", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get("start") !== mockedWeekStart) return route.continue();
+
+      const response = await route.fetch();
+      const week = await response.json() as {
+        days: Array<{
+          date: string;
+          totals: { calories: number };
+          targets: ({ target_calories: number } & Record<string, unknown>) | null;
+          target_provenance: string;
+        }>;
+      };
+      const targetCalories = [1000, 2000, null, 4000, 400];
+      week.days = week.days.map((day, index) => index < targetCalories.length
+        ? {
+            ...day,
+            totals: { ...day.totals, calories: 500 },
+            targets: targetCalories[index] === null
+              ? null
+              : { ...day.targets!, target_calories: targetCalories[index] },
+            target_provenance: targetCalories[index] === null ? "no_target_source" : day.target_provenance
+          }
+        : day);
+      await route.fulfill({ response, json: week });
+    });
+
+    await page.goto("/diary");
+    await selectDate(page, offsetIsoDate(mockedWeekStart, 3));
+    const days = page.locator(".compact-week-day");
+    const progress = async (index: number) => days.nth(index).locator("i").evaluate((element) =>
+      (element as HTMLElement).style.getPropertyValue("--day-progress")
+    );
+
+    await expect(days.nth(0).locator("small")).toHaveText("500");
+    await expect(days.nth(2).locator("small")).toHaveText("500");
+    await expect(days.nth(2).locator("i")).toHaveCount(0);
+    expect(await progress(0)).toBe("50%");
+    expect(await progress(1)).toBe("25%");
+    expect(await progress(4)).toBe("100%");
+
+    for (const index of [0, 1, 4]) {
+      await days.nth(index).click();
+      expect(await progress(0)).toBe("50%");
+      expect(await progress(1)).toBe("25%");
+      expect(await progress(4)).toBe("100%");
+    }
+  });
+
   test("@p0 removes the repeated visible page title and keeps the compact current-date card first", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/diary");

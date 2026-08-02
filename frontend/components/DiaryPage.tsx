@@ -275,7 +275,6 @@ export function DiaryPage() {
         error={weekQuery.isError}
         selectedDate={activeDate}
         today={today}
-        target={targets?.target_calories ?? 0}
         dateError={dateError}
         onSelect={chooseDate}
         onRetry={() => weekQuery.refetch()}
@@ -396,7 +395,6 @@ function CompactWeekNavigator({
   error,
   selectedDate,
   today,
-  target,
   dateError,
   onSelect,
   onRetry
@@ -406,13 +404,16 @@ function CompactWeekNavigator({
   error: boolean;
   selectedDate: string;
   today: string;
-  target: number;
   dateError: string;
   onSelect: (date: string) => void;
   onRetry: () => void;
 }) {
   const fallbackStart = weekStartSunday(selectedDate);
-  const days = week?.days ?? Array.from({ length: 7 }, (_, index) => ({ date: addDays(fallbackStart, index), totals: emptyNutritionTotals() }));
+  const days: Array<Pick<DaySummary, "date" | "totals" | "targets">> = week?.days ?? Array.from({ length: 7 }, (_, index) => ({
+    date: addDays(fallbackStart, index),
+    totals: emptyNutritionTotals(),
+    targets: null
+  }));
   const selectedLabel = formatDiarySelectedDate(selectedDate, today);
 
   return (
@@ -432,6 +433,10 @@ function CompactWeekNavigator({
           const selected = day.date === selectedDate;
           const future = day.date > today;
           const hasIntake = day.totals.calories > 0;
+          const dayTarget = day.targets?.target_calories;
+          const progress = typeof dayTarget === "number" && Number.isFinite(dayTarget) && dayTarget > 0
+            ? Math.min(100, Math.max(0, day.totals.calories / dayTarget * 100))
+            : null;
           return (
             <button
               className={`compact-week-day ${selected ? "selected" : ""}`}
@@ -447,7 +452,7 @@ function CompactWeekNavigator({
               <span>{shortWeekdays[index]}</span>
               <strong>{formatDayNumber(day.date)}</strong>
               <small>{hasIntake ? Math.round(day.totals.calories) : ""}</small>
-              {hasIntake ? <i style={{ "--day-progress": `${Math.min(100, target > 0 ? day.totals.calories / target * 100 : 0)}%` } as CSSProperties} /> : null}
+              {hasIntake && progress !== null ? <i style={{ "--day-progress": `${progress}%` } as CSSProperties} /> : null}
             </button>
           );
         })}
