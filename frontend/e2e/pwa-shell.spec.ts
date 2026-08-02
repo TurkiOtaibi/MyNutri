@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Request, type Route } from "@playwright/test";
+import { expect, test, type Page, type Request, type Response, type Route } from "@playwright/test";
 
 const APP_CACHE_PREFIX = "mynutri-shell-";
 const CURRENT_CACHE = "mynutri-shell-v3";
@@ -60,6 +60,8 @@ function isExactRequest(request: Request, pathname: string, method = "GET"): boo
 }
 
 type ProfileRequestObservation = {
+  origin: string;
+  pathname: string;
   url: string;
   method: string;
   resourceType: string;
@@ -67,6 +69,15 @@ type ProfileRequestObservation = {
   query: string;
   isRsc: boolean;
   isPrefetch: boolean;
+  classification: "document-navigation" | "rsc" | "router-prefetch" | "next-route-data" | "unknown-dynamic";
+  headers: {
+    rsc: string | null;
+    nextRouterPrefetch: string | null;
+    nextRouterStateTree: string | null;
+    nextRouterSegmentPrefetch: string | null;
+    purpose: string | null;
+    secPurpose: string | null;
+  };
 };
 
 function observeProfileRequest(request: Request): ProfileRequestObservation | null {
@@ -84,15 +95,36 @@ function observeProfileRequest(request: Request): ProfileRequestObservation | nu
     headers.rsc === "1" ||
     "next-router-state-tree" in headers ||
     "next-router-segment-prefetch" in headers;
+  const isNavigation = request.isNavigationRequest();
+  const classification = isNavigation && request.resourceType() === "document"
+    ? "document-navigation"
+    : isPrefetch
+      ? "router-prefetch"
+      : isRsc
+        ? "rsc"
+        : url.pathname.startsWith("/_next/data/")
+          ? "next-route-data"
+          : "unknown-dynamic";
 
   return {
+    origin: url.origin,
+    pathname: url.pathname,
     url: request.url(),
     method: request.method(),
     resourceType: request.resourceType(),
-    isNavigation: request.isNavigationRequest(),
+    isNavigation,
     query: url.search,
     isRsc,
-    isPrefetch
+    isPrefetch,
+    classification,
+    headers: {
+      rsc: headers.rsc ?? null,
+      nextRouterPrefetch: headers["next-router-prefetch"] ?? null,
+      nextRouterStateTree: headers["next-router-state-tree"] ?? null,
+      nextRouterSegmentPrefetch: headers["next-router-segment-prefetch"] ?? null,
+      purpose: headers.purpose ?? null,
+      secPurpose: headers["sec-purpose"] ?? null
+    }
   };
 }
 
@@ -423,47 +455,125 @@ test("@plan017 deep navigations return the exact generic offline document", asyn
 });
 
 test("@plan017 CacheStorage contains only generic and immutable static resources", async ({ page }) => {
-  const profileRequests: ProfileRequestObservation[] = [];
-  const dynamicProfileRequests: Request[] = [];
+  type ProfileRequestLifecycle = ProfileRequestObservation & {
+    id: string;
+    sequence: number;
+    responseReceived: boolean;
+    responseStatus: number | null;
+    responseUrl: string | null;
+    fromServiceWorker: boolean | null;
+    finished: boolean;
+    failed: boolean;
+    failureReason: string | null;
+    stillOpenAtReadiness: boolean;
+  };
+  const profileRequests: ProfileRequestLifecycle[] = [];
+  const lifecycleByRequest = new Map<Request, ProfileRequestLifecycle>();
+  let sequence = 0;
   const onRequest = (request: Request) => {
     const observation = observeProfileRequest(request);
     if (!observation) return;
-    profileRequests.push(observation);
-    if (observation.isRsc || observation.isPrefetch) dynamicProfileRequests.push(request);
+    const record: ProfileRequestLifecycle = {
+      ...observation,
+      id: `profile-${++sequence}`,
+      sequence,
+      responseReceived: false,
+      responseStatus: null,
+      responseUrl: null,
+      fromServiceWorker: null,
+      finished: false,
+      failed: false,
+      failureReason: null,
+      stillOpenAtReadiness: false
+    };
+    profileRequests.push(record);
+    lifecycleByRequest.set(request, record);
+  };
+  const onResponse = (response: Response) => {
+    const record = lifecycleByRequest.get(response.request());
+    if (!record) return;
+    record.responseReceived = true;
+    record.responseStatus = response.status();
+    record.responseUrl = response.url();
+    record.fromServiceWorker = response.fromServiceWorker();
+  };
+  const onRequestFinished = (request: Request) => {
+    const record = lifecycleByRequest.get(request);
+    if (record) record.finished = true;
+  };
+  const onRequestFailed = (request: Request) => {
+    const record = lifecycleByRequest.get(request);
+    if (!record) return;
+    record.failed = true;
+    record.failureReason = request.failure()?.errorText ?? "unknown request failure";
   };
   page.on("request", onRequest);
+  page.on("response", onResponse);
+  page.on("requestfinished", onRequestFinished);
+  page.on("requestfailed", onRequestFailed);
 
+  let profileReadyEntries: AppCacheEntry[] = [];
   try {
     await waitForWorkerControl(page);
-    for (const path of ["/profile", "/diary", "/foods", "/admin/users/00000000-0000-0000-0000-000000000001"]) {
+    await page.goto("/profile");
+    await expect(page.getByRole("heading", { name: "بياناتك وأهدافك", exact: true })).toBeVisible();
+    await expect(page.getByLabel("الوزن", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("جارٍ تحميل بياناتك", { exact: true })).toHaveCount(0);
+    for (const record of profileRequests) {
+      record.stillOpenAtReadiness = !record.finished && !record.failed;
+    }
+    profileReadyEntries = await appCacheEntries(page);
+    for (const path of ["/diary", "/foods", "/admin/users/00000000-0000-0000-0000-000000000001"]) {
       await page.goto(path);
     }
   } finally {
     page.off("request", onRequest);
+    page.off("response", onResponse);
+    page.off("requestfinished", onRequestFinished);
+    page.off("requestfailed", onRequestFailed);
   }
 
-  const dynamicProfileOutcomes = await Promise.all(
-    dynamicProfileRequests.map(async (request) => {
-      const response = await request.response();
-      if (!response) return "failed" as const;
-      return response.fromServiceWorker() ? "service-worker" as const : "network" as const;
-    })
-  );
-
   const documentNavigations = profileRequests.filter(
-    (request) => request.resourceType === "document" && request.isNavigation && !request.isRsc && !request.isPrefetch
+    (request) => request.classification === "document-navigation"
   );
   const rscRequests = profileRequests.filter((request) => request.isRsc);
   const prefetchRequests = profileRequests.filter((request) => request.isPrefetch);
   const dynamicProfileObservations = profileRequests.filter((request) => request.isRsc || request.isPrefetch);
   const unclassifiedRequests = profileRequests.filter(
-    (request) =>
-      !(request.resourceType === "document" && request.isNavigation && !request.isRsc && !request.isPrefetch) &&
-      !request.isRsc &&
-      !request.isPrefetch
+    (request) => request.classification === "unknown-dynamic"
   );
+  const lifecycleTable = profileRequests.map((request) => ({
+    index: request.sequence,
+    id: request.id,
+    method: request.method,
+    url: request.url,
+    origin: request.origin,
+    pathname: request.pathname,
+    query: request.query,
+    resourceType: request.resourceType,
+    isNavigation: request.isNavigation,
+    classification: request.classification,
+    headers: request.headers,
+    responseReceived: request.responseReceived,
+    responseStatus: request.responseStatus,
+    responseUrl: request.responseUrl,
+    fromServiceWorker: request.fromServiceWorker,
+    finished: request.finished,
+    failed: request.failed,
+    failureReason: request.failureReason,
+    stillOpenAtReadiness: request.stillOpenAtReadiness,
+    lifecycleOutcome: request.failed
+      ? "failed"
+      : request.responseReceived && request.finished
+        ? "response-finished"
+        : request.responseReceived
+          ? "response-streaming"
+          : "in-flight",
+    cacheEntryCount: profileReadyEntries.filter(({ method, url }) => method === request.method && url === request.url).length
+  }));
+  const lifecycleDiagnostics = JSON.stringify(lifecycleTable, null, 2);
 
-  expect(documentNavigations, JSON.stringify(profileRequests, null, 2)).toHaveLength(1);
+  expect(documentNavigations, lifecycleDiagnostics).toHaveLength(1);
   expect(documentNavigations[0]).toMatchObject({
     method: "GET",
     resourceType: "document",
@@ -472,14 +582,33 @@ test("@plan017 CacheStorage contains only generic and immutable static resources
     isRsc: false,
     isPrefetch: false
   });
-  expect(rscRequests.length).toBeGreaterThan(0);
+  expect(dynamicProfileObservations.length, lifecycleDiagnostics).toBeGreaterThan(0);
+  expect(rscRequests.length, lifecycleDiagnostics).toBeGreaterThan(0);
   expect(prefetchRequests.every((request) => request.resourceType !== "document")).toBe(true);
-  expect(unclassifiedRequests, JSON.stringify(profileRequests, null, 2)).toEqual([]);
-  expect(dynamicProfileOutcomes).toHaveLength(dynamicProfileObservations.length);
-  expect(dynamicProfileOutcomes).not.toContain("service-worker");
+  expect(unclassifiedRequests, lifecycleDiagnostics).toEqual([]);
+  for (const request of dynamicProfileObservations) {
+    expect(request.fromServiceWorker, lifecycleDiagnostics).not.toBe(true);
+    expect(
+      profileReadyEntries.filter(({ method, url }) => method === request.method && url === request.url),
+      lifecycleDiagnostics
+    ).toEqual([]);
+  }
+  expect(profileReadyEntries.length).toBeGreaterThanOrEqual(3);
+  expect(new Set(profileReadyEntries.map(({ cacheName }) => cacheName))).toEqual(new Set([CURRENT_CACHE]));
+  expect(profileReadyEntries.some(({ pathname }) => pathname === "/profile")).toBe(false);
+  for (const entry of profileReadyEntries) {
+    expect(
+      GENERIC_PATHS.has(entry.pathname) || entry.pathname.startsWith("/_next/static/"),
+      `Unexpected cached request at Profile readiness: ${entry.method} ${entry.url}`
+    ).toBe(true);
+    expect(entry.query).toBe("");
+    expect(entry.url).not.toMatch(/\/api\/|\/auth\/|_rsc|prefetch|token/i);
+    expect(entry.body).not.toMatch(/admin\.e2e|V2 E2E baseline/i);
+  }
 
   const entries = await appCacheEntries(page);
   expect(entries.length).toBeGreaterThanOrEqual(3);
+  expect(new Set(entries.map(({ cacheName }) => cacheName))).toEqual(new Set([CURRENT_CACHE]));
   expect(entries.some(({ url }) => new URL(url).pathname === "/profile")).toBe(false);
   for (const entry of entries) {
     const url = new URL(entry.url);
