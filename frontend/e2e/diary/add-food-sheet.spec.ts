@@ -1,4 +1,5 @@
-import type { Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+import type { Locator, Page } from "@playwright/test";
 
 import {
   API_TOKEN,
@@ -31,6 +32,62 @@ function deferred() {
     resolve = complete;
   });
   return { promise, resolve };
+}
+
+type SafeActiveElementState = {
+  tagName: string;
+  role: string | null;
+  accessibleName: string | null;
+  id: string | null;
+  disabled: boolean;
+  connected: boolean;
+  insideDialog: boolean;
+  insideInert: boolean;
+  insideAriaHidden: boolean;
+  isBody: boolean;
+  isDocumentElement: boolean;
+};
+
+async function safeActiveElementState(dialog: Locator): Promise<SafeActiveElementState> {
+  return dialog.evaluate((panel) => {
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const safeNames = new Set([
+      "إضافة طعام",
+      "إضافة إلى الفطور",
+      "جارٍ الإضافة…",
+      "إعادة المحاولة",
+      "إلغاء",
+      "اسحب لأسفل لإغلاق إضافة الطعام",
+      "إغلاق إضافة الطعام"
+    ]);
+    const normalize = (value: string | null | undefined) => value?.replace(/\s+/g, " ").trim() || null;
+    const labelledBy = active?.getAttribute("aria-labelledby")
+      ?.split(/\s+/)
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ");
+    const nameCandidate = normalize(active?.getAttribute("aria-label"))
+      ?? normalize(labelledBy)
+      ?? (active?.tagName === "BUTTON" ? normalize(active.textContent) : null);
+    const safeId = active?.id && /^[A-Za-z][\w:.-]{0,79}$/.test(active.id) ? active.id : null;
+    const implicitRole = active?.tagName === "BUTTON"
+      ? "button"
+      : active?.tagName === "INPUT"
+        ? "textbox"
+        : null;
+    return {
+      tagName: active?.tagName.toLowerCase() ?? "none",
+      role: active?.getAttribute("role") ?? implicitRole,
+      accessibleName: nameCandidate && safeNames.has(nameCandidate) ? nameCandidate : null,
+      id: safeId,
+      disabled: Boolean(active?.matches(":disabled") || active?.getAttribute("aria-disabled") === "true"),
+      connected: Boolean(active?.isConnected),
+      insideDialog: Boolean(active && panel.contains(active)),
+      insideInert: Boolean(active?.closest("[inert]")),
+      insideAriaHidden: Boolean(active?.closest('[aria-hidden="true"]')),
+      isBody: active === document.body,
+      isDocumentElement: active === document.documentElement
+    };
+  });
 }
 
 async function openGeneral(page: Page) {
@@ -206,16 +263,19 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     await expect(dialog.getByRole("button", { name: new RegExp(deleted.name) })).toHaveCount(0);
   });
 
-  test("@p0 each meal Add action preserves its preselected meal after Food selection", async ({ page, foodsApi }) => {
+  test("@plan018 @p0 each meal Add action preserves its preselected meal and opener focus", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Meal preselect") });
     await page.goto("/diary");
     for (const [meal, label] of [["فطور", "الفطور"], ["غداء", "الغداء"], ["عشاء", "العشاء"], ["سناك", "السناك"]] as const) {
-      await page.getByRole("button", { name: `إضافة طعام إلى ${meal}` }).click();
+      const trigger = page.getByRole("button", { name: `إضافة طعام إلى ${meal}` });
+      await trigger.click();
       const dialog = await selectFood(page, food.name);
       await expect(dialog.getByRole("radio", { name: meal })).toHaveAttribute("aria-checked", "true");
       await expect(dialog.getByRole("button", { name: `إضافة إلى ${label}` })).toBeEnabled();
       await dialog.getByRole("button", { name: "إلغاء" }).click();
-      await dialog.getByRole("button", { name: "إلغاء الإضافة" }).click();
+      await page.getByRole("alertdialog", { name: "إلغاء إضافة الطعام؟" }).getByRole("button", { name: "إلغاء الإضافة" }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(trigger).toBeFocused();
     }
   });
 
@@ -340,6 +400,7 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
 
   test("@p0 save is single-submit, exposes saving state, and inserts into selected meal", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Single modern save") });
+    const trigger = page.getByRole("button", { name: "إضافة طعام إلى فطور" });
     let posts = 0;
     const createPayloads: Array<Record<string, unknown>> = [];
     await page.route("**/diary", async (route) => {
@@ -356,6 +417,7 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     await save.dblclick();
     await expect(dialog.getByRole("button", { name: /جارٍ الإضافة|تمت الإضافة/ })).toBeVisible();
     await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
     expect(posts).toBe(1);
     expect(Object.keys(createPayloads[0] ?? {}).sort()).toEqual(["entry_date", "food_id", "meal_type", "quantity"]);
     expect(createPayloads[0]?.food_id).toBe(food.id);
@@ -379,6 +441,159 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     await expect(dialog.getByRole("textbox", { name: "الكمية", exact: true })).toHaveValue("1.5");
   });
 
+  test("@plan018 @p0 Add Food owns forward and backward keyboard focus", async ({ page }) => {
+    const trigger = page.getByRole("button", { name: "إضافة طعام إلى فطور" });
+    await page.goto("/diary");
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "إضافة طعام" });
+    const search = dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية");
+    const dragHandle = dialog.getByRole("button", { name: "اسحب لأسفل لإغلاق إضافة الطعام" });
+    const cancel = dialog.getByRole("button", { name: "إلغاء", exact: true });
+
+    await expect(dialog).toHaveAccessibleDescription(/.+/);
+    await expect(search).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Shift+Tab");
+    await expect(cancel).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(dragHandle).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(cancel).toBeFocused();
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  });
+
+  test("@plan018 @p0 discard confirmation is the only active focus scope", async ({ page, foodsApi }) => {
+    const food = await foodsApi.create({ name: uniqueName("Nested focus") });
+    const trigger = page.getByRole("button", { name: "إضافة طعام إلى فطور" });
+    await page.goto("/diary");
+    await trigger.click();
+    const dialog = await selectFood(page, food.name);
+    const parentCancel = dialog.getByRole("button", { name: "إلغاء", exact: true });
+    await parentCancel.click();
+
+    const confirmation = page.getByRole("alertdialog", { name: "إلغاء إضافة الطعام؟" });
+    const continueEditing = confirmation.getByRole("button", { name: "متابعة التعديل" });
+    const discard = confirmation.getByRole("button", { name: "إلغاء الإضافة" });
+    const parentPanel = page.locator(".entry-sheet .diary-modal-panel");
+    await expect(confirmation).toHaveAccessibleDescription("ستفقد التغييرات الحالية.");
+    await expect(continueEditing).toBeFocused();
+    await expect(parentPanel).toHaveAttribute("inert", "");
+    await page.keyboard.press("Shift+Tab");
+    await expect(discard).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(continueEditing).toBeFocused();
+    const accessibility = await new AxeBuilder({ page }).include(".discard-confirm").analyze();
+    expect(accessibility.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(confirmation).toHaveCount(0);
+    await expect(parentCancel).toBeFocused();
+    await expect(parentPanel).not.toHaveAttribute("inert", "");
+    await expect(dialog.getByLabel(`الطعام المحدد: ${food.name}`)).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(confirmation).toBeVisible();
+    await expect(continueEditing).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(parentCancel).toBeFocused();
+    await parentCancel.click();
+    await discard.click();
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  });
+
+  test("@plan018 @p1 rerenders keep focus inside the active Add Food scope", async ({ page }) => {
+    const dialog = await openGeneral(page);
+    const search = dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية");
+    await search.fill(`focus stability ${Date.now()}`);
+    await expect(search).toBeFocused();
+    await expect(dialog.getByText("لم نجد طعامًا مطابقًا")).toBeVisible();
+    await expect(search).toBeFocused();
+    await expect.poll(() => page.evaluate(() => document.body.classList.contains("modal-open"))).toBe(true);
+
+    const accessibility = await new AxeBuilder({ page }).include(".diary-modal-panel").analyze();
+    expect(accessibility.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+  });
+
+  test("@plan018 @p0 pending save blocks dismissal without releasing focus", async ({ page, foodsApi }) => {
+    const food = await foodsApi.create({ name: uniqueName("Pending focus") });
+    const requestStarted = deferred();
+    const releaseResponse = deferred();
+    const apiOrigin = new URL(API_URL).origin;
+    let postCount = 0;
+    await page.route((url) => url.origin === apiOrigin && url.pathname === "/diary", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      postCount += 1;
+      requestStarted.resolve();
+      await releaseResponse.promise;
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ detail: "fixture failure" }) });
+    });
+
+    const trigger = page.getByRole("button", { name: "إضافة طعام إلى فطور" });
+    await page.goto("/diary");
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "إضافة طعام" });
+    await selectFood(page, food.name);
+    const submit = dialog.getByRole("button", { name: "إضافة إلى الفطور" });
+    const cancel = dialog.getByRole("button", { name: "إلغاء", exact: true });
+    await page.keyboard.press("Shift+Tab");
+    await expect(cancel).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(submit).toBeFocused();
+    const beforeSubmit = await safeActiveElementState(dialog);
+    expect(beforeSubmit.insideDialog, `before submit: ${JSON.stringify(beforeSubmit)}`).toBe(true);
+    expect(beforeSubmit.accessibleName, `before submit: ${JSON.stringify(beforeSubmit)}`).toBe("إضافة إلى الفطور");
+    await page.keyboard.press("Enter");
+    await requestStarted.promise;
+    expect(postCount).toBe(1);
+    const pendingSubmit = dialog.getByRole("button", { name: "جارٍ الإضافة…" });
+    await expect(pendingSubmit).toBeVisible();
+    await expect(pendingSubmit).toBeDisabled();
+    const duringPending = await safeActiveElementState(dialog);
+    expect(duringPending.insideDialog, `during pending: ${JSON.stringify(duringPending)}`).toBe(true);
+    expect(duringPending.isBody, `during pending: ${JSON.stringify(duringPending)}`).toBe(false);
+    expect(duringPending.insideInert, `during pending: ${JSON.stringify(duringPending)}`).toBe(false);
+    expect(duringPending.insideAriaHidden, `during pending: ${JSON.stringify(duringPending)}`).toBe(false);
+    await expect(trigger).not.toBeFocused();
+    const accessibility = await new AxeBuilder({ page }).include(".entry-sheet .diary-modal-panel").analyze();
+    expect(accessibility.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeVisible();
+    await expect(page.getByRole("alertdialog", { name: "إلغاء إضافة الطعام؟" })).toHaveCount(0);
+    let pendingFocus = await safeActiveElementState(dialog);
+    expect(pendingFocus.insideDialog, `after pending Escape: ${JSON.stringify(pendingFocus)}`).toBe(true);
+    await page.locator(".entry-sheet.diary-modal-backdrop").click({ position: { x: 2, y: 2 } });
+    await expect(dialog).toBeVisible();
+    await expect(page.getByRole("alertdialog", { name: "إلغاء إضافة الطعام؟" })).toHaveCount(0);
+    pendingFocus = await safeActiveElementState(dialog);
+    expect(pendingFocus.insideDialog, `after pending backdrop: ${JSON.stringify(pendingFocus)}`).toBe(true);
+    await page.keyboard.press("Tab");
+    pendingFocus = await safeActiveElementState(dialog);
+    expect(pendingFocus.insideDialog, `after pending Tab: ${JSON.stringify(pendingFocus)}`).toBe(true);
+    await page.keyboard.press("Shift+Tab");
+    pendingFocus = await safeActiveElementState(dialog);
+    expect(pendingFocus.insideDialog, `after pending Shift+Tab: ${JSON.stringify(pendingFocus)}`).toBe(true);
+    expect(postCount).toBe(1);
+
+    releaseResponse.resolve();
+    await expect(dialog.getByText("تعذر إضافة الطعام")).toBeVisible();
+    await expect(dialog.getByLabel(`الطعام المحدد: ${food.name}`)).toBeVisible();
+    const afterFailure = await safeActiveElementState(dialog);
+    expect(afterFailure.insideDialog, `after failure: ${JSON.stringify(afterFailure)}`).toBe(true);
+    expect(afterFailure.isBody, `after failure: ${JSON.stringify(afterFailure)}`).toBe(false);
+    expect(postCount).toBe(1);
+    await page.keyboard.press("Escape");
+    const confirmation = page.getByRole("alertdialog", { name: "إلغاء إضافة الطعام؟" });
+    await expect(confirmation).toBeVisible();
+    await confirmation.getByRole("button", { name: "إلغاء الإضافة" }).click();
+    await expect(dialog).toHaveCount(0);
+  });
+
   test("@p0 clean cancel closes immediately; meaningful changes require discard confirmation", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Discard") });
     let dialog = await openGeneral(page);
@@ -388,13 +603,13 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     dialog = await openGeneral(page);
     await selectFood(page, food.name);
     await dialog.getByRole("button", { name: "إلغاء" }).click();
-    const confirmation = dialog.getByRole("alertdialog", { name: "إلغاء إضافة الطعام؟" });
+    const confirmation = page.getByRole("alertdialog", { name: "إلغاء إضافة الطعام؟" });
     await expect(confirmation).toContainText("ستفقد التغييرات الحالية.");
     await expect(confirmation.getByRole("button", { name: "متابعة التعديل" })).toBeFocused();
     await confirmation.getByRole("button", { name: "متابعة التعديل" }).click();
     await expect(dialog.getByLabel(`الطعام المحدد: ${food.name}`)).toBeVisible();
     await dialog.getByRole("button", { name: "إلغاء" }).click();
-    await dialog.getByRole("button", { name: "إلغاء الإضافة" }).click();
+    await page.getByRole("alertdialog", { name: "إلغاء إضافة الطعام؟" }).getByRole("button", { name: "إلغاء الإضافة" }).click();
     await expect(dialog).toHaveCount(0);
   });
 

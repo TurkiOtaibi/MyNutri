@@ -58,9 +58,25 @@ test("@diary @visual capture production-style Add Food sheet states", async ({ p
   await page.screenshot({ path: resolve(output, "08-save-error-390.png") });
 
   await dialog.getByRole("button", { name: "إلغاء" }).click();
-  await expect(dialog.getByRole("alertdialog", { name: "إلغاء إضافة الطعام؟" })).toBeVisible();
+  const confirmation = page.getByRole("alertdialog", { name: "إلغاء إضافة الطعام؟", exact: true });
+  const continueEditing = confirmation.getByRole("button", { name: "متابعة التعديل", exact: true });
+  const discard = confirmation.getByRole("button", { name: "إلغاء الإضافة", exact: true });
+  const parentPanel = page.locator(".entry-sheet .diary-modal-panel");
+  const diaryPage = page.locator(".diary-page");
+  await expect(confirmation).toHaveCount(1);
+  await expect(confirmation).toBeVisible();
+  await expect(continueEditing).toBeFocused();
+  await expect(parentPanel).toBeVisible();
+  await expect(parentPanel).toHaveAttribute("inert", "");
+  await expect(parentPanel).toHaveAttribute("aria-hidden", "true");
+  await expect.poll(() => parentPanel.evaluate((element) => !element.contains(document.activeElement))).toBe(true);
+  await expect.poll(() => diaryPage.evaluate((element) => !element.contains(document.activeElement))).toBe(true);
+  await page.keyboard.press("Shift+Tab");
+  await expect(discard).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(continueEditing).toBeFocused();
   await page.screenshot({ path: resolve(output, "09-unsaved-confirmation-390.png") });
-  await dialog.getByRole("button", { name: "إلغاء الإضافة" }).click();
+  await discard.click();
 
   for (const [index, width] of [[10, 320], [11, 390], [12, 430]] as const) {
     await page.setViewportSize({ width, height: 760 });
