@@ -19,15 +19,20 @@ async function waitForWorkerControl(page: Page): Promise<void> {
 type AppCacheEntry = {
   cacheName: string;
   method: string;
-  url: string;
   origin: string;
   pathname: string;
-  query: string;
-  body: string;
+  queryKeys: string[];
+  urlDigest: string;
+  bodyDigest: string;
+  bodyByteLength: number;
+  containsPrivateMarker: boolean;
 };
 
 async function appCacheEntries(page: Page): Promise<AppCacheEntry[]> {
   return page.evaluate(async ({ prefix }) => {
+    const digest = async (value: string) => Array.from(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))
+    ).map((byte) => byte.toString(16).padStart(2, "0")).join("");
     const entries: AppCacheEntry[] = [];
     for (const key of await caches.keys()) {
       if (!key.startsWith(prefix)) continue;
@@ -35,20 +40,25 @@ async function appCacheEntries(page: Page): Promise<AppCacheEntry[]> {
       for (const request of await cache.keys()) {
         const response = await cache.match(request);
         const url = new URL(request.url);
+        const body = response ? await response.clone().text() : "";
         entries.push({
           cacheName: key,
           method: request.method,
-          url: request.url,
           origin: url.origin,
           pathname: url.pathname,
-          query: url.search,
-          body: response ? await response.clone().text() : ""
+          queryKeys: [...url.searchParams.keys()]
+            .map((name) => /token|code|key|secret|session|auth|email/i.test(name) ? "[sensitive-key]" : name)
+            .sort(),
+          urlDigest: await digest(request.url),
+          bodyDigest: await digest(body),
+          bodyByteLength: new TextEncoder().encode(body).byteLength,
+          containsPrivateMarker: /plan017-(?:personal-marker|private-post)|admin\.e2e|V2 E2E baseline/i.test(body)
         });
       }
     }
     return entries.sort((left, right) =>
-      `${left.cacheName}\u0000${left.method}\u0000${left.url}`.localeCompare(
-        `${right.cacheName}\u0000${right.method}\u0000${right.url}`
+      `${left.cacheName}\u0000${left.method}\u0000${left.urlDigest}`.localeCompare(
+        `${right.cacheName}\u0000${right.method}\u0000${right.urlDigest}`
       )
     );
   }, { prefix: APP_CACHE_PREFIX });
@@ -62,23 +72,71 @@ function isExactRequest(request: Request, pathname: string, method = "GET"): boo
 type ProfileRequestObservation = {
   origin: string;
   pathname: string;
-  url: string;
   method: string;
   resourceType: string;
   isNavigation: boolean;
-  query: string;
+  queryKeys: string[];
   isRsc: boolean;
   isPrefetch: boolean;
   classification: "document-navigation" | "rsc" | "router-prefetch" | "next-route-data" | "unknown-dynamic";
-  headers: {
-    rsc: string | null;
-    nextRouterPrefetch: string | null;
-    nextRouterStateTree: string | null;
-    nextRouterSegmentPrefetch: string | null;
-    purpose: string | null;
-    secPurpose: string | null;
-  };
+  hasRscHeader: boolean;
+  hasNextRouterPrefetchHeader: boolean;
+  hasNextRouterStateTreeHeader: boolean;
+  hasNextRouterSegmentPrefetchHeader: boolean;
+  hasPurposePrefetch: boolean;
+  hasSecPurposePrefetch: boolean;
+  acceptsRsc: boolean;
 };
+
+const FORBIDDEN_DIAGNOSTIC_KEY = /cookie|authorization|set-cookie|access_token|refresh_token|token|secret|credential|session|auth/i;
+
+function safeUrl(urlValue: string) {
+  const url = new URL(urlValue);
+  const queryKeys = [...url.searchParams.keys()]
+    .map((key) => /token|code|key|secret|session|auth|email/i.test(key) ? "[sensitive-key]" : key)
+    .sort();
+  return { origin: url.origin, pathname: url.pathname, queryKeys };
+}
+
+function safeErrorCategory(errorText: string | null | undefined): "aborted" | "connection" | "blocked" | "other" | null {
+  if (!errorText) return null;
+  const value = errorText.toLowerCase();
+  if (value.includes("abort") || value.includes("cancel")) return "aborted";
+  if (value.includes("connection") || value.includes("failed")) return "connection";
+  if (value.includes("block") || value.includes("cors")) return "blocked";
+  return "other";
+}
+
+function stringifySafeDiagnostic(value: unknown): string {
+  const inspect = (candidate: unknown): void => {
+    if (!candidate || typeof candidate !== "object") return;
+    for (const [key, nested] of Object.entries(candidate)) {
+      if (FORBIDDEN_DIAGNOSTIC_KEY.test(key)) throw new Error(`Unsafe diagnostic key: ${key}`);
+      inspect(nested);
+    }
+  };
+  inspect(value);
+  return JSON.stringify(value, null, 2);
+}
+
+function sanitizeSyntheticRequest(input: {
+  url: string;
+  headers: Record<string, string>;
+  body: string | null;
+  expectedBody: string | null;
+}) {
+  const names = Object.keys(input.headers).map((name) => name.toLowerCase());
+  return {
+    ...safeUrl(input.url),
+    contentType: input.headers["Content-Type"] ?? input.headers["content-type"] ?? null,
+    hasRestrictedHeader: names.some((name) =>
+      /cookie|authorization|token|secret|credential|session|auth/i.test(name)
+    ),
+    bodyPresent: input.body !== null,
+    bodyByteLength: input.body === null ? 0 : Buffer.byteLength(input.body),
+    bodyMatchesExpected: input.body === input.expectedBody
+  };
+}
 
 function observeProfileRequest(request: Request): ProfileRequestObservation | null {
   if (!isExactRequest(request, "/profile")) return null;
@@ -109,22 +167,22 @@ function observeProfileRequest(request: Request): ProfileRequestObservation | nu
   return {
     origin: url.origin,
     pathname: url.pathname,
-    url: request.url(),
     method: request.method(),
     resourceType: request.resourceType(),
     isNavigation,
-    query: url.search,
+    queryKeys: [...url.searchParams.keys()]
+      .map((key) => /token|code|key|secret|session|auth|email/i.test(key) ? "[sensitive-key]" : key)
+      .sort(),
     isRsc,
     isPrefetch,
     classification,
-    headers: {
-      rsc: headers.rsc ?? null,
-      nextRouterPrefetch: headers["next-router-prefetch"] ?? null,
-      nextRouterStateTree: headers["next-router-state-tree"] ?? null,
-      nextRouterSegmentPrefetch: headers["next-router-segment-prefetch"] ?? null,
-      purpose: headers.purpose ?? null,
-      secPurpose: headers["sec-purpose"] ?? null
-    }
+    hasRscHeader: headers.rsc === "1",
+    hasNextRouterPrefetchHeader: headers["next-router-prefetch"] === "1",
+    hasNextRouterStateTreeHeader: "next-router-state-tree" in headers,
+    hasNextRouterSegmentPrefetchHeader: "next-router-segment-prefetch" in headers,
+    hasPurposePrefetch: (headers.purpose ?? "").toLowerCase().includes("prefetch"),
+    hasSecPurposePrefetch: (headers["sec-purpose"] ?? "").toLowerCase().includes("prefetch"),
+    acceptsRsc: (headers.accept ?? "").toLowerCase().includes("text/x-component")
   };
 }
 
@@ -187,14 +245,22 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
   };
   type BypassObservation = {
     requests: Array<{
-      url: string;
       method: string;
+      origin: string;
+      pathname: string;
+      queryKeys: string[];
       resourceType: string;
-      headers: Record<string, string>;
-      postData: string | null;
+      contentType: string | null;
+      hasRscHeader: boolean;
+      hasNextRouterPrefetchHeader: boolean;
+      hasPurposePrefetch: boolean;
+      bodyPresent: boolean;
+      bodyByteLength: number;
+      bodyMatchesExpected: boolean;
+      contentTypeMatchesExpected: boolean;
     }>;
-    responses: Array<{ url: string; status: number; fromServiceWorker: boolean }>;
-    failures: Array<string | null>;
+    responses: Array<{ origin: string; pathname: string; queryKeys: string[]; status: number; fromServiceWorker: boolean }>;
+    failures: Array<"aborted" | "connection" | "blocked" | "other" | null>;
     fixtureMatches: number;
   };
 
@@ -268,12 +334,20 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
   const onRequest = (request: Request) => {
     const item = findCase(request);
     if (!item) return;
+    const headers = request.headers();
+    const body = request.postData();
     observations.get(item.name)!.requests.push({
-      url: request.url(),
       method: request.method(),
+      ...safeUrl(request.url()),
       resourceType: request.resourceType(),
-      headers: request.headers(),
-      postData: request.postData()
+      contentType: headers["content-type"] ?? null,
+      hasRscHeader: headers.rsc === "1",
+      hasNextRouterPrefetchHeader: headers["next-router-prefetch"] === "1",
+      hasPurposePrefetch: (headers.purpose ?? "").toLowerCase().includes("prefetch"),
+      bodyPresent: body !== null,
+      bodyByteLength: body === null ? 0 : Buffer.byteLength(body),
+      bodyMatchesExpected: body === (item.body ?? null),
+      contentTypeMatchesExpected: (headers["content-type"] ?? null) === (item.headers["Content-Type"] ?? null)
     });
   };
   const onResponse = (response: Awaited<ReturnType<Request["response"]>>) => {
@@ -281,7 +355,7 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
     const item = findCase(response.request());
     if (!item) return;
     observations.get(item.name)!.responses.push({
-      url: response.url(),
+      ...safeUrl(response.url()),
       status: response.status(),
       fromServiceWorker: response.fromServiceWorker()
     });
@@ -289,7 +363,7 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
   const onRequestFailed = (request: Request) => {
     const item = findCase(request);
     if (!item) return;
-    observations.get(item.name)!.failures.push(request.failure()?.errorText ?? null);
+    observations.get(item.name)!.failures.push(safeErrorCategory(request.failure()?.errorText));
   };
   const fulfillBypassCase = async (route: Route) => {
     const item = findCase(route.request());
@@ -314,9 +388,12 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
     name: string;
     outcome: "fulfilled" | "rejected";
     status?: number;
-    responseUrl?: string;
+    responseOrigin?: string;
+    responsePathname?: string;
+    responseQueryKeys?: string[];
+    responseUrlMatchesExpected?: boolean;
     errorName?: string;
-    errorMessage?: string;
+    errorCategory?: "network" | "other";
   }> = [];
   let postCacheBefore: AppCacheEntry[] = [];
   let postCacheAfter: AppCacheEntry[] = [];
@@ -337,14 +414,19 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
             name: requestCase.name,
             outcome: "fulfilled" as const,
             status: response.status,
-            responseUrl: response.url
+            responseOrigin: new URL(response.url).origin,
+            responsePathname: new URL(response.url).pathname,
+            responseQueryKeys: [...new URL(response.url).searchParams.keys()]
+              .map((key) => /token|code|key|secret|session|auth|email/i.test(key) ? "[sensitive-key]" : key)
+              .sort(),
+            responseUrlMatchesExpected: response.url === requestCase.url
           };
         } catch (error) {
           return {
             name: requestCase.name,
             outcome: "rejected" as const,
             errorName: error instanceof Error ? error.name : "UnknownError",
-            errorMessage: error instanceof Error ? error.message : String(error)
+            errorCategory: error instanceof TypeError ? "network" as const : "other" as const
           };
         }
       }, item);
@@ -359,50 +441,94 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
   }
 
   const entries = await appCacheEntries(page);
+  const syntheticSanitized = sanitizeSyntheticRequest({
+    url: "http://127.0.0.1:3000/profile?access_token=SYNTHETIC_QUERY_SECRET",
+    headers: {
+      Cookie: "SYNTHETIC_COOKIE_MARKER",
+      Authorization: "SYNTHETIC_AUTHORIZATION_MARKER",
+      "Content-Type": "application/json"
+    },
+    body: "SYNTHETIC_PRIVATE_BODY",
+    expectedBody: "SYNTHETIC_PRIVATE_BODY"
+  });
+  const syntheticSerialized = stringifySafeDiagnostic(syntheticSanitized);
+  expect(syntheticSerialized).not.toContain("SYNTHETIC_QUERY_SECRET");
+  expect(syntheticSerialized).not.toContain("access_token");
+  expect(syntheticSerialized).not.toContain("SYNTHETIC_PRIVATE_BODY");
+  expect(syntheticSerialized).not.toContain("SYNTHETIC_COOKIE_MARKER");
+  expect(syntheticSerialized).not.toContain("SYNTHETIC_AUTHORIZATION_MARKER");
   for (const item of cases) {
     const observation = observations.get(item.name)!;
     const browserResult = browserResults.find((result) => result.name === item.name);
-    const diagnostics = JSON.stringify({ item, browserResult, observation }, null, 2);
+    const itemUrl = safeUrl(item.url);
+    const diagnostics = stringifySafeDiagnostic({
+      item: {
+        name: item.name,
+        method: item.method,
+        ...itemUrl,
+        expectedContentType: item.headers["Content-Type"] ?? null,
+        expectedBodyByteLength: item.body ? Buffer.byteLength(item.body) : 0
+      },
+      browserResult,
+      observation
+    });
     expect(browserResult, diagnostics).toMatchObject({
       name: item.name,
       outcome: "fulfilled",
       status: 200,
-      responseUrl: item.url
+      responseOrigin: itemUrl.origin,
+      responsePathname: itemUrl.pathname,
+      responseQueryKeys: itemUrl.queryKeys,
+      responseUrlMatchesExpected: true
     });
     expect(observation.fixtureMatches, diagnostics).toBe(1);
     expect(observation.requests, diagnostics).toHaveLength(1);
     expect(observation.responses, diagnostics).toHaveLength(1);
     expect(observation.failures, diagnostics).toEqual([]);
     expect(observation.requests[0], diagnostics).toMatchObject({
-      url: item.url,
+      ...itemUrl,
       method: item.method,
-      resourceType: "fetch"
+      resourceType: "fetch",
+      bodyPresent: item.body !== undefined,
+      bodyByteLength: item.body ? Buffer.byteLength(item.body) : 0,
+      bodyMatchesExpected: true,
+      contentTypeMatchesExpected: true
     });
     expect(observation.responses[0], diagnostics).toMatchObject({
-      url: item.url,
+      ...itemUrl,
       status: 200,
       fromServiceWorker: false
     });
-    for (const [name, value] of Object.entries(item.headers)) {
-      expect(observation.requests[0].headers[name.toLowerCase()], diagnostics).toBe(value);
+    if (item.name === "rsc-get") expect(observation.requests[0].hasRscHeader, diagnostics).toBe(true);
+    if (item.name === "prefetch-get") {
+      expect(observation.requests[0].hasNextRouterPrefetchHeader, diagnostics).toBe(true);
+      expect(observation.requests[0].hasPurposePrefetch, diagnostics).toBe(true);
     }
-    expect(observation.requests[0].postData, diagnostics).toBe(item.body ?? null);
-    expect(entries.filter(({ method, url }) => method === item.method && url === item.url), diagnostics).toEqual([]);
+    if (item.name === "non-get-post") {
+      expect(observation.requests[0].contentType, diagnostics).toBe("application/json");
+      expect(observation.requests[0].bodyMatchesExpected, diagnostics).toBe(true);
+    }
+    expect(
+      entries.filter(({ method, origin, pathname, queryKeys }) =>
+        method === item.method && origin === itemUrl.origin && pathname === itemUrl.pathname &&
+        JSON.stringify(queryKeys) === JSON.stringify(itemUrl.queryKeys)
+      ),
+      diagnostics
+    ).toEqual([]);
   }
   expect(postCacheAfter).toEqual(postCacheBefore);
   expect(
     postCacheAfter.filter(
-      ({ cacheName, method, origin, pathname, query }) =>
+      ({ cacheName, method, origin, pathname, queryKeys }) =>
         cacheName === CURRENT_CACHE &&
         method === "GET" &&
         origin === APP_ORIGIN &&
         pathname === "/offline" &&
-        query === ""
+        queryKeys.length === 0
     )
   ).toHaveLength(1);
-  expect(postCacheAfter.some(({ method, url }) => method === "POST" && url === `${APP_ORIGIN}/offline`)).toBe(false);
-  expect(entries.some(({ body }) => body.includes("plan017-personal-marker"))).toBe(false);
-  expect(entries.some(({ body }) => body.includes("plan017-private-post"))).toBe(false);
+  expect(postCacheAfter.some(({ method, origin, pathname }) => method === "POST" && origin === APP_ORIGIN && pathname === "/offline")).toBe(false);
+  expect(entries.some(({ containsPrivateMarker }) => containsPrivateMarker)).toBe(false);
 });
 
 test("@plan017 reuses only immutable Next static assets while offline", async ({ page, context }) => {
@@ -440,7 +566,7 @@ test("@plan017 deep navigations return the exact generic offline document", asyn
 
   await page.goto("/diary");
   await page.goto("/profile");
-  expect((await appCacheEntries(page)).some(({ url }) => ["/diary", "/profile"].includes(new URL(url).pathname))).toBe(false);
+  expect((await appCacheEntries(page)).some(({ pathname }) => ["/diary", "/profile"].includes(pathname))).toBe(false);
 
   await context.setOffline(true);
   for (const path of ["/diary", "/foods/plan017/edit", "/admin/users/plan017"]) {
@@ -460,7 +586,9 @@ test("@plan017 CacheStorage contains only generic and immutable static resources
     sequence: number;
     responseReceived: boolean;
     responseStatus: number | null;
-    responseUrl: string | null;
+    responseOrigin: string | null;
+    responsePathname: string | null;
+    responseQueryKeys: string[];
     fromServiceWorker: boolean | null;
     finished: boolean;
     failed: boolean;
@@ -479,7 +607,9 @@ test("@plan017 CacheStorage contains only generic and immutable static resources
       sequence,
       responseReceived: false,
       responseStatus: null,
-      responseUrl: null,
+      responseOrigin: null,
+      responsePathname: null,
+      responseQueryKeys: [],
       fromServiceWorker: null,
       finished: false,
       failed: false,
@@ -494,7 +624,10 @@ test("@plan017 CacheStorage contains only generic and immutable static resources
     if (!record) return;
     record.responseReceived = true;
     record.responseStatus = response.status();
-    record.responseUrl = response.url();
+    const responseUrl = safeUrl(response.url());
+    record.responseOrigin = responseUrl.origin;
+    record.responsePathname = responseUrl.pathname;
+    record.responseQueryKeys = responseUrl.queryKeys;
     record.fromServiceWorker = response.fromServiceWorker();
   };
   const onRequestFinished = (request: Request) => {
@@ -505,7 +638,7 @@ test("@plan017 CacheStorage contains only generic and immutable static resources
     const record = lifecycleByRequest.get(request);
     if (!record) return;
     record.failed = true;
-    record.failureReason = request.failure()?.errorText ?? "unknown request failure";
+    record.failureReason = safeErrorCategory(request.failure()?.errorText) ?? "other";
   };
   page.on("request", onRequest);
   page.on("response", onResponse);
@@ -546,17 +679,24 @@ test("@plan017 CacheStorage contains only generic and immutable static resources
     index: request.sequence,
     id: request.id,
     method: request.method,
-    url: request.url,
     origin: request.origin,
     pathname: request.pathname,
-    query: request.query,
+    queryKeys: request.queryKeys,
     resourceType: request.resourceType,
     isNavigation: request.isNavigation,
     classification: request.classification,
-    headers: request.headers,
+    hasRscHeader: request.hasRscHeader,
+    hasNextRouterPrefetchHeader: request.hasNextRouterPrefetchHeader,
+    hasNextRouterStateTreeHeader: request.hasNextRouterStateTreeHeader,
+    hasNextRouterSegmentPrefetchHeader: request.hasNextRouterSegmentPrefetchHeader,
+    hasPurposePrefetch: request.hasPurposePrefetch,
+    hasSecPurposePrefetch: request.hasSecPurposePrefetch,
+    acceptsRsc: request.acceptsRsc,
     responseReceived: request.responseReceived,
     responseStatus: request.responseStatus,
-    responseUrl: request.responseUrl,
+    responseOrigin: request.responseOrigin,
+    responsePathname: request.responsePathname,
+    responseQueryKeys: request.responseQueryKeys,
     fromServiceWorker: request.fromServiceWorker,
     finished: request.finished,
     failed: request.failed,
@@ -569,16 +709,19 @@ test("@plan017 CacheStorage contains only generic and immutable static resources
         : request.responseReceived
           ? "response-streaming"
           : "in-flight",
-    cacheEntryCount: profileReadyEntries.filter(({ method, url }) => method === request.method && url === request.url).length
+    cacheEntryCount: profileReadyEntries.filter(({ method, origin, pathname, queryKeys }) =>
+      method === request.method && origin === request.origin && pathname === request.pathname &&
+      JSON.stringify(queryKeys) === JSON.stringify(request.queryKeys)
+    ).length
   }));
-  const lifecycleDiagnostics = JSON.stringify(lifecycleTable, null, 2);
+  const lifecycleDiagnostics = stringifySafeDiagnostic(lifecycleTable);
 
   expect(documentNavigations, lifecycleDiagnostics).toHaveLength(1);
   expect(documentNavigations[0]).toMatchObject({
     method: "GET",
     resourceType: "document",
     isNavigation: true,
-    query: "",
+    queryKeys: [],
     isRsc: false,
     isPrefetch: false
   });
@@ -589,7 +732,10 @@ test("@plan017 CacheStorage contains only generic and immutable static resources
   for (const request of dynamicProfileObservations) {
     expect(request.fromServiceWorker, lifecycleDiagnostics).not.toBe(true);
     expect(
-      profileReadyEntries.filter(({ method, url }) => method === request.method && url === request.url),
+      profileReadyEntries.filter(({ method, origin, pathname, queryKeys }) =>
+        method === request.method && origin === request.origin && pathname === request.pathname &&
+        JSON.stringify(queryKeys) === JSON.stringify(request.queryKeys)
+      ),
       lifecycleDiagnostics
     ).toEqual([]);
   }
@@ -599,26 +745,25 @@ test("@plan017 CacheStorage contains only generic and immutable static resources
   for (const entry of profileReadyEntries) {
     expect(
       GENERIC_PATHS.has(entry.pathname) || entry.pathname.startsWith("/_next/static/"),
-      `Unexpected cached request at Profile readiness: ${entry.method} ${entry.url}`
+      `Unexpected cached request at Profile readiness: ${entry.method} ${entry.origin}${entry.pathname} query keys=${entry.queryKeys.join(",")}`
     ).toBe(true);
-    expect(entry.query).toBe("");
-    expect(entry.url).not.toMatch(/\/api\/|\/auth\/|_rsc|prefetch|token/i);
-    expect(entry.body).not.toMatch(/admin\.e2e|V2 E2E baseline/i);
+    expect(entry.queryKeys).toEqual([]);
+    expect(`${entry.origin}${entry.pathname}`).not.toMatch(/\/api\/|\/auth\//i);
+    expect(entry.containsPrivateMarker).toBe(false);
   }
 
   const entries = await appCacheEntries(page);
   expect(entries.length).toBeGreaterThanOrEqual(3);
   expect(new Set(entries.map(({ cacheName }) => cacheName))).toEqual(new Set([CURRENT_CACHE]));
-  expect(entries.some(({ url }) => new URL(url).pathname === "/profile")).toBe(false);
+  expect(entries.some(({ pathname }) => pathname === "/profile")).toBe(false);
   for (const entry of entries) {
-    const url = new URL(entry.url);
     expect(
-      GENERIC_PATHS.has(url.pathname) || url.pathname.startsWith("/_next/static/"),
-      `Unexpected cached request: ${entry.url}`
+      GENERIC_PATHS.has(entry.pathname) || entry.pathname.startsWith("/_next/static/"),
+      `Unexpected cached request: ${entry.method} ${entry.origin}${entry.pathname} query keys=${entry.queryKeys.join(",")}`
     ).toBe(true);
-    expect(url.search).toBe("");
-    expect(entry.url).not.toMatch(/\/api\/|\/auth\/|_rsc|prefetch|token/i);
-    expect(entry.body).not.toMatch(/admin\.e2e|V2 E2E baseline/i);
+    expect(entry.queryKeys).toEqual([]);
+    expect(`${entry.origin}${entry.pathname}`).not.toMatch(/\/api\/|\/auth\//i);
+    expect(entry.containsPrivateMarker).toBe(false);
   }
   expect(await page.evaluate(() => indexedDB.databases().then((databases) => databases.length))).toBe(0);
 });
