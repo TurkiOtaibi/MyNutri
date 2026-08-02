@@ -232,8 +232,7 @@ test("@plan017 worker activation awaits shell population and removes only obsole
   });
 });
 
-test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic", async ({ page }) => {
-  await waitForWorkerControl(page);
+test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic", async ({ context }) => {
   type BypassCase = {
     name: string;
     url: string;
@@ -379,10 +378,11 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
       body: JSON.stringify({ marker: "plan017-personal-marker", case: item.name })
     });
   };
-  page.on("request", onRequest);
-  page.on("response", onResponse);
-  page.on("requestfailed", onRequestFailed);
-  await page.route("**/*", fulfillBypassCase);
+  context.on("request", onRequest);
+  context.on("response", onResponse);
+  context.on("requestfailed", onRequestFailed);
+  await context.route("**/*", fulfillBypassCase);
+  const page = await context.newPage();
 
   const browserResults: Array<{
     name: string;
@@ -398,6 +398,7 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
   let postCacheBefore: AppCacheEntry[] = [];
   let postCacheAfter: AppCacheEntry[] = [];
   try {
+    await waitForWorkerControl(page);
     for (const item of cases) {
       if (item.name === "non-get-post") postCacheBefore = await appCacheEntries(page);
       const result = await page.evaluate(async (requestCase) => {
@@ -434,10 +435,10 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
       if (item.name === "non-get-post") postCacheAfter = await appCacheEntries(page);
     }
   } finally {
-    await page.unroute("**/*", fulfillBypassCase);
-    page.off("request", onRequest);
-    page.off("response", onResponse);
-    page.off("requestfailed", onRequestFailed);
+    await context.unroute("**/*", fulfillBypassCase);
+    context.off("request", onRequest);
+    context.off("response", onResponse);
+    context.off("requestfailed", onRequestFailed);
   }
 
   const entries = await appCacheEntries(page);
