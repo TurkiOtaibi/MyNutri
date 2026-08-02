@@ -540,6 +540,9 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     const dialog = page.getByRole("dialog", { name: "إضافة طعام" });
     await selectFood(page, food.name);
     const submit = dialog.getByRole("button", { name: "إضافة إلى الفطور" });
+    const cancel = dialog.getByRole("button", { name: "إلغاء", exact: true });
+    await page.keyboard.press("Shift+Tab");
+    await expect(cancel).toBeFocused();
     await page.keyboard.press("Shift+Tab");
     await expect(submit).toBeFocused();
     const beforeSubmit = await safeActiveElementState(dialog);
