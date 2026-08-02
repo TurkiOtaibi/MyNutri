@@ -24,39 +24,3 @@ for (const state of majorStates) {
     expect(blocking, JSON.stringify(blocking, null, 2)).toEqual([]);
   });
 }
-
-test("@certification PWA shell registers without creating offline personal-data authority", async ({ browser, baseURL, request }) => {
-  const manifestResponse = await request.get(`${baseURL}/manifest.json`);
-  expect(manifestResponse.status()).toBe(200);
-  const manifest = await manifestResponse.json() as {
-    start_url: string;
-    scope: string;
-    display: string;
-    dir: string;
-    lang: string;
-  };
-  expect(manifest).toMatchObject({
-    start_url: "/diary",
-    scope: "/",
-    display: "standalone",
-    dir: "rtl",
-    lang: "ar"
-  });
-
-  const workerResponse = await request.get(`${baseURL}/service-worker.js`);
-  expect(workerResponse.status()).toBe(200);
-  const workerSource = await workerResponse.text();
-  expect(workerSource).not.toContain("/api/");
-  expect(workerSource).not.toContain("indexedDB");
-
-  const context = await browser.newContext({ baseURL, serviceWorkers: "allow" });
-  const page = await context.newPage();
-  await page.goto("/diary");
-  const scriptUrl = await page.evaluate(async () => {
-    const registration = await navigator.serviceWorker.ready;
-    return registration.active?.scriptURL ?? "";
-  });
-  expect(scriptUrl).toMatch(/\/service-worker\.js$/);
-  expect(await page.evaluate(() => indexedDB.databases().then((items) => items.length))).toBe(0);
-  await context.close();
-});

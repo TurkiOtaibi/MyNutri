@@ -161,7 +161,10 @@ jobs:
           exit 1
       - name: Run complete Playwright suite
         working-directory: frontend
-        run: npm run test:e2e
+        run: npm run test:e2e -- --project=foods-chromium
+      - name: Verify static-shell PWA isolation
+        working-directory: frontend
+        run: npx playwright test e2e/pwa-shell.spec.ts --project=pwa-chromium
       - name: Run development StrictMode signal smoke
         working-directory: frontend
         env:
