@@ -55,6 +55,11 @@ type SafeActiveElement = {
   visible: boolean;
   insideForm: boolean;
 };
+type SafeHistoryObservation = {
+  phase: "establish" | "leave" | "back" | "forward" | "reload";
+  source: "document-request" | "main-frame";
+  pathname: string;
+};
 
 let admin: SupabaseClient | null = null;
 const users = new Map<UserAlias, TestUser>();
@@ -926,20 +931,106 @@ test.describe("Plan 020 isolated local provider acceptance", () => {
 
   test("@plan020-provider Back, Forward, and reload cannot revive stale recovery ownership", async ({ browser }) => {
     const historyArtifact = await requestLink(browser, "history");
-    const historyRecovery = await openRecoveryLink(browser, historyArtifact);
+    const historyRecovery = await newAnonymousPage(browser, undefined, historyArtifact.verifierState);
     let historyUpdates = 0;
+    let historyRecoveryEvents = 0;
+    let historyPasswordSignIns = 0;
+    let historyPhase: SafeHistoryObservation["phase"] = "establish";
+    const historyObservations: SafeHistoryObservation[] = [];
+    const recordHistoryObservation = (observation: SafeHistoryObservation) => {
+      const previous = historyObservations.at(-1);
+      if (
+        previous?.phase === observation.phase &&
+        previous.source === observation.source &&
+        previous.pathname === observation.pathname
+      ) return;
+      historyObservations.push(observation);
+    };
+    const observedHistoryPath = (phase: SafeHistoryObservation["phase"], pathname: string) =>
+      historyObservations.some((observation) => observation.phase === phase && observation.pathname === pathname);
+    const safeHistoryDiagnostic = () => JSON.stringify({
+      observations: historyObservations,
+      recoveryEvents: historyRecoveryEvents,
+      passwordUpdates: historyUpdates,
+      passwordSignIns: historyPasswordSignIns,
+      subject: "recovery-user-a"
+    });
+    historyRecovery.page.on("framenavigated", (frame) => {
+      if (frame !== historyRecovery.page.mainFrame()) return;
+      const url = new URL(frame.url());
+      if (url.origin !== APP_URL.origin) return;
+      recordHistoryObservation({ phase: historyPhase, source: "main-frame", pathname: url.pathname });
+    });
     historyRecovery.page.on("request", (request) => {
       const url = new URL(request.url());
       if (url.origin === PROVIDER_URL.origin && url.pathname === PASSWORD_UPDATE_PATH && request.method() === "PUT") historyUpdates += 1;
+      if (
+        url.origin === PROVIDER_URL.origin &&
+        url.pathname === TOKEN_EXCHANGE_PATH &&
+        url.searchParams.get("grant_type") === "password" &&
+        request.method() === "POST"
+      ) historyPasswordSignIns += 1;
+      if (
+        url.origin === APP_URL.origin &&
+        request.method() === "GET" &&
+        request.resourceType() === "document" &&
+        request.isNavigationRequest()
+      ) recordHistoryObservation({ phase: historyPhase, source: "document-request", pathname: url.pathname });
     });
-    await expectRecoveryReady(historyRecovery.page);
+    historyRecovery.page.on("response", (response) => {
+      const url = new URL(response.url());
+      if (
+        url.origin === PROVIDER_URL.origin &&
+        url.pathname === TOKEN_EXCHANGE_PATH &&
+        url.searchParams.get("grant_type") === "pkce" &&
+        response.request().method() === "POST" &&
+        response.status() >= 200 &&
+        response.status() < 300
+      ) historyRecoveryEvents += 1;
+    });
     await historyRecovery.page.goto("/auth/forgot-password");
+    await assignProviderRecoveryLink(historyRecovery.page, historyArtifact.link);
+    await expectRecoveryReady(historyRecovery.page);
+    await expect(historyRecovery.page.getByLabel("كلمة المرور الجديدة", { exact: true })).toHaveValue("");
+    expect(historyRecoveryEvents, safeHistoryDiagnostic()).toBe(1);
+    expect(historyUpdates, safeHistoryDiagnostic()).toBe(0);
+    expect(historyPasswordSignIns, safeHistoryDiagnostic()).toBe(0);
+
+    historyPhase = "leave";
+    await historyRecovery.page.goto("/diary");
+    expect(safePath(historyRecovery.page)).toBe("/diary");
+    expect(observedHistoryPath("leave", "/diary"), safeHistoryDiagnostic()).toBe(true);
+    await expect(historyRecovery.page.getByLabel("كلمة المرور الجديدة", { exact: true })).toHaveCount(0);
+    expect(historyRecoveryEvents, safeHistoryDiagnostic()).toBe(1);
+    expect(historyUpdates, safeHistoryDiagnostic()).toBe(0);
+
+    historyPhase = "back";
     await historyRecovery.page.goBack();
     expect(safePath(historyRecovery.page)).toBe(RECOVERY_PATH);
+    expect(observedHistoryPath("back", RECOVERY_PATH), safeHistoryDiagnostic()).toBe(true);
     await expectRecoveryInvalid(historyRecovery.page);
+    await expect(historyRecovery.page.getByLabel("كلمة المرور الجديدة", { exact: true })).toHaveCount(0);
+    expect(historyRecoveryEvents, safeHistoryDiagnostic()).toBe(1);
+    expect(historyUpdates, safeHistoryDiagnostic()).toBe(0);
+    expect(historyPasswordSignIns, safeHistoryDiagnostic()).toBe(0);
+
+    historyPhase = "forward";
     await historyRecovery.page.goForward();
-    expect(safePath(historyRecovery.page)).toBe("/auth/forgot-password");
-    expect(historyUpdates).toBe(0);
+    expect(safePath(historyRecovery.page)).toBe("/diary");
+    expect(observedHistoryPath("forward", "/diary"), safeHistoryDiagnostic()).toBe(true);
+    await expect(historyRecovery.page.getByLabel("كلمة المرور الجديدة", { exact: true })).toHaveCount(0);
+    expect(historyRecoveryEvents, safeHistoryDiagnostic()).toBe(1);
+    expect(historyUpdates, safeHistoryDiagnostic()).toBe(0);
+    expect(historyPasswordSignIns, safeHistoryDiagnostic()).toBe(0);
+
+    historyPhase = "reload";
+    await historyRecovery.page.reload();
+    expect(safePath(historyRecovery.page)).toBe("/diary");
+    expect(observedHistoryPath("reload", "/diary"), safeHistoryDiagnostic()).toBe(true);
+    await expect(historyRecovery.page.getByLabel("كلمة المرور الجديدة", { exact: true })).toHaveCount(0);
+    expect(historyRecoveryEvents, safeHistoryDiagnostic()).toBe(1);
+    expect(historyUpdates, safeHistoryDiagnostic()).toBe(0);
+    expect(historyPasswordSignIns, safeHistoryDiagnostic()).toBe(0);
     await historyRecovery.context.close();
 
     const reloadArtifact = await requestLink(browser, "reload");
@@ -1017,12 +1108,12 @@ test.describe("Plan 020 isolated local provider acceptance", () => {
     await expect(navigationRecovery.page.getByRole("button", { name: "جارٍ الإرسال...", exact: true })).toBeDisabled();
     await expectSafeFocusWithin(navigationRecovery.page, "form", "Focus must remain coherent while navigation begins during a held update.");
     try {
-      await navigationRecovery.page.goto("/auth/forgot-password", { waitUntil: "commit" });
+      await navigationRecovery.page.goto("/diary", { waitUntil: "commit" });
     } finally {
       releaseUpdate();
     }
     await navigationRecovery.page.unroute(updateMatcher);
-    expect(safePath(navigationRecovery.page)).toBe("/auth/forgot-password");
+    expect(safePath(navigationRecovery.page)).toBe("/diary");
     expect(navigationUpdates).toBe(1);
     expect(navigationResponses).toBe(0);
     await navigationRecovery.context.close();
