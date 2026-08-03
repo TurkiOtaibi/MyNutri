@@ -310,9 +310,6 @@ class TargetPlan(SQLModel, table=True):
     __tablename__ = "target_plan"
     __table_args__ = (
         UniqueConstraint("id", "principal_id", name="uq_target_plan_id_principal"),
-        UniqueConstraint(
-            "principal_id", "activation_idempotency_key", name="uq_target_plan_principal_key"
-        ),
         ForeignKeyConstraint(
             ["profile_id", "principal_id"],
             ["profile.id", "profile.principal_id"],
