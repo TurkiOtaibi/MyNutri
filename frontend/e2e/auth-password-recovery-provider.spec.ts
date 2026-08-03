@@ -1037,23 +1037,41 @@ test.describe("Plan 020 isolated local provider acceptance", () => {
     const reloadRecovery = await newAnonymousPage(browser, undefined, reloadArtifact.verifierState);
     await reloadRecovery.page.goto("/auth/forgot-password");
     let reloadUpdates = 0;
+    let reloadRecoveryEvents = 0;
     reloadRecovery.page.on("request", (request) => {
       const url = new URL(request.url());
       if (url.origin === PROVIDER_URL.origin && url.pathname === PASSWORD_UPDATE_PATH && request.method() === "PUT") reloadUpdates += 1;
     });
+    reloadRecovery.page.on("response", (response) => {
+      const url = new URL(response.url());
+      if (
+        url.origin === PROVIDER_URL.origin &&
+        url.pathname === TOKEN_EXCHANGE_PATH &&
+        url.searchParams.get("grant_type") === "pkce" &&
+        response.request().method() === "POST" &&
+        response.status() >= 200 &&
+        response.status() < 300
+      ) reloadRecoveryEvents += 1;
+    });
     let exchangeRequests = 0;
     let releaseExchange!: () => void;
+    let settleFirstExchange!: () => void;
     const firstExchangeHeld = new Promise<void>((resolve) => { releaseExchange = resolve; });
+    const firstExchangeSettled = new Promise<void>((resolve) => { settleFirstExchange = resolve; });
     const exchangeMatcher = (url: URL) => url.origin === PROVIDER_URL.origin &&
       url.pathname === TOKEN_EXCHANGE_PATH && url.searchParams.get("grant_type") === "pkce";
     await reloadRecovery.page.route(exchangeMatcher, async (route) => {
       exchangeRequests += 1;
       if (exchangeRequests === 1) {
-        await firstExchangeHeld;
         try {
-          await route.abort("aborted");
-        } catch {
-          // Reload may already have cancelled the old document's exchange.
+          await firstExchangeHeld;
+          try {
+            await route.abort("aborted");
+          } catch {
+            // Reload may already have cancelled the old document's exchange.
+          }
+        } finally {
+          settleFirstExchange();
         }
         return;
       }
@@ -1068,11 +1086,22 @@ test.describe("Plan 020 isolated local provider acceptance", () => {
     } finally {
       releaseExchange();
     }
-    await expectRecoveryReady(reloadRecovery.page);
-    expect(exchangeRequests).toBe(2);
+    await firstExchangeSettled;
+    await expectRecoveryInvalid(reloadRecovery.page);
+    await expect(reloadRecovery.page.getByLabel("كلمة المرور الجديدة", { exact: true })).toHaveCount(0);
+    expect(reloadRecoveryEvents, JSON.stringify({
+      phase: "reload-during-pkce",
+      exchangeRequests,
+      recoveryEvents: reloadRecoveryEvents,
+      passwordUpdates: reloadUpdates,
+      subject: "recovery-user-a"
+    })).toBe(0);
+    expect(reloadUpdates).toBe(0);
     await reloadRecovery.page.unroute(exchangeMatcher);
     await reloadRecovery.page.reload();
     await expectRecoveryInvalid(reloadRecovery.page);
+    await expect(reloadRecovery.page.getByLabel("كلمة المرور الجديدة", { exact: true })).toHaveCount(0);
+    expect(reloadRecoveryEvents).toBe(0);
     expect(reloadUpdates).toBe(0);
     await reloadRecovery.context.close();
 
