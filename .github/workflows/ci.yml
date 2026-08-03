@@ -246,3 +246,232 @@ jobs:
             cat /tmp/mynutri-web-dev.log
             exit 1
           fi
+
+  plan020-provider-acceptance:
+    name: Plan 020 provider acceptance
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+      PLAYWRIGHT_API_URL: http://127.0.0.1:65534
+      PLAYWRIGHT_SKIP_GLOBAL_SETUP: "1"
+      PLAN020_RECOVERY_EXPIRY_SECONDS: "20"
+      PLAN020_PROJECT_ID: mynutri-plan020-provider-ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Set up pinned Supabase CLI
+        uses: supabase/setup-cli@v2
+        with:
+          version: 2.111.0
+      - name: Install provider acceptance dependencies
+        run: |
+          pip install -e "./backend[dev]"
+          cd frontend
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Start isolated local Supabase Auth and Mailpit
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          network_name="plan020-loopback-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker network create \
+            -o com.docker.network.bridge.host_binding_ipv4=127.0.0.1 \
+            "$network_name" >/dev/null
+          touch /tmp/plan020-network-created
+          echo "PLAN020_DOCKER_NETWORK=$network_name" >> "$GITHUB_ENV"
+
+          touch /tmp/plan020-stack-attempted
+          if ! supabase start --network-id "$network_name" > /tmp/plan020-supabase-start.log 2>&1; then
+            echo "The isolated local Supabase stack failed to start."
+            docker ps -a --format '{{.Names}} {{.Status}}' | grep '^supabase_' | sed -E 's/[[:space:]]+/ /g'
+            exit 1
+          fi
+          supabase status -o env > /tmp/plan020-supabase.env
+          chmod 600 /tmp/plan020-supabase.env
+          source /tmp/plan020-supabase.env
+
+          public_key="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
+          admin_key="${SECRET_KEY:-${SERVICE_ROLE_KEY:-}}"
+          mailpit_url="${MAILPIT_URL:-http://127.0.0.1:54324}"
+          provider_url="${API_URL:-}"
+          database_url_raw="${DB_URL:-}"
+          if [[ -z "${API_URL:-}" || -z "${DB_URL:-}" || -z "$public_key" || -z "$admin_key" ]]; then
+            echo "The isolated stack did not expose every required local runtime value."
+            exit 1
+          fi
+
+          echo "::add-mask::$public_key"
+          echo "::add-mask::$admin_key"
+          if [[ -n "${ANON_KEY:-}" ]]; then echo "::add-mask::$ANON_KEY"; fi
+          if [[ -n "${SERVICE_ROLE_KEY:-}" ]]; then echo "::add-mask::$SERVICE_ROLE_KEY"; fi
+          if [[ -n "${JWT_SECRET:-}" ]]; then echo "::add-mask::$JWT_SECRET"; fi
+          echo "::add-mask::$DB_URL"
+
+          database_url="${DB_URL/postgresql:\/\//postgresql+psycopg:\/\/}"
+          echo "::add-mask::$database_url"
+          unset SECRET_KEY SERVICE_ROLE_KEY DB_URL DATABASE_URL JWT_SECRET ANON_KEY PUBLISHABLE_KEY API_URL MAILPIT_URL
+
+          auth_ready=0
+          for attempt in {1..60}; do
+            if curl --fail --silent --max-time 2 "$provider_url/auth/v1/health" >/dev/null &&
+               pg_isready -d "$database_url_raw" >/dev/null 2>&1 &&
+               curl --fail --silent --max-time 2 "$mailpit_url/api/v1/info" >/dev/null; then
+              auth_ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$auth_ready" -ne 1 ]]; then
+            echo "Auth, Postgres, or Mailpit did not reach a healthy local state."
+            docker ps -a --format '{{.Names}} {{.Status}}' | grep '^supabase_' | sed -E 's/[[:space:]]+/ /g'
+            exit 1
+          fi
+      - name: Apply application migrations to disposable local Postgres
+        working-directory: backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          source /tmp/plan020-supabase.env
+          database_url="${DB_URL/postgresql:\/\//postgresql+psycopg:\/\/}"
+          unset SECRET_KEY SERVICE_ROLE_KEY DB_URL DATABASE_URL JWT_SECRET ANON_KEY PUBLISHABLE_KEY API_URL MAILPIT_URL
+          DATABASE_URL="$database_url" alembic upgrade head
+      - name: Build and start loopback application
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          source /tmp/plan020-supabase.env
+          provider_url="$API_URL"
+          provider_public_key="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
+          unset SECRET_KEY SERVICE_ROLE_KEY DB_URL DATABASE_URL JWT_SECRET ANON_KEY PUBLISHABLE_KEY API_URL MAILPIT_URL
+          export NEXT_PUBLIC_API_URL=http://127.0.0.1:65534
+          export NEXT_PUBLIC_SUPABASE_URL="$provider_url"
+          export NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="$provider_public_key"
+          npm run build > /tmp/plan020-web-build.log 2>&1
+          setsid npm run start -- --hostname 127.0.0.1 --port 3000 > /tmp/plan020-web.log 2>&1 &
+          echo "$!" > /tmp/plan020-web.pgid
+          app_ready=0
+          for attempt in {1..60}; do
+            if curl --fail --silent --max-time 2 http://127.0.0.1:3000/auth/forgot-password >/dev/null; then
+              app_ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$app_ready" -ne 1 ]]; then
+            echo "The loopback application did not become ready."
+            exit 1
+          fi
+      - name: Discover exact provider acceptance suite
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          source /tmp/plan020-supabase.env
+          provider_url="$API_URL"
+          provider_public_key="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
+          provider_admin_key="${SECRET_KEY:-${SERVICE_ROLE_KEY:-}}"
+          provider_mailpit_url="${MAILPIT_URL:-http://127.0.0.1:54324}"
+          unset SECRET_KEY SERVICE_ROLE_KEY DB_URL DATABASE_URL JWT_SECRET ANON_KEY PUBLISHABLE_KEY API_URL MAILPIT_URL
+          export PLAN020_SUPABASE_URL="$provider_url"
+          export PLAN020_SUPABASE_ANON_KEY="$provider_public_key"
+          export PLAN020_SUPABASE_SERVICE_ROLE_KEY="$provider_admin_key"
+          export PLAN020_MAILPIT_URL="$provider_mailpit_url"
+          discovery="$(npx playwright test --project=password-recovery-provider --list)"
+          provider_count="$(printf '%s\n' "$discovery" |
+            awk '/@plan020-provider/ { count += 1 } END { print count + 0 }')"
+          total_count="$(printf '%s\n' "$discovery" | awk '/^Total:/ { print $2 }')"
+          total_count="${total_count:-0}"
+          if [[ "$provider_count" -ne 7 || "$total_count" -ne 7 ]]; then
+            echo "Expected exactly 7 total and tagged Plan 020 provider tests; discovered $total_count total and $provider_count tagged."
+            exit 1
+          fi
+          echo "Discovered exactly 7 isolated Plan 020 provider tests."
+      - name: Run isolated real-provider acceptance
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          source /tmp/plan020-supabase.env
+          provider_url="$API_URL"
+          provider_public_key="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
+          provider_admin_key="${SECRET_KEY:-${SERVICE_ROLE_KEY:-}}"
+          provider_mailpit_url="${MAILPIT_URL:-http://127.0.0.1:54324}"
+          unset SECRET_KEY SERVICE_ROLE_KEY DB_URL DATABASE_URL JWT_SECRET ANON_KEY PUBLISHABLE_KEY API_URL MAILPIT_URL
+          export PLAN020_SUPABASE_URL="$provider_url"
+          export PLAN020_SUPABASE_ANON_KEY="$provider_public_key"
+          export PLAN020_SUPABASE_SERVICE_ROLE_KEY="$provider_admin_key"
+          export PLAN020_MAILPIT_URL="$provider_mailpit_url"
+          npx playwright test --project=password-recovery-provider
+      - name: Clean up isolated provider resources
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          cleanup_failed=0
+
+          if [[ -s /tmp/plan020-web.pgid ]]; then
+            web_pgid="$(cat /tmp/plan020-web.pgid)"
+            if [[ "$web_pgid" =~ ^[0-9]+$ ]]; then
+              kill -TERM -- "-${web_pgid}" 2>/dev/null
+              for attempt in {1..15}; do
+                if ! kill -0 -- "-${web_pgid}" 2>/dev/null; then
+                  break
+                fi
+                sleep 1
+              done
+              if kill -0 -- "-${web_pgid}" 2>/dev/null; then
+                kill -KILL -- "-${web_pgid}" 2>/dev/null
+              fi
+              if kill -0 -- "-${web_pgid}" 2>/dev/null; then
+                echo "The loopback application process group survived cleanup."
+                cleanup_failed=1
+              fi
+            else
+              echo "The loopback application process marker was invalid."
+              cleanup_failed=1
+            fi
+          fi
+
+          if [[ -f /tmp/plan020-stack-attempted ]]; then
+            supabase stop --no-backup >/dev/null 2>&1
+            remaining_containers="$(docker ps -aq --filter "label=com.supabase.cli.project=$PLAN020_PROJECT_ID")"
+            remaining_volumes="$(docker volume ls -q --filter "label=com.supabase.cli.project=$PLAN020_PROJECT_ID")"
+            if [[ -n "$remaining_containers" || -n "$remaining_volumes" ]]; then
+              echo "Disposable Supabase containers or volumes survived cleanup."
+              cleanup_failed=1
+            fi
+          fi
+
+          if [[ -f /tmp/plan020-network-created && -n "${PLAN020_DOCKER_NETWORK:-}" ]]; then
+            docker network rm "$PLAN020_DOCKER_NETWORK" >/dev/null 2>&1
+            if docker network inspect "$PLAN020_DOCKER_NETWORK" >/dev/null 2>&1; then
+              echo "The disposable loopback Docker network survived cleanup."
+              cleanup_failed=1
+            fi
+          fi
+          rm -f /tmp/plan020-supabase.env /tmp/plan020-supabase-start.log
+          rm -f /tmp/plan020-web-build.log /tmp/plan020-web.log /tmp/plan020-web.pgid
+          rm -f /tmp/plan020-network-created /tmp/plan020-stack-attempted
+          rm -rf supabase/.temp supabase/.branches
+          rm -rf frontend/test-results frontend/playwright-report frontend/e2e/.auth
+          if [[ -e /tmp/plan020-supabase.env || -e /tmp/plan020-supabase-start.log ||
+                -e /tmp/plan020-web-build.log || -e /tmp/plan020-web.log ||
+                -e /tmp/plan020-web.pgid || -e /tmp/plan020-network-created ||
+                -e /tmp/plan020-stack-attempted || -e supabase/.temp ||
+                -e supabase/.branches || -e frontend/test-results ||
+                -e frontend/playwright-report || -e frontend/e2e/.auth ]]; then
+            echo "A temporary provider, web, Playwright, marker, or CLI path survived cleanup."
+            cleanup_failed=1
+          fi
+          exit "$cleanup_failed"

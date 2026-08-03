@@ -1,6 +1,6 @@
 "use client";
 
-import type { Session } from "@supabase/supabase-js";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { createContext, useContext, useEffect, useMemo, useReducer, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -16,10 +16,16 @@ type AuthState = {
   initialized: boolean;
   signingOutSubjectId: string | null;
   reloadNonce: number;
+  recoveryStatus: RecoveryStatus;
+  recoverySubjectId: string | null;
 };
+
+export type RecoveryStatus = "checking" | "ready" | "invalid";
+type RecoveryAttempt = "none" | "pending" | "invalid";
 
 type AuthAction =
   | { type: "AUTH_CHANGED"; session: Session | null }
+  | { type: "RECOVERY_EVENT"; event: AuthChangeEvent; session: Session | null; attempt: RecoveryAttempt }
   | { type: "ACCOUNT_REQUEST"; subjectId: string }
   | { type: "ACCOUNT_RECEIVED"; subjectId: string; account: CurrentAccount }
   | { type: "ACCOUNT_COMPLETE"; subjectId: string }
@@ -34,7 +40,9 @@ const initialState: AuthState = {
   accountSettledSubjectId: null,
   initialized: false,
   signingOutSubjectId: null,
-  reloadNonce: 0
+  reloadNonce: 0,
+  recoveryStatus: "checking",
+  recoverySubjectId: null
 };
 
 function reducer(state: AuthState, action: AuthAction): AuthState {
@@ -74,6 +82,34 @@ function reducer(state: AuthState, action: AuthAction): AuthState {
         signingOutSubjectId: state.signingOutSubjectId === nextSubject ? state.signingOutSubjectId : null,
       };
     }
+    case "RECOVERY_EVENT": {
+      const nextSubject = action.session?.user.id ?? null;
+      if (action.event === "PASSWORD_RECOVERY" && nextSubject) {
+        return { ...state, recoveryStatus: "ready", recoverySubjectId: nextSubject };
+      }
+      if (action.event === "INITIAL_SESSION") {
+        if (state.recoveryStatus === "ready" && state.recoverySubjectId === nextSubject) return state;
+        return action.attempt === "pending"
+          ? { ...state, recoveryStatus: "checking", recoverySubjectId: null }
+          : { ...state, recoveryStatus: "invalid", recoverySubjectId: null };
+      }
+      if (action.event === "TOKEN_REFRESHED") {
+        return state.recoverySubjectId === nextSubject
+          ? state
+          : { ...state, recoveryStatus: "invalid", recoverySubjectId: null };
+      }
+      if (action.event === "USER_UPDATED" || action.event === "SIGNED_OUT") {
+        return { ...state, recoveryStatus: "invalid", recoverySubjectId: null };
+      }
+      if (action.event === "SIGNED_IN") {
+        const sameRecoverySession = state.recoverySubjectId === nextSubject &&
+          state.session?.access_token === action.session?.access_token;
+        return sameRecoverySession
+          ? state
+          : { ...state, recoveryStatus: "invalid", recoverySubjectId: null };
+      }
+      return state;
+    }
     case "ACCOUNT_REQUEST":
       return state.session?.user.id === action.subjectId && state.signingOutSubjectId !== action.subjectId
         ? { ...state, accountLoadingSubjectId: action.subjectId }
@@ -101,6 +137,7 @@ type AuthContextState = {
   session: Session | null;
   account: CurrentAccount | null;
   loading: boolean;
+  recoveryStatus: RecoveryStatus;
   signOut: () => Promise<void>;
 };
 
@@ -110,6 +147,7 @@ type E2eWindow = Window & {
   __mynutriE2ESignInWithPassword?: (email: string, password: string) => ReturnType<ReturnType<typeof createClient>["auth"]["signInWithPassword"]>;
   __mynutriE2EDuplicateSession?: () => Promise<void>;
   __mynutriE2EHoldFingerprint?: () => Promise<void>;
+  __mynutriE2EVerifyRecoveryOtp?: (email: string, token: string) => ReturnType<ReturnType<typeof createClient>["auth"]["verifyOtp"]>;
 };
 
 const AuthContext = createContext<AuthContextState | null>(null);
@@ -117,6 +155,15 @@ const AuthContext = createContext<AuthContextState | null>(null);
 function allowE2eAuthControl() {
   return (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost") &&
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY === "e2e-public-key";
+}
+
+function recoveryAttemptFromLocation(): RecoveryAttempt {
+  if (typeof window === "undefined") return "none";
+  const search = new URLSearchParams(window.location.search);
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  if (search.has("error") || search.has("error_code") || hash.has("error") || hash.has("error_code")) return "invalid";
+  if (search.has("code") || search.get("type") === "recovery" || hash.get("type") === "recovery") return "pending";
+  return "none";
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -131,12 +178,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const acceptedAccessTokenRef = useRef<string | null>(null);
   const hasAcceptedSessionRef = useRef(false);
   const requestGeneration = useRef(0);
+  const recoveryAttemptRef = useRef<RecoveryAttempt>("none");
 
   useEffect(() => {
     pathnameRef.current = pathname;
   }, [pathname]);
 
   useEffect(() => {
+    recoveryAttemptRef.current = recoveryAttemptFromLocation();
     const supabase = createClient();
     const e2eWindow = window as E2eWindow;
     const e2eAuthControlAllowed = allowE2eAuthControl();
@@ -162,7 +211,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void supabase.auth.getSession().then(({ data }) => {
       if (active && requestGeneration.current === initialGeneration) acceptSession(data.session);
     });
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => acceptSession(nextSession));
+    const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      dispatch({ type: "RECOVERY_EVENT", event, session: nextSession, attempt: recoveryAttemptRef.current });
+      acceptSession(nextSession);
+    });
     if (e2eAuthControlAllowed) {
       e2eWindow.__mynutriE2ERefreshSession = () => supabase.auth.refreshSession();
       e2eWindow.__mynutriE2ESignOut = () => supabase.auth.signOut();
@@ -171,6 +223,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data } = await supabase.auth.getSession();
         acceptSession(data.session);
       };
+      e2eWindow.__mynutriE2EVerifyRecoveryOtp = (email, token) => supabase.auth.verifyOtp({ email, token, type: "recovery" });
     }
     return () => {
       active = false;
@@ -182,6 +235,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         delete e2eWindow.__mynutriE2ESignOut;
         delete e2eWindow.__mynutriE2ESignInWithPassword;
         delete e2eWindow.__mynutriE2EDuplicateSession;
+        delete e2eWindow.__mynutriE2EVerifyRecoveryOtp;
       }
     };
   }, []);
@@ -253,6 +307,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     session: state.session,
     account: exposedAccount,
     loading,
+    recoveryStatus: state.recoveryStatus,
     signOut: async () => {
       const currentSubject = subjectRef.current;
       if (!currentSubject) {
@@ -278,7 +333,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         router.replace("/auth/login");
       }
     }
-  }), [exposedAccount, loading, router, state.session]);
+  }), [exposedAccount, loading, router, state.recoveryStatus, state.session]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
