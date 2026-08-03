@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event
 from uuid import UUID, uuid4
 
 import pytest
@@ -31,7 +31,11 @@ from app.models import (
     Principal,
     UnitBasis,
 )
-from app.schemas import ProfilePreview, TargetPlanActivationRequest
+from app.schemas import (
+    ProfilePreview,
+    TargetPlanActivationRequest,
+    TargetPlanReplacementRequest,
+)
 from app.services.profile import to_target_response
 from app.services.target_plans import TargetPlanError, activate_plan
 
@@ -45,6 +49,9 @@ PLAN009_TIMESTAMP = datetime(2026, 7, 28, tzinfo=UTC)
 TRANSITION_SNAPSHOT_REVISION = "0009_legacy_target_transition_expand"
 SNAPSHOT_V2_REVISION = "0011_diary_snapshot_v2_expand"
 PLAN009_FINITE_NUTRIENTS_REVISION = "df46234d2a7e"
+PLAN021_REVISION = "3f2e7b1c9a04"
+PLAN021_DOWNGRADE_ERROR = "PLAN021_TARGET_PLAN_IDEMPOTENCY_DOWNGRADE_BLOCKED"
+PLAN021_DOWNGRADE_GUARD = "plan021_target_plan_idempotency_downgrade_guard"
 PLAN009_GROUP_NAN_CONSTRAINTS = frozenset(
     {
         "ck_food_group_contribution_amount",
@@ -229,7 +236,7 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "5294eff9a956"
+            PLAN021_REVISION
         )
     assert "principal" in inspector.get_table_names()
     for table in ("profile", "diary_entry"):
@@ -260,6 +267,329 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     assert diary_columns["snapshot_schema_version"]["nullable"] is True
     assert diary_columns["target_provenance"]["nullable"] is False
     engine.dispose()
+
+
+def _seed_plan021_profile(url: str) -> None:
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO principal (id,status,created_at,updated_at) "
+                "VALUES (:id,'active',now(),now())"
+            ),
+            {"id": DEPLOYMENT_PRINCIPAL},
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO profile
+                  (id,principal_id,sex,birth_date,height_cm,weight_kg,activity_level,goal,
+                   protein_per_kg,fat_pct,cut_intensity,updated_at)
+                VALUES
+                  (:id,:principal,'male','1990-01-01',175,80,'moderate','maintain',
+                   1.2,0.25,0.2,now())
+                """
+            ),
+            {"id": uuid4(), "principal": DEPLOYMENT_PRINCIPAL},
+        )
+    engine.dispose()
+
+
+def _plan021_draft(weight: float) -> ProfilePreview:
+    return ProfilePreview(
+        sex="male",
+        birth_date=date(1990, 1, 1),
+        height_cm=175,
+        weight_kg=weight,
+        activity_level="moderate",
+        goal="maintain",
+        protein_per_kg=1.2,
+        fat_pct=0.25,
+        selected_cut_intensity=0.2,
+    )
+
+
+def _plan021_activation_request(weight: float) -> TargetPlanActivationRequest:
+    draft = _plan021_draft(weight)
+    preview = to_target_response(draft)
+    return TargetPlanActivationRequest(
+        **draft.model_dump(),
+        confirmed=True,
+        expected_preview_hash=preview.preview_hash,
+    )
+
+
+def _plan021_replacement_request(weight: float) -> TargetPlanReplacementRequest:
+    draft = _plan021_draft(weight)
+    preview = to_target_response(draft)
+    return TargetPlanReplacementRequest(
+        **draft.model_dump(),
+        replace_confirmed=True,
+        expected_preview_hash=preview.preview_hash,
+    )
+
+
+def _plan021_activate(
+    engine,
+    request: TargetPlanActivationRequest | TargetPlanReplacementRequest,
+    key: str,
+    *,
+    replace_pending: bool = False,
+) -> tuple[str, bool]:
+    with Session(engine) as session:
+        response, replayed = activate_plan(
+            session,
+            PrincipalContext(principal_id=DEPLOYMENT_PRINCIPAL),
+            request,
+            key,
+            replace_pending=replace_pending,
+        )
+        return str(response.plan.id), replayed
+
+
+def _plan021_schema_signature(url: str) -> tuple[frozenset[str], ...]:
+    engine = create_engine(url)
+    inspector = inspect(engine)
+    target_uniques = frozenset(
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("target_plan")
+    )
+    ledger_uniques = frozenset(
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("idempotency_record")
+    )
+    target_indexes = frozenset(index["name"] for index in inspector.get_indexes("target_plan"))
+    target_foreign_keys = frozenset(
+        constraint["name"]
+        for constraint in inspector.get_foreign_keys("target_plan")
+        if constraint["name"] is not None
+    )
+    with engine.connect() as connection:
+        target_triggers = frozenset(
+            connection.execute(
+                text(
+                    "SELECT tgname FROM pg_trigger "
+                    "WHERE tgrelid='target_plan'::regclass AND NOT tgisinternal"
+                )
+            ).scalars()
+        )
+    engine.dispose()
+    return (
+        target_uniques,
+        ledger_uniques,
+        target_indexes,
+        target_foreign_keys,
+        target_triggers,
+    )
+
+
+def _plan021_data_signature(url: str) -> tuple[tuple[tuple[object, ...], ...], ...]:
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        plans = tuple(
+            tuple(row)
+            for row in connection.execute(
+                text(
+                    "SELECT id::text,principal_id::text,status,activation_idempotency_key,"
+                    "predecessor_plan_id::text,superseded_by_plan_id::text "
+                    "FROM target_plan ORDER BY id"
+                )
+            ).all()
+        )
+        records = tuple(
+            tuple(row)
+            for row in connection.execute(
+                text(
+                    "SELECT operation,idempotency_key,state,response_status,resource_id::text "
+                    "FROM idempotency_record ORDER BY operation,idempotency_key"
+                )
+            ).all()
+        )
+        profiles = tuple(
+            tuple(row)
+            for row in connection.execute(
+                text(
+                    "SELECT principal_id::text,weight_kg::text,updated_at::text "
+                    "FROM profile ORDER BY principal_id"
+                )
+            ).all()
+        )
+    engine.dispose()
+    return plans, records, profiles
+
+
+def _assert_plan021_operation_scoped_schema(url: str) -> None:
+    (
+        target_uniques,
+        ledger_uniques,
+        target_indexes,
+        target_foreign_keys,
+        target_triggers,
+    ) = _plan021_schema_signature(url)
+    assert "uq_target_plan_principal_key" not in target_uniques
+    assert "uq_target_plan_id_principal" in target_uniques
+    assert "uq_idempotency_scope" in ledger_uniques
+    assert {"uq_target_plan_one_active", "uq_target_plan_one_scheduled"}.issubset(
+        target_indexes
+    )
+    assert {
+        "fk_target_plan_profile_owner",
+        "fk_target_plan_predecessor_owner",
+        "fk_target_plan_superseding_owner",
+    }.issubset(target_foreign_keys)
+    assert "target_plan_immutable_content_trigger" in target_triggers
+
+
+@pytest.mark.migration
+def test_plan021_fresh_upgrade_keeps_ledger_as_replay_authority() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "head")
+
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            PLAN021_REVISION
+        )
+    engine.dispose()
+    _assert_plan021_operation_scoped_schema(url)
+
+
+@pytest.mark.migration
+def test_plan021_populated_upgrade_preserves_plan_and_ledger_rows() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "5294eff9a956")
+    _seed_plan021_profile(url)
+    engine = create_engine(url)
+    plan_id, replayed = _plan021_activate(
+        engine,
+        _plan021_activation_request(82),
+        "plan021-populated-upgrade",
+    )
+    engine.dispose()
+    assert replayed is False
+    before = _plan021_data_signature(url)
+    assert before[0][0][0] == plan_id
+    assert before[1] == (
+        ("target_plan.activate", "plan021-populated-upgrade", "completed", 201, plan_id),
+    )
+
+    _run_alembic(url, "upgrade", "head")
+
+    assert _plan021_data_signature(url) == before
+    _assert_plan021_operation_scoped_schema(url)
+
+
+def test_plan021_offline_downgrade_fails_before_constraint_sql() -> None:
+    result = _run_alembic(
+        "postgresql+psycopg://offline:offline@127.0.0.1:5432/mynutri_test_offline",
+        "downgrade",
+        f"{PLAN021_REVISION}:5294eff9a956",
+        "--sql",
+        check=False,
+    )
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert PLAN021_DOWNGRADE_ERROR in output
+    assert PLAN021_DOWNGRADE_GUARD in output
+    assert "offline downgrade SQL is intentionally unavailable" in output
+    assert "ADD CONSTRAINT uq_target_plan_principal_key" not in result.stdout
+    assert "ALTER TABLE" not in result.stdout
+    assert "UPDATE " not in result.stdout
+    assert "DELETE " not in result.stdout
+
+
+@pytest.mark.migration
+def test_plan021_downgrade_restores_constraint_before_cross_operation_reuse() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "head")
+    _seed_plan021_profile(url)
+    engine = create_engine(url)
+    _plan021_activate(
+        engine,
+        _plan021_activation_request(82),
+        "plan021-single-operation",
+    )
+    engine.dispose()
+    before = _plan021_data_signature(url)
+
+    _run_alembic(url, "downgrade", "5294eff9a956")
+
+    engine = create_engine(url)
+    inspector = inspect(engine)
+    target_uniques = {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("target_plan")
+    }
+    ledger_uniques = {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("idempotency_record")
+    }
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            "5294eff9a956"
+        )
+    engine.dispose()
+    assert "uq_target_plan_principal_key" in target_uniques
+    assert "uq_idempotency_scope" in ledger_uniques
+    assert _plan021_data_signature(url) == before
+
+    _run_alembic(url, "upgrade", "head")
+    assert _plan021_data_signature(url) == before
+    _assert_plan021_operation_scoped_schema(url)
+
+
+@pytest.mark.migration
+def test_plan021_downgrade_blocks_duplicate_visible_keys_atomically() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "head")
+    _seed_plan021_profile(url)
+    engine = create_engine(url)
+    shared_key = "plan021-legitimate-cross-operation"
+    activation_id, activation_replayed = _plan021_activate(
+        engine,
+        _plan021_activation_request(82),
+        shared_key,
+    )
+    replacement_id, replacement_replayed = _plan021_activate(
+        engine,
+        _plan021_replacement_request(84),
+        shared_key,
+        replace_pending=True,
+    )
+    engine.dispose()
+    assert activation_replayed is replacement_replayed is False
+    assert activation_id != replacement_id
+    before_data = _plan021_data_signature(url)
+    before_schema = _plan021_schema_signature(url)
+    assert len(before_data[0]) == 2
+    assert {
+        (record[0], record[1], record[4]) for record in before_data[1]
+    } == {
+        ("target_plan.activate", shared_key, activation_id),
+        ("target_plan.replace", shared_key, replacement_id),
+    }
+
+    result = _run_alembic(url, "downgrade", "5294eff9a956", check=False)
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert PLAN021_DOWNGRADE_ERROR in output
+    assert PLAN021_DOWNGRADE_GUARD in output
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            PLAN021_REVISION
+        )
+        assert connection.execute(text("SELECT 1")).scalar_one() == 1
+    engine.dispose()
+    assert _plan021_data_signature(url) == before_data
+    assert _plan021_schema_signature(url) == before_schema
+    _assert_plan021_operation_scoped_schema(url)
 
 
 @pytest.mark.migration
@@ -738,6 +1068,137 @@ def test_concurrent_first_legacy_activations_create_one_snapshot_and_plan() -> N
         assert connection.execute(text("SELECT count(*) FROM legacy_target_transition_snapshots")).scalar_one() == 1
         assert connection.execute(text("SELECT count(*) FROM target_plan")).scalar_one() == 1
         assert connection.execute(text("SELECT count(*) FROM idempotency_record")).scalar_one() == 1
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_plan021_concurrent_same_operation_is_one_execution_and_one_replay() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "head")
+    _seed_plan021_profile(url)
+    engine = create_engine(
+        url,
+        connect_args={"options": "-c lock_timeout=10000 -c statement_timeout=20000"},
+    )
+    request = _plan021_activation_request(82)
+    barrier = Barrier(2)
+
+    def concurrent_activate() -> tuple[str, bool]:
+        with Session(engine) as session:
+            barrier.wait(timeout=10)
+            response, replayed = activate_plan(
+                session,
+                PrincipalContext(principal_id=DEPLOYMENT_PRINCIPAL),
+                request,
+                "plan021-same-operation-race",
+            )
+            return str(response.plan.id), replayed
+
+    executor = ThreadPoolExecutor(max_workers=2)
+    try:
+        futures = [executor.submit(concurrent_activate) for _ in range(2)]
+        results = [future.result(timeout=30) for future in futures]
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
+
+    assert {plan_id for plan_id, _ in results} == {results[0][0]}
+    assert sorted(replayed for _, replayed in results) == [False, True]
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM target_plan")).scalar_one() == 1
+        assert connection.execute(text("SELECT count(*) FROM idempotency_record")).scalar_one() == 1
+        assert connection.execute(
+            text(
+                "SELECT operation FROM idempotency_record "
+                "WHERE idempotency_key='plan021-same-operation-race'"
+            )
+        ).scalar_one() == "target_plan.activate"
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_plan021_concurrent_cross_operation_sessions_reuse_visible_key() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "head")
+    _seed_plan021_profile(url)
+    engine = create_engine(
+        url,
+        connect_args={"options": "-c lock_timeout=10000 -c statement_timeout=20000"},
+    )
+    activation_request = _plan021_activation_request(82)
+    replacement_request = _plan021_replacement_request(84)
+    shared_key = "plan021-cross-operation-race"
+    start_barrier = Barrier(2)
+    activation_commit_ready = Event()
+    replacement_started = Event()
+
+    def activate_with_gated_commit() -> tuple[str, bool]:
+        with Session(engine) as session:
+            original_commit = session.commit
+
+            def gated_commit() -> None:
+                activation_commit_ready.set()
+                assert replacement_started.wait(timeout=10)
+                original_commit()
+
+            session.commit = gated_commit
+            start_barrier.wait(timeout=10)
+            response, replayed = activate_plan(
+                session,
+                PrincipalContext(principal_id=DEPLOYMENT_PRINCIPAL),
+                activation_request,
+                shared_key,
+            )
+            return str(response.plan.id), replayed
+
+    def replace_after_activation_reaches_commit() -> tuple[str, bool]:
+        with Session(engine) as session:
+            start_barrier.wait(timeout=10)
+            assert activation_commit_ready.wait(timeout=10)
+            replacement_started.set()
+            response, replayed = activate_plan(
+                session,
+                PrincipalContext(principal_id=DEPLOYMENT_PRINCIPAL),
+                replacement_request,
+                shared_key,
+                replace_pending=True,
+            )
+            return str(response.plan.id), replayed
+
+    executor = ThreadPoolExecutor(max_workers=2)
+    try:
+        activation_future = executor.submit(activate_with_gated_commit)
+        replacement_future = executor.submit(replace_after_activation_reaches_commit)
+        activation_result = activation_future.result(timeout=30)
+        replacement_result = replacement_future.result(timeout=30)
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
+
+    assert activation_result[1] is replacement_result[1] is False
+    assert activation_result[0] != replacement_result[0]
+    assert _plan021_activate(engine, activation_request, shared_key) == (
+        activation_result[0],
+        True,
+    )
+    assert _plan021_activate(
+        engine,
+        replacement_request,
+        shared_key,
+        replace_pending=True,
+    ) == (replacement_result[0], True)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM target_plan")).scalar_one() == 2
+        assert connection.execute(text("SELECT count(*) FROM idempotency_record")).scalar_one() == 2
+        assert set(
+            connection.execute(
+                text(
+                    "SELECT operation FROM idempotency_record "
+                    "WHERE idempotency_key=:key"
+                ),
+                {"key": shared_key},
+            ).scalars()
+        ) == {"target_plan.activate", "target_plan.replace"}
     engine.dispose()
 
 

@@ -796,6 +796,292 @@ def test_idempotent_replay_and_payload_conflict_do_not_mutate(target_plan_contex
     assert len(session.exec(select(LegacyTargetTransitionSnapshot)).all()) == 1
 
 
+def test_plan021_activation_and_replacement_complete_operation_ledgers(
+    target_plan_context,
+) -> None:
+    client, session = target_plan_context
+    saved = client.put("/profile", json=profile_payload(), headers=headers("token-a"))
+    assert saved.status_code == 200
+
+    activation_payload = profile_payload(weight=82)
+    activation_preview = preview(client, activation_payload)
+    activation_body = {
+        **activation_payload,
+        "confirmed": True,
+        "expected_preview_hash": activation_preview["preview_hash"],
+    }
+    activation = client.post(
+        "/target-plans/activate",
+        json=activation_body,
+        headers=headers("token-a", "plan021-activate-ledger"),
+    )
+    assert activation.status_code == 201, activation.text
+
+    replacement_payload = profile_payload(weight=84)
+    replacement_preview = preview(client, replacement_payload)
+    replacement_body = {
+        **replacement_payload,
+        "replace_confirmed": True,
+        "expected_preview_hash": replacement_preview["preview_hash"],
+    }
+    replacement = client.post(
+        "/target-plans/pending/replace",
+        json=replacement_body,
+        headers=headers("token-a", "plan021-replace-ledger"),
+    )
+    assert replacement.status_code == 201, replacement.text
+
+    session.expire_all()
+    records = {
+        record.operation: record
+        for record in session.exec(
+            select(IdempotencyRecord).where(
+                IdempotencyRecord.principal_id == PRINCIPAL_A
+            )
+        ).all()
+    }
+    assert set(records) == {"target_plan.activate", "target_plan.replace"}
+    for operation, response in (
+        ("target_plan.activate", activation),
+        ("target_plan.replace", replacement),
+    ):
+        record = records[operation]
+        assert record.state == "completed"
+        assert record.response_status == 201
+        assert record.response_document == response.json()
+        assert record.resource_type == "target_plan"
+        assert str(record.resource_id) == response.json()["plan"]["id"]
+        assert record.completed_at is not None
+
+    activation_replay = client.post(
+        "/target-plans/activate",
+        json=activation_body,
+        headers=headers("token-a", "plan021-activate-ledger"),
+    )
+    replacement_replay = client.post(
+        "/target-plans/pending/replace",
+        json=replacement_body,
+        headers=headers("token-a", "plan021-replace-ledger"),
+    )
+    assert activation_replay.status_code == replacement_replay.status_code == 201
+    assert activation_replay.headers["Idempotent-Replayed"] == "true"
+    assert replacement_replay.headers["Idempotent-Replayed"] == "true"
+    assert activation_replay.json() == activation.json()
+    assert replacement_replay.json() == replacement.json()
+    assert len(session.exec(select(TargetPlan)).all()) == 2
+    assert len(session.exec(select(LegacyTargetTransitionSnapshot)).all()) == 1
+    assert len(session.exec(select(IdempotencyRecord)).all()) == 2
+
+
+def test_plan021_same_visible_key_is_independent_across_operations(
+    target_plan_context,
+) -> None:
+    client, session = target_plan_context
+    saved = client.put("/profile", json=profile_payload(), headers=headers("token-a"))
+    assert saved.status_code == 200
+    shared_key = "plan021-shared-operation-key"
+
+    activation_payload = profile_payload(weight=82)
+    activation_preview = preview(client, activation_payload)
+    activation_body = {
+        **activation_payload,
+        "confirmed": True,
+        "expected_preview_hash": activation_preview["preview_hash"],
+    }
+    activation = client.post(
+        "/target-plans/activate",
+        json=activation_body,
+        headers=headers("token-a", shared_key),
+    )
+    assert activation.status_code == 201, activation.text
+
+    replacement_payload = profile_payload(weight=84)
+    replacement_preview = preview(client, replacement_payload)
+    replacement_body = {
+        **replacement_payload,
+        "replace_confirmed": True,
+        "expected_preview_hash": replacement_preview["preview_hash"],
+    }
+    replacement = client.post(
+        "/target-plans/pending/replace",
+        json=replacement_body,
+        headers=headers("token-a", shared_key),
+    )
+    assert replacement.status_code == 201, replacement.text
+
+    session.expire_all()
+    profile_before_replays = _profile_state(
+        session.exec(select(Profile).where(Profile.principal_id == PRINCIPAL_A)).one()
+    )
+    plans_before_replays = tuple(
+        sorted(
+            (
+                str(plan.id),
+                str(plan.status),
+                str(plan.predecessor_plan_id),
+                str(plan.superseded_by_plan_id),
+            )
+            for plan in session.exec(
+                select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_A)
+            ).all()
+        )
+    )
+    transition_before_replays = session.exec(
+        select(LegacyTargetTransitionSnapshot).where(
+            LegacyTargetTransitionSnapshot.principal_id == PRINCIPAL_A
+        )
+    ).one()
+    transition_document_before_replays = transition_before_replays.legacy_target_document.copy()
+
+    activation_replay = client.post(
+        "/target-plans/activate",
+        json=activation_body,
+        headers=headers("token-a", shared_key),
+    )
+    replacement_replay = client.post(
+        "/target-plans/pending/replace",
+        json=replacement_body,
+        headers=headers("token-a", shared_key),
+    )
+    assert activation_replay.status_code == replacement_replay.status_code == 201
+    assert activation_replay.headers["Idempotent-Replayed"] == "true"
+    assert replacement_replay.headers["Idempotent-Replayed"] == "true"
+    assert activation_replay.json() == activation.json()
+    assert replacement_replay.json() == replacement.json()
+
+    changed_activation = profile_payload(weight=86)
+    changed_activation_preview = preview(client, changed_activation)
+    activation_conflict = client.post(
+        "/target-plans/activate",
+        json={
+            **changed_activation,
+            "confirmed": True,
+            "expected_preview_hash": changed_activation_preview["preview_hash"],
+        },
+        headers=headers("token-a", shared_key),
+    )
+    changed_replacement = profile_payload(weight=88)
+    changed_replacement_preview = preview(client, changed_replacement)
+    replacement_conflict = client.post(
+        "/target-plans/pending/replace",
+        json={
+            **changed_replacement,
+            "replace_confirmed": True,
+            "expected_preview_hash": changed_replacement_preview["preview_hash"],
+        },
+        headers=headers("token-a", shared_key),
+    )
+    assert activation_conflict.status_code == replacement_conflict.status_code == 409
+    assert activation_conflict.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+    assert replacement_conflict.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+
+    session.expire_all()
+    records = session.exec(
+        select(IdempotencyRecord).where(
+            IdempotencyRecord.principal_id == PRINCIPAL_A,
+            IdempotencyRecord.idempotency_key == shared_key,
+        )
+    ).all()
+    assert {(record.operation, str(record.resource_id)) for record in records} == {
+        ("target_plan.activate", activation.json()["plan"]["id"]),
+        ("target_plan.replace", replacement.json()["plan"]["id"]),
+    }
+    assert all(record.state == "completed" for record in records)
+    assert _profile_state(
+        session.exec(select(Profile).where(Profile.principal_id == PRINCIPAL_A)).one()
+    ) == profile_before_replays
+    assert tuple(
+        sorted(
+            (
+                str(plan.id),
+                str(plan.status),
+                str(plan.predecessor_plan_id),
+                str(plan.superseded_by_plan_id),
+            )
+            for plan in session.exec(
+                select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_A)
+            ).all()
+        )
+    ) == plans_before_replays
+    session.refresh(transition_before_replays)
+    assert transition_before_replays.legacy_target_document == transition_document_before_replays
+    assert len(records) == 2
+
+
+def test_plan021_replacement_rollback_leaves_no_ledger_and_retry_succeeds(
+    target_plan_context, monkeypatch
+) -> None:
+    client, session = target_plan_context
+    saved = client.put("/profile", json=profile_payload(), headers=headers("token-a"))
+    assert saved.status_code == 200
+    activation = activate(client, profile_payload(weight=82), "plan021-rollback-seed")
+    assert activation.status_code == 201, activation.text
+    activation_plan_id = activation.json()["plan"]["id"]
+
+    replacement_payload = profile_payload(weight=84)
+    replacement_preview = preview(client, replacement_payload)
+    replacement_body = {
+        **replacement_payload,
+        "replace_confirmed": True,
+        "expected_preview_hash": replacement_preview["preview_hash"],
+    }
+    real_commit = session.commit
+
+    def fail_commit() -> None:
+        raise RuntimeError("injected Plan 021 replacement commit failure")
+
+    monkeypatch.setattr(session, "commit", fail_commit)
+    with pytest.raises(
+        RuntimeError, match="injected Plan 021 replacement commit failure"
+    ):
+        client.post(
+            "/target-plans/pending/replace",
+            json=replacement_body,
+            headers=headers("token-a", "plan021-rollback-replace"),
+        )
+    monkeypatch.setattr(session, "commit", real_commit)
+
+    session.expire_all()
+    plans_after_rollback = session.exec(
+        select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_A)
+    ).all()
+    records_after_rollback = session.exec(
+        select(IdempotencyRecord).where(
+            IdempotencyRecord.principal_id == PRINCIPAL_A
+        )
+    ).all()
+    profile_after_rollback = session.exec(
+        select(Profile).where(Profile.principal_id == PRINCIPAL_A)
+    ).one()
+    assert len(plans_after_rollback) == 1
+    assert str(plans_after_rollback[0].id) == activation_plan_id
+    assert plans_after_rollback[0].status == "scheduled"
+    assert plans_after_rollback[0].superseded_by_plan_id is None
+    assert [(record.operation, record.idempotency_key) for record in records_after_rollback] == [
+        ("target_plan.activate", "plan021-rollback-seed")
+    ]
+    assert float(profile_after_rollback.weight_kg) == 82
+
+    retry = client.post(
+        "/target-plans/pending/replace",
+        json=replacement_body,
+        headers=headers("token-a", "plan021-rollback-replace"),
+    )
+    assert retry.status_code == 201, retry.text
+    session.expire_all()
+    replacement_record = session.exec(
+        select(IdempotencyRecord).where(
+            IdempotencyRecord.principal_id == PRINCIPAL_A,
+            IdempotencyRecord.operation == "target_plan.replace",
+            IdempotencyRecord.idempotency_key == "plan021-rollback-replace",
+        )
+    ).one()
+    assert replacement_record.state == "completed"
+    assert str(replacement_record.resource_id) == retry.json()["plan"]["id"]
+    assert len(session.exec(select(TargetPlan)).all()) == 2
+    assert len(session.exec(select(IdempotencyRecord)).all()) == 2
+
+
 def test_idempotency_key_requires_visible_ascii(target_plan_context) -> None:
     client, session = target_plan_context
     payload = profile_payload()
