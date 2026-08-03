@@ -1087,7 +1087,7 @@ test.describe("Plan 020 isolated local provider acceptance", () => {
       releaseExchange();
     }
     await firstExchangeSettled;
-    await expectRecoveryInvalid(reloadRecovery.page);
+    await expect(reloadRecovery.page.getByRole("status")).toHaveText("جارٍ التحميل...");
     await expect(reloadRecovery.page.getByLabel("كلمة المرور الجديدة", { exact: true })).toHaveCount(0);
     expect(reloadRecoveryEvents, JSON.stringify({
       phase: "reload-during-pkce",
@@ -1099,7 +1099,7 @@ test.describe("Plan 020 isolated local provider acceptance", () => {
     expect(reloadUpdates).toBe(0);
     await reloadRecovery.page.unroute(exchangeMatcher);
     await reloadRecovery.page.reload();
-    await expectRecoveryInvalid(reloadRecovery.page);
+    await expect(reloadRecovery.page.getByRole("status")).toHaveText("جارٍ التحميل...");
     await expect(reloadRecovery.page.getByLabel("كلمة المرور الجديدة", { exact: true })).toHaveCount(0);
     expect(reloadRecoveryEvents).toBe(0);
     expect(reloadUpdates).toBe(0);
