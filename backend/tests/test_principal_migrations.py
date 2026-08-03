@@ -1917,6 +1917,11 @@ def _assert_plan012_guard_failure(
     assert _plan012_audit_signature(url) == before_audit
     assert _plan012_schema_signature(url) == before_schema
 
+    # The historical assertions above must run at the frozen Plan 012 boundary.
+    # Restore the shared disposable database only after that proof is complete so
+    # the repository-level model-drift gate starts from the current schema.
+    _run_alembic(url, "upgrade", "head")
+
 
 @pytest.mark.migration
 def test_plan012_empty_database_blocks_before_frozen_0014_downgrade() -> None:
