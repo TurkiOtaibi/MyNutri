@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type Browser, type BrowserContext, type Page, type Route } from "@playwright/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { randomBytes } from "node:crypto";
 
@@ -300,6 +300,33 @@ async function submitRecovery(
   let responses = 0;
   let status: number | null = null;
   const providerOrigin = PROVIDER_URL.origin;
+  const recoveryMatcher = (url: URL) => url.origin === providerOrigin && url.pathname === RECOVERY_REQUEST_PATH;
+  let barrierMatches = 0;
+  let firstRequestReachedBarrier = Promise.resolve();
+  let releaseFirstRequest = () => {};
+  let recoveryBarrierEnabled = false;
+  let firstRequestReleased = false;
+  let holdFirstRecoveryRequest: ((route: Route) => Promise<void>) | null = null;
+
+  if (mode === "enter-plus-click") {
+    recoveryBarrierEnabled = true;
+    let markFirstRequestReached!: () => void;
+    firstRequestReachedBarrier = new Promise<void>((resolve) => { markFirstRequestReached = resolve; });
+    const firstRequestRelease = new Promise<void>((resolve) => { releaseFirstRequest = resolve; });
+    holdFirstRecoveryRequest = async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      barrierMatches += 1;
+      if (barrierMatches === 1) {
+        markFirstRequestReached();
+        await firstRequestRelease;
+      }
+      await route.continue();
+    };
+    await page.route(recoveryMatcher, holdFirstRecoveryRequest);
+  }
   const onRequest = (request: import("@playwright/test").Request) => {
     const url = new URL(request.url());
     if (url.origin === providerOrigin && url.pathname === RECOVERY_REQUEST_PATH && request.method() === "POST") requests += 1;
@@ -318,23 +345,57 @@ async function submitRecovery(
     const input = page.getByLabel("البريد الإلكتروني", { exact: true });
     const submitButton = page.locator('button[type="submit"]');
     await input.fill(record.email);
+    await expect(input).toBeFocused();
+    await expect(submitButton).toBeEnabled();
+    await expect(submitButton).toHaveText("إرسال رابط الاستعادة");
+    await expect(page.getByRole("status")).toHaveCount(0);
+    expect(requests).toBe(0);
+    expect(responses).toBe(0);
     if (mode === "double-submit") {
       await page.locator("form").evaluate((form: HTMLFormElement) => {
         form.requestSubmit();
         form.requestSubmit();
       });
     } else if (mode === "enter-plus-click") {
-      await input.press("Enter");
-      await submitButton.evaluate((button: HTMLButtonElement) => button.click());
+      await input.focus();
+      const enterAttempt = input.press("Enter");
+      await firstRequestReachedBarrier;
+      await enterAttempt;
+      await expect.poll(() => requests, { message: "The first Enter submission must reach the exact recovery endpoint once." }).toBe(1);
+      expect(barrierMatches).toBe(1);
+      expect(responses).toBe(0);
+      await expect(submitButton).toBeDisabled();
+      await expect(submitButton).toHaveText("جارٍ الإرسال...");
+      await expect(page.getByRole("status")).toHaveCount(0);
+      await expect(page.locator('.auth-message[role="alert"]')).toHaveCount(0);
+
+      const submitBounds = await submitButton.boundingBox();
+      expect(submitBounds, "The locked submit control must remain visibly available for the second pointer gesture.").not.toBeNull();
+      if (!submitBounds) throw new Error("The locked submit control was unavailable for the second pointer gesture.");
+      // A physical pointer gesture preserves native disabled-button semantics; no forced or synthetic submit is used.
+      await page.mouse.click(submitBounds.x + submitBounds.width / 2, submitBounds.y + submitBounds.height / 2);
+
+      await expect.poll(() => requests, { message: "The disabled click path must not emit a second recovery request." }).toBe(1);
+      expect(barrierMatches).toBe(1);
+      expect(responses).toBe(0);
+      await expect(page.getByRole("status")).toHaveCount(0);
+      await expect(page.locator('.auth-message[role="alert"]')).toHaveCount(0);
+      await expectSafeFocusWithin(page, "form", "Focus must remain coherent while the first recovery request is pending.");
+
+      firstRequestReleased = true;
+      releaseFirstRequest();
     } else {
       await input.press("Enter");
     }
     const publicStatus = page.getByRole("status");
+    await expect(publicStatus).toHaveCount(1);
     await expect(publicStatus).toBeVisible();
     await expect.poll(() => requests, { message: "The recovery UI must issue exactly one provider request." }).toBe(1);
     await expect.poll(() => responses, { message: "The recovery provider request must reach a terminal response." }).toBe(1);
     return { requests, responses, status, publicMessage: await publicStatus.innerText() };
   } finally {
+    if (recoveryBarrierEnabled && !firstRequestReleased) releaseFirstRequest();
+    if (holdFirstRecoveryRequest) await page.unroute(recoveryMatcher, holdFirstRecoveryRequest);
     page.off("request", onRequest);
     page.off("response", onResponse);
   }
