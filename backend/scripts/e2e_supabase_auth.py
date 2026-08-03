@@ -7,9 +7,11 @@ non-loopback binding and never contains production credentials.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Lock
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4, uuid5
 
@@ -43,6 +45,40 @@ class AuthState:
                 }
             ]
         }
+        self._lock = Lock()
+        self._used_recovery_codes: set[str] = set()
+        self._active_recovery_sessions: set[str] = set()
+        self.request_records: list[dict[str, object]] = []
+
+    @staticmethod
+    def _digest(value: str) -> str:
+        return hashlib.sha256(value.encode()).hexdigest()
+
+    def record(self, operation: str, method: str, path: str, status: int) -> None:
+        with self._lock:
+            self.request_records.append(
+                {"operation": operation, "method": method, "path": path, "status": status}
+            )
+
+    def consume_recovery_code(self, code: str) -> bool:
+        digest = self._digest(code)
+        with self._lock:
+            if digest in self._used_recovery_codes:
+                return False
+            self._used_recovery_codes.add(digest)
+            return True
+
+    def activate_recovery_session(self, session_id: str) -> None:
+        with self._lock:
+            self._active_recovery_sessions.add(self._digest(session_id))
+
+    def consume_recovery_session(self, session_id: str) -> bool:
+        digest = self._digest(session_id)
+        with self._lock:
+            if digest not in self._active_recovery_sessions:
+                return False
+            self._active_recovery_sessions.remove(digest)
+            return True
 
     def user_for_email(self, email: str) -> dict[str, object]:
         normalized = email.strip().lower()
@@ -57,21 +93,26 @@ class AuthState:
             "app_metadata": {"provider": "email", "providers": ["email"]},
         }
 
-    def session(self, email: str) -> dict[str, object]:
+    def session(self, email: str, *, recovery: bool = False) -> dict[str, object]:
         user = self.user_for_email(email)
         now = datetime.now(timezone.utc)
         expires = now + timedelta(hours=2)
-        token = jwt.encode(
-            {
+        session_id = str(uuid4())
+        claims = {
                 "sub": user["id"],
                 "email": user["email"],
                 "aud": "authenticated",
                 "iss": self.issuer,
                 "iat": int(now.timestamp()),
                 "exp": int(expires.timestamp()),
-                "jti": str(uuid4()),
+                "jti": session_id,
                 "user_metadata": user["user_metadata"],
-            },
+            }
+        if recovery:
+            claims["recovery"] = True
+            self.activate_recovery_session(session_id)
+        token = jwt.encode(
+            claims,
             self.key,
             algorithm="RS256",
             headers={"kid": "mynutri-e2e"},
@@ -146,13 +187,55 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/auth/v1/signup":
             self._send(200, self.state.session(str(payload.get("email", "user.e2e@example.test"))))
             return
-        if parsed.path in {"/auth/v1/recover", "/auth/v1/logout"}:
+        if parsed.path == "/auth/v1/recover":
+            email = str(payload.get("email", "")).strip().lower()
+            if email.startswith("provider-error-"):
+                self.state.record("recover", "POST", parsed.path, 503)
+                self._send(503, {"message": "temporary provider failure"})
+                return
+            self.state.record("recover", "POST", parsed.path, 200)
+            self._send(200, {})
+            return
+        if parsed.path == "/auth/v1/verify":
+            code = str(payload.get("token", ""))
+            email = str(payload.get("email", ""))
+            recovery = payload.get("type") == "recovery"
+            valid = recovery and code.startswith("valid-recovery-code-")
+            if not valid or not self.state.consume_recovery_code(code):
+                self.state.record("verify-recovery", "POST", parsed.path, 403)
+                self._send(403, {"message": "invalid or expired recovery code"})
+                return
+            self.state.record("verify-recovery", "POST", parsed.path, 200)
+            self._send(200, self.state.session(email, recovery=True))
+            return
+        if parsed.path == "/auth/v1/logout":
             self._send(200, {})
             return
         self._send(404, {"message": "not found"})
 
     def do_PUT(self) -> None:  # noqa: N802
         if urlparse(self.path).path == "/auth/v1/user":
+            authorization = self.headers.get("authorization", "")
+            token = authorization.removeprefix("Bearer ")
+            try:
+                claims = jwt.decode(
+                    token,
+                    self.state.key.public_key(),
+                    algorithms=["RS256"],
+                    audience="authenticated",
+                    issuer=self.state.issuer,
+                )
+            except jwt.PyJWTError:
+                self.state.record("update-password", "PUT", "/auth/v1/user", 401)
+                self._send(401, {"message": "session missing or expired"})
+                return
+            if claims.get("recovery") and not self.state.consume_recovery_session(
+                str(claims.get("jti", ""))
+            ):
+                self.state.record("update-password", "PUT", "/auth/v1/user", 401)
+                self._send(401, {"message": "recovery session already used"})
+                return
+            self.state.record("update-password", "PUT", "/auth/v1/user", 200)
             self._send(200, self.state.user_for_email(ADMIN_EMAIL))
         else:
             self._send(404, {"message": "not found"})
