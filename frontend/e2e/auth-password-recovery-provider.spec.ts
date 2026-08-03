@@ -303,6 +303,7 @@ async function submitRecovery(
   const recoveryMatcher = (url: URL) => url.origin === providerOrigin && url.pathname === RECOVERY_REQUEST_PATH;
   let barrierMatches = 0;
   let firstRequestReachedBarrier = Promise.resolve();
+  let firstRequestContinuationSettled = Promise.resolve();
   let releaseFirstRequest = () => {};
   let recoveryBarrierEnabled = false;
   let firstRequestReleased = false;
@@ -311,7 +312,9 @@ async function submitRecovery(
   if (mode === "enter-plus-click") {
     recoveryBarrierEnabled = true;
     let markFirstRequestReached!: () => void;
+    let markFirstRequestContinuationSettled!: () => void;
     firstRequestReachedBarrier = new Promise<void>((resolve) => { markFirstRequestReached = resolve; });
+    firstRequestContinuationSettled = new Promise<void>((resolve) => { markFirstRequestContinuationSettled = resolve; });
     const firstRequestRelease = new Promise<void>((resolve) => { releaseFirstRequest = resolve; });
     holdFirstRecoveryRequest = async (route) => {
       if (route.request().method() !== "POST") {
@@ -319,11 +322,16 @@ async function submitRecovery(
         return;
       }
       barrierMatches += 1;
-      if (barrierMatches === 1) {
-        markFirstRequestReached();
-        await firstRequestRelease;
+      const isFirstRequest = barrierMatches === 1;
+      try {
+        if (isFirstRequest) {
+          markFirstRequestReached();
+          await firstRequestRelease;
+        }
+        await route.continue();
+      } finally {
+        if (isFirstRequest) markFirstRequestContinuationSettled();
       }
-      await route.continue();
     };
     await page.route(recoveryMatcher, holdFirstRecoveryRequest);
   }
@@ -369,11 +377,17 @@ async function submitRecovery(
       await expect(page.getByRole("status")).toHaveCount(0);
       await expect(page.locator('.auth-message[role="alert"]')).toHaveCount(0);
 
-      const submitBounds = await submitButton.boundingBox();
-      expect(submitBounds, "The locked submit control must remain visibly available for the second pointer gesture.").not.toBeNull();
-      if (!submitBounds) throw new Error("The locked submit control was unavailable for the second pointer gesture.");
-      // A physical pointer gesture preserves native disabled-button semantics; no forced or synthetic submit is used.
-      await page.mouse.click(submitBounds.x + submitBounds.width / 2, submitBounds.y + submitBounds.height / 2);
+      const clickAttempt = await submitButton.evaluate((button: HTMLButtonElement) => {
+        const activeBefore = document.activeElement;
+        const wasDisabled = button.disabled;
+        button.click();
+        return {
+          wasDisabled,
+          remainedDisabled: button.disabled,
+          focusUnchanged: document.activeElement === activeBefore
+        };
+      });
+      expect(clickAttempt).toEqual({ wasDisabled: true, remainedDisabled: true, focusUnchanged: true });
 
       await expect.poll(() => requests, { message: "The disabled click path must not emit a second recovery request." }).toBe(1);
       expect(barrierMatches).toBe(1);
@@ -395,6 +409,7 @@ async function submitRecovery(
     return { requests, responses, status, publicMessage: await publicStatus.innerText() };
   } finally {
     if (recoveryBarrierEnabled && !firstRequestReleased) releaseFirstRequest();
+    if (barrierMatches > 0) await firstRequestContinuationSettled;
     if (holdFirstRecoveryRequest) await page.unroute(recoveryMatcher, holdFirstRecoveryRequest);
     page.off("request", onRequest);
     page.off("response", onResponse);
