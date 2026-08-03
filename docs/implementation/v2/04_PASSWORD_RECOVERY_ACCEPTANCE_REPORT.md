@@ -2,9 +2,11 @@
 
 ## Status
 
-`PENDING — isolated non-production provider authorization required`
+`PENDING — isolated local provider CI required`
 
-This report is intentionally not a provider PASS record. The implementation and loopback fixture may be verified locally and in CI, but they do not prove hosted email delivery, redirect allowlisting, expiry, or one-time-link behavior. No shared or production Supabase project, mailbox, credential, or environment was used.
+This report is intentionally not a provider PASS record until the dedicated GitHub Actions gate succeeds on the reviewed head. The authorized functional provider gate uses Supabase CLI 2.111.0 to start disposable local Supabase Auth and Postgres services plus its bundled Mailpit mailbox. It exercises provider-generated recovery email and links without a hosted project, external SMTP, shared credential, or shared database.
+
+Hosted SMTP deliverability, hosted-platform availability, email reputation, and production-provider latency are explicitly outside this functional gate and may be covered by a separate release smoke.
 
 ## Verified SDK contract
 
@@ -47,16 +49,22 @@ The loopback fixture covers neutral recovery requests, deterministic provider fa
 
 The browser suite covers returned request failure, network abort, retry, duplicate-action locks, missing and expired recovery state, failed update with preserved input, successful update, refresh, sign-out invalidation, mobile layout, and accessibility.
 
-## Required isolated non-production gate
+## Required isolated local provider gate
 
-An explicitly authorized isolated non-production Supabase project and test mailbox must establish all of the following before Plan 020 can be marked DONE:
+The mandatory `Plan 020 provider acceptance` GitHub Actions job must establish all of the following against its loopback-only stack before the implementation can be reviewed for merge:
 
-- recovery email delivery
-- configured recovery redirect
-- `PASSWORD_RECOVERY` session establishment
-- expired-link rejection
-- reused-link rejection
-- password update
-- subsequent login with the new password
+- equivalent public recovery-request behavior for known and unknown addresses;
+- actual Auth recovery-email generation and Mailpit delivery;
+- use of the exact provider-generated recovery link and allowlisted application redirect;
+- `PASSWORD_RECOVERY` session establishment rather than URL-only readiness;
+- missing-session, expired-link, reused-link, and replaced-subject rejection;
+- exactly one authenticated password update and one final redirect;
+- subsequent login with the new password and rejection of the previous password;
+- Back, Forward, reload, duplicate-action, session-isolation, keyboard, mobile, and accessibility behavior;
+- secret-safe failure diagnostics and unconditional disposable-resource cleanup.
 
-The final provider run must record the environment class, reviewed frontend commit, date, and reviewer without recording a project identifier, email address, token, password, authorization header, or provider secret.
+The job obtains its local values from `supabase status` and masks key-like values immediately. The public key reaches only the loopback application and provider tests, the database URL reaches only the local migration process, and the administrative key reaches only provider-test discovery and execution. It must not call `supabase login`, `supabase link`, `supabase db push`, or any hosted API. The final provider run records the reviewed commit and sanitized scenario outcomes without recording an email address, recovery link, verifier, token, password, cookie, authorization header, mailbox body, or provider key.
+
+The provider job deliberately does not start the application Backend: its browser scenarios exercise Auth, Mailpit, recovery lifecycle, and cross-context subject ownership only. Private draft/cache isolation remains certified by the normal database-backed Playwright regression gate, including Plan 016, in the same required CI pipeline. Neither gate alone is described as proving the other contract.
+
+Synthetic passwords are generated at runtime and never retained in diagnostics. The provider flow checks coherent focus during duplicate locking and rejected login, plus the existing login password-visibility control. The recovery form currently has no visibility toggle, so the gate does not manufacture or claim one.
