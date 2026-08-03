@@ -2,7 +2,7 @@
 
 import { Eye, EyeOff, LogIn, UserPlus } from "lucide-react";
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useLayoutEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/client";
@@ -21,6 +21,43 @@ export function AuthShell({ mode }: { mode: Mode }) {
   const [visible, setVisible] = useState(false);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const pendingFocusHandledRef = useRef(false);
+  const focusPasswordAfterFailureRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (!pending) {
+      pendingFocusHandledRef.current = false;
+      return;
+    }
+    if (pendingFocusHandledRef.current) return;
+
+    const form = formRef.current;
+    const passwordInput = passwordRef.current;
+    const active = document.activeElement;
+    const activeIsUsable =
+      active instanceof HTMLElement &&
+      form?.contains(active) === true &&
+      active.isConnected &&
+      !active.matches(":disabled") &&
+      active.closest("[inert], [aria-hidden='true']") === null;
+
+    pendingFocusHandledRef.current = true;
+    if (!activeIsUsable && passwordInput?.isConnected && !passwordInput.disabled) {
+      passwordInput.focus({ preventScroll: true });
+    }
+  }, [pending]);
+
+  useLayoutEffect(() => {
+    if (!focusPasswordAfterFailureRef.current || pending || !message) return;
+
+    focusPasswordAfterFailureRef.current = false;
+    const passwordInput = passwordRef.current;
+    if (passwordInput?.isConnected && !passwordInput.disabled) {
+      passwordInput.focus({ preventScroll: true });
+    }
+  }, [message, pending]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -42,11 +79,13 @@ export function AuthShell({ mode }: { mode: Mode }) {
               emailRedirectTo: `${window.location.origin}/auth/login`
             }
           });
-    setPending(false);
     if (result.error) {
+      focusPasswordAfterFailureRef.current = true;
+      setPending(false);
       setMessage(GENERIC_ERROR);
       return;
     }
+    setPending(false);
     if (mode === "sign-up" && !result.data.session) {
       setMessage("تم إنشاء الحساب. تحقق من بريدك الإلكتروني لإكمال التسجيل.");
       return;
@@ -58,7 +97,7 @@ export function AuthShell({ mode }: { mode: Mode }) {
   const signup = mode === "sign-up";
   return (
     <section className="auth-page">
-      <form className="auth-panel" onSubmit={submit} noValidate>
+      <form ref={formRef} className="auth-panel" onSubmit={submit} noValidate>
         <div className="auth-brand">myNutri</div>
         <h1>{signup ? "إنشاء حساب" : "تسجيل الدخول"}</h1>
         <p>{signup ? "أنشئ حسابك الشخصي لمتابعة تغذيتك." : "ادخل إلى بياناتك الغذائية بأمان."}</p>
@@ -75,7 +114,7 @@ export function AuthShell({ mode }: { mode: Mode }) {
         <label>
           <span>كلمة المرور</span>
           <div className="password-field">
-            <input value={password} onChange={(e) => setPassword(e.target.value)} type={visible ? "text" : "password"} autoComplete={signup ? "new-password" : "current-password"} required dir="ltr" />
+            <input ref={passwordRef} value={password} onChange={(e) => setPassword(e.target.value)} type={visible ? "text" : "password"} autoComplete={signup ? "new-password" : "current-password"} required dir="ltr" />
             <button type="button" onClick={() => setVisible((value) => !value)} aria-label={visible ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}>
               {visible ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>

@@ -45,6 +45,16 @@ type SafeRequestDiagnostic = {
 };
 type RecoveryVerifierState = Awaited<ReturnType<BrowserContext["storageState"]>>;
 type RecoveryArtifact = { link: string; verifierState: RecoveryVerifierState };
+type SafeActiveElement = {
+  tagName: string;
+  type: string | null;
+  role: string | null;
+  accessibleName: string | null;
+  connected: boolean;
+  disabled: boolean;
+  visible: boolean;
+  insideForm: boolean;
+};
 
 let admin: SupabaseClient | null = null;
 const users = new Map<UserAlias, TestUser>();
@@ -159,6 +169,45 @@ async function expectSafeFocusWithin(page: Page, selector: string, message: stri
     const style = getComputedStyle(active);
     return style.visibility !== "hidden" && style.display !== "none";
   }, selector), { message }).toBe(true);
+}
+
+async function safeActiveElement(page: Page): Promise<SafeActiveElement> {
+  return page.evaluate(() => {
+    const active = document.activeElement;
+    const form = document.querySelector("form");
+    if (!(active instanceof HTMLElement)) {
+      return {
+        tagName: "[none]",
+        type: null,
+        role: null,
+        accessibleName: null,
+        connected: false,
+        disabled: false,
+        visible: false,
+        insideForm: false
+      };
+    }
+    const style = getComputedStyle(active);
+    const label = active instanceof HTMLInputElement
+      ? active.labels?.[0]?.textContent?.trim() ?? null
+      : active.getAttribute("aria-label") ?? (active instanceof HTMLButtonElement ? active.textContent?.trim() ?? null : null);
+    return {
+      tagName: active.tagName.toLowerCase(),
+      type: active instanceof HTMLInputElement || active instanceof HTMLButtonElement ? active.type : null,
+      role: active.getAttribute("role"),
+      accessibleName: label,
+      connected: active.isConnected,
+      disabled: active.matches(":disabled"),
+      visible: style.visibility !== "hidden" && style.display !== "none",
+      insideForm: form instanceof HTMLFormElement && form.contains(active)
+    };
+  });
+}
+
+async function hasStoredAuthSession(page: Page): Promise<boolean> {
+  return page.evaluate(() => Object.entries(localStorage).some(([key, value]) =>
+    /auth-token$/i.test(key) && value.includes('"access_token"')
+  ));
 }
 
 async function safeFetch(url: URL, init: RequestInit | undefined, operation: string): Promise<Response> {
@@ -453,18 +502,153 @@ async function expectRecoveryInvalid(page: Page): Promise<void> {
 }
 
 async function signInThroughUi(page: Page, record: TestUser, password: string, expectedSuccess: boolean): Promise<void> {
-  await page.goto("/auth/login");
-  await page.getByLabel("البريد الإلكتروني", { exact: true }).fill(record.email);
-  await page.getByLabel("كلمة المرور", { exact: true }).fill(password);
-  await expect(page.getByRole("button", { name: "إظهار كلمة المرور", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "دخول", exact: true }).click();
-  if (expectedSuccess) {
-    await expect.poll(() => safePath(page), { message: "The accepted synthetic subject must reach Diary." }).toBe("/diary");
-    return;
+  const providerOrigin = PROVIDER_URL.origin;
+  const passwordTokenMatcher = (url: URL) =>
+    url.origin === providerOrigin &&
+    url.pathname === TOKEN_EXCHANGE_PATH &&
+    url.searchParams.get("grant_type") === "password";
+  let requests = 0;
+  let responses = 0;
+  let responseStatus: number | null = null;
+  let barrierMatches = 0;
+  let requestReachedBarrier = Promise.resolve();
+  let requestContinuationSettled = Promise.resolve();
+  let releaseRequest = () => {};
+  let requestReleased = false;
+  let holdRejectedLogin: ((route: Route) => Promise<void>) | null = null;
+
+  const onRequest = (request: import("@playwright/test").Request) => {
+    const url = new URL(request.url());
+    if (passwordTokenMatcher(url) && request.method() === "POST") requests += 1;
+  };
+  const onResponse = (response: import("@playwright/test").Response) => {
+    const url = new URL(response.url());
+    if (passwordTokenMatcher(url) && response.request().method() === "POST") {
+      responses += 1;
+      responseStatus = response.status();
+    }
+  };
+
+  if (!expectedSuccess) {
+    let markRequestReached!: () => void;
+    let markContinuationSettled!: () => void;
+    requestReachedBarrier = new Promise<void>((resolve) => { markRequestReached = resolve; });
+    requestContinuationSettled = new Promise<void>((resolve) => { markContinuationSettled = resolve; });
+    const heldRequest = new Promise<void>((resolve) => { releaseRequest = resolve; });
+    holdRejectedLogin = async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      barrierMatches += 1;
+      markRequestReached();
+      try {
+        await heldRequest;
+        await route.continue();
+      } finally {
+        markContinuationSettled();
+      }
+    };
+    await page.route(passwordTokenMatcher, holdRejectedLogin);
   }
-  await expect(page.getByRole("status")).toHaveText("تعذر إكمال الطلب. تحقق من البيانات وحاول مرة أخرى.");
-  await expectSafeFocusWithin(page, "form", "A rejected login must leave focus on a safe control inside the login form.");
-  expect(safePath(page)).toBe("/auth/login");
+
+  page.on("request", onRequest);
+  page.on("response", onResponse);
+  try {
+    await page.goto("/auth/login");
+    expect(safePath(page)).toBe("/auth/login");
+    if (!expectedSuccess) expect(await hasStoredAuthSession(page)).toBe(false);
+
+    const form = page.locator("form");
+    const emailInput = page.getByLabel("البريد الإلكتروني", { exact: true });
+    const passwordInput = page.getByLabel("كلمة المرور", { exact: true });
+    const submitButton = page.getByRole("button", { name: "دخول", exact: true });
+    await expect(form).toBeVisible();
+    await emailInput.fill(record.email);
+    await passwordInput.fill(password);
+    await expect(page.getByRole("button", { name: "إظهار كلمة المرور", exact: true })).toBeVisible();
+    await expect(submitButton).toBeEnabled();
+    expect(requests).toBe(0);
+
+    await submitButton.focus();
+    await expect(submitButton).toBeFocused();
+    const beforeSubmit = await safeActiveElement(page);
+    expect(beforeSubmit).toMatchObject({
+      tagName: "button",
+      type: "submit",
+      connected: true,
+      disabled: false,
+      visible: true,
+      insideForm: true
+    });
+
+    const submitAttempt = submitButton.click();
+    if (expectedSuccess) {
+      await submitAttempt;
+      await expect.poll(() => safePath(page), { message: "The accepted synthetic subject must reach Diary." }).toBe("/diary");
+      expect(requests).toBe(1);
+      expect(responses).toBe(1);
+      return;
+    }
+
+    await requestReachedBarrier;
+    await submitAttempt;
+    await expect.poll(() => requests, { message: "The old-password attempt must reach the exact password sign-in endpoint once." }).toBe(1);
+    expect(barrierMatches).toBe(1);
+    expect(responses).toBe(0);
+    await expect(submitButton).toBeDisabled();
+    await expectSafeFocusWithin(page, "form", "Pending login must retain focus inside the active form.");
+    const duringPending = await safeActiveElement(page);
+    expect(duringPending).toMatchObject({
+      tagName: "input",
+      type: "password",
+      connected: true,
+      disabled: false,
+      visible: true,
+      insideForm: true
+    });
+
+    const duplicateAttempt = await submitButton.evaluate((button: HTMLButtonElement) => {
+      const disabled = button.disabled;
+      button.click();
+      return { disabled, remainedDisabled: button.disabled };
+    });
+    expect(duplicateAttempt).toEqual({ disabled: true, remainedDisabled: true });
+    expect(requests).toBe(1);
+    expect(barrierMatches).toBe(1);
+    expect(responses).toBe(0);
+
+    requestReleased = true;
+    releaseRequest();
+    await expect.poll(() => responses, { message: "The rejected old-password request must reach one terminal provider response." }).toBe(1);
+    expect(responseStatus).not.toBeNull();
+    expect(responseStatus).toBeGreaterThanOrEqual(400);
+    await expect(page.getByRole("status")).toHaveText("تعذر إكمال الطلب. تحقق من البيانات وحاول مرة أخرى.");
+    await expect(passwordInput).toBeFocused();
+    await expect(passwordInput).toBeVisible();
+    await expect(passwordInput).toBeEnabled();
+    await expectSafeFocusWithin(page, "form", "A rejected login must leave focus on a safe control inside the login form.");
+    const afterRejection = await safeActiveElement(page);
+    expect(afterRejection).toMatchObject({
+      tagName: "input",
+      type: "password",
+      connected: true,
+      disabled: false,
+      visible: true,
+      insideForm: true
+    });
+    expect(requests).toBe(1);
+    expect(responses).toBe(1);
+    expect(safePath(page)).toBe("/auth/login");
+    expect(await hasStoredAuthSession(page)).toBe(false);
+    await expect(page.getByTitle("تسجيل الخروج", { exact: true })).toHaveCount(0);
+  } finally {
+    if (!expectedSuccess && !requestReleased) releaseRequest();
+    if (!expectedSuccess && barrierMatches > 0) await requestContinuationSettled;
+    if (holdRejectedLogin) await page.unroute(passwordTokenMatcher, holdRejectedLogin);
+    page.off("request", onRequest);
+    page.off("response", onResponse);
+  }
 }
 
 async function requestLink(browser: Browser, alias: UserAlias): Promise<RecoveryArtifact> {
@@ -664,7 +848,9 @@ test.describe("Plan 020 isolated local provider acceptance", () => {
     await expect(page.getByTitle("تسجيل الخروج", { exact: true })).toBeVisible();
     await page.getByTitle("تسجيل الخروج", { exact: true }).click();
     await expect.poll(() => safePath(page)).toBe("/auth/login");
+    const oldPasswordMailboxCount = await matchingMessageCount(user("user-a").email);
     await signInThroughUi(page, user("user-a"), INITIAL_PASSWORD, false);
+    expect(await matchingMessageCount(user("user-a").email)).toBe(oldPasswordMailboxCount);
     await context.close();
 
     const reused = await openRecoveryLink(browser, artifact);
