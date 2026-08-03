@@ -562,12 +562,13 @@ async function signInThroughUi(page: Page, record: TestUser, password: string, e
     const form = page.locator("form");
     const emailInput = page.getByLabel("البريد الإلكتروني", { exact: true });
     const passwordInput = page.getByLabel("كلمة المرور", { exact: true });
-    const submitButton = page.getByRole("button", { name: "دخول", exact: true });
+    const submitButton = form.locator('button[type="submit"]');
     await expect(form).toBeVisible();
     await emailInput.fill(record.email);
     await passwordInput.fill(password);
     await expect(page.getByRole("button", { name: "إظهار كلمة المرور", exact: true })).toBeVisible();
     await expect(submitButton).toBeEnabled();
+    await expect(submitButton).toHaveAccessibleName("دخول");
     expect(requests).toBe(0);
 
     await submitButton.focus();
@@ -597,6 +598,7 @@ async function signInThroughUi(page: Page, record: TestUser, password: string, e
     expect(barrierMatches).toBe(1);
     expect(responses).toBe(0);
     await expect(submitButton).toBeDisabled();
+    await expect(submitButton).toHaveAccessibleName("جارٍ الإرسال...");
     await expectSafeFocusWithin(page, "form", "Pending login must retain focus inside the active form.");
     const duringPending = await safeActiveElement(page);
     expect(duringPending).toMatchObject({
@@ -624,6 +626,8 @@ async function signInThroughUi(page: Page, record: TestUser, password: string, e
     expect(responseStatus).not.toBeNull();
     expect(responseStatus).toBeGreaterThanOrEqual(400);
     await expect(page.getByRole("status")).toHaveText("تعذر إكمال الطلب. تحقق من البيانات وحاول مرة أخرى.");
+    await expect(submitButton).toBeEnabled();
+    await expect(submitButton).toHaveAccessibleName("دخول");
     await expect(passwordInput).toBeFocused();
     await expect(passwordInput).toBeVisible();
     await expect(passwordInput).toBeEnabled();
