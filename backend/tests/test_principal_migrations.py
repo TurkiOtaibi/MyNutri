@@ -49,6 +49,9 @@ PLAN009_TIMESTAMP = datetime(2026, 7, 28, tzinfo=UTC)
 TRANSITION_SNAPSHOT_REVISION = "0009_legacy_target_transition_expand"
 SNAPSHOT_V2_REVISION = "0011_diary_snapshot_v2_expand"
 PLAN009_FINITE_NUTRIENTS_REVISION = "df46234d2a7e"
+PLAN012_GUARD_REVISION = "5294eff9a956"
+PLAN012_DOWNGRADE_ERROR = "PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED"
+PLAN012_DOWNGRADE_GUARD = "plan012_lossy_taxonomy_downgrade_guard"
 PLAN021_REVISION = "3f2e7b1c9a04"
 PLAN021_DOWNGRADE_ERROR = "PLAN021_TARGET_PLAN_IDEMPOTENCY_DOWNGRADE_BLOCKED"
 PLAN021_DOWNGRADE_GUARD = "plan021_target_plan_idempotency_downgrade_guard"
@@ -494,6 +497,8 @@ def test_plan021_offline_downgrade_fails_before_constraint_sql() -> None:
     assert result.returncode != 0
     assert PLAN021_DOWNGRADE_ERROR in output
     assert PLAN021_DOWNGRADE_GUARD in output
+    assert PLAN012_DOWNGRADE_ERROR not in output
+    assert PLAN012_DOWNGRADE_GUARD not in output
     assert "offline downgrade SQL is intentionally unavailable" in output
     assert "ADD CONSTRAINT uq_target_plan_principal_key" not in result.stdout
     assert "ALTER TABLE" not in result.stdout
@@ -573,6 +578,12 @@ def test_plan021_downgrade_blocks_duplicate_visible_keys_atomically() -> None:
         ("target_plan.activate", shared_key, activation_id),
         ("target_plan.replace", shared_key, replacement_id),
     }
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            PLAN021_REVISION
+        )
+    engine.dispose()
 
     result = _run_alembic(url, "downgrade", "5294eff9a956", check=False)
     output = result.stdout + result.stderr
@@ -580,6 +591,8 @@ def test_plan021_downgrade_blocks_duplicate_visible_keys_atomically() -> None:
     assert result.returncode != 0
     assert PLAN021_DOWNGRADE_ERROR in output
     assert PLAN021_DOWNGRADE_GUARD in output
+    assert PLAN012_DOWNGRADE_ERROR not in output
+    assert PLAN012_DOWNGRADE_GUARD not in output
     engine = create_engine(url)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
@@ -1829,14 +1842,17 @@ def test_plan012_offline_downgrade_fails_before_destructive_sql() -> None:
     result = _run_alembic(
         "postgresql+psycopg://offline:offline@127.0.0.1:5432/mynutri_test_offline",
         "downgrade",
-        "5294eff9a956:df46234d2a7e",
+        f"{PLAN012_GUARD_REVISION}:df46234d2a7e",
         "--sql",
         check=False,
     )
     output = result.stdout + result.stderr
 
     assert result.returncode != 0
-    assert "PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED" in output
+    assert PLAN012_DOWNGRADE_ERROR in output
+    assert PLAN012_DOWNGRADE_GUARD in output
+    assert PLAN021_DOWNGRADE_ERROR not in output
+    assert PLAN021_DOWNGRADE_GUARD not in output
     assert "offline downgrade SQL is intentionally unavailable" in output
     assert "ALTER TABLE" not in result.stdout
     assert "DROP TABLE" not in result.stdout
@@ -1867,14 +1883,22 @@ def _assert_plan012_guard_failure(
     before_schema: tuple[object, ...],
 ) -> None:
     before_audit = _plan012_audit_signature(url)
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            PLAN012_GUARD_REVISION
+        )
+    engine.dispose()
     result = _run_alembic(
         url, "downgrade", "0013_v2_shared_food_catalog", check=False
     )
     output = result.stdout + result.stderr
 
     assert result.returncode != 0
-    assert "PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED" in output
-    assert "plan012_lossy_taxonomy_downgrade_guard" in output
+    assert PLAN012_DOWNGRADE_ERROR in output
+    assert PLAN012_DOWNGRADE_GUARD in output
+    assert PLAN021_DOWNGRADE_ERROR not in output
+    assert PLAN021_DOWNGRADE_GUARD not in output
     assert PLAN012_IRREVERSIBLE_REASON in output
     assert "Running downgrade 0014_v2_food_taxonomy" not in output
     assert "NotNullViolation" not in output
@@ -1882,7 +1906,7 @@ def _assert_plan012_guard_failure(
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "5294eff9a956"
+            PLAN012_GUARD_REVISION
         )
         assert connection.execute(text("SELECT 1")).scalar_one() == 1
     column_names = {column["name"] for column in inspector.get_columns("food")}
@@ -1898,7 +1922,7 @@ def _assert_plan012_guard_failure(
 def test_plan012_empty_database_blocks_before_frozen_0014_downgrade() -> None:
     url = _database_url()
     _prepare_plan012_0013_foods(url, ())
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", PLAN012_GUARD_REVISION)
 
     assert _plan012_food_signature(url) == ()
     assert _plan012_audit_signature(url) == ()
@@ -1924,7 +1948,7 @@ def test_plan012_direct_edits_reviewed_resolution_and_new_food_block_downgrade(
 ) -> None:
     url = _database_url()
     identifiers = _prepare_plan012_0013_foods(url, (legacy_key,))
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", PLAN012_GUARD_REVISION)
     engine = create_engine(url)
     with engine.begin() as connection:
         if scenario == "direct_update":
@@ -1969,7 +1993,7 @@ def test_plan012_non_null_legacy_ledger_blocks_irreversible_boundary() -> None:
     url = _database_url()
     identifiers = _prepare_plan012_0013_foods(url, PLAN012_NON_NULL_LEGACY_CATEGORY_KEYS)
 
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", PLAN012_GUARD_REVISION)
     v2_before = _plan012_food_signature(url)
     v2_schema_before = _plan012_schema_signature(url)
     audit_before = _plan012_audit_signature(url)
@@ -1993,7 +2017,7 @@ def test_plan012_non_null_legacy_ledger_blocks_irreversible_boundary() -> None:
 def test_plan012_legacy_null_origin_blocks_before_frozen_0014_downgrade() -> None:
     url = _database_url()
     identifiers = _prepare_plan012_0013_foods(url, (None,))
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", PLAN012_GUARD_REVISION)
 
     before_food = _plan012_food_signature(url)
     before_schema = _plan012_schema_signature(url)
@@ -2054,7 +2078,7 @@ def test_plan012_each_v2_field_divergence_aborts_before_schema_or_data_loss(
 ) -> None:
     url = _database_url()
     identifiers = _prepare_plan012_0013_foods(url, (legacy_key,))
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", PLAN012_GUARD_REVISION)
     engine = create_engine(url)
     with engine.begin() as connection:
         connection.execute(text(update_sql), {"id": identifiers[legacy_key]})
@@ -2070,10 +2094,10 @@ def test_plan012_each_v2_field_divergence_aborts_before_schema_or_data_loss(
 
 
 @pytest.mark.migration
-def test_plan012_snapshot_v3_baseline_condition_blocks_at_current_head() -> None:
+def test_plan012_snapshot_v3_baseline_condition_blocks_at_historical_boundary() -> None:
     url = _database_url()
     identifiers = _prepare_plan012_0013_foods(url, ("other",))
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", PLAN012_GUARD_REVISION)
     engine = create_engine(url)
     with engine.begin() as connection:
         connection.execute(
