@@ -215,6 +215,12 @@ def test_plan022_parser_rejects_non_list_duplicate_and_malformed_food_ids(
     with pytest.raises(RuntimeError, match=empty_batch_message):
         parse_reviewed_mappings([])
 
+    numeric = _review_item(uuid4(), "Numeric UUID coercion")
+    numeric["id"] = 12345678901234567890123456789012
+    uuid_type_message = "must be a UUID string at row 0"
+    with pytest.raises(RuntimeError, match=uuid_type_message):
+        parse_reviewed_mappings([numeric])
+
     food_id = uuid4()
     _insert_review_food(sqlite_engine, food_id, "Empty batch guard")
     before = _full_food_state(sqlite_engine, [food_id])
@@ -234,6 +240,10 @@ def test_plan022_parser_rejects_non_list_duplicate_and_malformed_food_ids(
             event.listen(session, "after_commit", count_commit)
             with pytest.raises(RuntimeError, match=empty_batch_message):
                 apply_reviewed_mapping(session, [])
+            assert session.is_active
+            assert not session.in_transaction()
+            with pytest.raises(RuntimeError, match=uuid_type_message):
+                apply_reviewed_mapping(session, [numeric])
             assert session.is_active
             assert not session.in_transaction()
     finally:

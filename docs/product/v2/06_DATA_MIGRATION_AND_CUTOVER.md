@@ -92,6 +92,13 @@ either a registered string or `null`. A missing, `null`, scalar, or partial
 resolution is unresolved. The apply command never infers approval from the
 Food name, free text, or generated top-level suggestion.
 
+Every `id` must be a quoted JSON string containing a valid UUID. An unquoted
+numeric ID is invalid even when its digits could be interpreted as a UUID, and
+fails before database SQL or commit; the tool never converts numbers to
+strings. Malformed UUID strings remain invalid. Operators must not remove the
+quotation marks around IDs or rely on ID coercion or inference when editing the
+reviewed artifact.
+
 The reviewed mapping root must contain at least one row, and every row must
 contain one complete explicit `resolution` object. An empty JSON list is
 invalid: the apply command fails before database SQL or commit and never

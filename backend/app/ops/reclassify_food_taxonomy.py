@@ -148,9 +148,12 @@ def parse_reviewed_mappings(mappings: Any) -> list[ReviewedMapping]:
         if not isinstance(item, dict):
             raise RuntimeError(f"Reviewed taxonomy row {index} must be an object.")
         _require_exact_keys(item, CONTEXT_KEYS, f"reviewed taxonomy row {index}")
+        raw_food_id = item["id"]
+        if type(raw_food_id) is not str:
+            raise RuntimeError(f"Food id must be a UUID string at row {index}.")
         try:
-            food_id = UUID(str(item["id"]))
-        except (TypeError, ValueError, AttributeError) as exc:
+            food_id = UUID(raw_food_id)
+        except ValueError as exc:
             raise RuntimeError(f"Invalid Food UUID at row {index}.") from exc
         if food_id in seen_ids:
             raise RuntimeError(f"Duplicate Food UUID {food_id}.")
