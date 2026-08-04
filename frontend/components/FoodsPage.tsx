@@ -12,7 +12,7 @@ import {
   X
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, archiveFood, deleteFood, getNutritionRegistry, listAdminFoodsPage, listFoodsPage, restoreFood } from "@/lib/api";
@@ -57,23 +57,59 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
   const [deleteTarget, setDeleteTarget] = useState<FoodResponse | null>(null);
   const [note, setNote] = useState("");
   const [status, setStatus] = useState<"active" | "archived">("active");
+  const [lifecycleFocusRequest, setLifecycleFocusRequest] = useState(0);
+  const statusControlRef = useRef<HTMLSelectElement | null>(null);
+  const completedLifecycleFocusRequestRef = useRef(0);
+
+  const resetCollection = useCallback((next: {
+    search?: string;
+    category?: string;
+    sort?: FoodSort;
+    status?: "active" | "archived";
+  }) => {
+    if (next.search !== undefined) setSearch(next.search);
+    if (next.category !== undefined) setCategory(next.category);
+    if (next.sort !== undefined) setSort(next.sort);
+    if (next.status !== undefined) setStatus(next.status);
+    setPage(1);
+    setMobileItems([]);
+    setOpenMenuId(null);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const nextSearch = searchInput.trim();
       if (nextSearch === search) return;
-      setSearch(nextSearch);
-      setPage(1);
-      setMobileItems([]);
+      resetCollection({ search: nextSearch });
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [searchInput, search]);
+  }, [resetCollection, searchInput, search]);
 
   const foodsQuery = useQuery({
     queryKey: ["foods", adminMode ? "admin" : "catalog", search, category, sort, page, status],
     queryFn: () => (adminMode ? listAdminFoodsPage : listFoodsPage)({ search, category, sort, page, pageSize: PAGE_SIZE, status })
   });
   const registryQuery = useQuery({ queryKey: ["nutrition-registry"], queryFn: getNutritionRegistry });
+
+  const completeLifecycleSuccess = useCallback(async () => {
+    await queryClient.invalidateQueries(
+      { queryKey: ["foods"] },
+      { throwOnError: true }
+    );
+    if (sessionSignal.aborted) return;
+    setOpenMenuId(null);
+    setLifecycleFocusRequest((current) => current + 1);
+  }, [queryClient, sessionSignal]);
+
+  useEffect(() => {
+    if (
+      lifecycleFocusRequest === 0 ||
+      completedLifecycleFocusRequestRef.current === lifecycleFocusRequest
+    ) return;
+    completedLifecycleFocusRequestRef.current = lifecycleFocusRequest;
+    const control = statusControlRef.current;
+    if (control?.isConnected && !control.disabled) control.focus({ preventScroll: true });
+  }, [lifecycleFocusRequest]);
 
   useEffect(() => {
     const data = foodsQuery.data;
@@ -109,7 +145,7 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
   });
 
   const data = foodsQuery.data;
-  const hasFilters = Boolean(search || category);
+  const hasFilters = Boolean(search || category || (adminMode && status !== "active"));
   const desktopFoods = data?.items ?? [];
   const canLoadMore = Boolean(data && page < data.total_pages);
   const shownMobileCount = Math.min(mobileItems.length, data?.total ?? mobileItems.length);
@@ -129,20 +165,9 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
     [registryQuery.data]
   );
 
-  function resetCollection(next: { category?: string; sort?: FoodSort }) {
-    if (next.category !== undefined) setCategory(next.category);
-    if (next.sort !== undefined) setSort(next.sort);
-    setPage(1);
-    setMobileItems([]);
-    setOpenMenuId(null);
-  }
-
   function clearFilters() {
     setSearchInput("");
-    setSearch("");
-    setCategory("");
-    setPage(1);
-    setMobileItems([]);
+    resetCollection({ search: "", category: "", status: "active" });
   }
 
   return (
@@ -178,38 +203,50 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
             ) : null}
           </label>
 
-          <div className="foods-desktop-controls">
+          <div className="foods-controls">
             {adminMode ? (
-              <label className="compact-control"><span>الحالة</span><select value={status} onChange={(event) => { setStatus(event.target.value as "active" | "archived"); setPage(1); }}><option value="active">نشط</option><option value="archived">مؤرشف</option></select></label>
+              <label className="compact-control foods-admin-status-control">
+                <span>الحالة</span>
+                <select
+                  ref={statusControlRef}
+                  value={status}
+                  onChange={(event) => resetCollection({ status: event.target.value as "active" | "archived" })}
+                >
+                  <option value="active">نشط</option>
+                  <option value="archived">مؤرشف</option>
+                </select>
+              </label>
             ) : null}
-            <label className="compact-control">
-              <span>التصنيف</span>
-              <select
-                value={category}
-                onChange={(event) => resetCollection({ category: event.target.value })}
-                aria-label="تصفية حسب التصنيف"
-              >
-                {categoryOptions.map((option) => (
-                  <option key={option.value || "all"} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="compact-control">
-              <span>الترتيب</span>
-              <select
-                value={sort}
-                onChange={(event) => resetCollection({ sort: event.target.value as FoodSort })}
-                aria-label="ترتيب الأطعمة"
-              >
-                {Object.entries(sortLabels).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="foods-desktop-controls">
+              <label className="compact-control">
+                <span>التصنيف</span>
+                <select
+                  value={category}
+                  onChange={(event) => resetCollection({ category: event.target.value })}
+                  aria-label="تصفية حسب التصنيف"
+                >
+                  {categoryOptions.map((option) => (
+                    <option key={option.value || "all"} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="compact-control">
+                <span>الترتيب</span>
+                <select
+                  value={sort}
+                  onChange={(event) => resetCollection({ sort: event.target.value as FoodSort })}
+                  aria-label="ترتيب الأطعمة"
+                >
+                  {Object.entries(sortLabels).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -300,6 +337,7 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
                       menuOpen={openMenuId === `table:${food.id}`}
                       onMenuChange={(open) => setOpenMenuId(open ? `table:${food.id}` : null)}
                       onDelete={() => setDeleteTarget(food)}
+                      onLifecycleSuccess={completeLifecycleSuccess}
                       adminMode={adminMode}
                       categoryLabel={categoryLabels.get(food.food_category_key) ?? food.food_category_key}
                     />
@@ -316,6 +354,7 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
                   menuOpen={openMenuId === `card:${food.id}`}
                   onMenuChange={(open) => setOpenMenuId(open ? `card:${food.id}` : null)}
                   onDelete={() => setDeleteTarget(food)}
+                  onLifecycleSuccess={completeLifecycleSuccess}
                   adminMode={adminMode}
                   categoryLabel={categoryLabels.get(food.food_category_key) ?? food.food_category_key}
                 />
@@ -356,6 +395,7 @@ function FoodTableRow({
   menuOpen,
   onMenuChange,
   onDelete,
+  onLifecycleSuccess,
   adminMode
   ,categoryLabel
 }: {
@@ -363,6 +403,7 @@ function FoodTableRow({
   menuOpen: boolean;
   onMenuChange: (open: boolean) => void;
   onDelete: () => void;
+  onLifecycleSuccess: () => Promise<void>;
   adminMode: boolean;
   categoryLabel: string;
 }) {
@@ -379,7 +420,7 @@ function FoodTableRow({
       <td><span className="serving-label">{defaultServingText(food)}</span></td>
       <NutritionCells nutrition={nutrition} />
       <td className="table-actions-cell">
-        {adminMode ? <FoodActionsMenu food={food} open={menuOpen} onOpenChange={onMenuChange} onDelete={onDelete} /> : null}
+        {adminMode ? <FoodActionsMenu food={food} open={menuOpen} onOpenChange={onMenuChange} onDelete={onDelete} onLifecycleSuccess={onLifecycleSuccess} /> : null}
       </td>
     </tr>
   );
@@ -404,6 +445,7 @@ function FoodCard({
   menuOpen,
   onMenuChange,
   onDelete,
+  onLifecycleSuccess,
   adminMode
   ,categoryLabel
 }: {
@@ -411,6 +453,7 @@ function FoodCard({
   menuOpen: boolean;
   onMenuChange: (open: boolean) => void;
   onDelete: () => void;
+  onLifecycleSuccess: () => Promise<void>;
   adminMode: boolean;
   categoryLabel: string;
 }) {
@@ -424,7 +467,7 @@ function FoodCard({
           <h2 className="food-card-title" title={food.name} dir="auto">{food.name}</h2>
           <p className="food-card-secondary" dir="auto">{secondary}</p>
         </div>
-        {adminMode ? <FoodActionsMenu food={food} open={menuOpen} onOpenChange={onMenuChange} onDelete={onDelete} /> : null}
+        {adminMode ? <FoodActionsMenu food={food} open={menuOpen} onOpenChange={onMenuChange} onDelete={onDelete} onLifecycleSuccess={onLifecycleSuccess} /> : null}
       </div>
       <span className="serving-badge">{defaultServingText(food)}</span>
       {nutrition ? (
@@ -454,35 +497,43 @@ function FoodActionsMenu({
   food,
   open,
   onOpenChange,
-  onDelete
+  onDelete,
+  onLifecycleSuccess
 }: {
   food: FoodResponse;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDelete: () => void;
+  onLifecycleSuccess: () => Promise<void>;
 }) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const sessionSignal = useSessionAbortSignal();
-  const queryClient = useQueryClient();
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const firstItemRef = useRef<HTMLAnchorElement | null>(null);
+  const errorRef = useRef<HTMLDivElement | null>(null);
   const statusMutation = useMutation({
     mutationFn: () => food.status === "archived"
       ? restoreFood(food.id, accessToken, sessionSignal)
       : archiveFood(food.id, accessToken, sessionSignal),
     onSuccess: async () => {
       if (sessionSignal.aborted) return;
-      onOpenChange(false);
-      await queryClient.invalidateQueries({ queryKey: ["foods"] });
+      await onLifecycleSuccess();
       if (sessionSignal.aborted) return;
     }
   });
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const buttonRef = useRef<HTMLButtonElement | null>(null);
-  const firstItemRef = useRef<HTMLAnchorElement | null>(null);
+
+  useEffect(() => {
+    if (open) firstItemRef.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (open && statusMutation.isError) errorRef.current?.focus();
+  }, [open, statusMutation.isError]);
 
   useEffect(() => {
     if (!open) return;
-    firstItemRef.current?.focus();
     const close = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) onOpenChange(false);
     };
@@ -514,29 +565,48 @@ function FoodActionsMenu({
         <MoreVertical size={20} aria-hidden="true" />
       </button>
       {open ? (
-        <div className="food-actions-popover" role="menu">
-          <Link ref={firstItemRef} href={`/foods/${food.id}/edit`} role="menuitem" onClick={() => onOpenChange(false)}>
-            <Pencil size={17} aria-hidden="true" />
-            تعديل
-          </Link>
-          <button
-            type="button"
-            role="menuitem"
-            disabled={statusMutation.isPending}
-            onClick={() => statusMutation.mutate()}
-          >
-            <RotateCcw size={17} aria-hidden="true" />
-            {food.status === "archived" ? "استعادة" : "أرشفة"}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="danger-menu-item"
-            onClick={onDelete}
-          >
-            <Trash2 size={17} aria-hidden="true" />
-            حذف
-          </button>
+        <div className="food-actions-popover">
+          <div className="food-actions-list" role="menu">
+            <Link ref={firstItemRef} href={`/foods/${food.id}/edit`} role="menuitem" onClick={() => onOpenChange(false)}>
+              <Pencil size={17} aria-hidden="true" />
+              تعديل
+            </Link>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={statusMutation.isPending}
+              onClick={() => statusMutation.mutate()}
+            >
+              <RotateCcw size={17} aria-hidden="true" />
+              {food.status === "archived" ? "استعادة" : "أرشفة"}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="danger-menu-item"
+              onClick={onDelete}
+            >
+              <Trash2 size={17} aria-hidden="true" />
+              حذف
+            </button>
+          </div>
+          {statusMutation.isError ? (
+            <div
+              ref={errorRef}
+              className="food-lifecycle-error"
+              role="alert"
+              tabIndex={-1}
+            >
+              <span>{WRITE_ERROR}</span>
+              <button
+                type="button"
+                disabled={statusMutation.isPending}
+                onClick={() => statusMutation.mutate()}
+              >
+                إعادة المحاولة
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
