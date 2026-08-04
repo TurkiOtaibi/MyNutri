@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from psycopg.errors import CheckViolation, NumericValueOutOfRange
-from sqlalchemy import Numeric, String, create_engine, inspect, text
+from sqlalchemy import CheckConstraint, Numeric, String, create_engine, inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlmodel import Session
@@ -25,6 +25,7 @@ from app.models import (
     FOOD_GROUP_NUMERIC_COLUMNS,
     FOOD_NUMERIC_COLUMNS,
     DefaultUnitType,
+    DiaryEntry,
     Food,
     FoodGroupContribution,
     NutritionBasis,
@@ -53,6 +54,10 @@ PLAN012_GUARD_REVISION = "5294eff9a956"
 PLAN012_DOWNGRADE_ERROR = "PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED"
 PLAN012_DOWNGRADE_GUARD = "plan012_lossy_taxonomy_downgrade_guard"
 PLAN021_REVISION = "3f2e7b1c9a04"
+PLAN023_REVISION = "7c4a9d2e1f06"
+PLAN023_CONSTRAINT = "ck_diary_entry_quantity_positive_finite"
+PLAN023_PREFLIGHT_ERROR = "PLAN023_DIARY_QUANTITY_PREFLIGHT_BLOCKED"
+PLAN023_PREFLIGHT_GUARD = "plan023_diary_quantity_positive_finite_preflight"
 PLAN021_DOWNGRADE_ERROR = "PLAN021_TARGET_PLAN_IDEMPOTENCY_DOWNGRADE_BLOCKED"
 PLAN021_DOWNGRADE_GUARD = "plan021_target_plan_idempotency_downgrade_guard"
 PLAN009_GROUP_NAN_CONSTRAINTS = frozenset(
@@ -239,7 +244,7 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            PLAN021_REVISION
+            PLAN023_REVISION
         )
     assert "principal" in inspector.get_table_names()
     for table in ("profile", "diary_entry"):
@@ -447,7 +452,7 @@ def _assert_plan021_operation_scoped_schema(url: str) -> None:
 def test_plan021_fresh_upgrade_keeps_ledger_as_replay_authority() -> None:
     url = _database_url()
     _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", PLAN021_REVISION)
 
     engine = create_engine(url)
     with engine.connect() as connection:
@@ -478,7 +483,7 @@ def test_plan021_populated_upgrade_preserves_plan_and_ledger_rows() -> None:
         ("target_plan.activate", "plan021-populated-upgrade", "completed", 201, plan_id),
     )
 
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", PLAN021_REVISION)
 
     assert _plan021_data_signature(url) == before
     _assert_plan021_operation_scoped_schema(url)
@@ -510,7 +515,7 @@ def test_plan021_offline_downgrade_fails_before_constraint_sql() -> None:
 def test_plan021_downgrade_restores_constraint_before_cross_operation_reuse() -> None:
     url = _database_url()
     _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", PLAN021_REVISION)
     _seed_plan021_profile(url)
     engine = create_engine(url)
     _plan021_activate(
@@ -542,7 +547,7 @@ def test_plan021_downgrade_restores_constraint_before_cross_operation_reuse() ->
     assert "uq_idempotency_scope" in ledger_uniques
     assert _plan021_data_signature(url) == before
 
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", PLAN021_REVISION)
     assert _plan021_data_signature(url) == before
     _assert_plan021_operation_scoped_schema(url)
 
@@ -551,7 +556,7 @@ def test_plan021_downgrade_restores_constraint_before_cross_operation_reuse() ->
 def test_plan021_downgrade_blocks_duplicate_visible_keys_atomically() -> None:
     url = _database_url()
     _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", PLAN021_REVISION)
     _seed_plan021_profile(url)
     engine = create_engine(url)
     shared_key = "plan021-legitimate-cross-operation"
@@ -1242,6 +1247,267 @@ def _seed_plan009_food(url: str) -> tuple[UUID, UUID]:
         session.commit()
     engine.dispose()
     return principal_id, food_id
+
+
+def _seed_plan023_diary_entry(url: str) -> tuple[UUID, UUID, UUID]:
+    principal_id, food_id = _seed_plan009_food(url)
+    entry_id = uuid4()
+    engine = create_engine(url)
+    with Session(engine) as session:
+        session.add(
+            DiaryEntry(
+                id=entry_id,
+                principal_id=principal_id,
+                entry_date=date(2026, 8, 4),
+                food_id=food_id,
+                quantity=1,
+                nutrition_snapshot={"schema_version": 3},
+            )
+        )
+        session.commit()
+    engine.dispose()
+    return principal_id, food_id, entry_id
+
+
+def _plan023_constraint_names(url: str) -> set[str]:
+    engine = create_engine(url)
+    names = {
+        constraint["name"]
+        for constraint in inspect(engine).get_check_constraints("diary_entry")
+    }
+    engine.dispose()
+    return names
+
+
+def _plan023_quantity_text(url: str, entry_id: UUID) -> str:
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        value = connection.execute(
+            text("SELECT quantity::text FROM diary_entry WHERE id = :id"),
+            {"id": entry_id},
+        ).scalar_one()
+    engine.dispose()
+    return value
+
+
+def test_plan023_model_has_one_named_positive_finite_quantity_check() -> None:
+    checks = [
+        constraint
+        for constraint in DiaryEntry.__table__.constraints
+        if isinstance(constraint, CheckConstraint)
+        and constraint.name == PLAN023_CONSTRAINT
+    ]
+
+    assert len(checks) == 1
+    expression = str(checks[0].sqltext)
+    assert "quantity > 0" in expression
+    for special in ("NaN", "Infinity", "-Infinity"):
+        assert f"'{special}'" in expression
+
+
+def test_plan023_offline_upgrade_renders_preflight_and_named_check() -> None:
+    result = _run_alembic(
+        "postgresql+psycopg://offline:offline@127.0.0.1:5432/mynutri_test_offline",
+        "upgrade",
+        f"{PLAN021_REVISION}:{PLAN023_REVISION}",
+        "--sql",
+    )
+
+    assert "quantity <= 0 OR quantity::text IN" in result.stdout
+    assert "ORDER BY id" in result.stdout
+    assert "LIMIT 10" in result.stdout
+    assert PLAN023_PREFLIGHT_ERROR in result.stdout
+    assert PLAN023_PREFLIGHT_GUARD in result.stdout
+    assert PLAN023_CONSTRAINT in result.stdout
+    assert "UPDATE diary_entry" not in result.stdout
+    assert "DELETE FROM diary_entry" not in result.stdout
+
+
+@pytest.mark.migration
+def test_plan023_fresh_valid_downgrade_and_populated_reupgrade() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", PLAN023_REVISION)
+
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            PLAN023_REVISION
+        )
+    engine.dispose()
+    assert PLAN023_CONSTRAINT in _plan023_constraint_names(url)
+
+    _run_alembic(url, "downgrade", PLAN021_REVISION)
+    assert PLAN023_CONSTRAINT not in _plan023_constraint_names(url)
+    _, _, entry_id = _seed_plan023_diary_entry(url)
+    before = _plan023_quantity_text(url, entry_id)
+
+    _run_alembic(url, "upgrade", PLAN023_REVISION)
+
+    assert _plan023_quantity_text(url, entry_id) == before == "1.000"
+    assert PLAN023_CONSTRAINT in _plan023_constraint_names(url)
+
+
+@pytest.mark.migration
+def test_plan023_invalid_predecessor_rows_fail_closed_then_clean_fixture_upgrades() -> None:
+    url = _database_url()
+    for invalid in ("0", "-1", "NaN"):
+        _reset_database(url)
+        _run_alembic(url, "upgrade", PLAN021_REVISION)
+        _, _, entry_id = _seed_plan023_diary_entry(url)
+        engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE diary_entry SET quantity = CAST(:quantity AS numeric) "
+                    "WHERE id = :id"
+                ),
+                {"quantity": invalid, "id": entry_id},
+            )
+        engine.dispose()
+        before = _plan023_quantity_text(url, entry_id)
+
+        result = _run_alembic(url, "upgrade", PLAN023_REVISION, check=False)
+        output = result.stdout + result.stderr
+
+        assert result.returncode != 0
+        assert PLAN023_PREFLIGHT_ERROR in output
+        assert PLAN023_PREFLIGHT_GUARD in output
+        assert "invalid_count=1" in output
+        assert str(entry_id) in output
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            assert connection.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar_one() == PLAN021_REVISION
+        engine.dispose()
+        assert PLAN023_CONSTRAINT not in _plan023_constraint_names(url)
+        assert _plan023_quantity_text(url, entry_id) == before
+
+        engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text("DELETE FROM diary_entry WHERE id = :id"),
+                {"id": entry_id},
+            )
+        engine.dispose()
+        _run_alembic(url, "upgrade", PLAN023_REVISION)
+        assert PLAN023_CONSTRAINT in _plan023_constraint_names(url)
+
+    for special in ("Infinity", "-Infinity"):
+        _reset_database(url)
+        _run_alembic(url, "upgrade", PLAN021_REVISION)
+        _, _, entry_id = _seed_plan023_diary_entry(url)
+        engine = create_engine(url)
+        with pytest.raises(DBAPIError) as rejected:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "UPDATE diary_entry SET quantity = CAST(:quantity AS numeric) "
+                        "WHERE id = :id"
+                    ),
+                    {"quantity": special, "id": entry_id},
+                )
+        assert isinstance(rejected.value.orig, NumericValueOutOfRange)
+        assert rejected.value.orig.sqlstate == "22003"
+        engine.dispose()
+        assert _plan023_quantity_text(url, entry_id) == "1.000"
+
+
+def _assert_plan023_direct_write_rejected(error: DBAPIError, value: str) -> None:
+    if value in {"Infinity", "-Infinity"}:
+        assert isinstance(error.orig, NumericValueOutOfRange)
+        assert error.orig.sqlstate == "22003"
+        return
+    assert isinstance(error.orig, CheckViolation)
+    assert error.orig.sqlstate == "23514"
+    assert error.orig.diag.constraint_name == PLAN023_CONSTRAINT
+
+
+@pytest.mark.migration
+def test_plan023_postgresql_direct_writes_enforce_positive_finite_quantity() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", PLAN023_REVISION)
+    _, _, entry_id = _seed_plan023_diary_entry(url)
+    engine = create_engine(url)
+
+    for invalid in ("0", "-1", "NaN", "Infinity", "-Infinity"):
+        inserted_id = uuid4()
+        with pytest.raises(DBAPIError) as insert_rejected:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO diary_entry
+                          (id, principal_id, entry_date, food_id, target_plan_id,
+                           target_provenance, snapshot_schema_version, quantity,
+                           meal_type, nutrition_snapshot, created_at)
+                        SELECT :new_id, principal_id, entry_date, food_id, target_plan_id,
+                               target_provenance, snapshot_schema_version,
+                               CAST(:quantity AS numeric), meal_type,
+                               nutrition_snapshot, created_at
+                          FROM diary_entry
+                         WHERE id = :source_id
+                        """
+                    ),
+                    {"new_id": inserted_id, "source_id": entry_id, "quantity": invalid},
+                )
+        _assert_plan023_direct_write_rejected(insert_rejected.value, invalid)
+        with engine.connect() as connection:
+            assert connection.execute(
+                text("SELECT count(*) FROM diary_entry WHERE id = :id"),
+                {"id": inserted_id},
+            ).scalar_one() == 0
+
+        with pytest.raises(DBAPIError) as update_rejected:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "UPDATE diary_entry SET quantity = CAST(:quantity AS numeric) "
+                        "WHERE id = :id"
+                    ),
+                    {"quantity": invalid, "id": entry_id},
+                )
+        _assert_plan023_direct_write_rejected(update_rejected.value, invalid)
+        assert _plan023_quantity_text(url, entry_id) == "1.000"
+
+    expected_positive_values = (
+        Decimal("0.001"),
+        Decimal("1.250"),
+        Decimal("50.000"),
+    )
+    for expected in expected_positive_values:
+        inserted_id = uuid4()
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO diary_entry
+                      (id, principal_id, entry_date, food_id, target_plan_id,
+                       target_provenance, snapshot_schema_version, quantity,
+                       meal_type, nutrition_snapshot, created_at)
+                    SELECT :new_id, principal_id, entry_date, food_id, target_plan_id,
+                           target_provenance, snapshot_schema_version,
+                           :quantity, meal_type, nutrition_snapshot, created_at
+                      FROM diary_entry
+                     WHERE id = :source_id
+                    """
+                ),
+                {"new_id": inserted_id, "source_id": entry_id, "quantity": expected},
+            )
+
+        with Session(engine) as session:
+            stored = session.get(DiaryEntry, inserted_id)
+            assert stored is not None
+            assert isinstance(stored.quantity, Decimal)
+            assert stored.quantity == expected
+        with engine.connect() as connection:
+            assert connection.execute(
+                text("SELECT quantity::text FROM diary_entry WHERE id = :id"),
+                {"id": inserted_id},
+            ).scalar_one() == format(expected, "f")
+    engine.dispose()
 
 
 def _assert_plan009_special_value_failure(

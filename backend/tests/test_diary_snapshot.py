@@ -82,6 +82,22 @@ def test_future_diary_date_is_rejected(monkeypatch) -> None:
     assert raised.value.detail[0]["code"] == "invalid_entry_date"
 
 
+def test_plan023_api_quantity_bounds_remain_422() -> None:
+    for quantity in (0, -1, 50.001):
+        with pytest.raises(HTTPException) as raised:
+            validate_diary_payload(
+                DiaryEntryCreate,
+                {
+                    "entry_date": str(date.today()),
+                    "food_id": "00000000-0000-0000-0000-000000000001",
+                    "quantity": quantity,
+                },
+            )
+
+        assert raised.value.status_code == 422
+        assert raised.value.detail[0]["field"] == "quantity"
+
+
 def test_quantity_only_update_recalculates_frozen_totals() -> None:
     engine = create_engine(
         "sqlite://",

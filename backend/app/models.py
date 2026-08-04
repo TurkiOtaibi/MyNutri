@@ -779,6 +779,10 @@ class DiaryEntry(SQLModel, table=True):
             "snapshot_schema_version IS NULL OR snapshot_schema_version IN (2,3)",
             name="ck_diary_entry_snapshot_version",
         ),
+        CheckConstraint(
+            "quantity > 0 AND quantity NOT IN ('NaN', 'Infinity', '-Infinity')",
+            name="ck_diary_entry_quantity_positive_finite",
+        ),
         Index(
             "ix_diary_entry_principal_date_meal_created",
             "principal_id",

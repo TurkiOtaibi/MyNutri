@@ -21,6 +21,131 @@
 
 No production command is executed as part of repository implementation.
 
+### Diary quantity reconciliation before Plan 023
+
+Before applying revision `7c4a9d2e1f06`, run the following read-only query in
+the explicitly approved target environment. It uses the migration's exact
+predicate and returns only the total count plus at most ten Diary entry IDs:
+
+```sql
+WITH invalid_rows AS (
+    SELECT id
+      FROM diary_entry
+     WHERE quantity <= 0
+        OR quantity::text IN ('NaN', 'Infinity', '-Infinity')
+),
+bounded_rows AS (
+    SELECT id
+      FROM invalid_rows
+     ORDER BY id
+     LIMIT 10
+)
+SELECT (SELECT count(*) FROM invalid_rows) AS invalid_count,
+       coalesce(
+           (SELECT array_agg(id ORDER BY id) FROM bounded_rows),
+           ARRAY[]::uuid[]
+       ) AS bounded_ids;
+```
+
+If `invalid_count` is nonzero, STOP before migration. Escalate a separately
+reviewed data-remediation decision for the identified environment. Never
+delete the rows automatically, take an absolute value, clamp a quantity, or
+otherwise rewrite historical Diary data merely to pass the migration. The
+migration repeats this predicate and fails closed before adding
+`ck_diary_entry_quantity_positive_finite`.
+
+If the preflight blocks the upgrade, revision `3f2e7b1c9a04`, the schema, and
+all Diary rows remain unchanged; the new constraint is absent. Do not retry
+blindly or delete, clamp, normalize, or replace a quantity (including with
+`1`, `0.001`, or another placeholder). Resolve the data-governance decision
+under separate explicit authorization before retrying.
+
+### Plan 023 disposable upgrade and rollback rehearsal
+
+Revision `3f2e7b1c9a04` is the predecessor and `7c4a9d2e1f06` is the Plan 023
+head. Rehearse only in a PostgreSQL database created specifically for this
+test and bound to loopback. Do not use shared staging, hosted Supabase,
+Render, production credentials, or copied production secrets. The placeholder
+below must resolve only to that disposable loopback database:
+
+```powershell
+Set-Location backend
+$env:DATABASE_URL = "<disposable-loopback-postgresql-url>"
+$env:TEST_DATABASE_URL = $env:DATABASE_URL
+
+python -m alembic current
+python -m alembic upgrade 7c4a9d2e1f06
+python -m alembic current
+python -m alembic heads
+python -m pytest -q tests/test_principal_migrations.py -k plan023
+
+Remove-Item Env:TEST_DATABASE_URL
+Remove-Item Env:DATABASE_URL
+```
+
+After upgrade, both `alembic current` and `alembic heads` must report
+`7c4a9d2e1f06`. Verify the column and named constraint without dumping Diary
+content:
+
+```sql
+SELECT data_type, numeric_precision, numeric_scale, is_nullable
+  FROM information_schema.columns
+ WHERE table_schema = current_schema()
+   AND table_name = 'diary_entry'
+   AND column_name = 'quantity';
+
+SELECT count(*)
+  FROM pg_constraint
+ WHERE conrelid = 'diary_entry'::regclass
+   AND conname = 'ck_diary_entry_quantity_positive_finite';
+```
+
+The column must remain `numeric(8,3)` with unchanged nullability, and the
+constraint count must be exactly one. The approved Plan 023 PostgreSQL test
+performs direct writes and exact `quantity::text` reads: `0.001`, `1.250`, and
+`50.000` must persist with scale 3. Zero, a negative finite value, `NaN`,
+`Infinity`, and `-Infinity` must not persist. Record only SQLSTATE, the named
+constraint when PostgreSQL supplies it, and whether rejection occurred at the
+check or numeric typmod/cast boundary. Never record a database URL,
+credentials, or Diary content. After each expected error, roll back and use a
+clean transaction; the test must then prove a valid write still succeeds.
+
+Downgrade is a separate, explicitly authorized release decision. Before a
+disposable rehearsal downgrade, capture synthetic row signatures containing
+only Diary-entry ID, quantity, and the relevant immutable synthetic
+identifiers. Then run:
+
+```powershell
+python -m alembic downgrade 3f2e7b1c9a04
+python -m alembic current
+```
+
+Revision `3f2e7b1c9a04` must be current. Only
+`ck_diary_entry_quantity_positive_finite` is removed: the quantity column
+remains non-null `numeric(8,3)`, every signature remains value-identical, no
+Diary row is inserted, updated, deleted, clamped, or normalized, no Snapshot
+is recalculated, and no other constraint is removed. **Plan 023 downgrade
+removes only the new named constraint. It does not rewrite Diary quantities.**
+
+Re-upgrade the same disposable database and rerun current-head verification:
+
+```powershell
+python -m alembic upgrade 7c4a9d2e1f06
+python -m alembic current
+python -m alembic heads
+python -m pytest -q tests/test_principal_migrations.py -k plan023
+```
+
+The revision must return to `7c4a9d2e1f06`, the named constraint must exist
+exactly once, valid signatures must remain unchanged, exact positive-value
+checks must pass, and invalid writes must remain blocked. The downgraded
+schema intentionally does not match current model metadata; perform
+application/model verification only after re-upgrading to the current head.
+Neither this rehearsal nor Plan 023 performs a deployment. Any production
+rollback requires normal release approval, compatibility assessment, and
+separate deployment coordination; rollback does not remediate invalid legacy
+data.
+
 ## Render and Supabase Configuration
 
 Backend values:
