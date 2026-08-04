@@ -1,3 +1,5 @@
+import type { Page } from "@playwright/test";
+
 import { test, expect, expectNoHorizontalOverflow, validFood } from "./helpers";
 
 function plan024Food(idSuffix: number, name: string, status: "active" | "archived" = "active") {
@@ -24,6 +26,13 @@ function plan024Page(items: ReturnType<typeof plan024Food>[], page = 1, totalPag
     categories: ["other"],
     uncategorized_count: 0
   };
+}
+
+function plan024VisibleRowTrigger(page: Page, food: { name: string }) {
+  return page.getByRole("button", {
+    name: `إجراءات ${food.name}`,
+    exact: true
+  });
 }
 
 test.describe("Foods list, search, and states @foods", () => {
@@ -308,35 +317,35 @@ test.describe("Foods list, search, and states @foods", () => {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/admin/foods");
-    await expect(page.getByText(activeFirst.name, { exact: true })).toBeVisible();
+    await expect(plan024VisibleRowTrigger(page, activeFirst)).toBeVisible();
     await page.getByRole("button", { name: "عرض المزيد" }).click();
-    await expect(page.getByText(activeSecond.name, { exact: true })).toBeVisible();
+    await expect(plan024VisibleRowTrigger(page, activeSecond)).toBeVisible();
 
     const status = page.getByLabel("الحالة");
     await status.selectOption("archived");
-    await expect(page.getByText(archived.name, { exact: true })).toBeVisible();
-    await expect(page.getByText(activeFirst.name, { exact: true })).toHaveCount(0);
-    await expect(page.getByText(activeSecond.name, { exact: true })).toHaveCount(0);
+    await expect(plan024VisibleRowTrigger(page, archived)).toBeVisible();
+    await expect(plan024VisibleRowTrigger(page, activeFirst)).toHaveCount(0);
+    await expect(plan024VisibleRowTrigger(page, activeSecond)).toHaveCount(0);
 
     await status.selectOption("active");
-    await expect(page.getByText(activeFirst.name, { exact: true })).toBeVisible();
-    await expect(page.getByText(activeSecond.name, { exact: true })).toHaveCount(0);
+    await expect(plan024VisibleRowTrigger(page, activeFirst)).toBeVisible();
+    await expect(plan024VisibleRowTrigger(page, activeSecond)).toHaveCount(0);
 
     await page.getByLabel("بحث باسم الطعام").fill("needle");
-    await expect(page.getByText(searched.name, { exact: true })).toBeVisible();
-    await expect(page.getByText(activeFirst.name, { exact: true })).toHaveCount(0);
+    await expect(plan024VisibleRowTrigger(page, searched)).toBeVisible();
+    await expect(plan024VisibleRowTrigger(page, activeFirst)).toHaveCount(0);
 
     await page.getByLabel("بحث باسم الطعام").fill("");
-    await expect(page.getByText(activeFirst.name, { exact: true })).toBeVisible();
+    await expect(plan024VisibleRowTrigger(page, activeFirst)).toBeVisible();
     await page.locator(".category-chip").nth(1).click();
-    await expect(page.getByText(categorized.name, { exact: true })).toBeVisible();
-    await expect(page.getByText(activeFirst.name, { exact: true })).toHaveCount(0);
+    await expect(plan024VisibleRowTrigger(page, categorized)).toBeVisible();
+    await expect(plan024VisibleRowTrigger(page, activeFirst)).toHaveCount(0);
 
     await page.locator(".category-chip").first().click();
-    await expect(page.getByText(activeFirst.name, { exact: true })).toBeVisible();
+    await expect(plan024VisibleRowTrigger(page, activeFirst)).toBeVisible();
     await page.getByLabel("ترتيب الأطعمة").last().selectOption("recent");
-    await expect(page.getByText(sorted.name, { exact: true })).toBeVisible();
-    await expect(page.getByText(activeFirst.name, { exact: true })).toHaveCount(0);
+    await expect(plan024VisibleRowTrigger(page, sorted)).toBeVisible();
+    await expect(plan024VisibleRowTrigger(page, activeFirst)).toHaveCount(0);
   });
 
   test("[FOOD-TC-143] @plan024 @p0 lifecycle failures remain authoritative and retry exactly once", async ({ page }) => {
@@ -426,11 +435,11 @@ test.describe("Foods list, search, and states @foods", () => {
       await expect(alert).toBeVisible();
       await expect(alert).not.toHaveText("");
       await expect(alert).toBeFocused();
-      await expect(page.getByText(food.name, { exact: true })).toBeVisible();
+      await expect(plan024VisibleRowTrigger(page, food)).toBeVisible();
       expect(requestCount).toBe(1);
 
       await alert.getByRole("button", { name: "إعادة المحاولة" }).click();
-      await expect(page.getByText(food.name, { exact: true })).toHaveCount(0);
+      await expect(plan024VisibleRowTrigger(page, food)).toHaveCount(0);
       expect(requestCount).toBe(2);
       await page.unroute(endpoint);
     }
@@ -461,25 +470,25 @@ test.describe("Foods list, search, and states @foods", () => {
     await activeTrigger.focus();
     await activeTrigger.press("Enter");
     await page.getByRole("menuitem", { name: "أرشفة" }).click();
-    await expect(page.getByText(food.name, { exact: true })).toHaveCount(0);
+    await expect(plan024VisibleRowTrigger(page, food)).toHaveCount(0);
     await expect(status).toBeFocused();
     await expect(activeTrigger).toHaveCount(0);
     expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
 
     await status.press("End");
     await expect(status).toHaveValue("archived");
-    await expect(page.getByText(food.name, { exact: true })).toBeVisible();
+    await expect(plan024VisibleRowTrigger(page, food)).toBeVisible();
     const archivedTrigger = page.getByRole("button", { name: `إجراءات ${food.name}` });
     await archivedTrigger.focus();
     await archivedTrigger.press("Enter");
     await page.getByRole("menuitem", { name: "استعادة" }).click();
-    await expect(page.getByText(food.name, { exact: true })).toHaveCount(0);
+    await expect(plan024VisibleRowTrigger(page, food)).toHaveCount(0);
     await expect(status).toBeFocused();
     await expect(archivedTrigger).toHaveCount(0);
     expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
 
     await status.press("Home");
     await expect(status).toHaveValue("active");
-    await expect(page.getByText(food.name, { exact: true })).toBeVisible();
+    await expect(plan024VisibleRowTrigger(page, food)).toBeVisible();
   });
 });

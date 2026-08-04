@@ -140,7 +140,8 @@ test.describe("Foods mobile, RTL, and accessibility @foods", () => {
         await status.press("Home");
         await expect(status).toHaveValue("active");
       } else {
-        await status.tap();
+        await status.click();
+        await expect(status).toBeFocused();
         await status.selectOption("archived");
         await expect(status).toHaveValue("archived");
         await status.selectOption("active");
