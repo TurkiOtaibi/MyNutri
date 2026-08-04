@@ -524,17 +524,67 @@ def plan022_postgres() -> tuple[Engine, list[UUID]]:
         UUID("00000000-0000-0000-0000-000000000249"),
     ]
     with Session(database_engine) as session:
-        session.add(Principal(id=PRINCIPAL_ID))
-        for food_id, name in zip(ids, ("Postgres first", "Postgres final"), strict=True):
-            session.add(_food(food_id, name))
-            session.add(
-                FoodTaxonomyV2MigrationAudit(
-                    food_id=food_id,
-                    legacy_category="legacy",
-                    legacy_primary_category_key="whole_grains",
+        try:
+            session.add(Principal(id=PRINCIPAL_ID))
+            session.flush()
+            foods = [
+                _food(food_id, name)
+                for food_id, name in zip(
+                    ids,
+                    ("Postgres first", "Postgres final"),
+                    strict=True,
                 )
+            ]
+            session.add_all(foods)
+            session.flush()
+            session.add_all(
+                [
+                    FoodTaxonomyV2MigrationAudit(
+                        food_id=food.id,
+                        legacy_category="legacy",
+                        legacy_primary_category_key="whole_grains",
+                    )
+                    for food in foods
+                ]
             )
-        session.commit()
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+
+    with Session(database_engine) as verification:
+        assert verification.execute(
+            select(Principal.id).where(Principal.id == PRINCIPAL_ID)
+        ).scalars().all() == [PRINCIPAL_ID]
+        assert verification.execute(
+            select(
+                Food.id,
+                Food.created_by_principal_id,
+                Food.food_category_key,
+                Food.grain_type,
+                Food.baked_good_type,
+                Food.grain_starch_type,
+                Food.taxonomy_review_required,
+            )
+            .where(Food.id.in_(ids))
+            .order_by(Food.id)
+        ).all() == [
+            (
+                food_id,
+                PRINCIPAL_ID,
+                "grains_starches",
+                "whole",
+                None,
+                "other",
+                True,
+            )
+            for food_id in ids
+        ]
+        assert verification.execute(
+            select(FoodTaxonomyV2MigrationAudit.food_id)
+            .where(FoodTaxonomyV2MigrationAudit.food_id.in_(ids))
+            .order_by(FoodTaxonomyV2MigrationAudit.food_id)
+        ).scalars().all() == ids
     yield database_engine, ids
     database_engine.dispose()
 
