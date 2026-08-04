@@ -205,9 +205,44 @@ def test_plan022_closed_resolution_schema_rejects_invalid_rows_before_sql(
     assert statements == []
 
 
-def test_plan022_parser_rejects_non_list_duplicate_and_malformed_food_ids() -> None:
+def test_plan022_parser_rejects_non_list_duplicate_and_malformed_food_ids(
+    sqlite_engine: Engine,
+) -> None:
     with pytest.raises(RuntimeError, match="root must be a list"):
         parse_reviewed_mappings({})
+
+    empty_batch_message = "must contain at least one explicit resolution"
+    with pytest.raises(RuntimeError, match=empty_batch_message):
+        parse_reviewed_mappings([])
+
+    food_id = uuid4()
+    _insert_review_food(sqlite_engine, food_id, "Empty batch guard")
+    before = _full_food_state(sqlite_engine, [food_id])
+    statements: list[str] = []
+    commit_count = 0
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _executemany) -> None:
+        statements.append(statement)
+
+    def count_commit(_session: Session) -> None:
+        nonlocal commit_count
+        commit_count += 1
+
+    event.listen(sqlite_engine, "before_cursor_execute", capture)
+    try:
+        with Session(sqlite_engine) as session:
+            event.listen(session, "after_commit", count_commit)
+            with pytest.raises(RuntimeError, match=empty_batch_message):
+                apply_reviewed_mapping(session, [])
+            assert session.is_active
+            assert not session.in_transaction()
+    finally:
+        event.remove(sqlite_engine, "before_cursor_execute", capture)
+
+    assert statements == []
+    assert commit_count == 0
+    assert _full_food_state(sqlite_engine, [food_id]) == before
+
     malformed = _review_item(uuid4(), "Malformed")
     malformed["id"] = "not-a-uuid"
     with pytest.raises(RuntimeError, match="Invalid Food UUID"):

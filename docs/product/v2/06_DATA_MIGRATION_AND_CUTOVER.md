@@ -92,6 +92,16 @@ either a registered string or `null`. A missing, `null`, scalar, or partial
 resolution is unresolved. The apply command never infers approval from the
 Food name, free text, or generated top-level suggestion.
 
+The reviewed mapping root must contain at least one row, and every row must
+contain one complete explicit `resolution` object. An empty JSON list is
+invalid: the apply command fails before database SQL or commit and never
+reports the artifact as successfully applied. A zero-row apply is not a dry
+run. The read-only export may legitimately contain rows whose `resolution` is
+`null`; such an exported file is not directly applyable until an operator has
+reviewed it and populated at least one complete resolution. If no Foods require
+review and the export is empty, no apply operation is needed. Do not create an
+empty reviewed artifact merely to produce a successful command result.
+
 Before any write, the apply command validates the complete JSON schema,
 registered vocabulary, and category/detail compatibility. It then locks every
 requested Food in sorted UUID order and compares the current name, taxonomy,

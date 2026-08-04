@@ -138,6 +138,10 @@ def _validate_resolution(mapping: ReviewedMapping) -> None:
 def parse_reviewed_mappings(mappings: Any) -> list[ReviewedMapping]:
     if not isinstance(mappings, list):
         raise RuntimeError("Reviewed taxonomy mapping root must be a list.")
+    if not mappings:
+        raise RuntimeError(
+            "Reviewed taxonomy mapping must contain at least one explicit resolution."
+        )
     parsed: list[ReviewedMapping] = []
     seen_ids: set[UUID] = set()
     for index, item in enumerate(mappings):
