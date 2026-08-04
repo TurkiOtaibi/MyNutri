@@ -35,6 +35,18 @@ function plan024VisibleRowTrigger(page: Page, food: { name: string }) {
   });
 }
 
+function plan024MobileCategory(page: Page, name: string) {
+  return page
+    .locator(".foods-mobile-filters")
+    .getByRole("button", { name, exact: true });
+}
+
+function plan024MobileSort(page: Page) {
+  return page
+    .locator(".foods-mobile-sort")
+    .getByRole("combobox", { name: "ترتيب الأطعمة", exact: true });
+}
+
 test.describe("Foods list, search, and states @foods", () => {
   test("[FOOD-TC-008] @p0 desktop table shows approved columns", async ({ page, foodsApi }) => {
     await foodsApi.create({ name: `E2E-Desktop-Table-${Date.now()}` });
@@ -337,13 +349,22 @@ test.describe("Foods list, search, and states @foods", () => {
 
     await page.getByLabel("بحث باسم الطعام").fill("");
     await expect(plan024VisibleRowTrigger(page, activeFirst)).toBeVisible();
-    await page.locator(".category-chip").nth(1).click();
+    const otherCategory = plan024MobileCategory(page, "أخرى");
+    await expect(otherCategory).toHaveCount(1);
+    await expect(otherCategory).toBeVisible();
+    await otherCategory.click();
     await expect(plan024VisibleRowTrigger(page, categorized)).toBeVisible();
     await expect(plan024VisibleRowTrigger(page, activeFirst)).toHaveCount(0);
 
-    await page.locator(".category-chip").first().click();
+    const allCategories = plan024MobileCategory(page, "الكل");
+    await expect(allCategories).toHaveCount(1);
+    await expect(allCategories).toBeVisible();
+    await allCategories.click();
     await expect(plan024VisibleRowTrigger(page, activeFirst)).toBeVisible();
-    await page.getByLabel("ترتيب الأطعمة").last().selectOption("recent");
+    const mobileSort = plan024MobileSort(page);
+    await expect(mobileSort).toHaveCount(1);
+    await expect(mobileSort).toBeVisible();
+    await mobileSort.selectOption("recent");
     await expect(plan024VisibleRowTrigger(page, sorted)).toBeVisible();
     await expect(plan024VisibleRowTrigger(page, activeFirst)).toHaveCount(0);
   });
@@ -389,7 +410,10 @@ test.describe("Foods list, search, and states @foods", () => {
       const url = new URL(response.url());
       return url.pathname === "/admin/foods" && url.searchParams.get("sort") === "recent";
     });
-    await page.getByLabel("ترتيب الأطعمة").last().selectOption("recent");
+    const mobileSort = plan024MobileSort(page);
+    await expect(mobileSort).toHaveCount(1);
+    await expect(mobileSort).toBeVisible();
+    await mobileSort.selectOption("recent");
     await rerenderResponse;
     const currentSecondFocusOpener = page.getByRole("button", { name: `إجراءات ${secondFocusFood.name}` });
     await currentSecondFocusOpener.focus();
