@@ -18,7 +18,7 @@ from psycopg.errors import CheckViolation, NumericValueOutOfRange
 from sqlalchemy import CheckConstraint, Numeric, String, create_engine, inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
-from sqlmodel import Session
+from sqlmodel import SQLModel, Session
 
 from app.core.auth import PrincipalContext
 from app.models import (
@@ -60,6 +60,47 @@ PLAN023_PREFLIGHT_ERROR = "PLAN023_DIARY_QUANTITY_PREFLIGHT_BLOCKED"
 PLAN023_PREFLIGHT_GUARD = "plan023_diary_quantity_positive_finite_preflight"
 PLAN021_DOWNGRADE_ERROR = "PLAN021_TARGET_PLAN_IDEMPOTENCY_DOWNGRADE_BLOCKED"
 PLAN021_DOWNGRADE_GUARD = "plan021_target_plan_idempotency_downgrade_guard"
+AUTHORITATIVE_HISTORICAL_CHECKS = {
+    "profile": (
+        "ck_profile_cut_intensity",
+        "cut_intensity IN (0.150,0.200,0.250)",
+    ),
+    "legacy_target_transition_snapshots": (
+        "ck_legacy_transition_document_shape",
+        "jsonb_typeof(legacy_target_document)='object' AND "
+        "legacy_target_document->>'schema_version'='1' AND "
+        "legacy_target_document->>'source'='legacy_unversioned_transition' AND "
+        "jsonb_typeof(legacy_target_document->'captured_profile_inputs')='object' AND "
+        "jsonb_typeof(legacy_target_document->'resolved_targets')='object'",
+    ),
+    "diary_entry": (
+        "ck_diary_entry_versioned_shape",
+        "snapshot_schema_version IS NULL OR "
+        "(jsonb_typeof(nutrition_snapshot)='object' AND "
+        "nutrition_snapshot->>'schema_version'=snapshot_schema_version::text)",
+    ),
+}
+POSTGRESQL_AUTHORITATIVE_CHECK_DEFINITIONS = {
+    "ck_diary_entry_versioned_shape": (
+        "CHECK (snapshot_schema_version IS NULL OR "
+        "jsonb_typeof(nutrition_snapshot) = 'object'::text AND "
+        "(nutrition_snapshot ->> 'schema_version'::text) = "
+        "snapshot_schema_version::text)"
+    ),
+    "ck_legacy_transition_document_shape": (
+        "CHECK (jsonb_typeof(legacy_target_document) = 'object'::text AND "
+        "(legacy_target_document ->> 'schema_version'::text) = '1'::text AND "
+        "(legacy_target_document ->> 'source'::text) = "
+        "'legacy_unversioned_transition'::text AND "
+        "jsonb_typeof(legacy_target_document -> "
+        "'captured_profile_inputs'::text) = 'object'::text AND "
+        "jsonb_typeof(legacy_target_document -> "
+        "'resolved_targets'::text) = 'object'::text)"
+    ),
+    "ck_profile_cut_intensity": (
+        "CHECK (cut_intensity = ANY (ARRAY[0.150, 0.200, 0.250]))"
+    ),
+}
 PLAN009_GROUP_NAN_CONSTRAINTS = frozenset(
     {
         "ck_food_group_contribution_amount",
@@ -155,6 +196,25 @@ def _run_alembic(url: str, *arguments: str, check: bool = True) -> subprocess.Co
     )
 
 
+def _normalized_check_expression(expression: str) -> str:
+    normalized = "".join(expression.split())
+    while normalized.startswith("(") and normalized.endswith(")"):
+        depth = 0
+        wraps_entire_expression = True
+        for index, character in enumerate(normalized):
+            if character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+                if depth == 0 and index != len(normalized) - 1:
+                    wraps_entire_expression = False
+                    break
+        if not wraps_entire_expression:
+            break
+        normalized = normalized[1:-1]
+    return normalized
+
+
 def _reset_database(url: str) -> None:
     engine = create_engine(url, isolation_level="AUTOCOMMIT")
     with engine.connect() as connection:
@@ -235,6 +295,101 @@ def test_immutable_baseline_revision_hashes() -> None:
 
 
 @pytest.mark.migration
+def test_authoritative_historical_checks_are_in_metadata_and_sqlite_safe() -> None:
+    for table_name, (constraint_name, expected_expression) in (
+        AUTHORITATIVE_HISTORICAL_CHECKS.items()
+    ):
+        checks = [
+            constraint
+            for constraint in SQLModel.metadata.tables[table_name].constraints
+            if isinstance(constraint, CheckConstraint)
+        ]
+        named = [constraint for constraint in checks if constraint.name == constraint_name]
+        equivalent = [
+            constraint
+            for constraint in checks
+            if _normalized_check_expression(str(constraint.sqltext))
+            == _normalized_check_expression(expected_expression)
+        ]
+
+        assert len(named) == 1
+        assert equivalent == named
+
+    sqlite_engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(sqlite_engine)
+    sqlite_inspector = inspect(sqlite_engine)
+    sqlite_checks = {
+        table_name: [
+            constraint["name"]
+            for constraint in sqlite_inspector.get_check_constraints(table_name)
+        ]
+        for table_name in AUTHORITATIVE_HISTORICAL_CHECKS
+    }
+
+    assert sqlite_checks["profile"].count("ck_profile_cut_intensity") == 1
+    assert "ck_legacy_transition_document_shape" not in sqlite_checks[
+        "legacy_target_transition_snapshots"
+    ]
+    assert "ck_diary_entry_versioned_shape" not in sqlite_checks["diary_entry"]
+
+    profile_insert = text(
+        """
+        INSERT INTO profile (
+            id,
+            principal_id,
+            sex,
+            birth_date,
+            height_cm,
+            weight_kg,
+            activity_level,
+            goal,
+            protein_per_kg,
+            fat_pct,
+            cut_intensity,
+            updated_at
+        ) VALUES (
+            :id,
+            :principal_id,
+            'male',
+            '1990-01-01',
+            175.00,
+            75.00,
+            'moderate',
+            'cut',
+            1.20,
+            0.25,
+            :cut_intensity,
+            '2026-08-05 00:00:00'
+        )
+        """
+    )
+    with sqlite_engine.connect() as connection:
+        transaction = connection.begin()
+        with pytest.raises(IntegrityError, match="ck_profile_cut_intensity"):
+            connection.execute(
+                profile_insert,
+                {
+                    "id": str(uuid4()),
+                    "principal_id": str(uuid4()),
+                    "cut_intensity": 0.333,
+                },
+            )
+        transaction.rollback()
+
+        connection.execute(
+            profile_insert,
+            {
+                "id": str(uuid4()),
+                "principal_id": str(uuid4()),
+                "cut_intensity": 0.200,
+            },
+        )
+        connection.commit()
+
+    sqlite_engine.dispose()
+
+
+@pytest.mark.migration
 def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None:
     url = _database_url()
     _reset_database(url)
@@ -246,6 +401,25 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
             PLAN023_REVISION
         )
+        authoritative_checks = connection.execute(
+            text(
+                "SELECT conname, pg_get_constraintdef(oid, true) "
+                "FROM pg_constraint "
+                "WHERE conname IN "
+                "('ck_diary_entry_versioned_shape', "
+                "'ck_legacy_transition_document_shape', "
+                "'ck_profile_cut_intensity') "
+                "ORDER BY conname"
+            )
+        ).all()
+    assert len(authoritative_checks) == len(POSTGRESQL_AUTHORITATIVE_CHECK_DEFINITIONS)
+    assert {
+        name: _normalized_check_expression(definition)
+        for name, definition in authoritative_checks
+    } == {
+        name: _normalized_check_expression(definition)
+        for name, definition in POSTGRESQL_AUTHORITATIVE_CHECK_DEFINITIONS.items()
+    }
     assert "principal" in inspector.get_table_names()
     for table in ("profile", "diary_entry"):
         owner = next(
@@ -275,6 +449,11 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     assert diary_columns["snapshot_schema_version"]["nullable"] is True
     assert diary_columns["target_provenance"]["nullable"] is False
     engine.dispose()
+
+    check_result = _run_alembic(url, "check")
+    check_output = check_result.stdout + check_result.stderr
+    assert "alembic.autogenerate.checkconstraint_byname" in check_output
+    assert "No new upgrade operations detected." in check_output
 
 
 def _seed_plan021_profile(url: str) -> None:

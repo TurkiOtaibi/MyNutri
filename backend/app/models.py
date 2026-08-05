@@ -243,6 +243,10 @@ class Profile(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint("principal_id", name="uq_profile_principal_id"),
         UniqueConstraint("id", "principal_id", name="uq_profile_id_principal_id"),
+        CheckConstraint(
+            "cut_intensity IN (0.150,0.200,0.250)",
+            name="ck_profile_cut_intensity",
+        ),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -287,6 +291,14 @@ class LegacyTargetTransitionSnapshot(SQLModel, table=True):
         CheckConstraint(
             "target_document_schema_version = 1", name="ck_legacy_transition_schema_version"
         ),
+        CheckConstraint(
+            "jsonb_typeof(legacy_target_document)='object' AND "
+            "legacy_target_document->>'schema_version'='1' AND "
+            "legacy_target_document->>'source'='legacy_unversioned_transition' AND "
+            "jsonb_typeof(legacy_target_document->'captured_profile_inputs')='object' AND "
+            "jsonb_typeof(legacy_target_document->'resolved_targets')='object'",
+            name="ck_legacy_transition_document_shape",
+        ).ddl_if(dialect="postgresql"),
         Index("ix_legacy_transition_principal_date", "principal_id", "transition_date"),
     )
 
@@ -779,6 +791,12 @@ class DiaryEntry(SQLModel, table=True):
             "snapshot_schema_version IS NULL OR snapshot_schema_version IN (2,3)",
             name="ck_diary_entry_snapshot_version",
         ),
+        CheckConstraint(
+            "snapshot_schema_version IS NULL OR "
+            "(jsonb_typeof(nutrition_snapshot)='object' AND "
+            "nutrition_snapshot->>'schema_version'=snapshot_schema_version::text)",
+            name="ck_diary_entry_versioned_shape",
+        ).ddl_if(dialect="postgresql"),
         CheckConstraint(
             "quantity > 0 AND quantity NOT IN ('NaN', 'Infinity', '-Infinity')",
             name="ck_diary_entry_quantity_positive_finite",
