@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
 const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
@@ -54,6 +55,87 @@ test("admin navigation and monitoring remain explicit and read-only", async ({ p
   await expect(page.getByText("وضع قراءة فقط")).toBeVisible();
   await expect(page.getByRole("button", { name: /حفظ|تعديل|حذف/ })).toHaveCount(0);
   await expect(page.locator("pre")).toHaveCount(0);
+});
+
+const PLAN025_PRINCIPAL_ID = "00000000-0000-0000-0000-000000000025";
+const plan025Detail = {
+  account: { display_name: "مستخدم الاختبار", email: "plan025@example.test", status: "active", role: "user", created_at: "2026-08-01T12:00:00Z" },
+  profile: null,
+  current_target: null,
+  pending_plan: null,
+  plan_history: { items: [], next_cursor: null }
+};
+const plan025FirstPage = {
+  items: [
+    { id: "00000000-0000-0000-0000-000000000101", entry_date: "2026-08-01", meal_type: "breakfast", quantity: 1, food_name: "وجبة أولى" },
+    { id: "00000000-0000-0000-0000-000000000102", entry_date: "2026-07-31", meal_type: "lunch", quantity: 2, food_name: "وجبة ثانية" }
+  ],
+  next_cursor: "cursor-plan025"
+};
+const plan025FinalPage = {
+  items: [{ id: "00000000-0000-0000-0000-000000000103", entry_date: "2026-07-30", meal_type: "dinner", quantity: 3, food_name: "وجبة أخيرة" }],
+  next_cursor: null
+};
+
+async function mockPlan025Detail(page: import("@playwright/test").Page, failNextPage = false) {
+  let nextPageAttempts = 0;
+  await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}`, (route) => route.fulfill({ json: plan025Detail }));
+  await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}/diary?limit=50`, (route) => route.fulfill({ json: plan025FirstPage }));
+  await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}/diary?limit=50&cursor=cursor-plan025`, (route) => {
+    nextPageAttempts += 1;
+    if (failNextPage && nextPageAttempts === 1) return route.fulfill({ status: 500, json: { detail: "failed" } });
+    return route.fulfill({ json: plan025FinalPage });
+  });
+}
+
+test("@plan025 admin diary renders bounded pages, final state, mobile layout, and axe", async ({ page }) => {
+  await mockPlan025Detail(page);
+  await page.goto(`/admin/users/${PLAN025_PRINCIPAL_ID}`);
+  await expect(page.getByText("وجبة أولى", { exact: true })).toBeVisible();
+  const loadMore = page.getByRole("button", { name: "عرض المزيد" });
+  await expect(loadMore).toBeVisible();
+  await loadMore.focus();
+  await expect(loadMore).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("وجبة أخيرة", { exact: true })).toBeVisible();
+  await expect(page.getByText("لا توجد إدخالات أخرى.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /حفظ|تعديل|حذف/ })).toHaveCount(0);
+  const axe = await new AxeBuilder({ page }).analyze();
+  expect(axe.violations.filter((violation) => ["moderate", "serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
+  for (const width of [320, 360, 390, 430]) {
+    await page.setViewportSize({ width, height: 700 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  }
+});
+
+test("@plan025 next-page failure retains entries and offers keyboard retry", async ({ page }) => {
+  await mockPlan025Detail(page, true);
+  await page.goto(`/admin/users/${PLAN025_PRINCIPAL_ID}`);
+  await page.getByRole("button", { name: "عرض المزيد" }).click();
+  await expect(page.getByText("وجبة أولى", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("تعذر تحميل المزيد من اليوميات.");
+  const retry = page.getByRole("button", { name: "إعادة محاولة تحميل المزيد" });
+  await retry.focus();
+  await expect(retry).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("وجبة أخيرة", { exact: true })).toBeVisible();
+});
+
+test("@plan025 initial loading, empty state, and retry use deterministic route barriers", async ({ page }) => {
+  let initialAttempts = 0;
+  await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}`, (route) => route.fulfill({ json: plan025Detail }));
+  await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}/diary?limit=50`, (route) => {
+    initialAttempts += 1;
+    if (initialAttempts === 1) return route.fulfill({ status: 500, json: { detail: "failed" } });
+    return route.fulfill({ json: { items: [], next_cursor: null } });
+  });
+  await page.goto(`/admin/users/${PLAN025_PRINCIPAL_ID}`);
+  await expect(page.getByRole("alert")).toContainText("تعذر تحميل اليوميات.");
+  const retry = page.getByRole("button", { name: "إعادة المحاولة" });
+  await retry.focus();
+  await expect(retry).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("لا توجد إدخالات يومية.", { exact: true })).toBeVisible();
 });
 
 test("Food Taxonomy V2 and advanced analysis are mobile safe", async ({ page }) => {

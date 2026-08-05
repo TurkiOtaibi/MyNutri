@@ -19,6 +19,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    desc,
     text as sa_text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -807,6 +808,13 @@ class DiaryEntry(SQLModel, table=True):
             "entry_date",
             "meal_type",
             "created_at",
+        ),
+        Index(
+            "ix_diary_entry_principal_date_created_id_desc",
+            "principal_id",
+            desc("entry_date"),
+            desc("created_at"),
+            desc("id"),
         ),
         Index("ix_diary_entry_principal_target_plan", "principal_id", "target_plan_id"),
     )

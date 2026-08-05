@@ -947,8 +947,20 @@ class DiaryEntryResponse(BaseModel):
     nutrition_snapshot: NutritionSnapshot
     totals: NutritionTotals
     created_at: datetime
-
     model_config = ConfigDict(from_attributes=True)
+
+
+class AdminDiaryItem(BaseModel):
+    id: UUID
+    entry_date: date
+    meal_type: MealType
+    quantity: float
+    food_name: str
+
+
+class AdminDiaryPage(BaseModel):
+    items: list[AdminDiaryItem]
+    next_cursor: str | None
 
 
 class DaySummary(BaseModel):

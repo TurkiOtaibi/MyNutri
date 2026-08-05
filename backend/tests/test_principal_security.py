@@ -366,7 +366,7 @@ def test_admin_monitoring_is_authorized_and_read_only(security_context) -> None:
 
 @pytest.mark.parametrize(
     "endpoint",
-    ["detail", "week", "diary", "target_history"],
+    ["detail", "week", "diary", "diary_invalid", "target_history"],
 )
 def test_admin_monitoring_gets_execute_no_dml(
     security_context, monkeypatch, endpoint: str
@@ -375,12 +375,32 @@ def test_admin_monitoring_gets_execute_no_dml(
     due_response, lifecycle = _seed_active_and_due_targets(client, session)
     due_plan = due_response["plan"]
     today = current_diary_date()
+    session.add_all(
+        [
+            DiaryEntry(
+                principal_id=PRINCIPAL_B,
+                entry_date=today,
+                quantity=1,
+                target_provenance=TargetProvenance.no_target_source,
+                nutrition_snapshot={"name": "Today", "calories": 1, "protein_g": 1, "carb_g": 1, "fat_g": 1},
+            ),
+            DiaryEntry(
+                principal_id=PRINCIPAL_B,
+                entry_date=today - timedelta(days=1),
+                quantity=1,
+                target_provenance=TargetProvenance.no_target_source,
+                nutrition_snapshot={"name": "Yesterday", "calories": 1, "protein_g": 1, "carb_g": 1, "fat_g": 1},
+            ),
+        ]
+    )
+    session.commit()
     paths = {
         "detail": f"/admin/users/{PRINCIPAL_B}",
         "week": (
             f"/admin/users/{PRINCIPAL_B}/diary/week?start={today.isoformat()}"
         ),
         "diary": f"/admin/users/{PRINCIPAL_B}/diary?entry_date={today.isoformat()}",
+        "diary_invalid": f"/admin/users/{PRINCIPAL_B}/diary?cursor=not-a-cursor",
         "target_history": f"/admin/users/{PRINCIPAL_B}/target-plans",
     }
     path = paths[endpoint]
@@ -390,7 +410,8 @@ def test_admin_monitoring_gets_execute_no_dml(
         response_documents = []
         for _ in range(2):
             response = client.get(path, headers=headers("admin-a"))
-            assert response.status_code == 200, response.text
+            expected_status = 422 if endpoint == "diary_invalid" else 200
+            assert response.status_code == expected_status, response.text
             response_documents.append(response.json())
             if endpoint == "detail":
                 assert response.json()["current_target"]["plan"]["id"] == due_plan["id"]
@@ -406,7 +427,9 @@ def test_admin_monitoring_gets_execute_no_dml(
                     == due_plan["targets"]["final_target_calories"]
                 )
             elif endpoint == "diary":
-                assert response.json() == []
+                assert [item["entry_date"] for item in response.json()["items"]] == [today.isoformat()]
+            elif endpoint == "diary_invalid":
+                assert response.json()["detail"]["code"] == "INVALID_CURSOR"
             else:
                 assert response.json()["items"][0]["id"] == due_plan["id"]
             _assert_lifecycle_unchanged(engine, lifecycle)
@@ -456,6 +479,28 @@ def test_admin_week_failure_executes_no_dml(security_context, monkeypatch) -> No
         statement.startswith(("insert ", "update ", "delete "))
         for statement in normalized
     )
+    assert not any(" for update" in statement for statement in normalized)
+
+
+def test_plan025_admin_diary_service_failure_executes_no_dml(security_context, monkeypatch) -> None:
+    client, session = security_context
+    _, lifecycle = _seed_active_and_due_targets(client, session)
+    engine, statements, cleanup = _install_admin_read_guards(monkeypatch, session)
+    _reject_admin_commit(monkeypatch, session)
+
+    def fail_diary_page(*_args, **_kwargs):
+        raise RuntimeError("synthetic admin diary failure")
+
+    monkeypatch.setattr("app.api.routes.admin.admin_diary_page", fail_diary_page)
+    try:
+        with pytest.raises(RuntimeError, match="synthetic admin diary failure"):
+            client.get(f"/admin/users/{PRINCIPAL_B}/diary", headers=headers("admin-a"))
+        _assert_lifecycle_unchanged(engine, lifecycle)
+    finally:
+        cleanup()
+
+    normalized = [statement.lower() for statement in statements]
+    assert not any(statement.startswith(("insert ", "update ", "delete ")) for statement in normalized)
     assert not any(" for update" in statement for statement in normalized)
 
 

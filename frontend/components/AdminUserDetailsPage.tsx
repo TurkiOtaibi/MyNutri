@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { getAdminUser, getAdminUserDiary } from "@/lib/api";
 
 type Detail = {
@@ -48,11 +48,20 @@ function ReadOnlyFields({ data, keys }: { data: Record<string, unknown> | null; 
 
 export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
   const detail = useQuery<Detail>({ queryKey: ["admin-user", principalId], queryFn: () => getAdminUser(principalId) as Promise<Detail> });
-  const diary = useQuery({ queryKey: ["admin-user-diary", principalId], queryFn: () => getAdminUserDiary(principalId) });
+  const diaryQuery = useInfiniteQuery({
+    queryKey: ["admin-user-diary", principalId],
+    queryFn: ({ pageParam }) => getAdminUserDiary(principalId, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor,
+    retry: false
+  });
   if (detail.isPending) return <div className="state-note">جارٍ تحميل بيانات المستخدم...</div>;
   if (detail.isError) return <div className="state-note" role="alert">تعذر تحميل بيانات المستخدم.</div>;
   const { account, profile, current_target: target, pending_plan: pending, plan_history: history } = detail.data;
   const selectedName = String(account.display_name || account.email || principalId);
+  const diaryEntries = diaryQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const initialDiaryFailure = diaryQuery.isError && diaryEntries.length === 0;
+  const nextPageFailure = diaryQuery.isError && diaryEntries.length > 0;
   return <>
     <div className="selected-user-banner"><strong>عرض مستخدم آخر: {selectedName}</strong><span>وضع قراءة فقط</span></div>
     <div className="page-head"><div><h1 className="page-title">تفاصيل المستخدم</h1><p className="page-kicker">بيانات الحساب والتغذية المعروضة للمراقبة دون صلاحية تعديل.</p></div><Link className="btn" href="/admin/users">رجوع</Link></div>
@@ -61,6 +70,6 @@ export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
     <section className="section-panel"><h2>المصدر الحالي للأهداف</h2><ReadOnlyFields data={target} keys={["source", "effective_from", "calendar_timezone"]} /></section>
     <section className="section-panel"><h2>الخطة المجدولة</h2><ReadOnlyFields data={pending} keys={["lifecycle_status", "effective_from", "effective_to"]} /></section>
     <section className="section-panel"><h2>سجل الخطط</h2>{history.items?.length ? <ul className="admin-readonly-list">{history.items.map((plan, index) => <li key={String(plan.id ?? index)}><ReadOnlyFields data={plan} keys={["lifecycle_status", "effective_from", "effective_to"]} /></li>)}</ul> : <p className="state-note">لا توجد خطط محفوظة.</p>}</section>
-    <section className="section-panel"><h2>اليوميات</h2>{diary.isPending ? <p>جارٍ التحميل...</p> : diary.isError ? <p role="alert">تعذر تحميل اليوميات.</p> : diary.data?.length ? <ul className="admin-readonly-list">{diary.data.map((entry) => <li key={entry.id}><strong>{entry.nutrition_snapshot.name}</strong><span>{entry.entry_date} · {entry.meal_type} · {entry.quantity}</span></li>)}</ul> : <p className="state-note">لا توجد إدخالات يومية.</p>}</section>
+    <section className="section-panel"><h2>اليوميات</h2>{diaryQuery.isPending ? <p aria-live="polite">جارٍ التحميل...</p> : initialDiaryFailure ? <><p role="alert">تعذر تحميل اليوميات.</p><button className="btn" type="button" onClick={() => diaryQuery.refetch()}>إعادة المحاولة</button></> : diaryEntries.length ? <><ul className="admin-readonly-list">{diaryEntries.map((entry) => <li key={entry.id}><strong>{entry.food_name}</strong><span>{entry.entry_date} · {entry.meal_type} · {entry.quantity}</span></li>)}</ul>{nextPageFailure ? <div role="alert"><p>تعذر تحميل المزيد من اليوميات.</p><button className="btn" type="button" onClick={() => diaryQuery.fetchNextPage()}>إعادة محاولة تحميل المزيد</button></div> : null}{diaryQuery.hasNextPage && !nextPageFailure ? <button className="btn" type="button" onClick={() => diaryQuery.fetchNextPage()} disabled={diaryQuery.isFetchingNextPage}>{diaryQuery.isFetchingNextPage ? "جارٍ التحميل..." : "عرض المزيد"}</button> : null}{!diaryQuery.hasNextPage ? <p className="state-note">لا توجد إدخالات أخرى.</p> : null}</> : <p className="state-note">لا توجد إدخالات يومية.</p>}</section>
   </>;
 }
