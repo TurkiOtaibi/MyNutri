@@ -361,12 +361,17 @@ test.describe("Foods list, search, and states @foods", () => {
     await expect(allCategories).toBeVisible();
     await allCategories.click();
     await expect(plan024VisibleRowTrigger(page, activeFirst)).toBeVisible();
+    for (const food of [activeSecond, searched, categorized, archived]) {
+      await expect(plan024VisibleRowTrigger(page, food)).toHaveCount(0);
+    }
     const mobileSort = plan024MobileSort(page);
     await expect(mobileSort).toHaveCount(1);
     await expect(mobileSort).toBeVisible();
     await mobileSort.selectOption("recent");
     await expect(plan024VisibleRowTrigger(page, sorted)).toBeVisible();
-    await expect(plan024VisibleRowTrigger(page, activeFirst)).toHaveCount(0);
+    for (const food of [activeFirst, activeSecond, searched, categorized, archived]) {
+      await expect(plan024VisibleRowTrigger(page, food)).toHaveCount(0);
+    }
   });
 
   test("[FOOD-TC-143] @plan024 @p0 lifecycle failures remain authoritative and retry exactly once", async ({ page }) => {
