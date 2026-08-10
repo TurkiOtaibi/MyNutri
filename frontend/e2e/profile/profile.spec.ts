@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test as base, type APIRequestContext, type Page, type Route } from "@playwright/test";
 
+import type { CalendarAuthority } from "../../lib/api";
 import type { ProfileInput, ProfileResponse, TargetResponse } from "../../lib/types";
 import { API_TOKEN, API_URL } from "../foods/helpers";
 
@@ -228,13 +229,34 @@ test.describe("@profile Profile and targets redesign", () => {
   });
 
   test("@p0 dirty state normalizes values, validates fields, and blocks invalid saves", async ({ page, originalProfile }) => {
-    const profileResponse = page.waitForResponse((response) =>
-      new URL(response.url()).pathname === "/profile" &&
-      response.request().method() === "GET" &&
-      response.request().resourceType() === "fetch"
-    );
+    const profileResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return profilePath(url)
+        && response.request().method() === "GET"
+        && response.request().resourceType() === "fetch";
+    });
+    const calendarResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.origin === API_ORIGIN
+        && calendarPath(url)
+        && response.request().method() === "GET"
+        && response.request().resourceType() === "fetch";
+    });
     await page.goto("/profile");
-    expect((await profileResponse).status()).toBe(200);
+    const [profileResult, calendarResult] = await Promise.all([
+      profileResponse,
+      calendarResponse
+    ]);
+    expect(profileResult.status()).toBe(200);
+    expect(calendarResult.status()).toBe(200);
+    const profileBody = await profileResult.json() as ProfileResponse;
+    expect(profileBody.weight_kg).toBe(originalProfile.weight_kg);
+    const calendarBody = await calendarResult.json() as CalendarAuthority;
+    expect(calendarBody).toEqual(expect.objectContaining({
+      current_diary_date: expect.any(String),
+      calendar_timezone: expect.any(String),
+      next_rollover_at: expect.any(String)
+    }));
     const weight = page.getByLabel("الوزن");
     await expect(page.locator(".profile-card-skeleton")).toHaveCount(0);
     await expect(weight).toHaveValue(String(originalProfile.weight_kg));

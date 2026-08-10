@@ -64,6 +64,52 @@ async function appCacheEntries(page: Page): Promise<AppCacheEntry[]> {
   }, { prefix: APP_CACHE_PREFIX });
 }
 
+type ImmutableRequestTracker = {
+  inFlight: Set<Request>;
+  generation: number;
+};
+
+function isImmutableNextStaticRequest(request: Request): boolean {
+  const url = new URL(request.url());
+  return (
+    request.method() === "GET" &&
+    url.origin === APP_ORIGIN &&
+    url.pathname.startsWith("/_next/static/") &&
+    url.search === ""
+  );
+}
+
+async function waitForImmutableCacheSettlement(
+  page: Page,
+  tracker: ImmutableRequestTracker
+): Promise<AppCacheEntry[]> {
+  const startedAt = Date.now();
+  let quietStartedAt: number | null = null;
+  let previousInventory = "";
+  let previousGeneration = tracker.generation;
+
+  while (Date.now() - startedAt < 10_000) {
+    const entries = await appCacheEntries(page);
+    const inventory = JSON.stringify(entries);
+    const now = Date.now();
+    const changed = inventory !== previousInventory || tracker.generation !== previousGeneration;
+
+    if (changed || tracker.inFlight.size > 0) {
+      previousInventory = inventory;
+      previousGeneration = tracker.generation;
+      quietStartedAt = tracker.inFlight.size === 0 ? now : null;
+    } else if (quietStartedAt === null) {
+      quietStartedAt = now;
+    } else if (now - quietStartedAt >= 750) {
+      return entries;
+    }
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  }
+
+  throw new Error("PWA IMMUTABLE CACHE SETTLEMENT TIMEOUT");
+}
+
 function isExactRequest(request: Request, pathname: string, method = "GET"): boolean {
   const url = new URL(request.url());
   return request.method() === method && url.origin === APP_ORIGIN && url.pathname === pathname;
@@ -232,7 +278,7 @@ test("@plan017 worker activation awaits shell population and removes only obsole
   });
 });
 
-test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic", async ({ context }) => {
+test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic", async ({ context }, testInfo) => {
   type BypassCase = {
     name: string;
     url: string;
@@ -364,6 +410,15 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
     if (!item) return;
     observations.get(item.name)!.failures.push(safeErrorCategory(request.failure()?.errorText));
   };
+  const immutableTracker: ImmutableRequestTracker = { inFlight: new Set(), generation: 0 };
+  const onImmutableRequest = (request: Request) => {
+    if (!isImmutableNextStaticRequest(request)) return;
+    immutableTracker.inFlight.add(request);
+    immutableTracker.generation += 1;
+  };
+  const onImmutableRequestComplete = (request: Request) => {
+    immutableTracker.inFlight.delete(request);
+  };
   const fulfillBypassCase = async (route: Route) => {
     const item = findCase(route.request());
     if (!item) {
@@ -381,6 +436,9 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
   context.on("request", onRequest);
   context.on("response", onResponse);
   context.on("requestfailed", onRequestFailed);
+  context.on("request", onImmutableRequest);
+  context.on("requestfinished", onImmutableRequestComplete);
+  context.on("requestfailed", onImmutableRequestComplete);
   await context.route("**/*", fulfillBypassCase);
   const page = await context.newPage();
 
@@ -397,10 +455,18 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
   }> = [];
   let postCacheBefore: AppCacheEntry[] = [];
   let postCacheAfter: AppCacheEntry[] = [];
+  let prePostSettlementDurationMs = 0;
+  let postSettlementDurationMs = 0;
   try {
     await waitForWorkerControl(page);
     for (const item of cases) {
-      if (item.name === "non-get-post") postCacheBefore = await appCacheEntries(page);
+      if (item.name === "non-get-post") {
+        const settlementStartedAt = Date.now();
+        postCacheBefore = await waitForImmutableCacheSettlement(page, immutableTracker);
+        prePostSettlementDurationMs = Date.now() - settlementStartedAt;
+        expect(prePostSettlementDurationMs).toBeLessThan(10_000);
+        expect(immutableTracker.inFlight.size).toBe(0);
+      }
       const result = await page.evaluate(async (requestCase) => {
         try {
           const response = await fetch(requestCase.url, {
@@ -432,14 +498,34 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
         }
       }, item);
       browserResults.push(result);
-      if (item.name === "non-get-post") postCacheAfter = await appCacheEntries(page);
+      if (item.name === "non-get-post") {
+        const settlementStartedAt = Date.now();
+        postCacheAfter = await waitForImmutableCacheSettlement(page, immutableTracker);
+        postSettlementDurationMs = Date.now() - settlementStartedAt;
+        expect(postSettlementDurationMs).toBeLessThan(10_000);
+        expect(immutableTracker.inFlight.size).toBe(0);
+      }
     }
   } finally {
     await context.unroute("**/*", fulfillBypassCase);
     context.off("request", onRequest);
     context.off("response", onResponse);
     context.off("requestfailed", onRequestFailed);
+    context.off("request", onImmutableRequest);
+    context.off("requestfinished", onImmutableRequestComplete);
+    context.off("requestfailed", onImmutableRequestComplete);
   }
+
+  testInfo.annotations.push(
+    {
+      type: "pwa-immutable-settlement-before-post",
+      description: `duration_ms=${prePostSettlementDurationMs};cache_entries=${postCacheBefore.length}`
+    },
+    {
+      type: "pwa-immutable-settlement-after-post",
+      description: `duration_ms=${postSettlementDurationMs};cache_entries=${postCacheAfter.length}`
+    }
+  );
 
   const entries = await appCacheEntries(page);
   const syntheticSanitized = sanitizeSyntheticRequest({

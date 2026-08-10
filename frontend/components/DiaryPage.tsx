@@ -252,7 +252,7 @@ export function DiaryPage() {
   if (!today || !activeDate) {
     return authorityQuery.isError
       ? <RetryState message="تعذر تحميل تقويم اليوميات" description="تحقق من الاتصال ثم أعد المحاولة" onRetry={() => authorityQuery.refetch()} />
-      : <DiaryEntriesSkeleton />;
+      : <DiaryEntriesSkeleton message="جارٍ تحميل تقويم اليوميات" />;
   }
 
   function openAdd(_event: ReactMouseEvent<HTMLButtonElement>, meal: MealType | null = null) {
@@ -286,7 +286,7 @@ export function DiaryPage() {
             <h2 id="daily-log-title">وجبات اليوم</h2>
           </div>
 
-          {entriesQuery.isPending ? <DiaryEntriesSkeleton /> : null}
+          {entriesQuery.isPending ? <DiaryEntriesSkeleton message="جارٍ تحميل وجبات اليوم" /> : null}
           {entriesQuery.isError ? (
             <RetryState message={DIARY_DAY_READ_ERROR} description="تحقق من الاتصال ثم أعد المحاولة" onRetry={() => entriesQuery.refetch()} />
           ) : null}
@@ -470,7 +470,11 @@ const targetProvenanceLabels: Record<DaySummary["target_provenance"], string> = 
 };
 
 function DailyProgressSummary({ totals, targets, targetProvenance, pending, failed, onOpenNutrition }: { totals: NutritionTotals; targets: TargetResponse | null; targetProvenance: DaySummary["target_provenance"]; pending: boolean; failed: boolean; onOpenNutrition: () => void }) {
-  if (pending) return <div className="diary-summary diary-summary-loading" aria-label="جارٍ تحميل ملخص اليوم" />;
+  if (pending) return (
+    <div className="diary-summary diary-summary-loading">
+      <span className="sr-only" role="status">جارٍ تحميل ملخص اليوم</span>
+    </div>
+  );
   if (failed) return <section className="diary-summary diary-summary-unavailable" aria-label="ملخص اليوم غير متاح">تعذر تحميل ملخص هذا اليوم</section>;
   if (!targets) return (
     <section className="diary-summary state-note" aria-label="ملخص اليوم دون مصدر هدف">
@@ -1332,8 +1336,13 @@ function RetryState({ message, description = "", onRetry, compact = false }: { m
   );
 }
 
-function DiaryEntriesSkeleton() {
-  return <div className="diary-entry-list" aria-label="جارٍ تحميل يوميات اليوم">{[1, 2, 3].map((item) => <div className="diary-entry-skeleton" key={item} />)}</div>;
+function DiaryEntriesSkeleton({ message }: { message: string }) {
+  return (
+    <div className="diary-entry-list">
+      <span className="sr-only" role="status">{message}</span>
+      {[1, 2, 3].map((item) => <div aria-hidden="true" className="diary-entry-skeleton" key={item} />)}
+    </div>
+  );
 }
 
 function emptyNutritionTotals(): NutritionTotals {
