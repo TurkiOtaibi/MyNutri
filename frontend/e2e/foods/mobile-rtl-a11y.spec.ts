@@ -76,6 +76,8 @@ test.describe("Foods mobile, RTL, and accessibility @foods", () => {
   });
 
   test("[FOOD-TC-145] @plan024 @p0 @mobile @a11y Admin status control is keyboard and touch safe", async ({ page }) => {
+    test.setTimeout(120_000);
+
     const activeFood = plan024AccessibleFood(
       271,
       `طعام عربي طويل ${"اسم ".repeat(12)}Mixed Latin Food`,

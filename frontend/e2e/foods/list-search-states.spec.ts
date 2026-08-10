@@ -1,6 +1,113 @@
-import type { Page } from "@playwright/test";
+import type { Page, Response } from "@playwright/test";
 
-import { test, expect, expectNoHorizontalOverflow, validFood } from "./helpers";
+import { API_URL, test, expect, expectNoHorizontalOverflow, validFood } from "./helpers";
+
+const API_ORIGIN = new URL(API_URL).origin;
+
+type FoodIdentity = { id: string; name: string };
+
+function waitForPublicFoodsResponse(
+  page: Page,
+  {
+    search,
+    sort = "name",
+    category
+  }: {
+    search?: string | null;
+    sort?: string;
+    category?: string | null;
+  } = {}
+) {
+  return page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    if (
+      url.origin !== API_ORIGIN ||
+      url.pathname !== "/foods" ||
+      response.request().method() !== "GET" ||
+      response.request().resourceType() !== "fetch" ||
+      url.searchParams.get("page") !== "1" ||
+      url.searchParams.get("page_size") !== "20" ||
+      url.searchParams.get("sort") !== sort
+    ) return false;
+
+    const expectedSearch = search?.trim() ?? "";
+    if (
+      expectedSearch
+        ? url.searchParams.get("search") !== expectedSearch
+        : url.searchParams.has("search")
+    ) return false;
+
+    if (
+      category
+        ? url.searchParams.get("category") !== category
+        : url.searchParams.has("category")
+    ) return false;
+
+    return true;
+  });
+}
+
+function foodsFromBody(body: unknown): FoodIdentity[] {
+  const items = Array.isArray(body)
+    ? body
+    : body && typeof body === "object" && "items" in body && Array.isArray(body.items)
+      ? body.items
+      : null;
+  if (!items) throw new Error("Public Foods response must be an array or a paginated items object.");
+
+  return items.map((item, index) => {
+    if (
+      !item ||
+      typeof item !== "object" ||
+      !("id" in item) ||
+      typeof item.id !== "string" ||
+      !("name" in item) ||
+      typeof item.name !== "string"
+    ) throw new Error(`Public Foods response item ${index} is missing a stable id or name.`);
+    return { id: item.id, name: item.name };
+  });
+}
+
+async function foodsFromResponse(response: Response) {
+  expect(response.status()).toBe(200);
+  return foodsFromBody(await response.json());
+}
+
+function visibleFoodDetailLink(page: Page, food: { name: string }) {
+  return page.getByRole("link", {
+    name: `عرض تفاصيل ${food.name}`,
+    exact: true
+  });
+}
+
+function allFoodDetailLinks(page: Page, food: { id: string }) {
+  return page.locator(`a[href="/foods/${food.id}"]`);
+}
+
+function allCatalogFoodDetailLinks(page: Page) {
+  return page.locator('.food-table-wrap a[href^="/foods/"], .food-card-list a[href^="/foods/"]');
+}
+
+function expectFoodIncluded(foods: FoodIdentity[], food: { id: string }) {
+  expect(foods.map((item) => item.id)).toContain(food.id);
+}
+
+function expectFoodExcluded(foods: FoodIdentity[], food: { id: string }) {
+  expect(foods.map((item) => item.id)).not.toContain(food.id);
+}
+
+async function establishInitialPublicCatalog(page: Page, foods: FoodIdentity[] = []) {
+  const initialResponse = waitForPublicFoodsResponse(page);
+  await page.goto("/foods");
+  const initialFoods = await foodsFromResponse(await initialResponse);
+  await expect(page.getByLabel("بحث باسم الطعام")).toHaveValue("");
+  for (const food of foods) {
+    expectFoodIncluded(initialFoods, food);
+    await expect(visibleFoodDetailLink(page, food)).toBeVisible();
+    expect(await allFoodDetailLinks(page, food).count()).toBeGreaterThan(0);
+  }
+  return initialFoods;
+}
 
 function plan024Food(idSuffix: number, name: string, status: "active" | "archived" = "active") {
   return {
@@ -141,45 +248,79 @@ test.describe("Foods list, search, and states @foods", () => {
     test(`[${item.id}] ${item.priority} search finds matching current Food`, async ({ page, foodsApi }) => {
       const match = await foodsApi.create({ name: `${item.name} ${Date.now()}` });
       const other = await foodsApi.create({ name: `E2E-Unrelated-${Date.now()}` });
-      await page.goto("/foods");
-      await page.getByLabel("بحث باسم الطعام").fill(item.term);
-      await expect(page.getByText(match.name, { exact: true }).first()).toBeVisible();
-      await expect(page.getByText(other.name, { exact: true })).toHaveCount(0);
+      await establishInitialPublicCatalog(page, [match, other]);
+      const searchedResponse = waitForPublicFoodsResponse(page, { search: item.term });
+      const search = page.getByLabel("بحث باسم الطعام");
+      await search.fill(item.term);
+      const searchedFoods = await foodsFromResponse(await searchedResponse);
+      expectFoodIncluded(searchedFoods, match);
+      expectFoodExcluded(searchedFoods, other);
+      await expect(search).toHaveValue(item.term);
+      await expect(visibleFoodDetailLink(page, match)).toBeVisible();
+      await expect(allFoodDetailLinks(page, other)).toHaveCount(0);
     });
   }
 
   test("[FOOD-TC-021] @p1 search trims whitespace", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E Trim Search ${Date.now()}` });
-    await page.goto("/foods");
-    await page.getByLabel("بحث باسم الطعام").fill("   Trim Search   ");
-    await expect(page.getByText(food.name, { exact: true }).first()).toBeVisible();
+    const rawSearch = "   Trim Search   ";
+    await establishInitialPublicCatalog(page, [food]);
+    const searchedResponse = waitForPublicFoodsResponse(page, { search: "Trim Search" });
+    const search = page.getByLabel("بحث باسم الطعام");
+    await search.fill(rawSearch);
+    const searchedFoods = await foodsFromResponse(await searchedResponse);
+    expectFoodIncluded(searchedFoods, food);
+    await expect(search).toHaveValue(rawSearch);
+    await expect(visibleFoodDetailLink(page, food)).toBeVisible();
   });
 
   test("[FOOD-TC-022] @p0 no-results state is shown", async ({ page, foodsApi }) => {
-    await foodsApi.create({ name: `E2E-Existing-${Date.now()}` });
-    await page.goto("/foods");
-    await page.getByLabel("بحث باسم الطعام").fill(`NoMatch-${Date.now()}`);
+    const existing = await foodsApi.create({ name: `E2E-Existing-${Date.now()}` });
+    const term = `NoMatch-${Date.now()}`;
+    await establishInitialPublicCatalog(page, [existing]);
+    const searchedResponse = waitForPublicFoodsResponse(page, { search: term });
+    const search = page.getByLabel("بحث باسم الطعام");
+    await search.fill(term);
+    expect(await foodsFromResponse(await searchedResponse)).toHaveLength(0);
+    await expect(search).toHaveValue(term);
     await expect(page.getByText("لا توجد نتائج مطابقة للبحث.", { exact: true })).toBeVisible();
+    await expect(page.getByText("لا توجد أطعمة بعد.", { exact: true })).toHaveCount(0);
+    await expect(allFoodDetailLinks(page, existing)).toHaveCount(0);
+    await expect(allCatalogFoodDetailLinks(page)).toHaveCount(0);
   });
 
   test("[FOOD-TC-023] @p1 clearing search restores full catalog", async ({ page, foodsApi }) => {
     const first = await foodsApi.create({ name: `E2E-Clear-One-${Date.now()}` });
     const second = await foodsApi.create({ name: `E2E-Clear-Two-${Date.now()}` });
-    await page.goto("/foods");
+    await establishInitialPublicCatalog(page, [first, second]);
     const search = page.getByLabel("بحث باسم الطعام");
+    const filteredResponse = waitForPublicFoodsResponse(page, { search: "Clear-One" });
     await search.fill("Clear-One");
-    await expect(page.getByText(second.name, { exact: true })).toHaveCount(0);
+    const filteredFoods = await foodsFromResponse(await filteredResponse);
+    expectFoodIncluded(filteredFoods, first);
+    expectFoodExcluded(filteredFoods, second);
+    await expect(search).toHaveValue("Clear-One");
+    await expect(visibleFoodDetailLink(page, first)).toBeVisible();
+    await expect(allFoodDetailLinks(page, second)).toHaveCount(0);
+
     await search.fill("");
-    await expect(page.getByText(first.name, { exact: true }).first()).toBeVisible();
-    await expect(page.getByText(second.name, { exact: true }).first()).toBeVisible();
+    await expect(search).toHaveValue("");
+    await expect(visibleFoodDetailLink(page, first)).toBeVisible();
+    await expect(visibleFoodDetailLink(page, second)).toBeVisible();
   });
 
   test("[FOOD-TC-024] @p0 deleted Food is absent from search", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E-Deleted-Search-${Date.now()}` });
     await foodsApi.remove(food.id);
-    await page.goto("/foods");
-    await page.getByLabel("بحث باسم الطعام").fill("Deleted-Search");
-    await expect(page.getByText(food.name, { exact: true })).toHaveCount(0);
+    await establishInitialPublicCatalog(page);
+    await expect(allFoodDetailLinks(page, food)).toHaveCount(0);
+    const searchedResponse = waitForPublicFoodsResponse(page, { search: "Deleted-Search" });
+    const search = page.getByLabel("بحث باسم الطعام");
+    await search.fill("Deleted-Search");
+    const searchedFoods = await foodsFromResponse(await searchedResponse);
+    expectFoodExcluded(searchedFoods, food);
+    await expect(search).toHaveValue("Deleted-Search");
+    await expect(allFoodDetailLinks(page, food)).toHaveCount(0);
   });
 
   test("[FOOD-TC-025] @p0 search read failure shows Arabic error", async ({ page }) => {
@@ -193,10 +334,13 @@ test.describe("Foods list, search, and states @foods", () => {
 
   test("[FOOD-TC-026] @p1 @mobile search remains usable at 360px", async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 800 });
-    await page.goto("/foods");
+    await establishInitialPublicCatalog(page);
     const search = page.getByLabel("بحث باسم الطعام");
+    const searchedResponse = waitForPublicFoodsResponse(page, { search: "شوفان Oats" });
     await search.fill("شوفان Oats");
+    await foodsFromResponse(await searchedResponse);
     await expect(search).toHaveValue("شوفان Oats");
+    await expect(search).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });
 
@@ -225,11 +369,17 @@ test.describe("Foods list, search, and states @foods", () => {
   });
 
   test("[FOOD-TC-029] @p1 no-results differs from empty catalog state", async ({ page, foodsApi }) => {
-    await foodsApi.create({ name: `E2E-State-Distinction-${Date.now()}` });
-    await page.goto("/foods");
-    await page.getByLabel("بحث باسم الطعام").fill("No-Match");
+    const existing = await foodsApi.create({ name: `E2E-State-Distinction-${Date.now()}` });
+    await establishInitialPublicCatalog(page, [existing]);
+    const searchedResponse = waitForPublicFoodsResponse(page, { search: "No-Match" });
+    const search = page.getByLabel("بحث باسم الطعام");
+    await search.fill("No-Match");
+    expect(await foodsFromResponse(await searchedResponse)).toHaveLength(0);
+    await expect(search).toHaveValue("No-Match");
     await expect(page.getByText("لا توجد نتائج مطابقة للبحث.", { exact: true })).toBeVisible();
     await expect(page.getByText("لا توجد أطعمة بعد.", { exact: true })).toHaveCount(0);
+    await expect(allFoodDetailLinks(page, existing)).toHaveCount(0);
+    await expect(allCatalogFoodDetailLinks(page)).toHaveCount(0);
   });
 
   test("[FOOD-TC-030][FOOD-TC-031] @p0 @p1 read failure clears after fresh retry", async ({ page }) => {
@@ -279,12 +429,20 @@ test.describe("Foods list, search, and states @foods", () => {
     }));
     await page.route(/\/foods(?:\?.*)?$/, async (route) => {
       if (route.request().resourceType() === "document") return route.continue();
-      const query = new URL(route.request().url()).searchParams.get("q")?.toLowerCase();
+      const query = new URL(route.request().url()).searchParams.get("search")?.toLowerCase();
       const result = query ? foods.filter((food) => food.name.toLowerCase().includes(query)) : foods;
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(result) });
     });
+    const initialResponse = waitForPublicFoodsResponse(page);
     await page.goto("/foods");
-    await page.getByLabel("بحث باسم الطعام").fill("rice");
+    expect(await foodsFromResponse(await initialResponse)).toHaveLength(200);
+    const searchedResponse = waitForPublicFoodsResponse(page, { search: "rice" });
+    const search = page.getByLabel("بحث باسم الطعام");
+    await search.fill("rice");
+    const searchedFoods = await foodsFromResponse(await searchedResponse);
+    expect(searchedFoods).toHaveLength(20);
+    expect(searchedFoods.map((food) => food.id)).toEqual(foods.slice(0, 20).map((food) => food.id));
+    await expect(search).toHaveValue("rice");
     await expect(page.locator("tbody tr")).toHaveCount(20);
     await expectNoHorizontalOverflow(page);
   });

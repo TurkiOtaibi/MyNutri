@@ -1,4 +1,56 @@
+import type { Page, Response } from "@playwright/test";
+
+import { weekStartSunday } from "../../lib/dates";
 import { API_TOKEN, API_URL, diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
+
+const apiOrigin = new URL(API_URL).origin;
+
+function isExactDiaryResponse(response: Response, pathname: string, queryKey: string, queryValue: string) {
+  const request = response.request();
+  const url = new URL(response.url());
+  return request.method() === "GET" &&
+    response.ok() &&
+    url.origin === apiOrigin &&
+    url.pathname === pathname &&
+    url.searchParams.get(queryKey) === queryValue &&
+    [...url.searchParams.keys()].length === 1;
+}
+
+async function selectHistoricalDiaryDate(page: Page, value: string) {
+  const weekStart = weekStartSunday(value);
+  const matchedEntries: string[] = [];
+  const matchedWeeks: string[] = [];
+  const recordMatch = (response: Response) => {
+    if (isExactDiaryResponse(response, "/diary", "entry_date", value)) matchedEntries.push(response.url());
+    if (isExactDiaryResponse(response, "/diary/week", "start", weekStart)) matchedWeeks.push(response.url());
+  };
+  page.on("response", recordMatch);
+
+  try {
+    const entriesResponse = page.waitForResponse((response) =>
+      isExactDiaryResponse(response, "/diary", "entry_date", value)
+    );
+    const weekResponse = page.waitForResponse((response) =>
+      isExactDiaryResponse(response, "/diary/week", "start", weekStart)
+    );
+
+    const picker = page.getByLabel("اختيار تاريخ اليوميات");
+    await picker.fill(value);
+    const [entriesResult, weekResult] = await Promise.all([entriesResponse, weekResponse]);
+
+    expect(entriesResult.status()).toBe(200);
+    expect(weekResult.status()).toBe(200);
+    await expect(picker).toHaveValue(value);
+    await expect(page.locator(".diary-entry-skeleton")).toHaveCount(0);
+    await expect(page.locator(".diary-summary-loading")).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: "جارٍ تحميل وجبات اليوم" })).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: "جارٍ تحميل ملخص اليوم" })).toHaveCount(0);
+    expect(matchedEntries).toHaveLength(1);
+    expect(matchedWeeks).toHaveLength(1);
+  } finally {
+    page.off("response", recordMatch);
+  }
+}
 
 test.describe("@diary @meals Gregorian meal sections", () => {
   test("@p0 Gregorian date hydrates without server/client mismatch", async ({ page }) => {
@@ -29,12 +81,20 @@ test.describe("@diary @meals Gregorian meal sections", () => {
   test("@p0 renders four compact meal sections and legacy only when needed", async ({ page }) => {
     await page.goto("/diary");
     const emptyDate = localDate(-120);
-    await page.getByLabel("اختيار تاريخ اليوميات").fill(emptyDate);
+    await selectHistoricalDiaryDate(page, emptyDate);
+    await expect(page.locator(".meal-section")).toHaveCount(4);
     for (const meal of ["فطور", "غداء", "عشاء", "سناك"]) {
-      await expect(page.getByRole("button", { name: new RegExp(`قسم ${meal}$`) })).toBeVisible();
+      const sectionToggle = page.getByRole("button", { name: `فتح قسم ${meal}`, exact: true });
+      await expect(sectionToggle).toHaveCount(1);
+      await expect(sectionToggle).toBeVisible();
     }
     await expect(page.getByRole("button", { name: /قسم غير مصنف$/ })).toHaveCount(0);
-    await expect(page.locator(".meal-section")).toHaveCount(4);
+    await expect(page.getByText("لا توجد أطعمة مسجلة اليوم", { exact: true })).toBeVisible();
+    await expect(page.locator(".diary-error-state")).toHaveCount(0);
+    const summary = page.locator(".diary-summary");
+    await expect(summary).toHaveCount(1);
+    await expect(summary).toBeVisible();
+    await expect(summary.getByRole("heading", { name: "ملخص اليوم", exact: true })).toBeVisible();
   });
 
   test("@p0 section Add preselects meal and saves into that expanded section", async ({ page, foodsApi }) => {
