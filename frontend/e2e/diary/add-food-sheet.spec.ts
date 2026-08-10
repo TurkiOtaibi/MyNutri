@@ -297,9 +297,28 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
   test("@plan014 @p0 picker result can be selected with the keyboard", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Keyboard picker") });
     const dialog = await openGeneral(page);
+    const pickerResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.origin === new URL(API_URL).origin
+        && url.pathname === "/foods/picker"
+        && response.request().method() === "GET"
+        && response.request().resourceType() === "fetch"
+        && url.searchParams.get("limit") === "30"
+        && url.searchParams.get("search") === food.name
+        && !url.searchParams.has("cursor")
+      );
+    });
     await dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية").fill(food.name);
+    const response = await pickerResponse;
+    expect(response.status()).toBe(200);
+    const body = await response.json() as { items: Array<{ id: string }> };
+    expect(body.items.filter((item) => item.id === food.id)).toHaveLength(1);
     const option = dialog.getByRole("button", { name: new RegExp(food.name) });
+    await expect(option).toHaveCount(1);
+    await expect(option).toBeVisible();
     await option.focus();
+    await expect(option).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(dialog.getByLabel(`الطعام المحدد: ${food.name}`)).toBeVisible();
   });
