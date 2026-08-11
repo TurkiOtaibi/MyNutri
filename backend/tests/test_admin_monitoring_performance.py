@@ -5,6 +5,9 @@ from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 import json
 import os
+from pathlib import Path
+import subprocess
+import sys
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import pytest
@@ -12,13 +15,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine as sa_create_engine, event, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.api.routes import admin as admin_route
 from app.core.auth import AuthClaims, PrincipalContext, get_token_verifier
 from app.db.session import get_session
 from app.main import app
 from app.models import ActivityLevel, DiaryEntry, Goal, Principal, PrincipalRole, Profile, Sex, TargetProvenance
+from app.services.diary import AdminDiaryCursorError
 
 ADMIN_ID = UUID("00000000-0000-0000-0000-0000000000aa")
 USER_ID = UUID("00000000-0000-0000-0000-0000000000bb")
@@ -132,7 +136,7 @@ def _seed_diary(session: Session, principal_id: UUID, count: int) -> list[DiaryE
 
 
 @pytest.fixture
-def plan025_postgresql_session():
+def plan025_postgresql_database():
     url = os.environ.get("TEST_DATABASE_URL", "")
     if not url:
         pytest.skip("TEST_DATABASE_URL is required for disposable PostgreSQL Plan 025 tests.")
@@ -145,15 +149,43 @@ def plan025_postgresql_session():
     ):
         pytest.fail("Plan 025 requires a loopback mynutri_test_ PostgreSQL TEST_DATABASE_URL.")
 
+    database_name = f"mynutri_test_plan025_{uuid4().hex[:12]}"
+    admin_url = parsed.set(database="postgres").render_as_string(hide_password=False)
+    admin_engine = sa_create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    test_url = parsed.set(database=database_name).render_as_string(hide_password=False)
+    database_created = False
+    try:
+        with admin_engine.connect() as connection:
+            connection.execute(text(f'CREATE DATABASE "{database_name}"'))
+            database_created = True
+        yield test_url
+    finally:
+        if database_created:
+            with admin_engine.connect() as connection:
+                connection.execute(
+                    text(
+                        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                        "WHERE datname = :database_name AND pid <> pg_backend_pid()"
+                    ),
+                    {"database_name": database_name},
+                )
+                connection.execute(text(f'DROP DATABASE "{database_name}"'))
+        admin_engine.dispose()
+
+
+@pytest.fixture
+def plan025_postgresql_session(plan025_postgresql_database: str):
     schema_name = f"isolated_plan025_{uuid4().hex}"
-    admin_engine = sa_create_engine(url, isolation_level="AUTOCOMMIT")
+    admin_engine = sa_create_engine(plan025_postgresql_database, isolation_level="AUTOCOMMIT")
     test_engine = None
     schema_created = False
     try:
         with admin_engine.connect() as connection:
             connection.execute(text(f'CREATE SCHEMA "{schema_name}"'))
             schema_created = True
-        test_engine = sa_create_engine(url, connect_args={"options": f"-csearch_path={schema_name}"})
+        test_engine = sa_create_engine(
+            plan025_postgresql_database, connect_args={"options": f"-csearch_path={schema_name}"}
+        )
         SQLModel.metadata.create_all(test_engine)
         with Session(test_engine) as session:
             session.add_all(
@@ -172,6 +204,63 @@ def plan025_postgresql_session():
             with admin_engine.connect() as connection:
                 connection.execute(text(f'DROP SCHEMA "{schema_name}" CASCADE'))
         admin_engine.dispose()
+
+
+def _run_alembic(url: str, *arguments: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "alembic", *arguments],
+        cwd=Path(__file__).parents[1],
+        env={**os.environ, "DATABASE_URL": url},
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+
+def _index_catalog(session: Session) -> dict[str, object]:
+    row = session.execute(
+        text(
+            "SELECT pg_get_indexdef(indexrelid) AS definition, indpred IS NULL AS no_predicate, "
+            "indnkeyatts, indnatts, indoption::smallint[] AS options, "
+            "array_agg(pg_get_indexdef(indexrelid, key_position, true) ORDER BY key_position) AS keys "
+            "FROM pg_index JOIN pg_class ON pg_class.oid = indexrelid "
+            "CROSS JOIN LATERAL generate_series(1, indnkeyatts) AS key_position "
+            "WHERE indrelid = 'diary_entry'::regclass "
+            "AND relname = 'ix_diary_entry_principal_date_created_id_desc' "
+            "GROUP BY indexrelid, indpred, indnkeyatts, indnatts, indoption"
+        )
+    ).mappings().one()
+    return dict(row)
+
+
+def _assert_diary_index_catalog(session: Session) -> None:
+    indexes = session.execute(
+        text(
+            "SELECT count(*) FROM pg_index JOIN pg_class ON pg_class.oid = indexrelid "
+            "WHERE indrelid = 'diary_entry'::regclass "
+            "AND relname = 'ix_diary_entry_principal_date_created_id_desc'"
+        )
+    ).scalar_one()
+    assert indexes == 1
+    catalog = _index_catalog(session)
+    assert catalog["no_predicate"] is True
+    assert catalog["indnkeyatts"] == catalog["indnatts"] == 4
+    assert catalog["keys"] == ["principal_id", "entry_date", "created_at", "id"]
+    assert catalog["options"] == [0, 3, 3, 3]
+    assert str(catalog["definition"]).endswith(
+        "USING btree (principal_id, entry_date DESC, created_at DESC, id DESC)"
+    )
+
+
+def _walk_plan(node: dict) -> list[dict]:
+    return [node, *[descendant for child in node.get("Plans", []) for descendant in _walk_plan(child)]]
+
+
+def _explain(session: Session, statement: str, **params: object) -> dict:
+    result = session.execute(
+        text(f"EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) {statement}"), params
+    ).scalar_one()
+    return result[0]["Plan"]
 
 
 def test_plan025_admin_user_list_summary_queries_are_constant(admin_context) -> None:
@@ -323,8 +412,8 @@ def test_plan025_postgresql_budgets_read_only_and_bounded_pages(
                 )
             )
             _seed_diary(session, principal.id, 1)
-    _seed_diary(session, USER_ID, 101)
-    other_entries = _seed_diary(session, OTHER_ID, 1)
+    _seed_diary(session, USER_ID, 501)
+    other_entries = _seed_diary(session, OTHER_ID, 301)
 
     def forbidden(*_args, **_kwargs):
         raise AssertionError("admin monitoring mutated session state")
@@ -349,23 +438,113 @@ def test_plan025_postgresql_budgets_read_only_and_bounded_pages(
     first = admin_route.admin_diary_page(session, principal, 50)
     second = admin_route.admin_diary_page(session, principal, 100, first.next_cursor)
     assert len(first.items) == 50
-    assert len(second.items) == 51
-    assert len({item.id for item in first.items + second.items}) == 101
+    assert len(second.items) == 100
+    assert len({item.id for item in first.items + second.items}) == 150
     assert {item.id for item in first.items}.isdisjoint({entry.id for entry in other_entries})
     with _capture_statements(session) as invalid_statements:
-        with pytest.raises(Exception):
+        with pytest.raises(AdminDiaryCursorError, match="^invalid cursor$"):
             admin_route.admin_diary_page(session, principal, 50, "not-a-cursor")
     assert invalid_statements == []
 
-    plan = session.exec(
-        text(
-            "EXPLAIN (ANALYZE, BUFFERS) SELECT id FROM diary_entry "
-            "WHERE principal_id = :principal_id "
-            "ORDER BY entry_date DESC, created_at DESC, id DESC LIMIT 51"
-        ),
-        params={"principal_id": str(USER_ID)},
-    ).all()
-    assert plan
-    # The representative plan remains bounded by LIMIT 51; no new index is added without
-    # measured evidence that this bounded PostgreSQL query needs one.
-    assert any("Limit" in str(row[0]) for row in plan)
+    session.execute(text("ANALYZE diary_entry"))
+    first_plan = _explain(
+        session,
+        "SELECT id, entry_date, meal_type, quantity, nutrition_snapshot, snapshot_schema_version, "
+        "created_at FROM diary_entry WHERE principal_id = CAST(:principal_id AS uuid) "
+        "ORDER BY entry_date DESC, created_at DESC, id DESC LIMIT 51",
+        principal_id=str(USER_ID),
+    )
+    boundary = first.items[-1]
+    boundary_created_at = session.exec(
+        select(DiaryEntry.created_at).where(DiaryEntry.id == boundary.id)
+    ).one()
+    cursor_plan = _explain(
+        session,
+        "SELECT id, entry_date, meal_type, quantity, nutrition_snapshot, snapshot_schema_version, "
+        "created_at FROM diary_entry WHERE principal_id = CAST(:principal_id AS uuid) AND "
+        "(entry_date < CAST(:entry_date AS date) OR "
+        "(entry_date = CAST(:entry_date AS date) AND created_at < CAST(:created_at AS timestamptz)) OR "
+        "(entry_date = CAST(:entry_date AS date) AND created_at = CAST(:created_at AS timestamptz) "
+        "AND id < CAST(:entry_id AS uuid))) "
+        "ORDER BY entry_date DESC, created_at DESC, id DESC LIMIT 101",
+        principal_id=str(USER_ID),
+        entry_date=boundary.entry_date.isoformat(),
+        created_at=boundary_created_at.isoformat(),
+        entry_id=str(boundary.id),
+    )
+    for plan in (first_plan, cursor_plan):
+        nodes = _walk_plan(plan)
+        assert plan["Node Type"] == "Limit"
+        assert not any(node["Node Type"] == "Sort" for node in nodes)
+        diary_scans = [
+            node for node in nodes
+            if node["Node Type"] in {"Index Scan", "Index Only Scan"}
+            and node.get("Relation Name") == "diary_entry"
+        ]
+        assert len(diary_scans) == 1
+        scan = diary_scans[0]
+        assert scan["Index Name"] == "ix_diary_entry_principal_date_created_id_desc"
+        assert scan["Actual Rows"] <= 101
+        assert scan["Actual Loops"] == 1
+        assert "principal_id" in scan.get("Index Cond", "")
+        assert not any(
+            node["Node Type"] == "Seq Scan" and node.get("Relation Name") == "diary_entry"
+            for node in nodes
+        )
+    cursor_scan = next(
+        node for node in _walk_plan(cursor_plan)
+        if node["Node Type"] in {"Index Scan", "Index Only Scan"}
+        and node.get("Relation Name") == "diary_entry"
+    )
+    assert any(
+        predicate in (cursor_scan.get("Index Cond", "") + cursor_scan.get("Filter", ""))
+        for predicate in ("entry_date", "created_at", "id")
+    )
+    _assert_diary_index_catalog(session)
+
+
+def test_plan025_migration_rehearsal_catalog_and_reversibility(
+    plan025_postgresql_database: str,
+) -> None:
+    heads = _run_alembic(plan025_postgresql_database, "heads")
+    assert heads.stdout.strip() == "9f2a1b6c3d05 (head)"
+    _run_alembic(plan025_postgresql_database, "upgrade", "head")
+    engine = sa_create_engine(plan025_postgresql_database)
+    try:
+        with Session(engine) as session:
+            _assert_diary_index_catalog(session)
+            session.execute(
+                text(
+                    "INSERT INTO principal (id, auth_user_id, role, created_at, updated_at) VALUES "
+                    "(CAST(:principal_id AS uuid), CAST(:auth_id AS uuid), 'user', "
+                    "TIMESTAMPTZ '2026-08-01 12:00:00+00', "
+                    "TIMESTAMPTZ '2026-08-01 12:00:00+00')"
+                ),
+                {"principal_id": str(USER_ID), "auth_id": str(USER_AUTH_ID)},
+            )
+            session.execute(
+                text(
+                    "INSERT INTO diary_entry "
+                    "(id, principal_id, entry_date, meal_type, quantity, target_provenance, nutrition_snapshot, created_at) "
+                    "VALUES (CAST(:entry_id AS uuid), CAST(:principal_id AS uuid), DATE '2026-08-01', "
+                    "'unspecified', 1, "
+                    "'no_target_source', CAST(:snapshot AS jsonb), TIMESTAMPTZ '2026-08-01 12:00:00+00')"
+                ),
+                {"entry_id": str(uuid4()), "principal_id": str(USER_ID), "snapshot": json.dumps(_snapshot())},
+            )
+            session.commit()
+            before = session.execute(text("SELECT count(*) FROM diary_entry")).scalar_one()
+        _run_alembic(plan025_postgresql_database, "downgrade", "7c4a9d2e1f06")
+        with Session(engine) as session:
+            assert session.execute(text("SELECT count(*) FROM diary_entry")).scalar_one() == before
+            assert session.execute(
+                text("SELECT count(*) FROM pg_indexes WHERE tablename = 'diary_entry' "
+                     "AND indexname = 'ix_diary_entry_principal_date_created_id_desc'")
+            ).scalar_one() == 0
+        _run_alembic(plan025_postgresql_database, "upgrade", "head")
+        with Session(engine) as session:
+            _assert_diary_index_catalog(session)
+            assert session.execute(text("SELECT count(*) FROM diary_entry")).scalar_one() == before
+    finally:
+        engine.dispose()
+    _run_alembic(plan025_postgresql_database, "check")

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
@@ -88,40 +88,86 @@ async function mockPlan025Detail(page: import("@playwright/test").Page, failNext
   });
 }
 
-test("@plan025 admin diary renders bounded pages, final state, mobile layout, and axe", async ({ page }) => {
+async function assertDiaryViewport(page: import("@playwright/test").Page) {
+  const layout = await page.evaluate(() => {
+    const root = document.documentElement;
+    const visible = [...document.querySelectorAll<HTMLElement>(".section-panel button, .admin-readonly-list li, .state-note, [role='alert']")]
+      .filter((element) => element.offsetParent !== null)
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, width: rect.width, height: rect.height, tag: element.tagName };
+      });
+    const targets = [...document.querySelectorAll<HTMLButtonElement>(".section-panel button")]
+      .filter((element) => element.offsetParent !== null)
+      .map((element) => ({ width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height }));
+    const hiddenFocusable = document.querySelectorAll("[aria-hidden='true'] button, [aria-hidden='true'] a, [hidden] button, [hidden] a").length;
+    return { overflow: root.scrollWidth - root.clientWidth, viewport: innerWidth, visible, targets, hiddenFocusable };
+  });
+  expect(layout.overflow).toBeLessThanOrEqual(1);
+  expect(layout.visible.every((box) => box.left >= -1 && box.right <= layout.viewport + 1)).toBe(true);
+  expect(layout.targets.every((target) => target.width >= 44 && target.height >= 44)).toBe(true);
+  expect(layout.hiddenFocusable).toBe(0);
+}
+
+async function assertAxe(page: import("@playwright/test").Page) {
+  const axe = await new AxeBuilder({ page }).analyze();
+  expect(axe.violations.filter((violation) => ["moderate", "serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
+}
+
+function plan025DiarySection(page: Page) {
+  const heading = page.getByRole("heading", { name: "اليوميات", exact: true });
+  return page.locator("section").filter({ has: heading });
+}
+
+function plan025DiaryAlert(page: Page) {
+  return plan025DiarySection(page).getByRole("alert");
+}
+
+test("@plan025 admin diary renders bounded pages and keyboard load more", async ({ page }) => {
   await mockPlan025Detail(page);
   await page.goto(`/admin/users/${PLAN025_PRINCIPAL_ID}`);
   await expect(page.getByText("وجبة أولى", { exact: true })).toBeVisible();
+  await expect(plan025DiarySection(page)).toHaveCount(1);
+  await expect(plan025DiarySection(page)).toBeVisible();
   const loadMore = page.getByRole("button", { name: "عرض المزيد" });
   await expect(loadMore).toBeVisible();
-  await loadMore.focus();
-  await expect(loadMore).toBeFocused();
-  await page.keyboard.press("Enter");
+  await loadMore.click();
   await expect(page.getByText("وجبة أخيرة", { exact: true })).toBeVisible();
   await expect(page.getByText("لا توجد إدخالات أخرى.", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /حفظ|تعديل|حذف/ })).toHaveCount(0);
-  const axe = await new AxeBuilder({ page }).analyze();
-  expect(axe.violations.filter((violation) => ["moderate", "serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
-  for (const width of [320, 360, 390, 430]) {
-    await page.setViewportSize({ width, height: 700 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-  }
 });
 
 test("@plan025 next-page failure retains entries and offers keyboard retry", async ({ page }) => {
-  await mockPlan025Detail(page, true);
+  let nextPageAttempts = 0;
+  await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}`, (route) => route.fulfill({ json: plan025Detail }));
+  await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}/diary?limit=50`, (route) => route.fulfill({ json: plan025FirstPage }));
+  await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}/diary?limit=50&cursor=cursor-plan025`, (route) => {
+    nextPageAttempts += 1;
+    if (nextPageAttempts === 1) return route.fulfill({ status: 500, json: { detail: "failed" } });
+    return route.fulfill({ json: plan025FinalPage });
+  });
   await page.goto(`/admin/users/${PLAN025_PRINCIPAL_ID}`);
-  await page.getByRole("button", { name: "عرض المزيد" }).click();
+  const diarySection = plan025DiarySection(page);
+  await expect(diarySection).toHaveCount(1);
+  await expect(diarySection).toBeVisible();
+  const loadMore = diarySection.getByRole("button", { name: "عرض المزيد", exact: true });
+  await loadMore.press("Enter");
   await expect(page.getByText("وجبة أولى", { exact: true })).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText("تعذر تحميل المزيد من اليوميات.");
-  const retry = page.getByRole("button", { name: "إعادة محاولة تحميل المزيد" });
-  await retry.focus();
+  const diaryAlert = plan025DiaryAlert(page);
+  await expect(diaryAlert).toHaveCount(1);
+  await expect(diaryAlert).toBeVisible();
+  await expect(diaryAlert.getByText("تعذر تحميل المزيد من اليوميات.", { exact: true })).toBeVisible();
+  const retry = diarySection.getByRole("button", { name: "إعادة محاولة تحميل المزيد", exact: true });
   await expect(retry).toBeFocused();
   await page.keyboard.press("Enter");
+  await expect.poll(() => nextPageAttempts).toBe(2);
+  await expect(page.getByText("وجبة أولى", { exact: true })).toBeVisible();
   await expect(page.getByText("وجبة أخيرة", { exact: true })).toBeVisible();
+  await expect(diaryAlert).toHaveCount(0);
+  await expect(diarySection.getByRole("button", { name: "إعادة محاولة تحميل المزيد", exact: true })).toHaveCount(0);
 });
 
-test("@plan025 initial loading, empty state, and retry use deterministic route barriers", async ({ page }) => {
+test("@plan025 initial failure focuses its retry and keyboard retry makes one request", async ({ page }) => {
   let initialAttempts = 0;
   await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}`, (route) => route.fulfill({ json: plan025Detail }));
   await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}/diary?limit=50`, (route) => {
@@ -130,12 +176,105 @@ test("@plan025 initial loading, empty state, and retry use deterministic route b
     return route.fulfill({ json: { items: [], next_cursor: null } });
   });
   await page.goto(`/admin/users/${PLAN025_PRINCIPAL_ID}`);
-  await expect(page.getByRole("alert")).toContainText("تعذر تحميل اليوميات.");
-  const retry = page.getByRole("button", { name: "إعادة المحاولة" });
-  await retry.focus();
+  const diarySection = plan025DiarySection(page);
+  await expect(diarySection).toHaveCount(1);
+  await expect(diarySection).toBeVisible();
+  const diaryAlert = plan025DiaryAlert(page);
+  await expect(diaryAlert).toHaveCount(1);
+  await expect(diaryAlert).toBeVisible();
+  await expect(diaryAlert).toHaveText("تعذر تحميل اليوميات.");
+  const retry = diarySection.getByRole("button", { name: "إعادة المحاولة", exact: true });
   await expect(retry).toBeFocused();
   await page.keyboard.press("Enter");
+  await expect.poll(() => initialAttempts).toBe(2);
   await expect(page.getByText("لا توجد إدخالات يومية.", { exact: true })).toBeVisible();
+  await expect(diaryAlert).toHaveCount(0);
+});
+
+test("@plan025 Diary loading is a held request with no stale state", async ({ page }) => {
+  let requestPending = false;
+  let releaseRequest: (() => void) | undefined;
+  const held = new Promise<void>((resolve) => { releaseRequest = resolve; });
+  await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}`, (route) => route.fulfill({ json: plan025Detail }));
+  await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}/diary?limit=50`, async (route) => {
+    requestPending = true;
+    await held;
+    await route.fulfill({ json: plan025FirstPage });
+  });
+  try {
+    await page.goto(`/admin/users/${PLAN025_PRINCIPAL_ID}`);
+    await expect.poll(() => requestPending).toBe(true);
+    const diarySection = plan025DiarySection(page);
+    await expect(diarySection).toHaveCount(1);
+    await expect(diarySection).toBeVisible();
+    await expect(page.getByText("جارٍ التحميل...", { exact: true })).toBeVisible();
+    await expect(page.getByText("وجبة أولى", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("لا توجد إدخالات يومية.", { exact: true })).toHaveCount(0);
+    await expect(plan025DiaryAlert(page)).toHaveCount(0);
+    await assertAxe(page);
+  } finally {
+    releaseRequest?.();
+  }
+  await expect(page.getByText("وجبة أولى", { exact: true })).toBeVisible();
+  await expect(plan025DiaryAlert(page)).toHaveCount(0);
+});
+
+test("@plan025 Diary accessibility matrix covers each applicable state and viewport", async ({ page }) => {
+  test.setTimeout(120_000);
+  const viewports = [320, 360, 390, 430, 1280];
+  const states = ["loaded", "loading", "error", "empty"] as const;
+  for (const state of states) {
+    for (const width of viewports) {
+      await page.unrouteAll({ behavior: "wait" });
+      await page.setViewportSize({ width, height: 700 });
+      await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}`, (route) => route.fulfill({ json: plan025Detail }));
+      if (state === "loading") {
+        let releaseRequest: (() => void) | undefined;
+        const held = new Promise<void>((resolve) => { releaseRequest = resolve; });
+        await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}/diary?limit=50`, async (route) => {
+          await held;
+          await route.fulfill({ json: plan025FirstPage });
+        });
+        try {
+          await page.goto(`/admin/users/${PLAN025_PRINCIPAL_ID}?matrix=${state}-${width}`);
+          const diarySection = plan025DiarySection(page);
+          await expect(diarySection).toHaveCount(1);
+          await expect(diarySection).toBeVisible();
+          await expect(page.getByText("جارٍ التحميل...", { exact: true })).toBeVisible();
+          await expect(page.getByText("وجبة أولى", { exact: true })).toHaveCount(0);
+          await expect(plan025DiaryAlert(page)).toHaveCount(0);
+          await assertDiaryViewport(page);
+          await assertAxe(page);
+        } finally {
+          releaseRequest?.();
+        }
+        await expect(page.getByText("وجبة أولى", { exact: true })).toBeVisible();
+        await expect(plan025DiaryAlert(page)).toHaveCount(0);
+      } else {
+        const diaryResponse = state === "loaded" ? plan025FirstPage : state === "empty" ? { items: [], next_cursor: null } : undefined;
+        await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}/diary?limit=50`, (route) => diaryResponse ? route.fulfill({ json: diaryResponse }) : route.fulfill({ status: 500, json: { detail: "failed" } }));
+        await page.goto(`/admin/users/${PLAN025_PRINCIPAL_ID}?matrix=${state}-${width}`);
+        const diarySection = plan025DiarySection(page);
+        await expect(diarySection).toHaveCount(1);
+        await expect(diarySection).toBeVisible();
+        const diaryAlert = plan025DiaryAlert(page);
+        if (state === "loaded") {
+          await expect(page.getByText("وجبة أولى", { exact: true })).toBeVisible();
+          await expect(diaryAlert).toHaveCount(0);
+        } else if (state === "empty") {
+          await expect(page.getByText("لا توجد إدخالات يومية.", { exact: true })).toBeVisible();
+          await expect(diaryAlert).toHaveCount(0);
+        } else {
+          await expect(diaryAlert).toHaveCount(1);
+          await expect(diaryAlert).toBeVisible();
+          await expect(diaryAlert).toHaveText("تعذر تحميل اليوميات.");
+          await expect(diarySection.getByRole("button", { name: "إعادة المحاولة", exact: true })).toBeFocused();
+        }
+        await assertDiaryViewport(page);
+        await assertAxe(page);
+      }
+    }
+  }
 });
 
 test("Food Taxonomy V2 and advanced analysis are mobile safe", async ({ page }) => {
