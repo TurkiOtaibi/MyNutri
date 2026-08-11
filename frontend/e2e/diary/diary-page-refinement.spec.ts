@@ -1,9 +1,61 @@
+import type { Page, Response } from "@playwright/test";
+
+import type { DiaryEntryResponse, WeekSummary } from "../../lib/types";
 import { API_TOKEN, API_URL, diaryDate as localDate, expect, offsetIsoDate, test, uniqueName } from "../foods/helpers";
+
+const apiOrigin = new URL(API_URL).origin;
 
 function sundayStart(input: string): string {
   const [year, month, day] = input.split("-").map(Number);
   const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
   return offsetIsoDate(input, -weekday);
+}
+
+function isExactDiaryResponse(
+  response: Response,
+  pathname: "/diary" | "/diary/week",
+  queryKey: "entry_date" | "start",
+  queryValue: string
+) {
+  const request = response.request();
+  const url = new URL(response.url());
+  return request.method() === "GET" &&
+    request.resourceType() === "fetch" &&
+    url.origin === apiOrigin &&
+    url.pathname === pathname &&
+    url.searchParams.get(queryKey) === queryValue &&
+    [...url.searchParams.keys()].length === 1;
+}
+
+async function navigateToAuthoritativeDiary(page: Page, value: string) {
+  const weekStart = sundayStart(value);
+  const entriesResponse = page.waitForResponse((response) =>
+    isExactDiaryResponse(response, "/diary", "entry_date", value)
+  );
+  const weekResponse = page.waitForResponse((response) =>
+    isExactDiaryResponse(response, "/diary/week", "start", weekStart)
+  );
+
+  await page.goto("/diary");
+  const [entriesResult, weekResult] = await Promise.all([entriesResponse, weekResponse]);
+  expect(entriesResult.status()).toBe(200);
+  expect(weekResult.status()).toBe(200);
+
+  const entries = await entriesResult.json() as DiaryEntryResponse[];
+  const week = await weekResult.json() as WeekSummary;
+  expect(Array.isArray(entries)).toBe(true);
+  expect(entries.every((entry) => entry.entry_date === value)).toBe(true);
+  const selectedDay = week.days.find((day) => day.date === value);
+  expect(selectedDay).toBeDefined();
+  expect(selectedDay!.targets).not.toBeNull();
+
+  await expect(page.getByLabel("اختيار تاريخ اليوميات")).toHaveValue(value);
+  await expect(page.locator(".diary-entry-skeleton")).toHaveCount(0);
+  await expect(page.locator(".diary-summary-loading")).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: "جارٍ تحميل وجبات اليوم" })).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: "جارٍ تحميل ملخص اليوم" })).toHaveCount(0);
+  await expect(page.locator(".diary-error-state")).toHaveCount(0);
+  await expect(page.locator(".week-inline-error")).toHaveCount(0);
 }
 
 async function selectDate(page: import("@playwright/test").Page, value: string) {
@@ -224,9 +276,10 @@ test.describe("@diary @page-refinement compact Diary page", () => {
 
   test("@p1 responsive Diary remains compact and overflow-free at supported mobile widths", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
+    const selectedDate = localDate();
     for (const width of [320, 360, 390, 430]) {
       await page.setViewportSize({ width, height: 844 });
-      await page.goto("/diary");
+      await navigateToAuthoritativeDiary(page, selectedDate);
       await expect(page.locator(".compact-week-day")).toHaveCount(7);
       await expect(page.locator(".macro-progress-row")).toHaveCount(3);
       await expect(page.getByRole("button", { name: "إضافة طعام إلى فطور" })).toHaveAttribute("aria-label", "إضافة طعام إلى فطور");
