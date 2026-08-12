@@ -5,7 +5,7 @@ import json
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, or_
+from sqlalchemy import tuple_
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
@@ -222,19 +222,13 @@ def admin_diary_page(
     if entry_date is not None:
         statement = statement.where(DiaryEntry.entry_date == entry_date)
     if cursor is not None:
-        entry_date, created_at, entry_id = _decode_admin_diary_cursor(cursor)
+        cursor_entry_date, cursor_created_at, cursor_entry_id = _decode_admin_diary_cursor(cursor)
         statement = statement.where(
-            or_(
-                DiaryEntry.entry_date < entry_date,
-                and_(
-                    DiaryEntry.entry_date == entry_date,
-                    DiaryEntry.created_at < created_at,
-                ),
-                and_(
-                    DiaryEntry.entry_date == entry_date,
-                    DiaryEntry.created_at == created_at,
-                    DiaryEntry.id < entry_id,
-                ),
+            tuple_(DiaryEntry.entry_date, DiaryEntry.created_at, DiaryEntry.id)
+            < tuple_(
+                cursor_entry_date,
+                cursor_created_at,
+                cursor_entry_id,
             )
         )
     rows = session.exec(

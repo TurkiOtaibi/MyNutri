@@ -22,7 +22,7 @@ from app.core.auth import AuthClaims, PrincipalContext, get_token_verifier
 from app.db.session import get_session
 from app.main import app
 from app.models import ActivityLevel, DiaryEntry, Goal, Principal, PrincipalRole, Profile, Sex, TargetProvenance
-from app.services.diary import AdminDiaryCursorError
+from app.services.diary import AdminDiaryCursorError, _encode_admin_diary_cursor
 
 ADMIN_ID = UUID("00000000-0000-0000-0000-0000000000aa")
 USER_ID = UUID("00000000-0000-0000-0000-0000000000bb")
@@ -263,6 +263,43 @@ def _explain(session: Session, statement: str, **params: object) -> dict:
     return result[0]["Plan"]
 
 
+def _assert_bounded_diary_index_plan(
+    plan: dict,
+    *,
+    row_limit: int,
+    require_cursor_boundary: bool = False,
+    maximum_buffer_accesses: int | None = None,
+) -> dict:
+    nodes = _walk_plan(plan)
+    assert plan["Node Type"] == "Limit"
+    assert not any(node["Node Type"] in {"Sort", "Incremental Sort"} for node in nodes)
+    diary_scans = [
+        node
+        for node in nodes
+        if node["Node Type"] in {"Index Scan", "Index Only Scan"}
+        and node.get("Relation Name") == "diary_entry"
+    ]
+    assert len(diary_scans) == 1
+    scan = diary_scans[0]
+    assert scan["Index Name"] == "ix_diary_entry_principal_date_created_id_desc"
+    assert scan["Actual Rows"] <= row_limit
+    assert scan["Actual Loops"] == 1
+    index_condition = scan.get("Index Cond", "").lower()
+    assert "principal_id" in index_condition
+    assert not any(
+        node["Node Type"] == "Seq Scan" and node.get("Relation Name") == "diary_entry"
+        for node in nodes
+    )
+    if require_cursor_boundary:
+        assert "row(entry_date, created_at, id) < row(" in index_condition
+        assert not scan.get("Filter")
+        assert scan.get("Rows Removed by Filter", 0) == 0
+    if maximum_buffer_accesses is not None:
+        buffer_accesses = scan.get("Shared Hit Blocks", 0) + scan.get("Shared Read Blocks", 0)
+        assert buffer_accesses <= maximum_buffer_accesses
+    return scan
+
+
 def test_plan025_admin_user_list_summary_queries_are_constant(admin_context) -> None:
     client, session = admin_context
     for index in range(100):
@@ -462,44 +499,90 @@ def test_plan025_postgresql_budgets_read_only_and_bounded_pages(
         session,
         "SELECT id, entry_date, meal_type, quantity, nutrition_snapshot, snapshot_schema_version, "
         "created_at FROM diary_entry WHERE principal_id = CAST(:principal_id AS uuid) AND "
-        "(entry_date < CAST(:entry_date AS date) OR "
-        "(entry_date = CAST(:entry_date AS date) AND created_at < CAST(:created_at AS timestamptz)) OR "
-        "(entry_date = CAST(:entry_date AS date) AND created_at = CAST(:created_at AS timestamptz) "
-        "AND id < CAST(:entry_id AS uuid))) "
+        "(entry_date, created_at, id) < "
+        "(CAST(:entry_date AS date), CAST(:created_at AS timestamptz), CAST(:entry_id AS uuid)) "
         "ORDER BY entry_date DESC, created_at DESC, id DESC LIMIT 101",
         principal_id=str(USER_ID),
         entry_date=boundary.entry_date.isoformat(),
         created_at=boundary_created_at.isoformat(),
         entry_id=str(boundary.id),
     )
-    for plan in (first_plan, cursor_plan):
-        nodes = _walk_plan(plan)
-        assert plan["Node Type"] == "Limit"
-        assert not any(node["Node Type"] == "Sort" for node in nodes)
-        diary_scans = [
-            node for node in nodes
-            if node["Node Type"] in {"Index Scan", "Index Only Scan"}
-            and node.get("Relation Name") == "diary_entry"
-        ]
-        assert len(diary_scans) == 1
-        scan = diary_scans[0]
-        assert scan["Index Name"] == "ix_diary_entry_principal_date_created_id_desc"
-        assert scan["Actual Rows"] <= 101
-        assert scan["Actual Loops"] == 1
-        assert "principal_id" in scan.get("Index Cond", "")
-        assert not any(
-            node["Node Type"] == "Seq Scan" and node.get("Relation Name") == "diary_entry"
-            for node in nodes
+    _assert_bounded_diary_index_plan(first_plan, row_limit=51)
+    _assert_bounded_diary_index_plan(
+        cursor_plan,
+        row_limit=101,
+        require_cursor_boundary=True,
+    )
+    _assert_diary_index_catalog(session)
+
+
+def test_plan025_postgresql_deep_cursor_uses_complete_bounded_index_seek(
+    plan025_postgresql_session: Session,
+) -> None:
+    session = plan025_postgresql_session
+    entry_count = 10_001
+    cursor_offset = 9_000
+    page_size = 50
+    _seed_diary(session, USER_ID, entry_count)
+    _seed_diary(session, OTHER_ID, entry_count)
+    order = (DiaryEntry.entry_date.desc(), DiaryEntry.created_at.desc(), DiaryEntry.id.desc())
+    boundary = session.exec(
+        select(DiaryEntry.entry_date, DiaryEntry.created_at, DiaryEntry.id)
+        .where(DiaryEntry.principal_id == USER_ID)
+        .order_by(*order)
+        .offset(cursor_offset)
+        .limit(1)
+    ).one()
+    expected_ids = list(
+        session.exec(
+            select(DiaryEntry.id)
+            .where(DiaryEntry.principal_id == USER_ID)
+            .order_by(*order)
+            .offset(cursor_offset + 1)
+            .limit(page_size)
+        ).all()
+    )
+    cursor = _encode_admin_diary_cursor(boundary.entry_date, boundary.created_at, boundary.id)
+
+    with _capture_statements(session) as statements:
+        page = admin_route.admin_diary_page(
+            session,
+            PrincipalContext(USER_ID),
+            page_size,
+            cursor,
         )
-    cursor_scan = next(
-        node for node in _walk_plan(cursor_plan)
-        if node["Node Type"] in {"Index Scan", "Index Only Scan"}
-        and node.get("Relation Name") == "diary_entry"
+    assert [item.id for item in page.items] == expected_ids
+    diary_statements = [
+        statement
+        for statement in statements
+        if statement.startswith("select ") and " from diary_entry " in statement
+    ]
+    assert len(diary_statements) == 1
+    assert (
+        "(diary_entry.entry_date, diary_entry.created_at, diary_entry.id) < ("
+        in diary_statements[0]
     )
-    assert any(
-        predicate in (cursor_scan.get("Index Cond", "") + cursor_scan.get("Filter", ""))
-        for predicate in ("entry_date", "created_at", "id")
+
+    session.execute(text("ANALYZE diary_entry"))
+    plan = _explain(
+        session,
+        "SELECT id, entry_date, meal_type, quantity, nutrition_snapshot, snapshot_schema_version, "
+        "created_at FROM diary_entry WHERE principal_id = CAST(:principal_id AS uuid) AND "
+        "(entry_date, created_at, id) < "
+        "(CAST(:entry_date AS date), CAST(:created_at AS timestamptz), CAST(:entry_id AS uuid)) "
+        "ORDER BY entry_date DESC, created_at DESC, id DESC LIMIT 51",
+        principal_id=str(USER_ID),
+        entry_date=boundary.entry_date.isoformat(),
+        created_at=boundary.created_at.isoformat(),
+        entry_id=str(boundary.id),
     )
+    scan = _assert_bounded_diary_index_plan(
+        plan,
+        row_limit=page_size + 1,
+        require_cursor_boundary=True,
+        maximum_buffer_accesses=128,
+    )
+    assert scan.get("Rows Removed by Index Recheck", 0) == 0
     _assert_diary_index_catalog(session)
 
 

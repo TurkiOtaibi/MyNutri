@@ -51,9 +51,11 @@ export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
   const detailRetryRef = useRef<HTMLButtonElement>(null);
   const initialDiaryRetryRef = useRef<HTMLButtonElement>(null);
   const nextDiaryRetryRef = useRef<HTMLButtonElement>(null);
+  const refetchDiaryRetryRef = useRef<HTMLButtonElement>(null);
   const lastFocusedDetailErrorRef = useRef<number | null>(null);
   const lastFocusedInitialDiaryErrorRef = useRef<number | null>(null);
   const lastFocusedNextDiaryErrorRef = useRef<number | null>(null);
+  const lastFocusedRefetchDiaryErrorRef = useRef<number | null>(null);
   const detail = useQuery<Detail>({ queryKey: ["admin-user", principalId], queryFn: () => getAdminUser(principalId) as Promise<Detail> });
   const diaryQuery = useInfiniteQuery({
     queryKey: ["admin-user-diary", principalId],
@@ -63,8 +65,9 @@ export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
     retry: false
   });
   const diaryEntries = diaryQuery.data?.pages.flatMap((page) => page.items) ?? [];
-  const initialDiaryFailure = diaryQuery.isError && diaryEntries.length === 0;
-  const nextPageFailure = diaryQuery.isError && diaryEntries.length > 0;
+  const initialDiaryFailure = diaryQuery.isLoadingError;
+  const nextPageFailure = diaryQuery.isFetchNextPageError;
+  const refetchFailure = diaryQuery.isRefetchError;
 
   useEffect(() => {
     if (!detail.isError) return;
@@ -96,6 +99,16 @@ export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
     target.focus({ preventScroll: true });
   }, [detail.isSuccess, diaryQuery.errorUpdatedAt, nextPageFailure]);
 
+  useEffect(() => {
+    if (!detail.isSuccess || !refetchFailure) return;
+    const occurrence = diaryQuery.errorUpdatedAt;
+    if (!occurrence || lastFocusedRefetchDiaryErrorRef.current === occurrence) return;
+    const target = refetchDiaryRetryRef.current;
+    if (!target?.isConnected || target.disabled) return;
+    lastFocusedRefetchDiaryErrorRef.current = occurrence;
+    target.focus({ preventScroll: true });
+  }, [detail.isSuccess, diaryQuery.errorUpdatedAt, refetchFailure]);
+
   if (detail.isPending) return <div className="state-note">جارٍ تحميل بيانات المستخدم...</div>;
   if (detail.isError) return <div className="state-note" role="alert"><p>تعذر تحميل بيانات المستخدم.</p><button ref={detailRetryRef} className="btn" type="button" disabled={detail.isFetching} onClick={() => detail.refetch()}>{detail.isFetching ? "جارٍ إعادة تحميل بيانات المستخدم..." : "إعادة محاولة تحميل بيانات المستخدم"}</button></div>;
   const { account, profile, current_target: target, pending_plan: pending, plan_history: history } = detail.data;
@@ -109,6 +122,6 @@ export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
     <section className="section-panel"><h2>المصدر الحالي للأهداف</h2><ReadOnlyFields data={target} keys={["source", "effective_from", "calendar_timezone"]} /></section>
     <section className="section-panel"><h2>الخطة المجدولة</h2><ReadOnlyFields data={pending} keys={["lifecycle_status", "effective_from", "effective_to"]} /></section>
     <section className="section-panel"><h2>سجل الخطط</h2>{history.items?.length ? <ul className="admin-readonly-list">{history.items.map((plan, index) => <li key={String(plan.id ?? index)}><ReadOnlyFields data={plan} keys={["lifecycle_status", "effective_from", "effective_to"]} /></li>)}</ul> : <p className="state-note">لا توجد خطط محفوظة.</p>}</section>
-    <section className="section-panel"><h2>اليوميات</h2>{diaryQuery.isPending ? <p aria-live="polite">جارٍ التحميل...</p> : initialDiaryFailure ? <><p role="alert">تعذر تحميل اليوميات.</p><button ref={initialDiaryRetryRef} className="btn" type="button" onClick={() => diaryQuery.refetch()}>إعادة المحاولة</button></> : diaryEntries.length ? <><ul className="admin-readonly-list">{diaryEntries.map((entry) => <li key={entry.id}><strong>{entry.food_name}</strong><span>{entry.entry_date} · {entry.meal_type} · {entry.quantity}</span></li>)}</ul>{nextPageFailure ? <div role="alert"><p>تعذر تحميل المزيد من اليوميات.</p><button ref={nextDiaryRetryRef} className="btn" type="button" onClick={() => diaryQuery.fetchNextPage()}>إعادة محاولة تحميل المزيد</button></div> : null}{diaryQuery.hasNextPage && !nextPageFailure ? <button className="btn" type="button" onClick={() => diaryQuery.fetchNextPage()} disabled={diaryQuery.isFetchingNextPage}>{diaryQuery.isFetchingNextPage ? "جارٍ التحميل..." : "عرض المزيد"}</button> : null}{!diaryQuery.hasNextPage ? <p className="state-note">لا توجد إدخالات أخرى.</p> : null}</> : <p className="state-note">لا توجد إدخالات يومية.</p>}</section>
+    <section className="section-panel"><h2>اليوميات</h2>{diaryQuery.isPending ? <p aria-live="polite">جارٍ التحميل...</p> : initialDiaryFailure ? <><p role="alert">تعذر تحميل اليوميات.</p><button ref={initialDiaryRetryRef} className="btn" type="button" onClick={() => diaryQuery.refetch()}>إعادة المحاولة</button></> : <>{diaryEntries.length ? <><ul className="admin-readonly-list">{diaryEntries.map((entry) => <li key={entry.id}><strong>{entry.food_name}</strong><span>{entry.entry_date} · {entry.meal_type} · {entry.quantity}</span></li>)}</ul>{nextPageFailure ? <div role="alert"><p>تعذر تحميل المزيد من اليوميات.</p><button ref={nextDiaryRetryRef} className="btn" type="button" onClick={() => diaryQuery.fetchNextPage()}>إعادة محاولة تحميل المزيد</button></div> : null}{diaryQuery.hasNextPage && !nextPageFailure ? <button className="btn" type="button" onClick={() => diaryQuery.fetchNextPage()} disabled={diaryQuery.isFetchingNextPage}>{diaryQuery.isFetchingNextPage ? "جارٍ التحميل..." : "عرض المزيد"}</button> : null}{!diaryQuery.hasNextPage ? <p className="state-note">لا توجد إدخالات أخرى.</p> : null}</> : <p className="state-note">لا توجد إدخالات يومية.</p>}{refetchFailure ? <div role="alert"><p>تعذر تحديث اليوميات.</p><button ref={refetchDiaryRetryRef} className="btn" type="button" disabled={diaryQuery.isFetching} onClick={() => diaryQuery.refetch()}>{diaryQuery.isFetching ? "جارٍ إعادة تحديث اليوميات..." : "إعادة محاولة تحديث اليوميات"}</button></div> : null}</>}</section>
   </>;
 }

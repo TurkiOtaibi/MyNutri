@@ -167,6 +167,46 @@ test("@plan025 next-page failure retains entries and offers keyboard retry", asy
   await expect(diarySection.getByRole("button", { name: "إعادة محاولة تحميل المزيد", exact: true })).toHaveCount(0);
 });
 
+test("@plan025 background Diary refetch failure retains entries and retries the refresh", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-08-01T12:00:00.000Z") });
+  let diaryRefreshAttempts = 0;
+  let nextPageAttempts = 0;
+  await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}`, (route) => route.fulfill({ json: plan025Detail }));
+  await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}/diary?limit=50`, (route) => {
+    diaryRefreshAttempts += 1;
+    if (diaryRefreshAttempts === 2) return route.fulfill({ status: 500, json: { detail: "failed" } });
+    return route.fulfill({ json: plan025FirstPage });
+  });
+  await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}/diary?limit=50&cursor=cursor-plan025`, (route) => {
+    nextPageAttempts += 1;
+    return route.fulfill({ json: plan025FinalPage });
+  });
+
+  await page.goto(`/admin/users/${PLAN025_PRINCIPAL_ID}`);
+  const diarySection = plan025DiarySection(page);
+  await expect(page.getByText("وجبة أولى", { exact: true })).toBeVisible();
+  await expect.poll(() => diaryRefreshAttempts).toBe(1);
+
+  await page.clock.fastForward(20_001);
+  await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
+  await expect.poll(() => diaryRefreshAttempts).toBe(2);
+
+  await expect(page.getByText("وجبة أولى", { exact: true })).toBeVisible();
+  const diaryAlert = plan025DiaryAlert(page);
+  await expect(diaryAlert).toHaveCount(1);
+  await expect(diaryAlert.getByText("تعذر تحديث اليوميات.", { exact: true })).toBeVisible();
+  const retry = diarySection.getByRole("button", { name: "إعادة محاولة تحديث اليوميات", exact: true });
+  await expect(retry).toBeFocused();
+  await expect(diarySection.getByRole("button", { name: "إعادة محاولة تحميل المزيد", exact: true })).toHaveCount(0);
+  await expect.poll(() => nextPageAttempts).toBe(0);
+
+  await page.keyboard.press("Enter");
+  await expect.poll(() => diaryRefreshAttempts).toBe(3);
+  await expect.poll(() => nextPageAttempts).toBe(0);
+  await expect(page.getByText("وجبة أولى", { exact: true })).toBeVisible();
+  await expect(diaryAlert).toHaveCount(0);
+});
+
 test("@plan025 initial failure focuses its retry and keyboard retry makes one request", async ({ page }) => {
   let initialAttempts = 0;
   await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}`, (route) => route.fulfill({ json: plan025Detail }));
