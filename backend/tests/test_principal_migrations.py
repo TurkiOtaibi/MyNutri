@@ -55,6 +55,7 @@ PLAN012_DOWNGRADE_ERROR = "PLAN012_LOSSY_TAXONOMY_DOWNGRADE_BLOCKED"
 PLAN012_DOWNGRADE_GUARD = "plan012_lossy_taxonomy_downgrade_guard"
 PLAN021_REVISION = "3f2e7b1c9a04"
 PLAN023_REVISION = "7c4a9d2e1f06"
+PLAN025_REVISION = "9f2a1b6c3d05"
 PLAN023_CONSTRAINT = "ck_diary_entry_quantity_positive_finite"
 PLAN023_PREFLIGHT_ERROR = "PLAN023_DIARY_QUANTITY_PREFLIGHT_BLOCKED"
 PLAN023_PREFLIGHT_GUARD = "plan023_diary_quantity_positive_finite_preflight"
@@ -399,7 +400,7 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            PLAN023_REVISION
+            PLAN025_REVISION
         )
         authoritative_checks = connection.execute(
             text(

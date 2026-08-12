@@ -2,7 +2,7 @@ from datetime import date
 from math import ceil
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
@@ -12,14 +12,14 @@ from app.db.session import get_session
 from app.models import DiaryEntry, Principal, Profile
 from app.schemas import (
     AdminUserDetail,
+    AdminDiaryPage,
     AdminUserListResponse,
     AdminUserSummary,
-    DiaryEntryResponse,
     TargetPlanHistoryResponse,
     WeekSummary,
 )
 from app.services.aggregation import weekly_summary_read_only
-from app.services.diary import list_entries, to_entry_response
+from app.services.diary import AdminDiaryCursorError, admin_diary_page
 from app.services.errors import resource_not_found
 from app.services.profile import to_profile_response
 from app.services.target_plans import pending_plan, plan_history, project_targets
@@ -44,11 +44,32 @@ def _get_principal(session: Session, principal_id: UUID) -> Principal:
     return principal
 
 
-def _summary(session: Session, principal: Principal) -> AdminUserSummary:
-    profile = session.exec(select(Profile).where(Profile.principal_id == principal.id)).first()
-    last_activity = session.exec(
-        select(func.max(DiaryEntry.created_at)).where(DiaryEntry.principal_id == principal.id)
-    ).one()
+def _summary_statement(conditions: list, page: int, page_size: int):
+    principals = (
+        select(Principal.id.label("principal_id"), Principal.created_at.label("created_at"))
+        .where(*conditions)
+        .order_by(Principal.created_at.desc(), Principal.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .cte("page_principals")
+    )
+    activity = select(
+        DiaryEntry.principal_id.label("principal_id"),
+        func.max(DiaryEntry.created_at).label("last_activity_at"),
+    ).join(principals, DiaryEntry.principal_id == principals.c.principal_id).group_by(
+        DiaryEntry.principal_id
+    ).subquery()
+    return (
+        select(Principal, Profile.goal, Profile.principal_id, activity.c.last_activity_at)
+        .join(principals, Principal.id == principals.c.principal_id)
+        .outerjoin(Profile, Profile.principal_id == Principal.id)
+        .outerjoin(activity, activity.c.principal_id == Principal.id)
+        .order_by(principals.c.created_at.desc(), Principal.id.desc())
+    )
+
+
+def _summary_from_row(row) -> AdminUserSummary:
+    principal, goal, profile_principal_id, last_activity = row
     return AdminUserSummary(
         principal_id=principal.id,
         email=principal.email,
@@ -56,10 +77,24 @@ def _summary(session: Session, principal: Principal) -> AdminUserSummary:
         status=principal.status,
         role=principal.role,
         created_at=principal.created_at,
-        profile_complete=profile is not None,
-        current_goal=profile.goal if profile else None,
+        profile_complete=profile_principal_id is not None,
+        current_goal=goal,
         last_activity_at=last_activity,
     )
+
+
+def _summary(session: Session, principal: Principal) -> AdminUserSummary:
+    last_activity = (
+        select(func.max(DiaryEntry.created_at))
+        .where(DiaryEntry.principal_id == Principal.id)
+        .scalar_subquery()
+    )
+    row = session.exec(
+        select(Principal, Profile.goal, Profile.principal_id, last_activity)
+        .outerjoin(Profile, Profile.principal_id == Principal.id)
+        .where(Principal.id == principal.id)
+    ).one()
+    return _summary_from_row(row)
 
 
 @router.get("/users", response_model=AdminUserListResponse)
@@ -77,18 +112,15 @@ def list_users(
             or_(Principal.email.ilike(pattern), Principal.display_name.ilike(pattern))
         )
     count = select(func.count()).select_from(Principal)
-    statement = select(Principal)
+    statement = _summary_statement(conditions, page, page_size)
     if conditions:
         count = count.where(*conditions)
-        statement = statement.where(*conditions)
     total = int(session.exec(count).one())
-    principals = session.exec(
-        statement.order_by(Principal.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
+    rows = session.exec(
+        statement
     ).all()
     return AdminUserListResponse(
-        items=[_summary(session, principal) for principal in principals],
+        items=[_summary_from_row(row) for row in rows],
         total=total,
         page=page,
         page_size=page_size,
@@ -114,15 +146,20 @@ def user_detail(
     )
 
 
-@router.get("/users/{principal_id}/diary", response_model=list[DiaryEntryResponse])
+@router.get("/users/{principal_id}/diary", response_model=AdminDiaryPage)
 def user_diary(
     principal_id: UUID,
-    entry_date: date | None = None,
+    entry_date: date | None = Query(default=None),
+    cursor: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=100),
     _admin: PrincipalContext = Depends(require_admin),
     session: Session = Depends(get_session),
-) -> list[DiaryEntryResponse]:
+) -> AdminDiaryPage:
     selected = _selected_context(_get_principal(session, principal_id))
-    return [to_entry_response(entry) for entry in list_entries(session, selected, entry_date)]
+    try:
+        return admin_diary_page(session, selected, limit, cursor, entry_date)
+    except AdminDiaryCursorError as error:
+        raise HTTPException(status_code=422, detail={"code": "INVALID_CURSOR"}) from error
 
 
 @router.get("/users/{principal_id}/diary/week", response_model=WeekSummary)

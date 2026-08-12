@@ -366,6 +366,19 @@ export interface DiaryEntryResponse {
   created_at: string;
 }
 
+export interface AdminDiaryPage {
+  items: AdminDiaryItem[];
+  next_cursor: string | null;
+}
+
+export interface AdminDiaryItem {
+  id: string;
+  entry_date: string;
+  meal_type: MealType;
+  quantity: number;
+  food_name: string;
+}
+
 export interface DaySummary {
   date: string;
   totals: NutritionTotals;

@@ -1,4 +1,5 @@
 import type {
+  AdminDiaryPage,
   DiaryEntryInput,
   DiaryEntryResponse,
   MealType,
@@ -308,8 +309,16 @@ export function getAdminUser(principalId: string): Promise<unknown> {
   return apiFetch<unknown>(`/admin/users/${principalId}`);
 }
 
-export function getAdminUserDiary(principalId: string): Promise<DiaryEntryResponse[]> {
-  return apiFetch<DiaryEntryResponse[]>(`/admin/users/${principalId}/diary`);
+export function getAdminUserDiary(
+  principalId: string,
+  cursor?: string | null,
+  limit = 50,
+  entryDate?: string
+): Promise<AdminDiaryPage> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
+  if (entryDate) params.set("entry_date", entryDate);
+  return apiFetch<AdminDiaryPage>(`/admin/users/${principalId}/diary?${params.toString()}`);
 }
 
 export function listDiaryEntries(entryDate: string): Promise<DiaryEntryResponse[]> {

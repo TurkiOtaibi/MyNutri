@@ -1,7 +1,11 @@
-from datetime import date
+from base64 import urlsafe_b64decode, urlsafe_b64encode
+from datetime import date, datetime, timezone
+import binascii
+import json
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import tuple_
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
@@ -10,6 +14,8 @@ from app.schemas import (
     DiaryEntryCreate,
     DiaryEntryResponse,
     DiaryEntryUpdate,
+    AdminDiaryItem,
+    AdminDiaryPage,
     NutritionTotals,
 )
 from app.services.food import get_active_food_for_logging, lock_food_namespace_for_logging
@@ -40,6 +46,10 @@ DETAIL_FIELDS = (
     "folate_mcg",
     "vitamin_k_mcg",
 )
+
+
+class AdminDiaryCursorError(ValueError):
+    pass
 
 
 def make_snapshot(food: Food, quantity: float | None = None) -> dict[str, Any]:
@@ -150,6 +160,103 @@ def list_entries(
     if entry_date is not None:
         statement = statement.where(DiaryEntry.entry_date == entry_date)
     return list(session.exec(statement).all())
+
+
+def _encode_admin_diary_cursor(entry_date: date, created_at: datetime, entry_id: UUID) -> str:
+    if created_at.tzinfo is None or created_at.utcoffset() is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    payload = json.dumps(
+        {
+            "entry_date": entry_date.isoformat(),
+            "created_at": created_at.isoformat(),
+            "id": str(entry_id),
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_admin_diary_cursor(cursor: str) -> tuple[date, datetime, UUID]:
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    if not cursor or any(character not in alphabet for character in cursor):
+        raise AdminDiaryCursorError("invalid cursor")
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        payload = json.loads(urlsafe_b64decode(cursor + padding).decode("utf-8"))
+        if not isinstance(payload, dict) or set(payload) != {"entry_date", "created_at", "id"}:
+            raise ValueError("unexpected cursor shape")
+        if not all(isinstance(payload[key], str) for key in ("entry_date", "created_at", "id")):
+            raise ValueError("invalid cursor types")
+        entry_date = date.fromisoformat(payload["entry_date"])
+        created_at = datetime.fromisoformat(payload["created_at"])
+        entry_id = UUID(payload["id"])
+        if (
+            entry_date.isoformat() != payload["entry_date"]
+            or created_at.isoformat() != payload["created_at"]
+            or created_at.tzinfo is None
+            or created_at.utcoffset() is None
+            or str(entry_id) != payload["id"]
+        ):
+            raise ValueError("non-canonical cursor")
+        return entry_date, created_at, entry_id
+    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as error:
+        raise AdminDiaryCursorError("invalid cursor") from error
+
+
+def admin_diary_page(
+    session: Session,
+    principal: PrincipalContext,
+    limit: int,
+    cursor: str | None = None,
+    entry_date: date | None = None,
+) -> AdminDiaryPage:
+    statement = select(
+        DiaryEntry.id,
+        DiaryEntry.entry_date,
+        DiaryEntry.meal_type,
+        DiaryEntry.quantity,
+        DiaryEntry.nutrition_snapshot,
+        DiaryEntry.snapshot_schema_version,
+        DiaryEntry.created_at,
+    ).where(DiaryEntry.principal_id == principal.principal_id)
+    if entry_date is not None:
+        statement = statement.where(DiaryEntry.entry_date == entry_date)
+    if cursor is not None:
+        cursor_entry_date, cursor_created_at, cursor_entry_id = _decode_admin_diary_cursor(cursor)
+        statement = statement.where(
+            tuple_(DiaryEntry.entry_date, DiaryEntry.created_at, DiaryEntry.id)
+            < tuple_(
+                cursor_entry_date,
+                cursor_created_at,
+                cursor_entry_id,
+            )
+        )
+    rows = session.exec(
+        statement.order_by(
+            DiaryEntry.entry_date.desc(), DiaryEntry.created_at.desc(), DiaryEntry.id.desc()
+        ).limit(limit + 1)
+    ).all()
+    has_more = len(rows) > limit
+    items = rows[:limit]
+    return AdminDiaryPage(
+        items=[
+            AdminDiaryItem(
+                id=row.id,
+                entry_date=row.entry_date,
+                meal_type=row.meal_type,
+                quantity=float(row.quantity),
+                food_name=normalized_snapshot(
+                    row.nutrition_snapshot, row.snapshot_schema_version
+                ).name,
+            )
+            for row in items
+        ],
+        next_cursor=(
+            _encode_admin_diary_cursor(items[-1].entry_date, items[-1].created_at, items[-1].id)
+            if has_more
+            else None
+        ),
+    )
 
 
 def get_entry(session: Session, principal: PrincipalContext, entry_id: UUID) -> DiaryEntry:
