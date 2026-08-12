@@ -61,6 +61,155 @@ jobs:
       - name: Check migration SQL
         working-directory: backend
         run: alembic upgrade head --sql
+      - name: Plan 026 - Build Backend image
+        timeout-minutes: 10
+        run: docker build --tag "mynutri-backend:plan026-${GITHUB_SHA}" backend
+      - name: Plan 026 - Verify configured image user
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="mynutri-backend:plan026-${GITHUB_SHA}"
+          if ! configured_user="$(timeout --signal=KILL 30s docker image inspect --format '{{.Config.User}}' "$image")"; then
+            echo "Plan 026 failed: image user inspection did not complete."
+            exit 1
+          fi
+          if [[ -z "$configured_user" ]]; then
+            echo "Plan 026 failed: the image has no configured runtime user."
+            exit 1
+          fi
+          if [[ "$configured_user" == "root" || "$configured_user" == "0" || "$configured_user" == "0:0" ]]; then
+            echo "Plan 026 failed: the image is configured to run as root."
+            exit 1
+          fi
+          if [[ "$configured_user" != "10001:10001" ]]; then
+            echo "Plan 026 failed: expected configured user 10001:10001, got $configured_user."
+            exit 1
+          fi
+          echo "Plan 026 configured image user: $configured_user"
+      - name: Plan 026 - Verify runtime UID and GID
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="mynutri-backend:plan026-${GITHUB_SHA}"
+          if ! runtime_uid="$(timeout --signal=KILL 30s docker run --rm --entrypoint /usr/bin/id "$image" -u)"; then
+            echo "Plan 026 failed: runtime UID inspection did not complete."
+            exit 1
+          fi
+          if ! runtime_gid="$(timeout --signal=KILL 30s docker run --rm --entrypoint /usr/bin/id "$image" -g)"; then
+            echo "Plan 026 failed: runtime GID inspection did not complete."
+            exit 1
+          fi
+          if [[ "$runtime_uid" != "10001" ]]; then
+            echo "Plan 026 failed: expected runtime UID 10001, got $runtime_uid."
+            exit 1
+          fi
+          if [[ "$runtime_gid" != "10001" ]]; then
+            echo "Plan 026 failed: expected runtime GID 10001, got $runtime_gid."
+            exit 1
+          fi
+          echo "Plan 026 runtime identity: UID $runtime_uid, GID $runtime_gid"
+      - name: Plan 026 - Verify runtime filesystem permissions
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="mynutri-backend:plan026-${GITHUB_SHA}"
+          if ! app_permission="$(timeout --signal=KILL 30s docker run --rm --entrypoint /bin/sh "$image" \
+            -c 'if touch /app/.plan026-write-probe 2>/dev/null; then rm -f /app/.plan026-write-probe; printf writable; else printf readonly; fi')"; then
+            echo "Plan 026 failed: /app permission inspection did not complete."
+            exit 1
+          fi
+          if [[ "$app_permission" != "readonly" ]]; then
+            echo "Plan 026 failed: runtime user can write under /app."
+            exit 1
+          fi
+
+          if ! timeout --signal=KILL 30s docker run --rm --entrypoint /bin/sh "$image" \
+            -c 'probe="$(mktemp /tmp/plan026.XXXXXX)" && test -f "$probe" && rm -f "$probe"'; then
+            echo "Plan 026 failed: runtime user cannot use the standard /tmp directory."
+            exit 1
+          fi
+          echo "Plan 026 filesystem permissions: /app read-only, /tmp writable"
+      - name: Plan 026 - Start image and verify health
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="mynutri-backend:plan026-${GITHUB_SHA}"
+          container="plan026-backend-smoke"
+
+          sanitized_logs() {
+            docker logs "$container" 2>&1 | tail -n 200 | \
+              sed -E 's#(://)[^/@[:space:]]+:[^/@[:space:]]+@#\1***:***@#g' || true
+          }
+          fail_smoke() {
+            echo "Plan 026 failed: $1"
+            sanitized_logs
+            exit 1
+          }
+
+          if ! timeout --signal=KILL 30s docker run --detach \
+            --name "$container" \
+            --publish 127.0.0.1:18000:8000 \
+            --env ENVIRONMENT=ci \
+            --env DATABASE_URL=postgresql+psycopg://fixture:fixture@127.0.0.1:1/fixture \
+            --env SUPABASE_URL=https://ci-fixture.supabase.co \
+            --env SUPABASE_JWT_AUDIENCE=authenticated \
+            --env CALENDAR_TIMEZONE=Asia/Riyadh \
+            "$image" >/tmp/plan026-container-id; then
+            fail_smoke "the container did not start."
+          fi
+
+          health_status=""
+          for attempt in {1..30}; do
+            health_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              --max-time 2 http://127.0.0.1:18000/health || true)"
+            if [[ "$health_status" == "200" ]]; then
+              break
+            fi
+            if [[ "$(docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null || true)" != "true" ]]; then
+              fail_smoke "the container exited before becoming healthy."
+            fi
+            sleep 2
+          done
+          if [[ "$health_status" != "200" ]]; then
+            fail_smoke "the bounded /health poll did not return HTTP 200."
+          fi
+
+          process_uid="$(timeout --signal=KILL 15s docker exec "$container" \
+            /bin/sh -c "awk '/^Uid:/ {print \$2}' /proc/1/status")" || \
+            fail_smoke "could not inspect the running process UID."
+          process_gid="$(timeout --signal=KILL 15s docker exec "$container" \
+            /bin/sh -c "awk '/^Gid:/ {print \$2}' /proc/1/status")" || \
+            fail_smoke "could not inspect the running process GID."
+          if [[ "$process_uid" != "10001" ]]; then
+            fail_smoke "expected running process UID 10001, got $process_uid."
+          fi
+          if [[ "$process_gid" != "10001" ]]; then
+            fail_smoke "expected running process GID 10001, got $process_gid."
+          fi
+          if ! docker inspect --format '{{.State.Running}}' "$container" | grep -qx 'true'; then
+            fail_smoke "the container stopped after its health response."
+          fi
+
+          container_logs="$(docker logs "$container" 2>&1)"
+          if grep -Eiq 'permission denied|PermissionError' <<<"$container_logs"; then
+            fail_smoke "the healthy container logged a permission error."
+          fi
+          echo "Plan 026 health smoke: HTTP 200, PID 1 UID $process_uid, GID $process_gid"
+      - name: Plan 026 - Clean up image smoke
+        if: always()
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker rm --force plan026-backend-smoke >/dev/null 2>&1 || true
+          if docker inspect plan026-backend-smoke >/dev/null 2>&1; then
+            echo "Plan 026 failed: the smoke container survived cleanup."
+            exit 1
+          fi
 
   frontend:
     runs-on: ubuntu-latest
