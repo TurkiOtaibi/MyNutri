@@ -32,7 +32,44 @@ jobs:
           python-version: "3.12"
       - name: Install backend
         working-directory: backend
-        run: pip install -e ".[dev]"
+        run: |
+          pip install --require-hashes -r requirements-dev.lock
+          pip install --no-deps --no-build-isolation -e .
+      - name: Verify Python lock drift and shared versions
+        working-directory: backend
+        run: |
+          pip-compile --allow-unsafe --all-build-deps --generate-hashes --resolver=backtracking --strip-extras --output-file=requirements.lock pyproject.toml
+          pip-compile --allow-unsafe --all-build-deps --extra=dev --generate-hashes --resolver=backtracking --strip-extras --output-file=requirements-dev.lock pyproject.toml
+          git diff --exit-code -- requirements.lock requirements-dev.lock
+          python - <<'PY'
+          from pathlib import Path
+
+          def pins(name: str) -> dict[str, str]:
+              result = {}
+              for line in Path(name).read_text(encoding="utf-8").splitlines():
+                  if "==" not in line or line[0].isspace() or line.startswith("#"):
+                      continue
+                  package, remainder = line.split("==", 1)
+                  result[package.lower().replace("_", "-")] = (
+                      remainder.split()[0].rstrip("\\")
+                  )
+              return result
+
+          runtime = pins("requirements.lock")
+          development = pins("requirements-dev.lock")
+          mismatches = {
+              package: (version, development.get(package))
+              for package, version in runtime.items()
+              if development.get(package) != version
+          }
+          assert not mismatches, mismatches
+          PY
+      - name: Verify Python dependency integrity and advisories
+        working-directory: backend
+        run: |
+          pip check
+          python -m pip_audit --require-hashes -r requirements.lock
+          python -m pip_audit --require-hashes -r requirements-dev.lock
       - name: Lint backend
         working-directory: backend
         run: ruff check .
@@ -223,6 +260,9 @@ jobs:
       - name: Install frontend
         working-directory: frontend
         run: npm ci
+      - name: Audit all dependencies
+        working-directory: frontend
+        run: npm audit
       - name: Typecheck frontend
         working-directory: frontend
         run: npm run typecheck
@@ -272,7 +312,9 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install Backend
-        run: pip install -e "./backend[dev]"
+        run: |
+          pip install --require-hashes -r backend/requirements-dev.lock
+          pip install --no-deps --no-build-isolation -e ./backend
       - name: Install Frontend and Chromium
         working-directory: frontend
         run: |
@@ -423,7 +465,8 @@ jobs:
           version: 2.111.0
       - name: Install provider acceptance dependencies
         run: |
-          pip install -e "./backend[dev]"
+          pip install --require-hashes -r backend/requirements-dev.lock
+          pip install --no-deps --no-build-isolation -e ./backend
           cd frontend
           npm ci
           npx playwright install --with-deps chromium

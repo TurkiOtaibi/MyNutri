@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
@@ -44,6 +45,22 @@ BASELINE_HASHES = {
     "0001_initial.py": "8a4a122abcdc3da143a472c4317a5789aa8ba96828cc0ad168ea8b776ed138e4",
     "0002_foods_v1_per_basis.py": "8a148572e2ac061fc7815b8fe4c4a73eb61fbb4c3b648fec68b035b42c7cdb3a",
     "0003_diary_meal_type.py": "3df7b5160cc393a7df1a5ef3765b318a228df23fc26908ec8ed338ac57168929",
+    "0004_principal_expand.py": "0a94bab7d92c73dc1a0bbf92c134aa1085be77cc857e0269b8b7deedeb2ba2b2",
+    "0005_principal_backfill.py": "55e8f8d74d163ee407247d5921d1b9153d37a9df0460c966b1f1f4636cade560",
+    "0006_principal_contract.py": "94b1bd94354ddbe295ce43611fac37da30d6e13400b3a545d4e828af8840dcd8",
+    "0007_food_quality_expand.py": "4c3bdcec78e8eda39b1f0af68718e00a109e7324207c2703c9ecf8ef040ed088",
+    "0008_food_groups_expand.py": "64e1a15017c45d3212eda268edf12cb962281e10f05f1a01a0509e8ad57cc8f5",
+    "0009_legacy_target_transition_expand.py": "200d20c8325eb7763314edb8388afb33d6cd379a36733f21ce2871b4e28c47f9",
+    "0010_target_plan_expand.py": "bdbf54f4b67cdeb0f58be6c24553c1dc1f0ca2f62d12751f0781f9d0eccd5a9a",
+    "0011_diary_snapshot_v2_expand.py": "cd17529c25ec80c8daedbf566521a43e3398af5448888988b87e262ec5e916ea",
+    "0012_v2_principal_auth_expand.py": "5892874ce4e5c80337cda4409c58a38c16f3748289e19996d3fd949852687f21",
+    "0013_v2_shared_food_catalog.py": "d3ef7be045f1065cd29e67983611fba0aed58e4d5e098762636a9256b2bb7bf3",
+    "0014_v2_food_taxonomy.py": "49fac55e9a500593a068a1835fc1d5882f8e9954fc1a128494e985e0f802aaec",
+    "3f2e7b1c9a04_scope_target_plan_idempotency.py": "dae17300965446ba03b8e04398a0329e126bb5edcd640c836a5f5ab8e0a38052",
+    "5294eff9a956_block_lossy_taxonomy_downgrade.py": "9b0705ec4521cfe6516413d7ddc4a040912c1ad8724b2b55225a5ba3bd4ecc3b",
+    "7c4a9d2e1f06_enforce_positive_diary_quantity.py": "56466eef64421d14104ab174cf0745e3664c11df3c9d515c032dea20bfd9bb2e",
+    "9f2a1b6c3d05_plan025_admin_diary_order_index.py": "727052a802eeee1d6e4f493fc7d21e963cf6f6de7a7b78b102bf42c3d7c2c152",
+    "df46234d2a7e_constrain_finite_food_nutrients.py": "70767434911230795129b4702f8d4bf2e9a4add9dcf1607c3fa648dfebdd0674",
 }
 DEPLOYMENT_PRINCIPAL = UUID("00000000-0000-0000-0000-000000000001")
 PLAN009_TIMESTAMP = datetime(2026, 7, 28, tzinfo=UTC)
@@ -285,14 +302,36 @@ def _seed_0003(url: str) -> dict[str, UUID]:
     return identifiers
 
 
-@pytest.mark.migration
-def test_immutable_baseline_revision_hashes() -> None:
-    versions = Path(__file__).parents[1] / "alembic" / "versions"
+def _normalized_revision_hash(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def _assert_immutable_revision_hashes(versions: Path) -> None:
+    revision_files = {path.name for path in versions.glob("*.py")}
+    assert revision_files == set(BASELINE_HASHES)
     actual = {
-        name: hashlib.sha256((versions / name).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+        name: _normalized_revision_hash(versions / name)
         for name in BASELINE_HASHES
     }
     assert actual == BASELINE_HASHES
+
+
+@pytest.mark.migration
+def test_immutable_baseline_revision_hashes() -> None:
+    versions = Path(__file__).parents[1] / "alembic" / "versions"
+    _assert_immutable_revision_hashes(versions)
+
+
+@pytest.mark.migration
+def test_immutable_baseline_revision_hashes_detect_mutation(tmp_path: Path) -> None:
+    versions = Path(__file__).parents[1] / "alembic" / "versions"
+    copied_versions = tmp_path / "versions"
+    shutil.copytree(versions, copied_versions)
+    latest = copied_versions / "9f2a1b6c3d05_plan025_admin_diary_order_index.py"
+    latest.write_bytes(latest.read_bytes() + b"\n# mutation probe\n")
+
+    with pytest.raises(AssertionError):
+        _assert_immutable_revision_hashes(copied_versions)
 
 
 @pytest.mark.migration
