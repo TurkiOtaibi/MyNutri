@@ -63,14 +63,14 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   const [deleteTarget, setDeleteTarget] = useState<FoodResponse | null>(null);
   const [hydratedFoodId, setHydratedFoodId] = useState<string | null>(null);
   const [pendingServerFood, setPendingServerFood] = useState<FoodResponse | null>(null);
-  const initialForm = useRef(JSON.stringify(emptyFoodForm));
+  const [initialForm, setInitialForm] = useState(JSON.stringify(emptyFoodForm));
   const isEdit = mode === "edit";
   const { account, session, loading: authLoading } = useAuth();
   const accessToken = session?.access_token;
   const subjectId = session?.user.id ?? null;
   const formSubjectRef = useRef(subjectId);
   const sessionSignal = useSessionAbortSignal();
-  const dirty = JSON.stringify(form) !== initialForm.current;
+  const dirty = JSON.stringify(form) !== initialForm;
 
   const foodQuery = useQuery({
     queryKey: ["food", foodId],
@@ -87,7 +87,9 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     if (foodQuery.data) {
       const loaded = foodToForm(foodQuery.data);
       if (dirty && hydratedFoodId === foodQuery.data.id) {
-        if (JSON.stringify(loaded) !== initialForm.current) setPendingServerFood(foodQuery.data);
+        // Preserve an in-progress form when a newer server response arrives.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        if (JSON.stringify(loaded) !== initialForm) setPendingServerFood(foodQuery.data);
         return;
       }
       if (dirty) {
@@ -95,7 +97,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
         return;
       }
       setForm(loaded);
-      initialForm.current = JSON.stringify(loaded);
+      setInitialForm(JSON.stringify(loaded));
       setHydratedFoodId(foodQuery.data.id);
       setPendingServerFood(null);
     }
@@ -108,7 +110,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     if (formSubjectRef.current === subjectId) return;
     formSubjectRef.current = subjectId;
     setForm(emptyFoodForm);
-    initialForm.current = JSON.stringify(emptyFoodForm);
+    setInitialForm(JSON.stringify(emptyFoodForm));
     setHydratedFoodId(null);
     setPendingServerFood(null);
     setErrors({});
@@ -124,7 +126,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     onSuccess: async (food) => {
       if (sessionSignal.aborted) return;
       const saved = foodToForm(food);
-      initialForm.current = JSON.stringify(saved);
+      setInitialForm(JSON.stringify(saved));
       setForm(saved);
       setPendingServerFood(null);
       await queryClient.invalidateQueries({ queryKey: ["foods"] });
@@ -148,7 +150,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   const deleteMutation = useFoodDelete({
     onDeleted: () => {
       if (!sessionSignal.aborted) {
-        initialForm.current = JSON.stringify(form);
+        setInitialForm(JSON.stringify(form));
         completeAndNavigate("/foods");
       }
     },
@@ -162,7 +164,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     dirty,
     enabled: !saveMutation.isPending && !deleteMutation.isPending,
     discard: () => {
-      initialForm.current = JSON.stringify(form);
+      setInitialForm(JSON.stringify(form));
       setPendingServerFood(null);
     }
   });
@@ -295,7 +297,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
               <button className="btn danger" type="button" onClick={() => requestDiscard(() => {
                 const loaded = foodToForm(pendingServerFood);
                 setForm(loaded);
-                initialForm.current = JSON.stringify(loaded);
+                setInitialForm(JSON.stringify(loaded));
                 setHydratedFoodId(pendingServerFood.id);
                 setPendingServerFood(null);
               })}>تحميل نسخة الخادم</button>

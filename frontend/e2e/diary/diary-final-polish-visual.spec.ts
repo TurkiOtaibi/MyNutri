@@ -5,7 +5,7 @@ import type { Page } from "@playwright/test";
 import type { DaySummary, DiaryEntryResponse, WeekSummary } from "../../lib/types";
 import { API_TOKEN, API_URL, diaryDate as localDate, expect, offsetIsoDate, test, uniqueName } from "../foods/helpers";
 
-const output = resolve("..", "docs", "ui-ux", "screenshots", "diary-final-polish");
+const output = resolve(process.cwd(), "test-results", "manual-capture", "diary-final-polish");
 const apiOrigin = new URL(API_URL).origin;
 
 function sundayStart(value: string) {

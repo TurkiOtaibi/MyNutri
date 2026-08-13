@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 import type { ProfileInput, ProfileResponse } from "../../lib/types";
 import { API_TOKEN, API_URL } from "../foods/helpers";
 
-const output = resolve("..", "docs", "ui-ux", "screenshots", "profile-targets-redesign");
+const output = resolve(process.cwd(), "test-results", "manual-capture", "profile-targets-redesign");
 const headers = { Authorization: `Bearer ${API_TOKEN}` };
 const API_ORIGIN = new URL(API_URL).origin;
 const profileApiPattern = (url: URL) => url.origin === API_ORIGIN && url.pathname === "/profile";

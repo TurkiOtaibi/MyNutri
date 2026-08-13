@@ -4,7 +4,7 @@ import type { Locator, Page } from "@playwright/test";
 
 import { diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
 
-const output = resolve("..", "docs", "ui-ux", "screenshots", "diary-quantity-refinement");
+const output = resolve(process.cwd(), "test-results", "manual-capture", "diary-quantity-refinement");
 
 async function discardPortaledAddFoodDraft(page: Page, opener: Locator) {
   const discardDialog = page.getByRole("alertdialog", {

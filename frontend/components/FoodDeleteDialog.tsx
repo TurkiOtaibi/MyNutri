@@ -25,13 +25,18 @@ export function FoodDeleteDialog({
   const sawPendingRef = useRef(false);
   const [submitted, setSubmitted] = useState(false);
   const deleting = pending || submitted;
-  onCancelRef.current = onCancel;
-  deletingRef.current = deleting;
+
+  useEffect(() => {
+    onCancelRef.current = onCancel;
+    deletingRef.current = deleting;
+  }, [deleting, onCancel]);
 
   useEffect(() => {
     if (!food) {
       submittedRef.current = false;
       sawPendingRef.current = false;
+      // This state tracks a user submission lifecycle rather than derived render data.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSubmitted(false);
       return;
     }

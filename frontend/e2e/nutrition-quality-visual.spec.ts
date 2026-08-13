@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { diaryDate, expect, test, uniqueName } from "./foods/helpers";
 
-const output = resolve(process.cwd(), "..", "docs", "ui-ux", "screenshots", "nutrition-quality");
+const output = resolve(process.cwd(), "test-results", "manual-capture", "nutrition-quality");
 
 test.beforeAll(async () => mkdir(output, { recursive: true }));
 

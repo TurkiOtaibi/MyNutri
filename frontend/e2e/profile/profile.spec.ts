@@ -136,9 +136,9 @@ async function readProfile(request: APIRequestContext): Promise<ProfileResponse>
 }
 
 const test = base.extend<{ originalProfile: ProfileResponse }>({
-  originalProfile: async ({ request }, use) => {
+  originalProfile: async ({ request }, provide) => {
     const original = await readProfile(request);
-    await use(original);
+    await provide(original);
     await request.put(`${API_URL}/profile`, { headers: apiHeaders(), data: inputFrom(original) });
   }
 });
