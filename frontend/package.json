@@ -6,8 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:capture": "playwright test --project=manual-capture",
+    "test:visual": "playwright test --project=visual-regression",
     "test:e2e:foods": "playwright test e2e/foods",
     "test:e2e:foods:p0": "playwright test e2e/foods --grep @p0",
     "test:e2e:foods:headed": "playwright test e2e/foods --headed"
@@ -29,10 +33,14 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.2.11",
     "tailwindcss": "4.3.2",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
   },
   "overrides": {
+    "nanoid": "3.3.18",
     "postcss": "8.5.23",
     "sharp": "0.35.3"
   }

@@ -294,7 +294,10 @@ export function useUnsavedChanges(registration?: GuardRegistration) {
   const context = useContext(UnsavedChangesContext);
   if (!context) throw new Error("useUnsavedChanges must be used within UnsavedChangesProvider.");
   const registrationRef = useRef(registration);
-  registrationRef.current = registration;
+
+  useLayoutEffect(() => {
+    registrationRef.current = registration;
+  }, [registration]);
 
   useLayoutEffect(() => {
     if (!registration) return;

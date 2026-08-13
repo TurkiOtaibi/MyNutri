@@ -301,6 +301,8 @@ export function ProfilePage() {
     const responsePhaseOwnsAuthority = ["reconciling", "recovery", "committed"].includes(activationPhaseRef.current.kind);
     if (dirty && !responsePhaseOwnsAuthority) {
       if (normalizeDraft(nextDraft) !== normalizeDraft(savedDraft ?? blankDraft())) {
+        // Preserve an in-progress draft when a newer server response arrives.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setPendingServerProfile(profileQuery.data);
       }
       return;
@@ -391,6 +393,8 @@ export function ProfilePage() {
 
   useEffect(() => {
     if (activationSafetyOutcome) return;
+    // Reset the confirmation attempt when the authoritative preview changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSafetyAttemptSequence(0);
     if (activationPhaseRef.current.kind === "confirming") {
       transitionActivation({ kind: "idle" });
@@ -1126,8 +1130,10 @@ function ProfileSheet({ title, children, onClose, restoreFocusRef, dismissible =
   const triggerRef = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
   const dismissibleRef = useRef(dismissible);
-  onCloseRef.current = onClose;
-  dismissibleRef.current = dismissible;
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    dismissibleRef.current = dismissible;
+  }, [dismissible, onClose]);
   useEffect(() => {
     triggerRef.current = document.activeElement as HTMLElement | null;
     const panel = panelRef.current;

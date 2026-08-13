@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
 
-const output = resolve("..", "docs", "ui-ux", "screenshots", "diary-page-refinement");
+const output = resolve(process.cwd(), "test-results", "manual-capture", "diary-page-refinement");
 
 test("@diary @visual capture compact Diary page production states", async ({ page, foodsApi }) => {
   await mkdir(output, { recursive: true });

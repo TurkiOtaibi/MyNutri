@@ -252,18 +252,18 @@ export class FoodsApi {
 type Fixtures = { foodsApi: FoodsApi; calendarAuthority: CalendarAuthority };
 
 export const test = base.extend<Fixtures>({
-  calendarAuthority: [async ({ request }, use) => {
+  calendarAuthority: [async ({ request }, provide) => {
     const authority = await fetchCalendarAuthority(request);
     activeCalendarAuthority = authority;
     try {
-      await use(authority);
+      await provide(authority);
     } finally {
       activeCalendarAuthority = null;
     }
   }, { auto: true }],
-  foodsApi: async ({ request }, use) => {
+  foodsApi: async ({ request }, provide) => {
     const api = new FoodsApi(request);
-    await use(api);
+    await provide(api);
     await api.cleanup();
   }
 });

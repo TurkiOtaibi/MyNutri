@@ -1265,8 +1265,11 @@ function ModalFrame({
   const panelRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   const pendingRef = useRef(pending);
-  onCloseRef.current = onClose;
-  pendingRef.current = pending;
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    pendingRef.current = pending;
+  }, [onClose, pending]);
 
   useEffect(() => {
     const panel = panelRef.current;

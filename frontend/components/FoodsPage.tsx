@@ -114,6 +114,8 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
   useEffect(() => {
     const data = foodsQuery.data;
     if (!data) return;
+    // The paged query is the external source for the accumulated mobile collection.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setKnownCategories(data.categories);
     setUncategorizedCount(data.uncategorized_count);
     setMobileItems((current) => {

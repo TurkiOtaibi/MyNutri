@@ -49,7 +49,7 @@ export default defineConfig({
   projects: [
     {
       name: "foods-chromium",
-      testIgnore: [/pwa-shell\.spec\.ts/, /auth-password-recovery-provider\.spec\.ts/],
+      testIgnore: [/pwa-shell\.spec\.ts/, /auth-password-recovery-provider\.spec\.ts/, /visual\.spec\.ts/, /visual-regression\/critical\.spec\.ts/],
       use: { ...devices["Desktop Chrome"] }
     },
     {
@@ -66,6 +66,22 @@ export default defineConfig({
         trace: "off",
         screenshot: "off",
         video: "off"
+      }
+    },
+    {
+      name: "manual-capture",
+      testMatch: /visual\.spec\.ts/,
+      outputDir: "./test-results/manual-capture",
+      use: { ...devices["Desktop Chrome"] }
+    },
+    {
+      name: "visual-regression",
+      testMatch: /visual-regression\/critical\.spec\.ts/,
+      outputDir: "./test-results/visual-regression",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 390, height: 844 },
+        colorScheme: "light"
       }
     }
   ]

@@ -263,6 +263,12 @@ jobs:
       - name: Audit all dependencies
         working-directory: frontend
         run: npm audit
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+      - name: Run frontend unit tests
+        working-directory: frontend
+        run: npm run test:unit
       - name: Typecheck frontend
         working-directory: frontend
         run: npm run typecheck
@@ -353,6 +359,20 @@ jobs:
       - name: Run complete Playwright suite
         working-directory: frontend
         run: npm run test:e2e -- --project=foods-chromium
+      - name: Run critical visual regression
+        working-directory: frontend
+        run: npm run test:visual
+      - name: Retain critical visual failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: critical-visual-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            frontend/test-results/visual-regression
+            frontend/playwright-report
+            frontend/e2e/visual-regression/**/*.png
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Verify static-shell PWA isolation
         working-directory: frontend
         run: npx playwright test e2e/pwa-shell.spec.ts --project=pwa-chromium
