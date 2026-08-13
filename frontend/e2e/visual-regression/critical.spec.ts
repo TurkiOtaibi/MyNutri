@@ -4,13 +4,38 @@ import type { ProfileResponse, TargetResponse } from "../../lib/types";
 import {
   API_TOKEN,
   API_URL,
-  diaryDate,
   expect,
   test,
   validFood
 } from "../foods/helpers";
 
+const API_ORIGIN = new URL(API_URL).origin;
+const FIXED_VISUAL_DATE = "2026-08-01";
+const FIXED_VISUAL_TIME = "2026-08-01T12:00:00.000Z";
+const FIXED_NEXT_ROLLOVER = "2026-08-01T21:00:00.000Z";
 const profileHeaders = () => ({ Authorization: `Bearer ${API_TOKEN}` });
+
+function isExactApiPath(url: URL, pathname: string): boolean {
+  return url.origin === API_ORIGIN && url.pathname === pathname;
+}
+
+async function routeFixedCalendar(page: Page): Promise<void> {
+  await page.route(
+    (url) => isExactApiPath(url, "/account/calendar"),
+    async (route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        json: {
+          current_diary_date: FIXED_VISUAL_DATE,
+          calendar_timezone: "Asia/Riyadh",
+          next_rollover_at: FIXED_NEXT_ROLLOVER
+        }
+      });
+    }
+  );
+}
 
 async function stableRendering(page: Page): Promise<void> {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -40,11 +65,11 @@ function adminFood(idSuffix: number, name: string, status: "active" | "archived"
     id: `00000000-0000-4000-8000-${String(idSuffix).padStart(12, "0")}`,
     net_carbs_g: 20,
     status,
-    archived_at: status === "archived" ? "2026-08-04T00:00:00Z" : null,
+    archived_at: status === "archived" ? FIXED_VISUAL_TIME : null,
     group_data_status: "unknown",
     group_data_completeness: "unknown",
-    created_at: "2026-08-04T00:00:00Z",
-    updated_at: "2026-08-04T00:00:00Z"
+    created_at: FIXED_VISUAL_TIME,
+    updated_at: FIXED_VISUAL_TIME
   };
 }
 
@@ -61,11 +86,34 @@ function adminPage(items: ReturnType<typeof adminFood>[]) {
 }
 
 test.describe("critical visual regression", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.clock.install({ time: FIXED_VISUAL_TIME });
+  });
+
   test("Profile blocked-safety preview", async ({ page, request }) => {
     const profileResponse = await request.get(`${API_URL}/profile`, { headers: profileHeaders() });
     expect(profileResponse.status()).toBe(200);
-    const profile = await profileResponse.json() as ProfileResponse;
-    await page.route((url) => url.pathname === "/profile/preview", fulfillBlockedPreview);
+    const currentProfile = await profileResponse.json() as ProfileResponse;
+    const profile: ProfileResponse = {
+      ...currentProfile,
+      birth_date: "1990-01-01",
+      height_cm: 175,
+      weight_kg: 80,
+      activity_level: "moderate",
+      goal: "maintain",
+      updated_at: FIXED_VISUAL_TIME
+    };
+    await page.route(
+      (url) => isExactApiPath(url, "/profile"),
+      async (route) => {
+        if (route.request().method() !== "GET") return route.continue();
+        await route.fulfill({ status: 200, contentType: "application/json", json: profile });
+      }
+    );
+    await page.route(
+      (url) => isExactApiPath(url, "/profile/preview"),
+      fulfillBlockedPreview
+    );
 
     await page.goto("/profile?visual=blocked-safety");
     await page.getByLabel("الوزن").fill(String(profile.weight_kg + 1));
@@ -78,7 +126,8 @@ test.describe("critical visual regression", () => {
 
   test("Diary populated day and week strip", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: "E2E-Visual-Diary-Food", calories: 240 });
-    await foodsApi.createDiary(food.id, diaryDate(), 1, "breakfast");
+    await foodsApi.createDiary(food.id, FIXED_VISUAL_DATE, 1, "breakfast");
+    await routeFixedCalendar(page);
 
     await page.goto("/diary?visual=populated");
     await expect(page.getByText(food.name, { exact: true })).toBeVisible();
@@ -89,6 +138,23 @@ test.describe("critical visual regression", () => {
   });
 
   test("Diary Add-Food sheet open", async ({ page }) => {
+    const pickerFood = adminFood(281, "Plan028 frozen picker food");
+    await routeFixedCalendar(page);
+    await page.route(
+      (url) => isExactApiPath(url, "/foods/picker"),
+      async (route) => {
+        if (route.request().method() !== "GET") return route.continue();
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          json: {
+            items: [pickerFood],
+            recent_items: [],
+            next_cursor: null
+          }
+        });
+      }
+    );
     await page.goto("/diary?visual=add-food");
     await page.locator('[data-diary-add-trigger="meal-breakfast"]').click();
     const sheet = page.locator(".add-food-sheet-form");
@@ -100,14 +166,18 @@ test.describe("critical visual regression", () => {
 
   test("Admin Food lifecycle on mobile", async ({ page }) => {
     const food = adminFood(280, "Plan028 lifecycle visual");
-    await page.route(/\/admin\/foods\?.*$/, async (route) => {
-      const status = new URL(route.request().url()).searchParams.get("status") ?? "active";
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        json: adminPage(status === "archived" ? [{ ...food, status: "archived" as const }] : [food])
-      });
-    });
+    await page.route(
+      (url) => isExactApiPath(url, "/admin/foods"),
+      async (route) => {
+        if (route.request().method() !== "GET") return route.continue();
+        const status = new URL(route.request().url()).searchParams.get("status") ?? "active";
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          json: adminPage(status === "archived" ? [{ ...food, status: "archived" as const }] : [food])
+        });
+      }
+    );
 
     await page.goto("/admin/foods?visual=lifecycle");
     await page.getByLabel("الحالة").selectOption("archived");
