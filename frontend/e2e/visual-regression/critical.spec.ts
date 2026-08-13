@@ -120,9 +120,6 @@ test.describe("critical visual regression", () => {
     const preview = page.getByRole("region", { name: "الأهداف المتوقعة بعد الحفظ" });
     await expect(preview).toContainText("799");
     await stableRendering(page);
-    await preview.evaluate((element) => {
-      element.style.transform = "translateX(1px)";
-    });
 
     await expect(preview).toHaveScreenshot("profile-blocked-safety.png");
   });
