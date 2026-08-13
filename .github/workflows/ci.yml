@@ -360,10 +360,12 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e -- --project=foods-chromium
       - name: Run critical visual regression
+        id: critical_visual
+        continue-on-error: true
         working-directory: frontend
         run: npm run test:visual
       - name: Retain critical visual failure evidence
-        if: failure()
+        if: steps.critical_visual.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: critical-visual-failure-${{ github.run_id }}-${{ github.run_attempt }}
@@ -455,6 +457,17 @@ jobs:
             --project=foods-chromium \
             --grep "@strictmode"; then
             cat /tmp/mynutri-web-dev.log
+            exit 1
+          fi
+      - name: Enforce critical visual result
+        if: always()
+        shell: bash
+        env:
+          CRITICAL_VISUAL_OUTCOME: ${{ steps.critical_visual.outcome }}
+        run: |
+          set -euo pipefail
+          if [[ "$CRITICAL_VISUAL_OUTCOME" != "success" ]]; then
+            echo "Critical visual regression outcome was $CRITICAL_VISUAL_OUTCOME."
             exit 1
           fi
 
