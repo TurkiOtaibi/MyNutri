@@ -1,0 +1,2281 @@
+:global(.diary-page) {
+  --diary-soft: #eef6f2;
+  --diary-soft-strong: #e3f2ed;
+  display: grid;
+  gap: 14px;
+}
+
+:global(.section-eyebrow-text) {
+  margin: 0 0 3px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+:global(.week-day) {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  min-height: 92px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  padding: 8px;
+  text-align: right;
+}
+
+:global(.week-day):hover:not(:disabled) {
+  background: var(--diary-soft);
+}
+
+:global(.week-day):disabled {
+  opacity: 0.42;
+}
+
+:global(.week-day) > strong {
+  font-size: 14px;
+}
+
+:global(.diary-layout) {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.75fr);
+  gap: 14px;
+  align-items: start;
+}
+
+:global(.diary-log),
+:global(.diary-summary) {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+
+:global(.diary-section-heading) {
+  margin-bottom: 13px;
+}
+
+:global(.diary-section-heading) h2,
+:global(.diary-summary-heading) h2,
+:global(.sheet-header) h2 {
+  margin: 0;
+  font-size: 19px;
+}
+
+:global(.diary-summary-column) {
+  position: sticky;
+  top: 82px;
+}
+
+:global(.diary-summary-heading) {
+  align-items: flex-start;
+}
+
+:global(.calorie-summary) {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 15px 0 10px;
+}
+
+:global(.calorie-summary) > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 7px;
+}
+
+:global(.calorie-summary) span,
+:global(.calorie-summary) small,
+:global(.macro-progress-row) span,
+:global(.macro-progress-row) small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+:global(.calorie-summary) strong {
+  font-size: 22px;
+}
+
+:global(.calorie-summary) small {
+  grid-column: 2;
+}
+
+:global(.macro-progress-list) {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+:global(.macro-progress-row) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  gap: 5px 8px;
+  align-items: center;
+}
+
+:global(.macro-progress-row) > div {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+:global(.macro-progress-row) small {
+  text-align: left;
+}
+
+:global(.diary-entry-list) {
+  display: grid;
+  gap: 7px;
+}
+
+:global(.diary-entry-row) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 10px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding: 11px 2px;
+}
+
+:global(.diary-entry-row):first-child {
+  border-top: 0;
+}
+
+:global(.diary-entry-copy) {
+  min-width: 0;
+}
+
+:global(.diary-entry-copy) h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+:global(.diary-entry-copy) p,
+:global(.diary-entry-copy) span {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+:global(.entry-menu-wrap) {
+  position: relative;
+}
+
+:global(.entry-menu-trigger) {
+  border-color: transparent;
+}
+
+:global(.entry-action-menu) {
+  position: absolute;
+  inset-block-start: calc(100% + 5px);
+  inset-inline-end: 0;
+  z-index: 20;
+  display: grid;
+  width: 170px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: white;
+  padding: 5px;
+  box-shadow: var(--shadow);
+}
+
+:global(.entry-action-menu) button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  padding: 8px 10px;
+  text-align: right;
+}
+
+:global(.entry-action-menu) button:hover {
+  background: var(--surface-strong);
+}
+
+:global(.entry-action-menu) :global(.danger-text) {
+  color: var(--danger);
+}
+
+:global(.diary-entry-skeleton) {
+  height: 76px;
+  border-radius: var(--radius);
+}
+
+:global(.diary-error-state) {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--danger-soft);
+  border-radius: var(--radius);
+  background: #fffafa;
+  color: var(--danger);
+  padding: 13px;
+}
+
+:global(.diary-status) {
+  position: fixed;
+  inset-inline-end: 18px;
+  inset-block-end: 18px;
+  z-index: 60;
+  max-width: min(360px, calc(100vw - 24px));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: var(--radius);
+  background: white;
+  padding: 11px 14px;
+  box-shadow: var(--shadow);
+}
+
+:global(.diary-modal-backdrop) {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 35, 31, 0.42);
+  padding: 16px;
+}
+
+:global(.diary-modal-panel) {
+  width: min(100%, 500px);
+  max-height: min(88vh, 760px);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: white;
+  padding: 17px;
+  box-shadow: 0 18px 55px rgba(15, 35, 31, 0.2);
+}
+
+:global(.sheet-header) {
+  align-items: flex-start;
+  margin-bottom: 15px;
+}
+
+:global(.search-control) {
+  position: relative;
+}
+
+:global(.search-control) > svg {
+  position: absolute;
+  z-index: 1;
+  inset-inline-start: 11px;
+  top: 50%;
+  color: var(--muted);
+  transform: translateY(-50%);
+}
+
+:global(.diary-food-results) {
+  display: grid;
+  gap: 4px;
+  max-height: 285px;
+  overflow-y: auto;
+  margin: 12px 0;
+}
+
+:global(.diary-food-option) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 20px;
+  gap: 10px;
+  align-items: center;
+  min-height: 58px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--surface-strong);
+  color: var(--ink);
+  padding: 8px 10px;
+  text-align: right;
+}
+
+:global(.diary-food-option) > span:first-child {
+  display: grid;
+  min-width: 0;
+}
+
+:global(.diary-food-option) strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.diary-food-option) small {
+  color: var(--muted);
+}
+
+:global(.entry-preview) {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+}
+
+:global(.entry-preview) span {
+  display: grid;
+  gap: 2px;
+  border-inline-start: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+:global(.entry-preview) span:last-child {
+  border-inline-start: 0;
+}
+
+:global(.entry-preview) strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+:global(.sheet-actions) {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+:global(.dialog-help) {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+:global(.confirm-entry-dialog) {
+  text-align: center;
+}
+
+:global(.confirm-entry-dialog) h2 {
+  margin: 8px 0 0;
+}
+
+:global(.confirm-entry-dialog) p {
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+:global(.dialog-danger-icon) {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-inline: auto;
+  border-radius: 50%;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+:global(.entry-sheet):global(.diary-modal-backdrop) {
+  align-items: end;
+  padding: 0;
+}
+
+:global(.entry-sheet) :global(.diary-modal-panel) {
+  width: min(720px, calc(100vw - 24px));
+  height: min(94dvh, 860px);
+  max-height: none;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: 24px 24px 0 0;
+  background: var(--surface);
+  padding: 0;
+  box-shadow: 0 -18px 60px rgba(15, 35, 31, 0.16);
+}
+
+:global(.add-food-sheet-form) {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+}
+
+:global(.add-sheet-header) {
+  position: relative;
+  z-index: 3;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+  background: rgba(255, 255, 255, 0.96);
+  padding: 4px 16px 12px;
+  backdrop-filter: blur(14px);
+}
+
+:global(.sheet-drag-handle) {
+  display: grid;
+  width: 72px;
+  height: 28px;
+  margin-inline: auto;
+  place-items: center;
+  border: 0;
+  background: transparent;
+}
+
+:global(.sheet-drag-handle) span {
+  display: block;
+  width: 38px;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 38%, white);
+}
+
+:global(.add-sheet-title-row) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+:global(.add-sheet-title-row) h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+:global(.add-sheet-title-row) p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+:global(.add-sheet-close) {
+  flex: 0 0 44px;
+  border-color: transparent;
+  background: var(--surface-strong);
+  color: var(--muted);
+}
+
+:global(.add-sheet-content) {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 16px 24px;
+  scroll-padding-block: 100px;
+  transition: opacity 200ms ease;
+}
+
+:global(.add-food-search-state),
+:global(.add-food-configure-state) {
+  min-width: 0;
+  animation: add-sheet-state-in 200ms ease both;
+}
+
+@keyframes add-sheet-state-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.add-food-search-state),
+  :global(.add-food-configure-state),
+  :global(.entry-sheet) :global(.meal-type-selector) button,
+  :global(.entry-sheet) :global(.quantity-stepper) {
+    animation: none;
+    transition: none;
+  }
+}
+
+:global(.add-search-sticky) {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  margin-inline: -2px;
+  background: linear-gradient(to bottom, white 88%, rgba(255, 255, 255, 0));
+  padding: 20px 2px 14px;
+}
+
+:global(.add-search-sticky) h3,
+:global(.add-config-section) h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+:global(.entry-sheet) :global(.diary-food-results) {
+  display: grid;
+  gap: 20px;
+  max-height: none;
+  overflow: visible;
+  margin: 0;
+  padding: 0;
+}
+
+:global(.food-result-group) h4 {
+  margin: 0 0 7px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+:global(.food-result-list) {
+  overflow: hidden;
+  border-block: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+:global(.entry-sheet) :global(.diary-food-option) {
+  display: block;
+  width: 100%;
+  min-height: 72px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 68%, transparent);
+  border-radius: 0;
+  background: transparent;
+  padding: 9px 3px;
+  text-align: start;
+  transition: background 90ms ease;
+}
+
+:global(.entry-sheet) :global(.diary-food-option):last-child {
+  border-bottom: 0;
+}
+
+:global(.entry-sheet) :global(.diary-food-option):active {
+  background: var(--accent-soft);
+}
+
+:global(.entry-sheet) :global(.diary-food-option-copy) {
+  display: grid;
+  gap: 2px;
+}
+
+:global(.entry-sheet) :global(.diary-food-option-copy) strong {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+:global(.entry-sheet) :global(.diary-food-option-copy) small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.recent-foods-empty) {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+:global(.add-search-empty) {
+  display: grid;
+  gap: 5px;
+  min-height: 180px;
+  align-content: center;
+  justify-items: center;
+  color: var(--muted);
+  text-align: center;
+}
+
+:global(.add-search-empty) strong {
+  color: var(--ink);
+  font-size: 16px;
+}
+
+:global(.food-result-skeletons) {
+  display: grid;
+}
+
+:global(.food-result-skeletons) span {
+  height: 72px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(90deg, transparent, rgba(15, 118, 110, 0.07), transparent);
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.4s linear infinite;
+}
+
+:global(.add-food-configure-state) {
+  display: grid;
+  gap: 22px;
+  padding-top: 18px;
+}
+
+:global(.selected-food-summary) {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  min-height: 112px;
+  border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--line));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--accent-soft) 38%, white);
+  padding: 12px 16px 42px;
+}
+
+:global(.selected-food-summary) h3 {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+:global(.selected-food-summary) p,
+:global(.selected-food-summary) span {
+  overflow: hidden;
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.selected-food-summary) button {
+  position: absolute;
+  inset-inline-end: 10px;
+  bottom: 4px;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+:global(.selected-food-summary) :global(.selected-food-serving) {
+  direction: rtl;
+  white-space: normal;
+}
+
+:global(.add-config-section) {
+  display: grid;
+  gap: 8px;
+}
+
+:global(.entry-sheet) :global(.meal-type-selector) {
+  position: relative;
+  gap: 3px;
+  border-radius: 16px;
+  background: var(--surface-strong);
+  padding: 4px;
+}
+
+:global(.entry-sheet) :global(.meal-type-selector) button {
+  min-height: 48px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  transition: color 190ms ease, background 190ms ease, box-shadow 190ms ease;
+}
+
+:global(.entry-sheet) :global(.quantity-stepper) {
+  direction: ltr;
+  grid-template-columns: 52px minmax(0, 1fr) 52px;
+  width: 100%;
+  min-height: 58px;
+  border-color: transparent;
+  border-radius: 16px;
+  background: var(--surface-strong);
+  box-shadow: none;
+}
+
+:global(.entry-sheet) :global(.quantity-stepper) > button {
+  width: 46px;
+  min-height: 46px;
+  margin-inline: 3px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
+  border-radius: 50%;
+  background: white;
+}
+
+:global(.entry-sheet) :global(.quantity-stepper) > label {
+  direction: ltr;
+}
+
+:global(.entry-sheet) :global(.quantity-stepper) input {
+  font-size: 24px;
+  font-weight: 750;
+}
+
+:global(.entry-sheet) :global(.quantity-unit) {
+  direction: rtl;
+  font-size: 14px;
+}
+
+:global(.quantity-inline-error) {
+  margin: 0;
+}
+
+:global(.add-nutrition-preview) {
+  display: grid;
+  gap: 11px;
+  border-radius: 18px;
+  background: var(--surface-strong);
+  padding: 16px;
+  text-align: center;
+}
+
+:global(.add-nutrition-preview) > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+:global(.add-calorie-total) {
+  display: grid;
+  justify-items: center;
+}
+
+:global(.add-calorie-total) strong {
+  color: var(--ink);
+  font-size: 36px;
+  line-height: 1;
+}
+
+:global(.add-calorie-total) span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+:global(.add-macro-row) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
+  padding-top: 11px;
+}
+
+:global(.add-macro-row) span {
+  display: grid;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+:global(.add-macro-row) strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+:global(.add-sheet-footer) {
+  position: relative;
+  z-index: 4;
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+  background: rgba(255, 255, 255, 0.97);
+  padding: 12px 16px max(12px, env(safe-area-inset-bottom));
+  backdrop-filter: blur(14px);
+}
+
+:global(.add-food-submit) {
+  justify-content: center;
+  width: 100%;
+  min-height: 54px;
+  border-radius: 15px;
+  font-size: 16px;
+  font-weight: 750;
+}
+
+:global(.add-action-helper) {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+:global(.add-sheet-cancel) {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+:global(.add-save-error) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+:global(.add-save-error) strong,
+:global(.add-save-error) span {
+  grid-column: 1;
+}
+
+:global(.add-save-error) button {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  font-weight: 750;
+}
+
+:global(.discard-confirm-backdrop) {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  align-items: end;
+  background: rgba(15, 35, 31, 0.38);
+  padding: 16px;
+}
+
+:global(.discard-confirm) {
+  display: grid;
+  gap: 9px;
+  border-radius: 18px;
+  background: white;
+  padding: 18px;
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+:global(.discard-confirm) h3,
+:global(.discard-confirm) p {
+  margin: 0;
+}
+
+:global(.discard-confirm) p {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  :global(.entry-sheet) :global(.diary-modal-panel) {
+      width: 100%;
+      height: 95dvh;
+      border-width: 1px 0 0;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.add-sheet-content),
+    :global(.add-sheet-header),
+    :global(.add-sheet-footer) {
+      padding-inline: 16px;
+    }
+}
+
+@media (max-width: 340px) {
+  :global(.add-sheet-content),
+    :global(.add-sheet-header),
+    :global(.add-sheet-footer) {
+      padding-inline: 12px;
+    }
+}
+
+@media (max-width: 340px) {
+  :global(.entry-sheet) :global(.meal-type-selector) button {
+      padding-inline: 2px;
+      font-size: 12px;
+    }
+}
+
+:global(.compact-week-nav) {
+  display: grid;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: white;
+  padding: 10px;
+  box-shadow: 0 5px 18px rgba(15, 35, 31, 0.045);
+}
+
+:global(.compact-week-topline) {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px auto;
+  align-items: center;
+  gap: 6px;
+}
+
+:global(.compact-selected-date) {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+:global(.compact-selected-date) strong {
+  font-size: 14px;
+  text-align: center;
+}
+
+:global(.compact-selected-date) input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+:global(.compact-today) {
+  min-height: 44px;
+  padding-inline: 12px;
+}
+
+:global(.compact-week-days) {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+  direction: rtl;
+}
+
+:global(.compact-week-day) {
+  position: relative;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 66px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  padding: 5px 2px 7px;
+}
+
+:global(.compact-week-day) strong {
+  color: var(--ink);
+  font-size: 16px;
+}
+
+:global(.compact-week-day) span,
+:global(.compact-week-day) small {
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+:global(.compact-week-day) i {
+  width: 70%;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+:global(.compact-week-day) i::after {
+  display: block;
+  width: var(--day-progress);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  content: "";
+}
+
+:global(.compact-week-day):disabled {
+  opacity: 0.4;
+}
+
+:global(.meal-sections) {
+  display: grid;
+  gap: 7px;
+}
+
+:global(.diary-empty-note) {
+  margin: 0 0 9px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: 10px;
+  background: var(--diary-soft);
+  color: var(--muted);
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+:global(.meal-section) {
+  overflow: visible;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+}
+
+:global(.meal-section-header) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+}
+
+:global(.meal-toggle) {
+  display: grid;
+  grid-template-columns: 24px auto minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 8px;
+  min-height: 54px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 8px 11px;
+  text-align: start;
+}
+
+:global(.meal-toggle) > span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.meal-add) {
+  margin-inline-end: 5px;
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+  color: var(--accent);
+}
+
+:global(.meal-section-content) {
+  border-top: 1px solid var(--line);
+  padding-inline: 11px;
+}
+
+:global(.meal-section-content) :global(.diary-entry-row) {
+  border-radius: 0;
+  box-shadow: none;
+  padding-inline: 0;
+}
+
+:global(.meal-type-selector) {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+:global(.meal-type-selector) button {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+:global(.diary-status) {
+  max-width: min(420px, calc(100vw - 24px));
+  pointer-events: none;
+}
+
+@media (min-width: 921px) {
+  :global(.compact-week-nav) {
+      grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.compact-week-nav) {
+      gap: 7px;
+      padding: 7px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.compact-week-topline) {
+      grid-template-columns: 44px minmax(0, 1fr) 44px 48px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.compact-selected-date) strong {
+      font-size: 12px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.compact-selected-date) svg {
+      display: none;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.compact-today) {
+      padding-inline: 5px;
+      font-size: 12px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.compact-week-days) {
+      gap: 2px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.compact-week-day) {
+      min-height: 61px;
+      border-radius: 8px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.compact-week-day) span,
+    :global(.compact-week-day) small {
+      font-size: 9px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.meal-toggle) {
+      grid-template-columns: 21px auto minmax(0, 1fr) 18px;
+      gap: 6px;
+      min-height: 52px;
+      padding-inline: 9px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.meal-toggle) > span {
+      font-size: 11px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.meal-type-selector) {
+      gap: 4px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.meal-type-selector) button {
+      padding-inline: 3px;
+      font-size: 12px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.meal-section-content),
+    :global(.compact-week-day) {
+      transition: none;
+    }
+}
+
+:global(.calorie-summary-primary) {
+  display: grid;
+  gap: 3px;
+  margin: 12px 0 9px;
+}
+
+:global(.calorie-summary-primary) > strong {
+  color: var(--ink);
+  font-size: 25px;
+  line-height: 1.25;
+}
+
+:global(.calorie-summary-primary) > strong span,
+:global(.calorie-summary-primary) > strong small {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+:global(.calorie-summary-primary) p {
+  margin: 0;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+:global(.macro-value-expression) {
+  direction: rtl;
+  unicode-bidi: isolate;
+}
+
+:global(.diary-entry-copy) h3 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+:global(.diary-food-option) {
+  grid-template-columns: minmax(0, 1fr) 22px;
+  min-height: 68px;
+  border-color: var(--line);
+  background: white;
+}
+
+:global(.diary-food-option):hover {
+  background: var(--surface-strong);
+}
+
+:global(.diary-food-option-copy) {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+:global(.diary-food-option-copy) strong {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+}
+
+:global(.diary-food-option-copy) small {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.quantity-stepper-field) {
+  display: grid;
+  gap: 7px;
+}
+
+:global(.quantity-stepper-label) {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+:global(.quantity-stepper) {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 52px;
+  align-items: center;
+  width: min(100%, 360px);
+  min-height: 56px;
+  margin-inline: auto;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 999px;
+  background: var(--diary-soft);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+:global(.quantity-stepper):focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+:global(.quantity-stepper) > button {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  min-height: 54px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 27px;
+  font-weight: 500;
+}
+
+:global(.quantity-stepper) > button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+:global(.quantity-stepper) > button:disabled {
+  color: color-mix(in srgb, var(--muted) 45%, white);
+}
+
+:global(.quantity-stepper) > label {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+:global(.quantity-stepper) input {
+  width: clamp(42px, 24%, 80px);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 900;
+  text-align: center;
+}
+
+:global(.quantity-unit) {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+:global(.entry-preview) {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-strong);
+  padding: 11px;
+}
+
+:global(.entry-preview) > p {
+  margin: 0;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+}
+
+:global(.entry-preview) > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+:global(.entry-preview) > div span {
+  display: grid;
+  gap: 2px;
+  border-inline-start: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+:global(.entry-preview) > div span:last-child {
+  border-inline-start: 0;
+}
+
+:global(.entry-preview) > div strong {
+  color: var(--ink);
+  font-size: 16px;
+}
+
+:global(.edit-entry-preview) {
+  margin-top: 12px;
+}
+
+:global(.diary-modal-panel) {
+  width: min(100%, 580px);
+}
+
+@media (max-width: 920px) {
+  :global(.week-day) {
+      flex-basis: 98px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-page) {
+      scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom));
+      padding-bottom: calc(104px + env(safe-area-inset-bottom));
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.week-day) {
+      flex-basis: 96px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-summary-heading) {
+      display: block;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.calorie-summary-primary) {
+      margin-top: 8px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.calorie-summary-primary) > strong {
+      font-size: 22px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.macro-progress-row) > div span {
+      font-size: 11px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-entry-row) {
+      padding-block: 9px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-entry-copy) span {
+      white-space: normal;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-food-results) {
+      max-height: min(36dvh, 300px);
+      padding-bottom: 6px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.quantity-stepper) {
+      width: 100%;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.entry-preview) > div strong {
+      font-size: 15px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.sheet-actions) {
+      box-shadow: 0 -8px 18px rgba(15, 35, 31, 0.04);
+    }
+}
+
+:global(.diary-page) {
+  gap: 14px;
+  padding-top: 0;
+}
+
+:global(.diary-page) :global(.compact-week-nav) {
+  position: relative;
+  gap: 6px;
+  border-radius: 16px;
+  padding: 8px 10px 9px;
+  box-shadow: 0 3px 14px rgba(15, 35, 31, 0.04);
+}
+
+:global(.diary-page) :global(.compact-week-topline) {
+  position: relative;
+  display: block;
+  direction: ltr;
+  min-height: 44px;
+}
+
+:global(.diary-page) :global(.week-day-arrow) {
+  position: absolute;
+  inset-block-start: 0;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+}
+
+:global(.diary-page) :global(.week-day-arrow):hover:not(:disabled),
+:global(.diary-page) :global(.week-day-arrow):focus-visible {
+  background: var(--surface-strong);
+  color: var(--accent);
+}
+
+:global(.diary-page) :global(.compact-selected-date) {
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: min(calc(100% - 120px), 230px);
+  transform: translateX(-50%);
+  direction: rtl;
+}
+
+:global(.diary-page) :global(.compact-week-topline):global(.has-today) :global(.compact-selected-date) {
+  width: min(calc(100% - 190px), 230px);
+}
+
+:global(.diary-page) :global(.compact-selected-date) h2 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.diary-page) :global(.compact-today) {
+  position: absolute;
+  inset-block-start: 5px;
+  left: 50px;
+  z-index: 2;
+  min-width: 44px;
+  min-height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--diary-soft);
+  color: var(--accent);
+  padding-inline: 9px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+:global(.diary-page) :global(.compact-week-days) {
+  direction: rtl;
+  gap: 2px;
+}
+
+:global(.diary-page) :global(.compact-week-day) {
+  position: relative;
+  gap: 0;
+  min-height: 49px;
+  border: 0;
+  border-radius: 10px;
+  padding: 3px 1px 4px;
+}
+
+:global(.diary-page) :global(.compact-week-day) span {
+  font-size: 9px;
+}
+
+:global(.diary-page) :global(.compact-week-day) strong {
+  display: grid;
+  width: 36px;
+  height: 32px;
+  margin-inline: auto;
+  place-items: center;
+  border-radius: 11px;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+:global(.diary-page) :global(.compact-week-day) small {
+  min-height: 12px;
+  font-size: 9px;
+}
+
+:global(.diary-page) :global(.compact-week-day) i {
+  width: 5px;
+  height: 5px;
+  margin-top: 1px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+:global(.diary-page) :global(.compact-week-day) i::after {
+  width: 100%;
+}
+
+:global(.week-inline-error) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+:global(.week-inline-error) button {
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  font-weight: 750;
+  text-decoration: underline;
+}
+
+:global(.diary-page) :global(.diary-layout) {
+  grid-template-columns: minmax(0, 1.75fr) minmax(280px, 0.8fr);
+  gap: 14px;
+}
+
+:global(.diary-page) :global(.diary-log) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+:global(.diary-page) :global(.diary-section-heading) {
+  min-height: 32px;
+  margin: 0 0 8px;
+}
+
+:global(.diary-page) :global(.diary-section-heading) h2 {
+  font-size: 18px;
+}
+
+:global(.diary-page) :global(.diary-summary) {
+  border-radius: 16px;
+  padding: 13px 14px;
+  box-shadow: 0 3px 14px rgba(15, 35, 31, 0.04);
+}
+
+:global(.diary-page) :global(.diary-summary-heading) h2 {
+  font-size: 15px;
+}
+
+:global(.diary-page) :global(.calorie-summary-primary) {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 7px 0 8px;
+}
+
+:global(.diary-page) :global(.calorie-summary-primary) > strong {
+  font-size: 25px;
+}
+
+:global(.diary-page) :global(.calorie-summary-primary) p {
+  flex: 0 0 auto;
+  margin: 0;
+  border-radius: 9px;
+  background: var(--diary-soft);
+  color: var(--accent);
+  padding: 5px 7px;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+:global(.diary-page) :global(.calorie-summary-primary) p:global(.reached) {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+:global(.diary-progress-track),
+:global(.macro-progress-track) {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8ede7;
+}
+
+:global(.diary-progress-track) > span,
+:global(.macro-progress-track) > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
+
+:global(.macro-progress-track) {
+  direction: rtl;
+}
+
+:global(.macro-progress-track) > span {
+  width: 0;
+}
+
+:global(.macro-progress-track):global(.has-progress) > span {
+  width: max(var(--macro-min-progress), var(--macro-progress));
+}
+
+:global(.diary-page) :global(.macro-progress-list) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 11px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  padding-top: 10px;
+}
+
+:global(.diary-page) :global(.macro-progress-row) {
+  grid-template-columns: 1fr;
+  gap: 4px;
+  min-width: 0;
+}
+
+:global(.diary-page) :global(.macro-progress-track) {
+  width: 100%;
+}
+
+:global(.diary-page) :global(.macro-progress-row) > div {
+  display: grid;
+  gap: 1px;
+  text-align: center;
+}
+
+:global(.diary-page) :global(.macro-progress-row) strong {
+  font-size: 13px;
+}
+
+:global(.diary-page) :global(.macro-value-expression) {
+  justify-content: center;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+:global(.diary-page) :global(.macro-progress-row) small {
+  color: var(--muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+:global(.diary-summary-loading) {
+  min-height: 166px;
+}
+
+:global(.diary-summary-unavailable) {
+  min-height: 92px;
+  align-content: center;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+:global(.diary-page) :global(.diary-empty-note) {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 8px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--diary-soft);
+  padding: 9px 12px;
+}
+
+:global(.diary-page) :global(.diary-summary-column) + :global(.diary-log),
+:global(.diary-page) :global(.diary-summary-column) + * {
+  margin-top: 0;
+}
+
+:global(.diary-page) :global(.diary-empty-note) strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+:global(.diary-page) :global(.diary-empty-note) span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+:global(.diary-page) :global(.meal-sections) {
+  gap: 8px;
+}
+
+:global(.diary-page) :global(.meal-section) {
+  overflow: visible;
+  border-color: color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: 15px;
+  box-shadow: none;
+}
+
+:global(.diary-page) :global(.meal-section-header) {
+  grid-template-columns: minmax(0, 1fr) 48px;
+  min-height: 60px;
+}
+
+:global(.diary-page) :global(.meal-toggle) {
+  grid-template-columns: 24px minmax(0, 1fr) 20px;
+  gap: 10px;
+  min-height: 60px;
+  padding: 5px 13px;
+}
+
+:global(.meal-title-copy) {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  text-align: start;
+}
+
+:global(.meal-title-copy) strong {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+:global(.meal-title-copy) small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.meal-chevron) {
+  color: var(--muted);
+  transition: transform 190ms ease;
+}
+
+:global(.diary-page) :global(.meal-add) {
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--diary-soft) 68%, white);
+  color: var(--accent);
+}
+
+:global(.diary-page) :global(.meal-section-content) {
+  border-top-color: color-mix(in srgb, var(--line) 72%, transparent);
+  padding-inline: 14px;
+}
+
+:global(.diary-page) :global(.diary-entry-row) {
+  grid-template-columns: minmax(0, 1fr) auto 44px;
+  gap: 9px;
+  min-height: 64px;
+  border-radius: 0;
+  padding: 5px 0;
+  cursor: pointer;
+  transition: background 100ms ease, opacity 100ms ease;
+}
+
+:global(.diary-page) :global(.diary-entry-row):hover,
+:global(.diary-page) :global(.diary-entry-row):focus-visible {
+  background: color-mix(in srgb, var(--diary-soft) 62%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+:global(.diary-page) :global(.diary-entry-row):global(.is-deleting) {
+  opacity: 0.58;
+  cursor: wait;
+}
+
+:global(.diary-page) :global(.diary-entry-copy) h3 {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+:global(.diary-page) :global(.diary-entry-copy) p {
+  overflow: hidden;
+  margin-top: 3px;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.diary-entry-calories) {
+  color: var(--ink);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+:global(.diary-page) :global(.entry-menu-trigger) {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+:global(.delete-inline-error) {
+  display: grid;
+  gap: 2px;
+  border-radius: 10px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  padding: 9px 11px;
+  font-size: 12px;
+}
+
+:global(.diary-page) :global(.diary-error-state) > span {
+  display: grid;
+  gap: 2px;
+}
+
+:global(.diary-page) :global(.diary-error-state) small {
+  color: color-mix(in srgb, var(--danger) 72%, var(--muted));
+  font-size: 12px;
+}
+
+@media (max-width: 920px) {
+  :global(.diary-page) :global(.diary-layout) {
+      grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 920px) {
+  :global(.diary-page) :global(.diary-summary-column) {
+      order: -1;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-page) {
+      gap: 12px;
+      padding-top: 0;
+      padding-bottom: calc(24px + env(safe-area-inset-bottom));
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-page) :global(.compact-week-nav) {
+      margin: 0;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-page) :global(.compact-selected-date) svg {
+      display: none;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-page) :global(.compact-selected-date) h2 {
+      font-size: 14px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-page) :global(.compact-today) {
+      left: 48px;
+      padding-inline: 5px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-page) :global(.diary-summary) {
+      padding: 12px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-page) :global(.calorie-summary-primary) > strong {
+      font-size: 22px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-page) :global(.macro-progress-list) {
+      gap: 7px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-page) :global(.meal-toggle) {
+      min-height: 60px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-page) :global(.diary-layout) {
+      gap: 16px;
+    }
+}
+
+@media (max-width: 340px) {
+  :global(.diary-page) :global(.compact-week-nav) {
+      padding-inline: 7px;
+    }
+}
+
+@media (max-width: 340px) {
+  :global(.diary-page) :global(.compact-week-topline) {
+      min-height: 44px;
+    }
+}
+
+@media (max-width: 340px) {
+  :global(.diary-page) :global(.compact-selected-date) h2 {
+      font-size: 12px;
+    }
+}
+
+@media (max-width: 340px) {
+  :global(.diary-page) :global(.compact-today) {
+      inset-block-start: 5px;
+      left: 46px;
+      min-width: 40px;
+      padding-inline: 3px;
+    }
+}
+
+@media (max-width: 340px) {
+  :global(.diary-page) :global(.calorie-summary-primary) {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 5px;
+    }
+}
+
+@media (max-width: 340px) {
+  :global(.diary-page) :global(.macro-value-expression) {
+      font-size: 9px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.diary-page) :global(.meal-chevron),
+    :global(.diary-page) :global(.diary-entry-row),
+    :global(.diary-progress-track) > span,
+    :global(.macro-progress-track) > span {
+      transition: none;
+    }
+}
+
+@media (max-width: 920px) {
+  :global(.diary-layout) {
+      grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 920px) {
+  :global(.diary-summary-column) {
+      position: static;
+      order: -1;
+    }
+}
+
+@media (max-width: 920px) {
+  :global(.week-day) {
+      flex: 0 0 104px;
+      min-height: 88px;
+      scroll-snap-align: center;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-page) {
+      gap: 11px;
+      padding-bottom: calc(68px + env(safe-area-inset-bottom));
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.week-day) {
+      flex-basis: 94px;
+      min-height: 82px;
+      padding: 7px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-log),
+    :global(.diary-summary) {
+      padding: 13px 12px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-summary-heading) {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: start;
+      gap: 6px 8px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.calorie-summary) {
+      margin-top: 10px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.macro-progress-list) {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.macro-progress-row) {
+      grid-template-columns: 1fr;
+      gap: 4px;
+      min-width: 0;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.macro-progress-row) > div {
+      display: grid;
+      gap: 2px;
+      text-align: center;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.macro-progress-row) > div span {
+      overflow: hidden;
+      font-size: 10px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.macro-progress-row) small {
+      text-align: center;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-section-heading) {
+      align-items: flex-end;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-entry-copy) span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-status) {
+      inset-inline: 12px;
+      inset-block-end: calc(72px + env(safe-area-inset-bottom));
+      text-align: center;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-modal-backdrop) {
+      align-items: end;
+      padding: 0;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-modal-panel) {
+      width: 100%;
+      max-height: min(90dvh, 760px);
+      border-width: 1px 0 0;
+      border-radius: var(--radius) var(--radius) 0 0;
+      padding: 15px 12px calc(15px + env(safe-area-inset-bottom));
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.entry-preview) {
+      padding: 9px 0;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.sheet-actions) {
+      position: sticky;
+      z-index: 2;
+      bottom: calc(-15px - env(safe-area-inset-bottom));
+      margin: 14px -12px calc(-15px - env(safe-area-inset-bottom));
+      border-top: 1px solid var(--line);
+      background: white;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    }
+}
+
+@media (max-width: 920px) {
+  :global(.week-day) {
+      flex: 0 0 98px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-page) {
+      padding-bottom: calc(104px + env(safe-area-inset-bottom));
+      scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom));
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.week-day) {
+      flex-basis: 96px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-summary-heading) {
+      display: block;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-entry-copy) span {
+      white-space: normal;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.diary-food-results) {
+      max-height: min(36dvh, 300px);
+      padding-bottom: 6px;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.quantity-stepper) {
+      width: 100%;
+    }
+}
+
+@media (max-width: 640px) {
+  :global(.entry-preview) {
+      padding: 11px;
+    }
+}
+
+:global(.calorie-summary-primary) > strong,
+:global(.macro-value-expression) {
+  display: inline-flex;
+  direction: rtl;
+  gap: 3px;
+  align-items: baseline;
+  unicode-bidi: isolate;
+}
+
+:global(.calorie-summary-primary) bdi,
+:global(.macro-value-expression) bdi {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+@media (max-width: 640px) {
+  :global(.diary-page) {
+      padding-bottom: calc(28px + env(safe-area-inset-bottom));
+      scroll-padding-bottom: calc(24px + env(safe-area-inset-bottom));
+    }
+}
+
+:global(.target-provenance-label) { display: inline-flex; align-items: center; width: fit-content; min-height: 26px; padding: 3px 8px; border-radius: 7px; background: #edf4f1; color: #0f766e; font-size: .75rem; font-weight: 700; }
+
+:global(.meal-macro-totals) { display: flex; flex-wrap: wrap; gap: 2px; color: var(--muted, #64726c); font-size: .72rem; line-height: 1.35; margin-top: 2px; }
+
+:global(.diary-nutrition-details-action) { width: 100%; min-height: 44px; margin-top: 10px; border: 0; border-top: 1px solid rgba(31, 55, 48, .09); background: transparent; color: var(--primary, #11877b); font: inherit; font-weight: 700; }
+
+:global(.nutrition-details-modal) :global(.diary-modal-panel) { height: min(94dvh, 760px); border-radius: 24px 24px 0 0; align-self: end; }
+
+:global(.daily-nutrition-sheet) { display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: 100%; }
+
+:global(.daily-nutrition-sheet) > header { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px 12px; border-bottom: 1px solid rgba(31, 55, 48, .09); }
+
+:global(.daily-nutrition-sheet) > header h2 { margin: 0; font-size: 1.15rem; }
+
+:global(.daily-nutrition-sheet) > header button { width: 44px; height: 44px; border: 0; background: transparent; border-radius: 10px; }
+
+:global(.daily-nutrition-sheet-content) { overflow-y: auto; overscroll-behavior: contain; padding: 14px 16px max(16px, env(safe-area-inset-bottom)); }
+
+:global(.nutrition-coverage-notice) { border-radius: 14px; background: #eff6f3; padding: 12px; margin-bottom: 10px; }
+
+:global(.nutrition-coverage-notice) p { margin: 5px 0 0; color: var(--muted, #64726c); font-size: .8rem; line-height: 1.55; }
+
+:global(.daily-nutrient-list) { background: #fff; border: 1px solid var(--border, #dfe6df); border-radius: 16px; overflow: hidden; }
+
+:global(.daily-nutrient-row) { padding: 13px 14px; border-top: 1px solid rgba(31, 55, 48, .09); }
+
+:global(.daily-nutrient-row):first-child { border-top: 0; }
+
+:global(.daily-nutrient-row) header, :global(.daily-nutrient-row) footer { display: flex; justify-content: space-between; gap: 10px; }
+
+:global(.daily-nutrient-row) header span, :global(.daily-nutrient-row) footer { color: var(--muted, #64726c); font-size: .78rem; }
+
+:global(.daily-nutrient-value) { display: flex; gap: 6px; align-items: baseline; margin: 7px 0; font-weight: 750; }
+
+:global(.daily-nutrient-value) small { color: var(--muted, #64726c); font-weight: 500; }
+
+:global(.daily-nutrient-progress) { height: 6px; direction: rtl; overflow: hidden; border-radius: 99px; background: #e5ebe7; margin-bottom: 7px; }
+
+:global(.daily-nutrient-progress) span { display: block; height: 100%; margin-inline-end: 0; background: var(--primary, #11877b); border-radius: inherit; transition: width 180ms ease; }
+
+:global(.daily-nutrient-row) > p { margin: 7px 0 0; color: var(--muted, #64726c); font-size: .76rem; }
+
+:global(.daily-nutrition-empty) { padding: 30px 12px; text-align: center; color: var(--muted, #64726c); }
+
+@media (max-width: 360px) {
+  :global(.meal-macro-totals) { max-width: 190px; }
+}

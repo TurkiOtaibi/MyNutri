@@ -5,14 +5,6 @@ import Link from "next/link";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { getAdminUser, getAdminUserDiary } from "@/lib/api";
 
-type Detail = {
-  account: Record<string, unknown>;
-  profile: Record<string, unknown> | null;
-  current_target: Record<string, unknown> | null;
-  pending_plan: Record<string, unknown> | null;
-  plan_history: { items?: Array<Record<string, unknown>> };
-};
-
 const labels: Record<string, string> = {
   display_name: "الاسم", email: "البريد الإلكتروني", status: "حالة الحساب",
   role: "الدور", created_at: "تاريخ التسجيل", goal: "الهدف", weight_kg: "الوزن",
@@ -40,10 +32,14 @@ function displayValue(key: string, value: unknown): string {
   return String(value);
 }
 
-function ReadOnlyFields({ data, keys }: { data: Record<string, unknown> | null; keys: string[] }) {
+function readField(data: object, key: string): unknown {
+  return Object.entries(data).find(([entryKey]) => entryKey === key)?.[1];
+}
+
+function ReadOnlyFields({ data, keys }: { data: object | null; keys: string[] }) {
   if (!data) return <p className="state-note">غير متوفر.</p>;
   return <dl className="admin-readonly-grid">{keys.map((key) => (
-    <div key={key}><dt>{labels[key] ?? key}</dt><dd dir={key === "email" ? "ltr" : "auto"}>{displayValue(key, data[key])}</dd></div>
+    <div key={key}><dt>{labels[key] ?? key}</dt><dd dir={key === "email" ? "ltr" : "auto"}>{displayValue(key, readField(data, key))}</dd></div>
   ))}</dl>;
 }
 
@@ -56,7 +52,7 @@ export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
   const lastFocusedInitialDiaryErrorRef = useRef<number | null>(null);
   const lastFocusedNextDiaryErrorRef = useRef<number | null>(null);
   const lastFocusedRefetchDiaryErrorRef = useRef<number | null>(null);
-  const detail = useQuery<Detail>({ queryKey: ["admin-user", principalId], queryFn: () => getAdminUser(principalId) as Promise<Detail> });
+  const detail = useQuery({ queryKey: ["admin-user", principalId], queryFn: () => getAdminUser(principalId) });
   const diaryQuery = useInfiniteQuery({
     queryKey: ["admin-user-diary", principalId],
     queryFn: ({ pageParam }) => getAdminUserDiary(principalId, pageParam),

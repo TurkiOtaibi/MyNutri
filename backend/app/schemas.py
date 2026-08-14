@@ -43,6 +43,80 @@ from app.services.food_validation_errors import (
 )
 
 
+class RegistryNutrientDefinition(BaseModel):
+    key: str
+    storage_field: str
+    label_ar: str
+    unit: str
+    display_precision: int
+    display_order: int
+    target_type: Literal[
+        "minimum", "maximum", "adequate", "recommended", "range", "monitor_only", "minimize"
+    ]
+    target_source: str
+    target_rule: dict[str, Any]
+    completeness_participation: bool
+    diary_coverage_participation: bool
+
+
+class RegistryLabelDefinition(BaseModel):
+    key: str
+    label_ar: str
+
+
+class RegistryFoodGroupDefinition(RegistryLabelDefinition):
+    model_config = ConfigDict(extra="allow")
+    subtype_labels_ar: dict[str, str]
+    subtypes: dict[str, Any] | list[str] | None = None
+
+
+class RegistrySourceTypeDefinition(BaseModel):
+    type: NutritionSourceType
+    label_ar: str
+    reliability: Literal["high", "medium", "low", "mixed", "unknown"]
+
+
+class RegistryIngredientSourceDefinition(BaseModel):
+    type: IngredientsSourceType
+    label_ar: str
+
+
+class RegistryNovaDefinition(BaseModel):
+    classifications: list[int | Literal["unknown"]]
+    labels_ar: dict[str, str]
+    review_statuses: list[Literal["unreviewed", "reviewed"]]
+    automated_suggestions: Literal[False]
+
+
+class NutritionRegistryResponse(BaseModel):
+    nutrition_registry_version: str
+    calculation_engine_version: str
+    food_group_rules_version: str
+    source_reliability_rules_version: str
+    nova_rules_version: str
+    registry_schema_version: Literal[2]
+    snapshot_schema_version: Literal[3]
+    analysis_rules_version: None
+    analysis_rules_status: Literal["reserved_for_wave_3"]
+    rules_manifest_hash: str
+    calculation_policy: dict[str, Any]
+    nutrients: list[RegistryNutrientDefinition]
+    target_types: list[str]
+    food_categories: list[str]
+    food_category_definitions: list[RegistryLabelDefinition]
+    grain_type_definitions: list[RegistryLabelDefinition]
+    baked_good_type_definitions: list[RegistryLabelDefinition]
+    grain_starch_type_definitions: list[RegistryLabelDefinition]
+    food_groups: list[dict[str, Any]]
+    food_group_definitions: list[RegistryFoodGroupDefinition]
+    traits: list[RegistryLabelDefinition]
+    source_types: list[RegistrySourceTypeDefinition]
+    ingredient_source_types: list[IngredientsSourceType]
+    ingredient_source_definitions: list[RegistryIngredientSourceDefinition]
+    reliability_levels: list[RegistryLabelDefinition]
+    nova: RegistryNovaDefinition
+
+
 class AdditionalNutrientTarget(BaseModel):
     key: str
     label_ar: str

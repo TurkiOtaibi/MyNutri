@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "generate:api": "python ../backend/scripts/export_openapi.py --output openapi.json && swagger-typescript-api generate --path ./openapi.json --output ./lib/generated --name openapi.ts --no-client --route-types --sort-types --sort-routes --enum-style union --silent",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -35,6 +36,7 @@
     "@types/react-dom": "^19.2.0",
     "eslint": "9.39.5",
     "eslint-config-next": "16.2.11",
+    "swagger-typescript-api": "13.12.6",
     "tailwindcss": "4.3.2",
     "typescript": "6.0.3",
     "vitest": "4.1.10"

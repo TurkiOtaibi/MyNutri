@@ -1,8 +1,9 @@
-from typing import Any
+from typing import Annotated
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
+from pydantic import SkipValidation
 from sqlmodel import Session
 
 from app.core.auth import PrincipalContext, get_principal_context, require_admin
@@ -72,7 +73,7 @@ def read_foods(
 
 @router.post("", response_model=FoodResponse, status_code=status.HTTP_201_CREATED)
 def add_food(
-    payload: dict[str, Any] = Body(...),
+    payload: Annotated[SkipValidation[FoodCreate], Body()],
     principal: PrincipalContext = Depends(require_admin),
     session: Session = Depends(get_session),
 ) -> FoodResponse:
@@ -124,7 +125,7 @@ def read_food(
 @router.put("/{food_id}", response_model=FoodResponse)
 def edit_food(
     food_id: UUID,
-    payload: dict[str, Any] = Body(...),
+    payload: Annotated[SkipValidation[FoodUpdate], Body()],
     principal: PrincipalContext = Depends(require_admin),
     session: Session = Depends(get_session),
 ) -> FoodResponse:
