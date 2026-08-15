@@ -1,9 +1,9 @@
 # Wave 2 Day Logging Status Design Contract
 
-**Status:** Draft — design/spike only; implementation not authorized  
-**Decision:** PD-015  
-**Design version:** 1.0-draft  
-**Repository baseline:** `89e83928406d90a38f383fff23752583fffee753`  
+**Status:** Draft — design/spike only; implementation not authorized
+**Decision:** PD-015
+**Design version:** 1.0-draft
+**Repository baseline:** `89e83928406d90a38f383fff23752583fffee753`
 **Calendar authority:** Backend `Asia/Riyadh` Diary calendar
 
 ## 1. Purpose and authority

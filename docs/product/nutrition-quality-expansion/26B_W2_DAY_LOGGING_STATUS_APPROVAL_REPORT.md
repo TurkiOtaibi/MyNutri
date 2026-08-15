@@ -7,7 +7,7 @@
 3. `tools/verify_w2_day_logging_status_vectors.py`
 4. `26B_W2_DAY_LOGGING_STATUS_APPROVAL_REPORT.md`
 
-**Repository baseline:** `89e83928406d90a38f383fff23752583fffee753`  
+**Repository baseline:** `89e83928406d90a38f383fff23752583fffee753`
 **Review state:** AWAITING APPROVAL
 
 Decision status: Draft; implementation not authorized
