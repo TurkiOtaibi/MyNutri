@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "seed": 3102026,
+  "calendar": {
+    "timezone": "Asia/Riyadh",
+    "captured_current_diary_date": "2026-08-15"
+  },
+  "vectors": [
+    {
+      "name": "untouched-empty-day-projects-unregistered",
+      "initial": {"record": false, "persisted_status": null, "entry_count": 0, "version": 0},
+      "events": [
+        {"type": "read", "expected": {"result": "projected", "public_status": "unregistered", "persisted_status": null, "entry_count": 0, "version": 0}}
+      ]
+    },
+    {
+      "name": "legacy-day-with-entry-projects-partial-without-backfill",
+      "initial": {"record": false, "persisted_status": null, "entry_count": 2, "version": 0},
+      "events": [
+        {"type": "read", "expected": {"result": "projected", "public_status": "partial", "persisted_status": null, "entry_count": 2, "version": 0}}
+      ]
+    },
+    {
+      "name": "first-entry-materializes-partial",
+      "initial": {"record": false, "persisted_status": null, "entry_count": 0, "version": 0},
+      "events": [
+        {"type": "create_entry", "expected_version": 0, "expected": {"result": "created", "public_status": "partial", "persisted_status": "partial", "entry_count": 1, "version": 1}}
+      ]
+    },
+    {
+      "name": "additional-entry-remains-partial",
+      "initial": {"record": true, "persisted_status": "partial", "entry_count": 1, "version": 4},
+      "events": [
+        {"type": "create_entry", "expected_version": 4, "expected": {"result": "created", "public_status": "partial", "persisted_status": "partial", "entry_count": 2, "version": 5}}
+      ]
+    },
+    {
+      "name": "edit-partial-increments-version",
+      "initial": {"record": true, "persisted_status": "partial", "entry_count": 1, "version": 2},
+      "events": [
+        {"type": "edit_entry", "expected_version": 2, "expected": {"result": "edited", "public_status": "partial", "persisted_status": "partial", "entry_count": 1, "version": 3}}
+      ]
+    },
+    {
+      "name": "last-delete-preserves-explicit-partial-history",
+      "initial": {"record": true, "persisted_status": "partial", "entry_count": 1, "version": 7},
+      "events": [
+        {"type": "delete_entry", "expected_version": 7, "expected": {"result": "deleted", "public_status": "partial", "persisted_status": "partial", "entry_count": 0, "version": 8}}
+      ]
+    },
+    {
+      "name": "explicit-empty-complete",
+      "initial": {"record": false, "persisted_status": null, "entry_count": 0, "version": 0},
+      "events": [
+        {"type": "complete", "expected_version": 0, "idempotency_key": "empty-complete", "expected": {"result": "completed", "public_status": "complete", "persisted_status": "complete", "entry_count": 0, "version": 1}}
+      ]
+    },
+    {
+      "name": "complete-populated-partial-day",
+      "initial": {"record": true, "persisted_status": "partial", "entry_count": 3, "version": 5},
+      "events": [
+        {"type": "complete", "expected_version": 5, "idempotency_key": "populated-complete", "expected": {"result": "completed", "public_status": "complete", "persisted_status": "complete", "entry_count": 3, "version": 6}}
+      ]
+    },
+    {
+      "name": "reopen-complete-day",
+      "initial": {"record": true, "persisted_status": "complete", "entry_count": 2, "version": 6},
+      "events": [
+        {"type": "reopen", "expected_version": 6, "idempotency_key": "reopen", "expected": {"result": "reopened", "public_status": "partial", "persisted_status": "partial", "entry_count": 2, "version": 7}}
+      ]
+    },
+    {
+      "name": "reopen-empty-complete-day-remains-explicit-partial",
+      "initial": {"record": true, "persisted_status": "complete", "entry_count": 0, "version": 1},
+      "events": [
+        {"type": "reopen", "expected_version": 1, "idempotency_key": "reopen-empty", "expected": {"result": "reopened", "public_status": "partial", "persisted_status": "partial", "entry_count": 0, "version": 2}}
+      ]
+    },
+    {
+      "name": "entry-write-on-complete-requires-reopen",
+      "initial": {"record": true, "persisted_status": "complete", "entry_count": 1, "version": 3},
+      "events": [
+        {"type": "edit_entry", "expected_version": 3, "expected": {"result": "day_complete_conflict", "public_status": "complete", "persisted_status": "complete", "entry_count": 1, "version": 3}},
+        {"type": "delete_entry", "expected_version": 3, "expected": {"result": "day_complete_conflict", "public_status": "complete", "persisted_status": "complete", "entry_count": 1, "version": 3}}
+      ]
+    },
+    {
+      "name": "reopen-then-edit",
+      "initial": {"record": true, "persisted_status": "complete", "entry_count": 1, "version": 8},
+      "events": [
+        {"type": "reopen", "expected_version": 8, "idempotency_key": "reopen-edit", "expected": {"result": "reopened", "public_status": "partial", "persisted_status": "partial", "entry_count": 1, "version": 9}},
+        {"type": "edit_entry", "expected_version": 9, "expected": {"result": "edited", "public_status": "partial", "persisted_status": "partial", "entry_count": 1, "version": 10}}
+      ]
+    },
+    {
+      "name": "duplicate-command-replays-original-response",
+      "initial": {"record": true, "persisted_status": "partial", "entry_count": 2, "version": 10},
+      "events": [
+        {"type": "complete", "expected_version": 10, "idempotency_key": "duplicate", "expected": {"result": "completed", "public_status": "complete", "persisted_status": "complete", "entry_count": 2, "version": 11}},
+        {"type": "complete", "expected_version": 10, "idempotency_key": "duplicate", "expected": {"result": "replayed", "public_status": "complete", "persisted_status": "complete", "entry_count": 2, "version": 11}}
+      ]
+    },
+    {
+      "name": "same-key-different-request-conflicts",
+      "initial": {"record": true, "persisted_status": "partial", "entry_count": 1, "version": 2},
+      "events": [
+        {"type": "complete", "expected_version": 2, "idempotency_key": "reused", "expected": {"result": "completed", "public_status": "complete", "persisted_status": "complete", "entry_count": 1, "version": 3}},
+        {"type": "complete", "expected_version": 3, "idempotency_key": "reused", "expected": {"result": "idempotency_key_conflict", "public_status": "complete", "persisted_status": "complete", "entry_count": 1, "version": 3}}
+      ]
+    },
+    {
+      "name": "entry-writer-wins-complete-sees-stale-version",
+      "initial": {"record": true, "persisted_status": "partial", "entry_count": 1, "version": 4},
+      "events": [
+        {"type": "create_entry", "expected_version": 4, "actor": "entry-session", "expected": {"result": "created", "public_status": "partial", "persisted_status": "partial", "entry_count": 2, "version": 5}},
+        {"type": "complete", "expected_version": 4, "idempotency_key": "stale-complete", "actor": "complete-session", "expected": {"result": "stale_version_conflict", "public_status": "partial", "persisted_status": "partial", "entry_count": 2, "version": 5}}
+      ]
+    },
+    {
+      "name": "complete-wins-entry-write-is-blocked",
+      "initial": {"record": true, "persisted_status": "partial", "entry_count": 1, "version": 4},
+      "events": [
+        {"type": "complete", "expected_version": 4, "idempotency_key": "winning-complete", "actor": "complete-session", "expected": {"result": "completed", "public_status": "complete", "persisted_status": "complete", "entry_count": 1, "version": 5}},
+        {"type": "delete_entry", "expected_version": 5, "actor": "delete-session", "expected": {"result": "day_complete_conflict", "public_status": "complete", "persisted_status": "complete", "entry_count": 1, "version": 5}}
+      ]
+    },
+    {
+      "name": "two-completers-one-stale",
+      "initial": {"record": true, "persisted_status": "partial", "entry_count": 1, "version": 9},
+      "events": [
+        {"type": "complete", "expected_version": 9, "idempotency_key": "complete-a", "actor": "session-a", "expected": {"result": "completed", "public_status": "complete", "persisted_status": "complete", "entry_count": 1, "version": 10}},
+        {"type": "complete", "expected_version": 9, "idempotency_key": "complete-b", "actor": "session-b", "expected": {"result": "stale_version_conflict", "public_status": "complete", "persisted_status": "complete", "entry_count": 1, "version": 10}}
+      ]
+    },
+    {
+      "name": "future-day-mutations-rejected",
+      "initial": {"record": false, "persisted_status": null, "entry_count": 0, "version": 0},
+      "events": [
+        {"type": "complete", "expected_version": 0, "idempotency_key": "future-complete", "date_relation": "future", "expected": {"result": "future_rejected", "public_status": "unregistered", "persisted_status": null, "entry_count": 0, "version": 0}},
+        {"type": "create_entry", "expected_version": 0, "date_relation": "future", "expected": {"result": "future_rejected", "public_status": "unregistered", "persisted_status": null, "entry_count": 0, "version": 0}}
+      ]
+    },
+    {
+      "name": "past-day-completion-is-allowed",
+      "initial": {"record": false, "persisted_status": null, "entry_count": 1, "version": 0},
+      "events": [
+        {"type": "complete", "expected_version": 0, "idempotency_key": "past-complete", "date_relation": "past", "expected": {"result": "completed", "public_status": "complete", "persisted_status": "complete", "entry_count": 1, "version": 1}}
+      ]
+    },
+    {
+      "name": "rollover-uses-one-captured-calendar-snapshot",
+      "initial": {"record": true, "persisted_status": "partial", "entry_count": 1, "version": 2},
+      "events": [
+        {"type": "complete", "expected_version": 2, "idempotency_key": "rollover", "date_relation": "current", "rollover_after_capture": true, "expected": {"result": "completed", "public_status": "complete", "persisted_status": "complete", "entry_count": 1, "version": 3}}
+      ]
+    },
+    {
+      "name": "reopen-unregistered-is-no-op",
+      "initial": {"record": false, "persisted_status": null, "entry_count": 0, "version": 0},
+      "events": [
+        {"type": "reopen", "expected_version": 0, "idempotency_key": "reopen-unregistered", "expected": {"result": "no_change", "public_status": "unregistered", "persisted_status": null, "entry_count": 0, "version": 0}},
+        {"type": "reopen", "expected_version": 0, "idempotency_key": "reopen-unregistered", "expected": {"result": "replayed", "public_status": "unregistered", "persisted_status": null, "entry_count": 0, "version": 0}}
+      ]
+    }
+  ]
+}
