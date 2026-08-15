@@ -1,11 +1,11 @@
 "use client";
 
-import { ArrowRight, ChevronDown, Plus, Save, Trash2, X } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { Dispatch, FormEvent, SetStateAction, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { ApiError, createFood, getAdminFood, getNutritionRegistry, updateFood } from "@/lib/api";
+import { createFood, getAdminFood, getNutritionRegistry, updateFood } from "@/lib/api";
 import {
   defaultUnitLabels,
   defaultUnitOptions,
@@ -20,9 +20,12 @@ import {
   type FoodFormErrors,
   type FoodFormValues
 } from "@/lib/food";
-import type { FoodResponse, NutritionRegistryResponse, NovaClassification } from "@/lib/types";
+import type { FoodResponse, NovaClassification } from "@/lib/types";
 
 import { FoodDeleteDialog } from "./FoodDeleteDialog";
+import { FoodFormActions, FoodGroupFields, FormSection, NumberField, SelectField, TextAreaField, TextField } from "@/features/foods/food-form-fields";
+import { mapFoodApiError, optionalFields } from "@/features/foods/food-form-model";
+import "@/features/foods/food-form.module.css";
 import { useFoodDelete } from "./useFoodDelete";
 import { useAuth } from "./AuthProvider";
 import { useSessionAbortSignal } from "./SessionQueryProvider";
@@ -31,29 +34,6 @@ import { useUnsavedChanges } from "./UnsavedChangesProvider";
 const FOOD_READ_ERROR = "تعذر تحميل تفاصيل الطعام. تحقق من الاتصال وحاول مرة أخرى.";
 const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
 const VALIDATION_ERROR = "راجع الحقول المحددة ثم حاول مرة أخرى.";
-
-const optionalFields: (keyof FoodFormValues)[] = [
-  "fiber_g",
-  "sugar_g",
-  "added_sugar_g",
-  "saturated_fat_g",
-  "trans_fat_g",
-  "sodium_mg",
-  "cholesterol_mg",
-  "potassium_mg",
-  "calcium_mg",
-  "iron_mg",
-  "magnesium_mg",
-  "zinc_mg",
-  "selenium_mcg",
-  "vitamin_d_mcg",
-  "vitamin_b12_mcg",
-  "vitamin_c_mg",
-  "vitamin_a_rae_mcg",
-  "folate_dfe_mcg",
-  "vitamin_k_mcg",
-  "iodine_mcg"
-];
 
 export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId?: string }) {
   const queryClient = useQueryClient();
@@ -449,22 +429,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
           <TextField label="مصدر البيانات" value={form.data_source ?? ""} maxLength={foodTextMax.data_source} error={errors.data_source} onChange={(value) => update("data_source", value)} />
         </FormSection>
 
-        <div className="form-actions-sticky">
-          <button className="btn primary" type="submit" disabled={saveMutation.isPending}>
-            <Save size={18} />
-            {saveMutation.isPending ? "جاري الحفظ..." : isEdit ? "حفظ التعديل" : "حفظ الطعام"}
-          </button>
-          <Link className="btn" href={isEdit && foodId ? `/foods/${foodId}` : "/foods"}>
-            <X size={18} />
-            إلغاء
-          </Link>
-          {isEdit && foodQuery.data ? (
-            <button className="btn danger" type="button" onClick={() => setDeleteTarget(foodQuery.data ?? null)}>
-              <Trash2 size={18} />
-              حذف
-            </button>
-          ) : null}
-        </div>
+        <FoodFormActions isEdit={isEdit} foodId={foodId} pending={saveMutation.isPending} food={foodQuery.data ?? null} onDelete={setDeleteTarget} />
       </form>
 
       <FoodDeleteDialog
@@ -475,344 +440,4 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
       />
     </>
   );
-}
-
-function mapFoodApiError(error: unknown): FoodFormErrors {
-  if (!(error instanceof ApiError)) return {};
-  if (error.status === 404) return { form: "لم يتم العثور على الطعام. حدّث القائمة وحاول مرة أخرى." };
-  if (error.status !== 422 || !Array.isArray(error.detail)) return {};
-
-  const next: FoodFormErrors = {};
-  for (const item of error.detail) {
-    if (!item || typeof item !== "object") continue;
-    const explicitField = "field" in item && typeof item.field === "string" ? item.field : undefined;
-    const loc = "loc" in item && Array.isArray(item.loc) ? item.loc : [];
-    const field = (explicitField ?? loc[loc.length - 1]) as keyof FoodFormValues | undefined;
-    const msg = "msg" in item && typeof item.msg === "string" ? item.msg : VALIDATION_ERROR;
-    const code = "code" in item && typeof item.code === "string" ? item.code : "";
-    if (code.startsWith("source_")) next.nutrition_source = msg;
-    else if (code.startsWith("ingredients_")) next.ingredients = msg;
-    else if (code.includes("food_group") || code.includes("group_data")) next.group_contributions = msg;
-    else if (code.includes("analytical_trait")) next.analytical_traits = msg;
-    else if (field && field in emptyFoodForm) next[field] = msg;
-    else next.form = msg;
-  }
-  return next;
-}
-
-function FormSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="form-panel food-form-section">
-      <h2 className="panel-title">{title}</h2>
-      <div className="form-grid">{children}</div>
-    </section>
-  );
-}
-
-function FoodGroupFields({
-  form,
-  setForm,
-  registry,
-  error
-}: {
-  form: FoodFormValues;
-  setForm: Dispatch<SetStateAction<FoodFormValues>>;
-  registry: NutritionRegistryResponse;
-  error?: string;
-}) {
-  const [showAllTraits, setShowAllTraits] = useState(false);
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  const suggestedGroup = suggestedGroupKey(form);
-
-  useEffect(() => {
-    if (error && detailsRef.current) detailsRef.current.open = true;
-  }, [error]);
-  const addContribution = () => {
-    const definition = registry.food_group_definitions.find(
-      (item) => !form.group_contributions.some((entry) => entry.group_key === item.key)
-    );
-    if (!definition) return;
-    const subtypes = subtypeKeys(definition);
-    setForm((current) => ({
-      ...current,
-      group_contributions: [
-        ...current.group_contributions,
-        {
-          group_key: definition.key,
-          subtype_key: subtypes[0] ?? null,
-          amount_per_100_basis: 1,
-          data_status: "known"
-        }
-      ]
-    }));
-  };
-  const confirmSuggestion = () => {
-    if (!suggestedGroup || form.group_contributions.some((item) => item.group_key === suggestedGroup)) return;
-    const definition = registry.food_group_definitions.find((item) => item.key === suggestedGroup);
-    if (!definition) return;
-    setForm((current) => ({
-      ...current,
-      group_contributions: [...current.group_contributions, {
-        group_key: suggestedGroup,
-        subtype_key: subtypeKeys(definition)[0] ?? null,
-        amount_per_100_basis: 1,
-        data_status: "estimated"
-      }]
-    }));
-  };
-  const relevantTraits = new Set([
-    ...form.analytical_traits,
-    ...relevantTraitKeys(form.food_category_key),
-    "processed",
-    "salted"
-  ]);
-
-  return (
-    <details
-      ref={detailsRef}
-      className="form-panel food-form-section advanced-analysis"
-      aria-labelledby="food-groups-title"
-      onToggle={(event) => {
-        if (error && !event.currentTarget.open) event.currentTarget.open = true;
-      }}
-    >
-      <summary className="advanced-analysis-summary" id="food-groups-title">
-        <span className="advanced-analysis-heading">
-          <span className="panel-title">التحليل الغذائي المتقدم</span>
-          <span className="advanced-analysis-optional">اختياري</span>
-        </span>
-        <span className="advanced-analysis-disclosure">
-          <small>{form.group_contributions.length} مجموعة غذائية • {form.analytical_traits.length} سمات</small>
-          <span className="advanced-analysis-action">
-            <span className="advanced-analysis-action-open">فتح وإدارة التحليل</span>
-            <span className="advanced-analysis-action-close">إغلاق التحليل</span>
-          </span>
-          <ChevronDown className="advanced-analysis-chevron" size={20} aria-hidden="true" />
-        </span>
-      </summary>
-      {error ? <div className="field-error" role="alert">{error}</div> : null}
-      <h3>المجموعات الغذائية</h3>
-      <p className="page-kicker">حدد المجموعات التي يساهم فيها هذا الطعام لاستخدامها في التحليل الأسبوعي. المقادير لكل 100 جم أو 100 مل.</p>
-      {suggestedGroup && !form.group_contributions.some((item) => item.group_key === suggestedGroup) ? (
-        <div className="analysis-suggestion">
-          <span>اقتراح حسب فئة الطعام: {registry.food_group_definitions.find((item) => item.key === suggestedGroup)?.label_ar}</span>
-          <button className="btn" type="button" onClick={confirmSuggestion}>تأكيد الاقتراح</button>
-        </div>
-      ) : null}
-
-      <div className="food-classification-list">
-        {form.group_contributions.map((entry, index) => {
-          const definition = registry.food_group_definitions.find((item) => item.key === entry.group_key);
-          const subtypes = definition ? subtypeKeys(definition) : [];
-          return (
-            <fieldset className="form-grid contribution-card" key={`${entry.group_key}-${index}`}>
-              <legend>مجموعة غذائية {index + 1}</legend>
-              <SelectField
-                label={`المجموعة ${index + 1}`}
-                value={entry.group_key}
-                onChange={(value) => setForm((current) => ({ ...current, group_contributions: current.group_contributions.map((item, itemIndex) => itemIndex === index ? { ...item, group_key: value, subtype_key: subtypeKeys(registry.food_group_definitions.find((definitionItem) => definitionItem.key === value))[0] ?? null } : item) }))}
-                options={registry.food_group_definitions.map((item) => [item.key, item.label_ar])}
-              />
-              {subtypes.length ? (
-                <SelectField label={`النوع الفرعي ${index + 1}`} value={entry.subtype_key ?? ""} onChange={(value) => setForm((current) => ({ ...current, group_contributions: current.group_contributions.map((item, itemIndex) => itemIndex === index ? { ...item, subtype_key: value } : item) }))} options={subtypes.map((item) => [item, definition?.subtype_labels_ar[item] ?? item])} />
-              ) : null}
-              <NumberField label={`المقدار من 100 (${index + 1})`} value={entry.amount_per_100_basis} onChange={(value) => setForm((current) => ({ ...current, group_contributions: current.group_contributions.map((item, itemIndex) => itemIndex === index ? { ...item, amount_per_100_basis: value ?? 0 } : item) }))} />
-              <SelectField label={`يقين المساهمة ${index + 1}`} value={entry.data_status} onChange={(value) => setForm((current) => ({ ...current, group_contributions: current.group_contributions.map((item, itemIndex) => itemIndex === index ? { ...item, data_status: value as "known" | "estimated" } : item) }))} options={[["known", "مؤكدة"], ["estimated", "تقديرية"]]} />
-              <button className="btn danger" type="button" onClick={() => setForm((current) => ({ ...current, group_contributions: current.group_contributions.filter((_, itemIndex) => itemIndex !== index) }))} aria-label={`حذف المساهمة ${index + 1}`}><Trash2 size={18} />حذف</button>
-            </fieldset>
-          );
-        })}
-        <button className="btn" type="button" onClick={addContribution} disabled={form.group_contributions.length >= registry.food_group_definitions.length}><Plus size={18} />إضافة مجموعة غذائية</button>
-      </div>
-
-      <fieldset className="food-traits-fieldset">
-        <legend>السمات التحليلية</legend>
-        <p className="page-kicker">اختر السمات المثبتة في المصدر فقط. لا تُحفظ الاقتراحات تلقائيًا.</p>
-        {traitGroups.map((group) => {
-          const traits = registry.traits.filter((trait) => group.keys.includes(trait.key) && (showAllTraits || relevantTraits.has(trait.key)));
-          if (!traits.length) return null;
-          return <div className="trait-group" key={group.label}><h4>{group.label}</h4><div className="food-traits-grid trait-chips">{traits.map((trait) => (
-            <label key={trait.key} className="trait-chip" title={traitHelp[trait.key]}>
-              <input type="checkbox" checked={form.analytical_traits.includes(trait.key)} onChange={(event) => setForm((current) => ({ ...current, analytical_traits: event.target.checked ? [...current.analytical_traits, trait.key] : current.analytical_traits.filter((item) => item !== trait.key) }))} />
-              <span>{trait.label_ar}</span>
-            </label>
-          ))}</div></div>;
-        })}
-        <button className="btn" type="button" onClick={() => setShowAllTraits((value) => !value)}>{showAllTraits ? "عرض الأقل" : "عرض المزيد"}</button>
-      </fieldset>
-    </details>
-  );
-}
-
-const traitGroups = [
-  { label: "المنشأ", keys: ["omega3_rich_seafood", "fruit_liquid_100_percent", "dried_fruit", "starchy_root"] },
-  { label: "المعالجة", keys: ["processed", "smoked", "salted"] },
-  { label: "الخصائص الغذائية", keys: ["sweetened", "non_nutritive_sweetened", "calcium_fortified", "unsaturated_fat_source"] }
-];
-
-const traitHelp: Record<string, string> = {
-  non_nutritive_sweetened: "يحتوي على مُحلٍ لا يضيف سكرًا غذائيًا.",
-  omega3_rich_seafood: "صفة تحليلية للمأكولات البحرية المثبت غناها بأوميغا 3.",
-  fruit_liquid_100_percent: "عصير أو سموذي فواكه كامل دون تخمين من الاسم."
-};
-
-function relevantTraitKeys(category: string): string[] {
-  if (category === "seafood") return ["omega3_rich_seafood"];
-  if (category === "dairy_fortified_alternatives") return ["calcium_fortified"];
-  if (category === "fruits") return ["fruit_liquid_100_percent", "dried_fruit"];
-  if (["nuts_seeds", "added_oils_fats"].includes(category)) return ["unsaturated_fat_source"];
-  if (["sweets", "sugar_sweetened_beverages"].includes(category)) return ["sweetened", "non_nutritive_sweetened"];
-  if (["processed_meat", "red_meat"].includes(category)) return ["processed", "smoked", "salted"];
-  return [];
-}
-
-function suggestedGroupKey(form: FoodFormValues): string | null {
-  if (["baked_goods", "grains_starches"].includes(form.food_category_key)) {
-    if (form.grain_type === "whole") return "whole_grains";
-    if (form.grain_type === "refined") return "refined_grains";
-    return null;
-  }
-  const direct = new Set(["vegetables", "fruits", "legumes", "nuts_seeds", "seafood", "dairy_fortified_alternatives", "eggs", "poultry", "red_meat", "processed_meat", "added_oils_fats", "sweets", "sugar_sweetened_beverages", "unsweetened_beverages", "mixed_dish"]);
-  return direct.has(form.food_category_key) ? form.food_category_key : null;
-}
-
-function subtypeKeys(definition: NutritionRegistryResponse["food_group_definitions"][number] | undefined): string[] {
-  if (!definition?.subtypes) return [];
-  return Array.isArray(definition.subtypes) ? definition.subtypes : Object.keys(definition.subtypes);
-}
-
-function TextField({
-  label,
-  value,
-  onChange,
-  error,
-  required = false,
-  maxLength
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  error?: string;
-  required?: boolean;
-  maxLength?: number;
-}) {
-  const id = fieldId(label);
-  return (
-    <label className="field" htmlFor={id}>
-      <span>
-        {label} {required ? <b aria-label="مطلوب">*</b> : null}
-      </span>
-      <input
-        id={id}
-        className="input"
-        value={value}
-        maxLength={maxLength}
-        onChange={(event) => onChange(event.target.value)}
-        aria-invalid={Boolean(error)}
-        aria-describedby={error ? `${id}-error` : undefined}
-      />
-      {error ? <span id={`${id}-error`} className="field-error">{error}</span> : null}
-    </label>
-  );
-}
-
-function TextAreaField({ label, value, onChange, error, maxLength }: { label: string; value: string; onChange: (value: string) => void; error?: string; maxLength?: number }) {
-  const id = fieldId(label);
-  return (
-    <label className="field" htmlFor={id}>
-      <span>{label}</span>
-      <textarea
-        id={id}
-        className="input textarea"
-        value={value}
-        maxLength={maxLength}
-        onChange={(event) => onChange(event.target.value)}
-        aria-invalid={Boolean(error)}
-        aria-describedby={error ? `${id}-error` : undefined}
-      />
-      {error ? <span id={`${id}-error`} className="field-error">{error}</span> : null}
-    </label>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  onChange,
-  error,
-  required = false
-}: {
-  label: string;
-  value: number | null;
-  onChange: (value: number | null) => void;
-  error?: string;
-  required?: boolean;
-}) {
-  const id = fieldId(label);
-  return (
-    <label className="field" htmlFor={id}>
-      <span>
-        {label} {required ? <b aria-label="مطلوب">*</b> : null}
-      </span>
-      <input
-        id={id}
-        className="input"
-        type="number"
-        min="0"
-        step="0.01"
-        value={value ?? ""}
-        onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))}
-        aria-invalid={Boolean(error)}
-        aria-describedby={error ? `${id}-error` : undefined}
-      />
-      {error ? <span id={`${id}-error`} className="field-error">{error}</span> : null}
-    </label>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  onChange,
-  options,
-  placeholder,
-  error,
-  required = false
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: [string, string][];
-  placeholder?: string;
-  error?: string;
-  required?: boolean;
-}) {
-  const id = fieldId(label);
-  return (
-    <label className="field" htmlFor={id}>
-      <span>
-        {label} {required ? <b aria-label="مطلوب">*</b> : null}
-      </span>
-      <select
-        id={id}
-        className="select"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        aria-invalid={Boolean(error)}
-        aria-describedby={error ? `${id}-error` : undefined}
-      >
-        {placeholder ? <option value="" disabled>{placeholder}</option> : null}
-        {options.map(([optionValue, labelText]) => (
-          <option key={optionValue} value={optionValue}>
-            {labelText}
-          </option>
-        ))}
-      </select>
-      {error ? <span id={`${id}-error`} className="field-error">{error}</span> : null}
-    </label>
-  );
-}
-
-function fieldId(label: string): string {
-  return `food-${label.replace(/\s+/g, "-")}`;
 }

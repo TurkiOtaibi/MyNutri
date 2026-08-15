@@ -2,11 +2,19 @@ from fastapi import APIRouter, Depends, Header, Response
 
 from app.core.auth import PrincipalContext, get_principal_context
 from app.nutrition_rules.manifest import registry_response, rules_manifest_hash
+from app.schemas import NutritionRegistryResponse
 
 router = APIRouter(prefix="/nutrition", tags=["nutrition"])
 
 
-@router.get("/registry", response_model=None)
+@router.get(
+    "/registry",
+    response_model=None,
+    responses={
+        200: {"model": NutritionRegistryResponse},
+        304: {"description": "Registry not modified"},
+    },
+)
 def read_registry(
     response: Response,
     if_none_match: str | None = Header(default=None),

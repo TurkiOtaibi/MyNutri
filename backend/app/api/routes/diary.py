@@ -1,9 +1,10 @@
 from datetime import date
 from uuid import UUID
 
-from typing import Any
+from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, Response, status
+from pydantic import SkipValidation
 from sqlmodel import Session
 
 from app.core.auth import PrincipalContext, get_principal_context
@@ -51,7 +52,7 @@ def read_week(
     include_in_schema=False,
 )
 def add_entry(
-    payload: dict[str, Any] = Body(...),
+    payload: Annotated[SkipValidation[DiaryEntryCreate], Body()],
     principal: PrincipalContext = Depends(get_principal_context),
     settings: Settings = Depends(get_settings),
     session: Session = Depends(get_session),
@@ -80,7 +81,7 @@ def read_entry(
 @router.put("/{entry_id}", response_model=DiaryEntryResponse, include_in_schema=False)
 def edit_entry(
     entry_id: UUID,
-    payload: dict[str, Any] = Body(...),
+    payload: Annotated[SkipValidation[DiaryEntryUpdate], Body()],
     principal: PrincipalContext = Depends(get_principal_context),
     session: Session = Depends(get_session),
 ) -> DiaryEntryResponse:

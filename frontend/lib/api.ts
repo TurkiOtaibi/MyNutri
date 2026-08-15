@@ -16,24 +16,20 @@ import type {
   TargetPlanHistoryResponse,
   WeekSummary
 } from "./types";
+import type {
+  AccountResponse,
+  AdminUserDetail,
+  AdminUserListResponse,
+  AdminUserSummary as GeneratedAdminUserSummary,
+  CalendarAuthorityResponse,
+  FoodDeleteResponse
+} from "./generated/openapi";
 import { createClient } from "./supabase/client";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/+$/, "");
 
-export interface CurrentAccount {
-  principal_id: string;
-  auth_user_id: string;
-  email: string | null;
-  display_name: string | null;
-  role: "user" | "admin";
-  status: "active" | "disabled";
-}
-
-export interface CalendarAuthority {
-  current_diary_date: string;
-  calendar_timezone: string;
-  next_rollover_at: string;
-}
+export type CurrentAccount = AccountResponse;
+export type CalendarAuthority = CalendarAuthorityResponse;
 
 export class ApiError extends Error {
   constructor(
@@ -267,8 +263,8 @@ export function updateFood(foodId: string, payload: Partial<FoodInput>, accessTo
   }));
 }
 
-export function deleteFood(foodId: string, accessToken: string | null | undefined, signal?: AbortSignal): Promise<{ disposition: "deleted" | "archived" }> {
-  return apiFetch<{ disposition: "deleted" | "archived" }>(`/admin/foods/${foodId}`, authorizedInit(accessToken, signal, { method: "DELETE" }));
+export function deleteFood(foodId: string, accessToken: string | null | undefined, signal?: AbortSignal): Promise<FoodDeleteResponse> {
+  return apiFetch<FoodDeleteResponse>(`/admin/foods/${foodId}`, authorizedInit(accessToken, signal, { method: "DELETE" }));
 }
 
 export function archiveFood(foodId: string, accessToken: string | null | undefined, signal?: AbortSignal): Promise<FoodResponse> {
@@ -279,25 +275,8 @@ export function restoreFood(foodId: string, accessToken: string | null | undefin
   return apiFetch<FoodResponse>(`/admin/foods/${foodId}/restore`, authorizedInit(accessToken, signal, { method: "POST" }));
 }
 
-export interface AdminUserSummary {
-  principal_id: string;
-  email: string | null;
-  display_name: string | null;
-  status: "active" | "disabled";
-  role: "user" | "admin";
-  created_at: string;
-  profile_complete: boolean;
-  current_goal: string | null;
-  last_activity_at: string | null;
-}
-
-export interface AdminUserList {
-  items: AdminUserSummary[];
-  total: number;
-  page: number;
-  page_size: number;
-  total_pages: number;
-}
+export type AdminUserSummary = GeneratedAdminUserSummary;
+export type AdminUserList = AdminUserListResponse;
 
 export function listAdminUsers(search = "", page = 1): Promise<AdminUserList> {
   const params = new URLSearchParams({ page: String(page), page_size: "20" });
@@ -305,8 +284,8 @@ export function listAdminUsers(search = "", page = 1): Promise<AdminUserList> {
   return apiFetch<AdminUserList>(`/admin/users?${params}`);
 }
 
-export function getAdminUser(principalId: string): Promise<unknown> {
-  return apiFetch<unknown>(`/admin/users/${principalId}`);
+export function getAdminUser(principalId: string): Promise<AdminUserDetail> {
+  return apiFetch<AdminUserDetail>(`/admin/users/${principalId}`);
 }
 
 export function getAdminUserDiary(

@@ -252,17 +252,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - name: Install Backend contract export dependencies
+        run: pip install --require-hashes -r backend/requirements.lock
       - name: Install frontend
         working-directory: frontend
         run: npm ci
       - name: Audit all dependencies
         working-directory: frontend
         run: npm audit
+      - name: Verify generated API contract drift
+        working-directory: frontend
+        run: |
+          npm run generate:api
+          git diff --exit-code -- openapi.json lib/generated/openapi.ts
       - name: Lint frontend
         working-directory: frontend
         run: npm run lint
