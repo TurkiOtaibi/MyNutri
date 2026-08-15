@@ -105,7 +105,7 @@ Every new entry mutation materializes or updates the aggregate to `partial`. Mig
 - Owner endpoints derive `principal_id` only from `PrincipalContext`; payloads never accept it.
 - Queries use `(principal_id, diary_date)` and owner-scoped entry IDs. A cross-owner entry remains `404 RESOURCE_NOT_FOUND`, not `403`, to avoid existence disclosure.
 - Admin may read status through the existing authenticated admin boundary. Admin responses contain status, date, entry count, timestamps, and version, but not idempotency keys or request hashes.
-- Admin has no complete/reopen route. Attempts through owner routes operate on the admin's own Principal only and never accept a subject override.
+- Admin has no complete/reopen route. Owner routes are self-only for every authenticated Principal, including a Principal whose role is admin, and never accept a subject override. A request to an absent admin mutation path receives the framework's ordinary `404`; a non-GET method on the defined admin projection path receives the framework's ordinary `405`. Neither case has an application-level status-write error code because no Admin write operation exists.
 - Logs include request ID, operation, result code, date, and opaque Principal ID. They exclude nutrition payloads and idempotency keys.
 - One call to `diary_calendar_authority()` is captured before validation or locks. `requested_date > captured.current_diary_date` is rejected.
 - A rollover after capture does not change the in-flight decision. The response returns the captured calendar metadata. The next request captures the new date.
@@ -285,7 +285,6 @@ Pydantic models are named, `extra="forbid"`, and emitted by OpenAPI. The Fronten
 | --- | --- | --- | --- |
 | 400 | `INVALID_IDEMPOTENCY_KEY` | `تعذر التحقق من الطلب. أعد المحاولة.` | new request key |
 | 401 | `AUTHENTICATION_REQUIRED` | `انتهت الجلسة. سجّل الدخول للمتابعة.` | authenticate |
-| 403 | `ADMIN_WRITE_FORBIDDEN` | `لا يملك المشرف صلاحية تعديل حالة يوم المستخدم.` | never from admin UI |
 | 404 | `RESOURCE_NOT_FOUND` | `تعذر العثور على السجل المطلوب.` | refresh/navigation |
 | 409 | `DAY_ALREADY_COMPLETE` | `أعد فتح اليوم قبل تعديل الوجبات.` | explicit reopen |
 | 409 | `DAY_VERSION_CONFLICT` | `تغيّرت بيانات اليوم. حدّث الصفحة ثم حاول مجددًا.` | refetch |
@@ -358,9 +357,6 @@ The remaining closed response examples are:
   "authentication_401": {
     "detail": {"code": "AUTHENTICATION_REQUIRED", "message_ar": "انتهت الجلسة. سجّل الدخول للمتابعة."}
   },
-  "admin_write_403": {
-    "detail": {"code": "ADMIN_WRITE_FORBIDDEN", "message_ar": "لا يملك المشرف صلاحية تعديل حالة يوم المستخدم."}
-  },
   "not_found_404": {
     "detail": {"code": "RESOURCE_NOT_FOUND", "message_ar": "تعذر العثور على السجل المطلوب."}
   },
@@ -379,7 +375,7 @@ The remaining closed response examples are:
 }
 ```
 
-The future-date block above is the closed future `422` example. A rollover success has the ordinary success shape and echoes the single captured calendar even if the clock rolls over during lock wait; it never silently mixes calendar snapshots.
+The future-date block above is the closed future `422` example. Admin mutation-path `404` and method `405` responses remain framework responses rather than application command envelopes because those routes do not exist. A rollover success has the ordinary success shape and echoes the single captured calendar even if the clock rolls over during lock wait; it never silently mixes calendar snapshots.
 
 ## 9. Daily, weekly, and analysis semantics
 
@@ -453,7 +449,7 @@ Product Owner approval of this exact copy is required before freeze.
 | Concurrency | deterministic two-session schedules | no lost update/deadlock; second writer 409 | Postgres concurrency without sleeps |
 | Idempotency | same key/hash exact replay | same key/different hash conflict; different key stale conflict | API + Postgres |
 | Principal isolation | owner reads/writes own date | cross-owner entry/status returns 404; cache separated | Backend + Playwright sessions |
-| Admin boundary | bounded GET shows status | every admin write path absent/403; GET does not mutate | backend contract/query count |
+| Admin boundary | bounded GET shows status | route inventory contains no Admin command; PUT on the GET projection is 405; absent Admin complete/reopen paths are 404; cross-owner owner-resource access is isolated as 404; GET does not mutate | backend OpenAPI/route contract + query count |
 | Calendar | captured current/past succeeds | future 422; rollover uses one snapshot | unit with injected clock + API |
 | Migration | fresh/populated upgrade; legacy entries project partial | zero backfilled complete/status rows; invalid predecessor fails | Alembic PostgreSQL |
 | Rollback | old app reads entries with additive tables | downgrade refuses non-empty tables; no data loss | migration rollback gate |
