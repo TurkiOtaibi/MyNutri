@@ -13,7 +13,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from pydantic import ValidationError
-from sqlalchemy import and_, delete, func, or_
+from sqlalchemy import and_, delete, func, or_, text
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
@@ -23,7 +23,6 @@ from app.models import (
     FoodAnalyticalTrait,
     FoodGroupContribution,
     NovaReviewStatus,
-    Principal,
     FoodStatus,
     utcnow,
 )
@@ -444,24 +443,38 @@ def ensure_not_duplicate(
             raise HTTPException(status_code=422, detail=_duplicate_detail())
 
 
+_FOOD_NAMESPACE_ADVISORY_KEY = 4_666_663_031
+
+
+def _food_namespace_lock(session: Session, *, shared: bool) -> None:
+    """Use one transaction-scoped namespace lock without taking an owner row.
+
+    Keeping this sentinel outside the Principal/Food row namespaces lets Diary
+    writers follow the frozen owner -> target -> day -> namespace -> Food order,
+    while Food writers serialize before locking Food rows.
+    """
+    if session.get_bind().dialect.name != "postgresql":
+        return
+    function = "pg_advisory_xact_lock_shared" if shared else "pg_advisory_xact_lock"
+    session.execute(
+        text(f"SELECT {function}(:lock_key)"),
+        {"lock_key": _FOOD_NAMESPACE_ADVISORY_KEY},
+    )
+
+
 def _lock_food_namespace(session: Session) -> None:
     """Serialize Food writers before they take an exclusive Food row lock."""
-    session.exec(select(Principal).order_by(Principal.id).with_for_update()).first()
+    _food_namespace_lock(session, shared=False)
 
 
 def lock_food_namespace_for_logging(session: Session) -> None:
     """Join the Food lock order with a reader-compatible namespace lock.
 
-    Diary capture holds ``FOR KEY SHARE`` on the same namespace sentinel before
-    resolving TargetPlan state or taking ``FOR SHARE`` on Food. Food writers
-    take ``FOR UPDATE`` here first, so neither side can hold Food while waiting
-    for the namespace lock. Concurrent Diary captures remain compatible.
+    Diary capture takes this only after owner/target/day locks and before Food.
+    Food writers take the exclusive advisory lock before Food. Because the
+    namespace no longer uses a Principal row, both paths have one total order.
     """
-    session.exec(
-        select(Principal)
-        .order_by(Principal.id)
-        .with_for_update(read=True, key_share=True)
-    ).first()
+    _food_namespace_lock(session, shared=True)
 
 
 def _validated_update_data(

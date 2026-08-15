@@ -6,10 +6,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ApiError,
   deleteDiaryEntry,
+  getDiaryDayStatus,
   getCalendarAuthority,
   getNutritionRegistry,
   getWeekSummary,
-  listDiaryEntries
+  listDiaryEntries,
+  setDiaryDayStatus
 } from "@/lib/api";
 import { weekStartSunday } from "@/lib/dates";
 import type {
@@ -18,16 +20,16 @@ import type {
 } from "@/lib/types";
 import { useAuth } from "./AuthProvider";
 import { useSessionAbortSignal } from "./SessionQueryProvider";
-import { CompactWeekNavigator, DailyNutritionDetails, DailyProgressSummary, MealSections } from "@/features/diary/diary-summary";
+import { CompactWeekNavigator, DailyNutritionDetails, DailyProgressSummary, DayLoggingStatusCard, MealSections } from "@/features/diary/diary-summary";
 import { AddEntrySheet, ConfirmDialog, DiaryEntriesSkeleton, EditEntryDialog, RetryState } from "@/features/diary/diary-entry-dialogs";
 import { emptyNutritionTotals, standardMeals } from "@/features/diary/diary-model";
 import { invalidateDiary } from "@/features/diary/diary-hooks";
 import "@/features/diary/diary.module.css";
 
-
 const DIARY_DAY_READ_ERROR = "تعذر تحميل بيانات هذا اليوم";
 const WEEK_READ_ERROR = "تعذر تحميل ملخص الأسبوع. تحقق من الاتصال وحاول مرة أخرى.";
 const FUTURE_DATE_ERROR = "لا يمكن تسجيل يوميات بتاريخ مستقبلي.";
+const COMPLETED_DAY_EDIT_EXPLANATION = "أعد فتح اليوم قبل إضافة وجبة أو تعديلها أو حذفها.";
 const ROLLOVER_RECHECK_DELAY_MS = 1_000;
 const MAX_ROLLOVER_RECHECKS = 5;
 
@@ -46,6 +48,8 @@ export function DiaryPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
   const [nutritionDetailsOpen, setNutritionDetailsOpen] = useState(false);
+  const [statusAction, setStatusAction] = useState<"complete" | "reopen" | null>(null);
+  const [statusActionError, setStatusActionError] = useState("");
   const [expandedMeals, setExpandedMeals] = useState<Set<MealType>>(new Set());
   const expandedMealsByDateRef = useRef(new Map<string, Set<MealType>>());
   const previousAuthoritativeDateRef = useRef<string | null>(null);
@@ -63,13 +67,18 @@ export function DiaryPage() {
 
   const registryQuery = useQuery({ queryKey: ["nutrition-registry"], queryFn: getNutritionRegistry });
   const weekQuery = useQuery({
-    queryKey: ["week", weekStart],
+    queryKey: ["week", session?.user.id, weekStart],
     queryFn: () => getWeekSummary(weekStart!),
     enabled: weekStart !== null && today !== null
   });
   const entriesQuery = useQuery({
-    queryKey: ["entries", activeDate],
+    queryKey: ["entries", session?.user.id, activeDate],
     queryFn: () => listDiaryEntries(activeDate!),
+    enabled: activeDate !== null && today !== null
+  });
+  const dayStatusQuery = useQuery({
+    queryKey: ["diary-day-status", session?.user.id, activeDate],
+    queryFn: () => getDiaryDayStatus(activeDate!, accessToken, sessionSignal),
     enabled: activeDate !== null && today !== null
   });
 
@@ -78,6 +87,7 @@ export function DiaryPage() {
   const targets = selectedDay?.targets ?? null;
   const entries = entriesQuery.data ?? [];
   const totals = selectedDay?.totals ?? emptyNutritionTotals();
+  const dayStatus = dayStatusQuery.data;
 
   useEffect(() => {
     if (!today) return;
@@ -176,7 +186,7 @@ export function DiaryPage() {
   }, [openMenuId]);
 
   const deleteMutation = useMutation({
-    mutationFn: (entryId: string) => deleteDiaryEntry(entryId, accessToken, sessionSignal),
+    mutationFn: (entryId: string) => deleteDiaryEntry(entryId, dayStatus?.logging_status_version ?? 0, accessToken, sessionSignal),
     onSuccess: async () => {
       if (sessionSignal.aborted) return;
       setDeleteError("");
@@ -184,9 +194,40 @@ export function DiaryPage() {
       await invalidateDiary(queryClient);
       if (sessionSignal.aborted) return;
     },
-    onError: () => {
+    onError: (error) => {
       if (sessionSignal.aborted) return;
-      setDeleteError("تعذر حذف الطعام");
+      setDeleteError(error instanceof ApiError && error.code === "DAY_ALREADY_COMPLETE"
+        ? COMPLETED_DAY_EDIT_EXPLANATION
+        : error instanceof ApiError && error.code === "DAY_VERSION_CONFLICT"
+          ? "تغيّرت بيانات اليوم. حدّث الصفحة ثم حاول مجددًا."
+          : "تعذر حذف الطعام");
+    }
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: (action: "complete" | "reopen") => setDiaryDayStatus(
+      activeDate!,
+      action,
+      dayStatus?.logging_status_version ?? 0,
+      crypto.randomUUID(),
+      accessToken,
+      sessionSignal
+    ),
+    onSuccess: async (_, action) => {
+      const restoreEntryInvoker = action === "reopen" && statusMessage === COMPLETED_DAY_EDIT_EXPLANATION;
+      setStatusAction(null);
+      setStatusActionError("");
+      setStatusMessage(action === "complete" ? "تم إنهاء تسجيل اليوم" : "تمت إعادة فتح اليوم");
+      await invalidateDiary(queryClient);
+      if (!restoreEntryInvoker) requestAnimationFrame(() => document.getElementById("day-status-title")?.focus());
+    },
+    onError: async (error) => {
+      if (error instanceof ApiError && error.code === "DAY_VERSION_CONFLICT") {
+        setStatusActionError("تغيّرت بيانات اليوم. حدّث الصفحة ثم حاول مجددًا.");
+        await invalidateDiary(queryClient);
+        return;
+      }
+      setStatusActionError("تعذر حفظ حالة اليوم. لم تُفقد بياناتك؛ حاول مجددًا.");
     }
   });
 
@@ -207,6 +248,11 @@ export function DiaryPage() {
   }
 
   function openAdd(_event: ReactMouseEvent<HTMLButtonElement>, meal: MealType | null = null) {
+    if (dayStatus?.logging_status === "complete") {
+      setStatusMessage(COMPLETED_DAY_EDIT_EXPLANATION);
+      setStatusAction("reopen");
+      return;
+    }
     setStatusMessage("");
     setAddMeal(meal);
     setAddOpen(true);
@@ -233,6 +279,15 @@ export function DiaryPage() {
 
       <div className="diary-layout">
         <main className="diary-log" aria-labelledby="daily-log-title">
+          <DayLoggingStatusCard
+            status={dayStatus}
+            pending={dayStatusQuery.isPending}
+            failed={dayStatusQuery.isError}
+            commandPending={statusMutation.isPending}
+            onComplete={() => setStatusAction("complete")}
+            onReopen={() => setStatusAction("reopen")}
+            onRetry={() => dayStatusQuery.refetch()}
+          />
           <div className="diary-section-heading">
             <h2 id="daily-log-title">وجبات اليوم</h2>
           </div>
@@ -256,9 +311,24 @@ export function DiaryPage() {
               })}
               onAdd={(event, meal) => openAdd(event, meal)}
               onToggleMenu={(id) => setOpenMenuId((current) => current === id ? null : id)}
-              onEdit={(entry) => { setOpenMenuId(null); setEditingEntry(entry); }}
+              onEdit={(entry) => {
+                setOpenMenuId(null);
+                if (dayStatus?.logging_status === "complete") {
+                  setStatusMessage(COMPLETED_DAY_EDIT_EXPLANATION);
+                  setStatusAction("reopen");
+                } else setEditingEntry(entry);
+              }}
               deletingId={deleteMutation.isPending ? deletingEntry?.id ?? null : null}
-              onDelete={(entry) => { setOpenMenuId(null); setDeleteError(""); setDeletingEntry(entry); }}
+              onDelete={(entry) => {
+                setOpenMenuId(null);
+                if (dayStatus?.logging_status === "complete") {
+                  setStatusMessage(COMPLETED_DAY_EDIT_EXPLANATION);
+                  setStatusAction("reopen");
+                } else {
+                  setDeleteError("");
+                  setDeletingEntry(entry);
+                }
+              }}
             />
             </>
           ) : null}
@@ -285,6 +355,7 @@ export function DiaryPage() {
       {addOpen ? (
         <AddEntrySheet
           selectedDate={activeDate}
+          dayVersion={dayStatus?.logging_status_version ?? 0}
           initialMeal={addMeal}
           onClose={closeAdd}
           onSaved={async (savedMeal) => {
@@ -307,6 +378,7 @@ export function DiaryPage() {
       {editingEntry ? (
         <EditEntryDialog
           entry={editingEntry}
+          dayVersion={dayStatus?.logging_status_version ?? 0}
           onClose={() => setEditingEntry(null)}
           onSaved={async (savedMeal) => {
             if (sessionSignal.aborted) return;
@@ -334,6 +406,23 @@ export function DiaryPage() {
           onConfirm={() => {
             if (!deleteMutation.isPending) deleteMutation.mutate(deletingEntry.id);
           }}
+        />
+      ) : null}
+
+      {statusAction ? (
+        <ConfirmDialog
+          title={statusAction === "complete" && entries.length === 0 ? "إنهاء يوم دون وجبات؟" : statusAction === "complete" ? "إنهاء تسجيل اليوم؟" : "إعادة فتح اليوم؟"}
+          description={statusAction === "complete" && entries.length === 0
+            ? "سيُحتسب هذا اليوم المكتمل على أنه لم يُسجل فيه تناول غذائي. يمكنك إعادة فتحه لاحقًا."
+            : statusAction === "complete"
+              ? "تأكد من اكتمال وجباتك قبل إنهاء تسجيل اليوم."
+              : "يمكنك بعد إعادة الفتح إضافة الوجبات أو تعديلها أو حذفها."}
+          confirmLabel={statusMutation.isPending ? "جارٍ الحفظ…" : statusAction === "complete" && entries.length === 0 ? "إنهاء اليوم دون وجبات" : statusAction === "complete" ? "إنهاء تسجيل اليوم" : "إعادة فتح اليوم"}
+          cancelLabel="إلغاء"
+          error={statusActionError}
+          pending={statusMutation.isPending}
+          onClose={() => { setStatusAction(null); setStatusActionError(""); }}
+          onConfirm={() => { if (!statusMutation.isPending) statusMutation.mutate(statusAction); }}
         />
       ) : null}
     </div>

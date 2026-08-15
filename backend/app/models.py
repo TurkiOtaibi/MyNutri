@@ -13,6 +13,8 @@ from sqlalchemy import (
     Enum as SAEnum,
     ForeignKey,
     ForeignKeyConstraint,
+    BigInteger,
+    Integer,
     Index,
     Numeric,
     SmallInteger,
@@ -154,6 +156,19 @@ class TargetPlanStatus(str, Enum):
 class IdempotencyState(str, Enum):
     in_progress = "in_progress"
     completed = "completed"
+
+
+class DiaryDayStatusValue(str, Enum):
+    partial = "partial"
+    complete = "complete"
+
+
+class DiaryDayStatusEvent(str, Enum):
+    entry_created = "entry_created"
+    entry_edited = "entry_edited"
+    entry_deleted = "entry_deleted"
+    completed = "completed"
+    reopened = "reopened"
 
 
 class PrincipalStatus(str, Enum):
@@ -767,6 +782,107 @@ class FoodAnalyticalTrait(SQLModel, table=True):
     created_at: datetime = Field(
         default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
     )
+
+
+class DiaryDayStatus(SQLModel, table=True):
+    __tablename__ = "diary_day_status"
+    __table_args__ = (
+        UniqueConstraint("id", "principal_id", name="uq_diary_day_status_id_principal"),
+        UniqueConstraint(
+            "principal_id", "diary_date", name="uq_diary_day_status_principal_date"
+        ),
+        CheckConstraint("status IN ('partial','complete')", name="ck_diary_day_status_value"),
+        CheckConstraint("version >= 1", name="ck_diary_day_status_version"),
+        CheckConstraint("entry_count >= 0", name="ck_diary_day_status_entry_count"),
+        CheckConstraint(
+            "(status='complete' AND completed_at IS NOT NULL) OR "
+            "(status='partial' AND completed_at IS NULL)",
+            name="ck_diary_day_status_completion",
+        ),
+        Index(
+            "ix_diary_day_status_principal_date_desc",
+            "principal_id",
+            desc("diary_date"),
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    diary_date: date = Field(nullable=False)
+    status: DiaryDayStatusValue = Field(sa_column=Column(Text(), nullable=False))
+    version: int = Field(sa_column=Column(BigInteger(), nullable=False))
+    entry_count: int = Field(sa_column=Column(Integer(), nullable=False))
+    completed_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    reopened_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    updated_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+
+
+class DiaryDayStatusHistory(SQLModel, table=True):
+    __tablename__ = "diary_day_status_history"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["day_status_id", "principal_id"],
+            ["diary_day_status.id", "diary_day_status.principal_id"],
+            name="fk_diary_day_status_history_owner",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "day_status_id", "day_version", name="uq_diary_day_status_history_version"
+        ),
+        CheckConstraint(
+            "from_status IS NULL OR from_status IN ('partial','complete')",
+            name="ck_diary_day_status_history_from",
+        ),
+        CheckConstraint(
+            "to_status IN ('partial','complete')", name="ck_diary_day_status_history_to"
+        ),
+        CheckConstraint(
+            "event_type IN ('entry_created','entry_edited','entry_deleted','completed','reopened')",
+            name="ck_diary_day_status_history_event",
+        ),
+        CheckConstraint("day_version >= 1", name="ck_diary_day_status_history_version"),
+        CheckConstraint(
+            "actor_principal_id = principal_id", name="ck_diary_day_status_history_actor"
+        ),
+        Index(
+            "ix_diary_day_status_history_principal_date_version",
+            "principal_id",
+            "diary_date",
+            "day_version",
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    day_status_id: uuid.UUID = Field(nullable=False)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    diary_date: date = Field(nullable=False)
+    from_status: DiaryDayStatusValue | None = Field(
+        default=None, sa_column=Column(Text(), nullable=True)
+    )
+    to_status: DiaryDayStatusValue = Field(sa_column=Column(Text(), nullable=False))
+    event_type: DiaryDayStatusEvent = Field(sa_column=Column(Text(), nullable=False))
+    day_version: int = Field(sa_column=Column(BigInteger(), nullable=False))
+    entry_id: uuid.UUID | None = Field(default=None, nullable=True)
+    actor_principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    occurred_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    request_id: str | None = Field(default=None, sa_column=Column(Text(), nullable=True))
 
 
 class DiaryEntry(SQLModel, table=True):

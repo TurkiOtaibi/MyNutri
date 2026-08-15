@@ -37,7 +37,7 @@ const manifests = {
   ],
   "features/profile/profile-view.tsx": ["ProfileView"],
   "features/diary/diary-summary.tsx": [
-    "CompactWeekNavigator", "DailyProgressSummary", "MacroProgress", "MealSections",
+    "CompactWeekNavigator", "DayLoggingStatusCard", "DailyProgressSummary", "MacroProgress", "MealSections",
     "DiaryEntryRow", "DailyNutritionDetails", "DailyNutrientRow",
   ],
   "features/diary/diary-entry-dialogs.tsx": [
@@ -49,7 +49,7 @@ const manifests = {
     "DiaryEntriesSkeleton",
   ],
   "features/diary/diary-model.ts": [
-    "mealLabels", "standardMeals", "shortWeekdays", "mealAddLabels",
+    "dayLoggingStatusLabels", "isDayAnalysisEligible", "isFutureDiaryStatus", "mealLabels", "standardMeals", "shortWeekdays", "mealAddLabels",
     "mealItemCountLabel", "emptyNutritionTotals", "formatDiarySelectedDate",
     "pickerServingNutrition", "multiplyServing", "scaleEntryPreview", "parseQuantity",
     "validateQuantity", "entryQuantityLabel", "snapshotUnitLabel",
@@ -73,7 +73,10 @@ function expectTransportBoundary(source: string) {
   expect(source).toContain('apiFetch<TargetResponse>("/profile/preview"');
   expect(source).toContain('apiFetch<FoodPickerResponse>');
   expect(source).toContain('`/admin/users/${principalId}/diary?${params.toString()}`');
-  expect(source).toContain('apiFetch<DiaryEntryResponse>("/diary"');
+  expect(source).toContain('apiFetch<DiaryEntryResponse>("/diary/entries"');
+  expect(source).toContain('`/diary/days/${diaryDate}/status`');
+  expect(source).toContain('`/diary/days/${diaryDate}/${action}`');
+  expect(source).toContain('headers: { "If-Match": `"day-${dayVersion}"` }');
   expect(source).toContain('throw new ApiError(message, response.status, detail, code)');
 }
 
@@ -161,7 +164,9 @@ describe("domain boundaries", () => {
     ].join("\n");
     for (const key of [
       '["profile"]', '["calendar-authority"]', '["nutrition-registry"]',
-      '["target-plan-history"]', '["week", weekStart]', '["entries", activeDate]',
+      '["target-plan-history"]', '["week", session?.user.id, weekStart]',
+      '["entries", session?.user.id, activeDate]',
+      '["diary-day-status", session?.user.id, activeDate]',
       '["diary-food-picker", session?.user.id, normalizedSearch]',
       '["food", foodId]', '["foods"]',
     ]) expect(sources).toContain(key);

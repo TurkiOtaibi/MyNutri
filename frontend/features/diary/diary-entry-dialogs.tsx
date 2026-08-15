@@ -14,7 +14,7 @@ import { useDebouncedValue } from "./diary-hooks";
 
 const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
 
-export function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { selectedDate: string; initialMeal: MealType | null; onClose: () => void; onSaved: (meal: MealType) => Promise<void> }) {
+export function AddEntrySheet({ selectedDate, dayVersion, initialMeal, onClose, onSaved }: { selectedDate: string; dayVersion: number; initialMeal: MealType | null; onClose: () => void; onSaved: (meal: MealType) => Promise<void> }) {
   const [search, setSearch] = useState("");
   const [selectedFood, setSelectedFood] = useState<FoodPickerItem | null>(null);
   const [quantity, setQuantity] = useState("1");
@@ -46,7 +46,7 @@ export function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: {
   });
 
   const mutation = useMutation({
-    mutationFn: (payload: DiaryEntryInput) => createDiaryEntry(payload, accessToken, sessionSignal),
+    mutationFn: (payload: DiaryEntryInput) => createDiaryEntry(payload, dayVersion, accessToken, sessionSignal),
     onSuccess: async () => {
       if (sessionSignal.aborted) return;
       setSaveSucceeded(true);
@@ -287,7 +287,7 @@ export function SelectedFoodSummary({ food, onChange }: { food: FoodPickerItem; 
   );
 }
 
-export function EditEntryDialog({ entry, onClose, onSaved }: { entry: DiaryEntryResponse; onClose: () => void; onSaved: (meal: MealType) => Promise<void> }) {
+export function EditEntryDialog({ entry, dayVersion, onClose, onSaved }: { entry: DiaryEntryResponse; dayVersion: number; onClose: () => void; onSaved: (meal: MealType) => Promise<void> }) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const sessionSignal = useSessionAbortSignal();
@@ -295,7 +295,7 @@ export function EditEntryDialog({ entry, onClose, onSaved }: { entry: DiaryEntry
   const [mealType, setMealType] = useState<MealType>(entry.meal_type ?? "unspecified");
   const [error, setError] = useState("");
   const mutation = useMutation({
-    mutationFn: (amount: number) => updateDiaryEntry(entry.id, amount, mealType, accessToken, sessionSignal),
+    mutationFn: (amount: number) => updateDiaryEntry(entry.id, amount, mealType, dayVersion, accessToken, sessionSignal),
     onSuccess: async () => {
       if (sessionSignal.aborted) return;
       await onSaved(mealType);
@@ -432,13 +432,17 @@ export function QuantityStepper({
 }
 
 export function ConfirmDialog({ title, description, confirmLabel, cancelLabel = "إلغاء", error = "", pending, onClose, onConfirm }: { title: string; description: string; confirmLabel: string; cancelLabel?: string; error?: string; pending: boolean; onClose: () => void; onConfirm: () => void }) {
+  const errorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (error) errorRef.current?.focus();
+  }, [error]);
   return (
     <ModalFrame labelledBy="confirm-entry-title" onClose={onClose} pending={pending}>
       <div className="confirm-entry-dialog">
         <div className="dialog-danger-icon"><AlertCircle size={22} /></div>
         <h2 id="confirm-entry-title">{title}</h2>
         <p>{description}</p>
-        {error ? <div className="delete-inline-error" role="alert"><strong>{error}</strong><span>حاول مرة أخرى</span></div> : null}
+        {error ? <div ref={errorRef} className="delete-inline-error" role="alert" tabIndex={-1}><strong>{error}</strong><span>حاول مرة أخرى</span></div> : null}
         <div className="sheet-actions">
           <button data-initial-focus className="btn" type="button" onClick={onClose} disabled={pending}>{cancelLabel}</button>
           <button className="btn danger" type="button" onClick={onConfirm} disabled={pending}>{confirmLabel}</button>

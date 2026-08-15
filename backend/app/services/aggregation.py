@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
+from app.core.calendar import diary_calendar_authority
 from app.models import DiaryEntry
 from app.nutrition_rules.registry import NUTRIENTS, NutrientDefinition
 from app.schemas import (
@@ -14,6 +15,7 @@ from app.schemas import (
     WeekSummary,
 )
 from app.services.diary import add_totals, empty_totals, totals_for_entry
+from app.services.day_logging_status import project_status_range
 from app.services.profile import to_target_response
 from app.services.target_plans import (
     WeekTargetContext,
@@ -175,6 +177,7 @@ def _day_summary(
     current: date,
     entries: list[DiaryEntry],
     target_context: WeekTargetContext,
+    status,
 ) -> DaySummary:
     totals = empty_totals()
     entry_totals = []
@@ -206,6 +209,11 @@ def _day_summary(
         target_provenance=source.target_provenance,
         nutrient_aggregates=aggregates,
         overall_nutrient_coverage_percent=overall,
+        logging_status=status.logging_status,
+        logging_status_version=status.logging_status_version,
+        entry_count=status.entry_count,
+        analysis_eligible=status.analysis_eligible,
+        completed_at=status.completed_at,
     )
 
 
@@ -218,10 +226,23 @@ def _weekly_summary(
 ) -> WeekSummary:
     week_start = sunday_start(start)
     week_end = week_start + timedelta(days=6)
+    authority = diary_calendar_authority()
     target_context = (
-        project_week_target_context(session, principal, week_start, week_end)
+        project_week_target_context(
+            session,
+            principal,
+            week_start,
+            week_end,
+            authoritative_current_date=authority.current_diary_date,
+        )
         if read_only
-        else resolve_week_target_context(session, principal, week_start, week_end)
+        else resolve_week_target_context(
+            session,
+            principal,
+            week_start,
+            week_end,
+            authoritative_current_date=authority.current_diary_date,
+        )
     )
     entries = session.exec(
         select(DiaryEntry).where(
@@ -242,12 +263,17 @@ def _weekly_summary(
     entries_by_date: dict[date, list[DiaryEntry]] = {}
     for entry in entries:
         entries_by_date.setdefault(entry.entry_date, []).append(entry)
+    statuses = {
+        item.date: item
+        for item in project_status_range(session, principal, week_start, week_end, authority)
+    }
     for offset in range(7):
         current = week_start + timedelta(days=offset)
         day = _day_summary(
             current,
             entries_by_date.get(current, []),
             target_context,
+            statuses[current],
         )
         weekly_totals = add_totals(weekly_totals, day.totals)
         days.append(day)

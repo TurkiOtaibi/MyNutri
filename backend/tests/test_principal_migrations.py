@@ -60,6 +60,7 @@ BASELINE_HASHES = {
     "5294eff9a956_block_lossy_taxonomy_downgrade.py": "9b0705ec4521cfe6516413d7ddc4a040912c1ad8724b2b55225a5ba3bd4ecc3b",
     "7c4a9d2e1f06_enforce_positive_diary_quantity.py": "56466eef64421d14104ab174cf0745e3664c11df3c9d515c032dea20bfd9bb2e",
     "9f2a1b6c3d05_plan025_admin_diary_order_index.py": "727052a802eeee1d6e4f493fc7d21e963cf6f6de7a7b78b102bf42c3d7c2c152",
+    "b7e31a4c9d20_add_diary_day_status.py": "cef968f1e3786213eef07a337e5a178501305dfb07a47a772a370a2f8c50d939",
     "df46234d2a7e_constrain_finite_food_nutrients.py": "70767434911230795129b4702f8d4bf2e9a4add9dcf1607c3fa648dfebdd0674",
 }
 DEPLOYMENT_PRINCIPAL = UUID("00000000-0000-0000-0000-000000000001")
@@ -73,6 +74,7 @@ PLAN012_DOWNGRADE_GUARD = "plan012_lossy_taxonomy_downgrade_guard"
 PLAN021_REVISION = "3f2e7b1c9a04"
 PLAN023_REVISION = "7c4a9d2e1f06"
 PLAN025_REVISION = "9f2a1b6c3d05"
+PLAN031_REVISION = "b7e31a4c9d20"
 PLAN023_CONSTRAINT = "ck_diary_entry_quantity_positive_finite"
 PLAN023_PREFLIGHT_ERROR = "PLAN023_DIARY_QUANTITY_PREFLIGHT_BLOCKED"
 PLAN023_PREFLIGHT_GUARD = "plan023_diary_quantity_positive_finite_preflight"
@@ -98,6 +100,19 @@ AUTHORITATIVE_HISTORICAL_CHECKS = {
         "nutrition_snapshot->>'schema_version'=snapshot_schema_version::text)",
     ),
 }
+
+
+def test_plan031_migration_is_additive_without_completion_backfill_and_fails_closed() -> None:
+    migration = (
+        Path(__file__).parents[1]
+        / "alembic/versions/b7e31a4c9d20_add_diary_day_status.py"
+    ).read_text(encoding="utf-8")
+    assert "create_table(\n        \"diary_day_status\"" in migration
+    assert "create_table(\n        \"diary_day_status_history\"" in migration
+    assert "INSERT INTO DIARY_DAY_STATUS" not in migration.upper()
+    assert "PLAN031_BACKFILL_MUST_REMAIN_EMPTY" in migration
+    assert "PLAN031 downgrade requires an online empty-table preflight" in migration
+    assert "status_count={status_count}, history_count={history_count}" in migration
 POSTGRESQL_AUTHORITATIVE_CHECK_DEFINITIONS = {
     "ck_diary_entry_versioned_shape": (
         "CHECK (snapshot_schema_version IS NULL OR "
@@ -439,7 +454,7 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            PLAN025_REVISION
+            PLAN031_REVISION
         )
         authoritative_checks = connection.execute(
             text(

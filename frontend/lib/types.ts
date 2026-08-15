@@ -99,6 +99,8 @@ export type DiaryEntryResponse = Omit<DeepRequired<OpenApi.DiaryEntryResponse>, 
 };
 export type AdminDiaryPage = DeepRequired<OpenApi.AdminDiaryPage>;
 export type AdminDiaryItem = DeepRequired<OpenApi.AdminDiaryItem>;
+export type DiaryLoggingStatus = OpenApi.DiaryLoggingStatus;
+export type DiaryDayStatusResponse = DeepRequired<OpenApi.DiaryDayStatusResponse>;
 export type DaySummary = Omit<DeepRequired<OpenApi.DaySummary>, "totals" | "targets"> & {
   totals: NutritionTotals;
   targets: TargetResponse | null;

@@ -1,6 +1,20 @@
 import { formatLongArabicDate } from "@/lib/dates";
 import { defaultUnitLabels, formatServingMacro, unitBasisLabels } from "@/lib/food";
-import type { DiaryEntryResponse, FoodPickerItem, MealType, NutritionSnapshot, NutritionTotals } from "@/lib/types";
+import type { DiaryDayStatusResponse, DiaryEntryResponse, DiaryLoggingStatus, FoodPickerItem, MealType, NutritionSnapshot, NutritionTotals } from "@/lib/types";
+
+export const dayLoggingStatusLabels: Record<DiaryLoggingStatus, string> = {
+  unregistered: "غير مسجل",
+  partial: "التسجيل غير مكتمل",
+  complete: "تم تسجيل اليوم"
+};
+
+export function isDayAnalysisEligible(status: DiaryLoggingStatus): boolean {
+  return status === "complete";
+}
+
+export function isFutureDiaryStatus(status: DiaryDayStatusResponse): boolean {
+  return status.date > status.calendar.current_diary_date;
+}
 
 export const mealLabels: Record<MealType, string> = {
   breakfast: "فطور",

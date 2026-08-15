@@ -4,8 +4,8 @@ import { addDays, formatDayNumber, formatShortDate, weekStartSunday } from "@/li
 import { formatServingMacro } from "@/lib/food";
 import { weekdays } from "@/lib/labels";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels, type NutrientDefinition } from "@/lib/nutrients";
-import type { DaySummary, DiaryEntryResponse, DiaryNutrientAggregate, MealType, NutritionRegistryResponse, NutritionTotals, TargetResponse, WeekSummary } from "@/lib/types";
-import { emptyNutritionTotals, entryQuantityLabel, formatDiarySelectedDate, mealItemCountLabel, mealLabels, shortWeekdays, standardMeals } from "./diary-model";
+import type { DaySummary, DiaryDayStatusResponse, DiaryEntryResponse, DiaryNutrientAggregate, MealType, NutritionRegistryResponse, NutritionTotals, TargetResponse, WeekSummary } from "@/lib/types";
+import { dayLoggingStatusLabels, emptyNutritionTotals, entryQuantityLabel, formatDiarySelectedDate, isFutureDiaryStatus, mealItemCountLabel, mealLabels, shortWeekdays, standardMeals } from "./diary-model";
 import { ModalFrame } from "./diary-entry-dialogs";
 
 const WEEK_READ_ERROR = "تعذر تحميل ملخص الأسبوع. تحقق من الاتصال وحاول مرة أخرى.";
@@ -30,10 +30,11 @@ export function CompactWeekNavigator({
   onRetry: () => void;
 }) {
   const fallbackStart = weekStartSunday(selectedDate);
-  const days: Array<Pick<DaySummary, "date" | "totals" | "targets">> = week?.days ?? Array.from({ length: 7 }, (_, index) => ({
+  const days: Array<Pick<DaySummary, "date" | "totals" | "targets" | "logging_status">> = week?.days ?? Array.from({ length: 7 }, (_, index) => ({
     date: addDays(fallbackStart, index),
     totals: emptyNutritionTotals(),
-    targets: null
+    targets: null,
+    logging_status: "unregistered"
   }));
   const selectedLabel = formatDiarySelectedDate(selectedDate, today);
 
@@ -72,7 +73,7 @@ export function CompactWeekNavigator({
             >
               <span>{shortWeekdays[index]}</span>
               <strong>{formatDayNumber(day.date)}</strong>
-              <small>{hasIntake ? Math.round(day.totals.calories) : ""}</small>
+              <small>{hasIntake ? Math.round(day.totals.calories) : dayLoggingStatusLabels[day.logging_status]}</small>
               {hasIntake && progress !== null ? <i style={{ "--day-progress": `${progress}%` } as CSSProperties} /> : null}
             </button>
           );
@@ -80,6 +81,43 @@ export function CompactWeekNavigator({
       </div>
       {error ? <div className="week-inline-error"><span>{WEEK_READ_ERROR}</span><button type="button" onClick={onRetry}>إعادة المحاولة</button></div> : null}
       {dateError ? <p className="field-error date-error" role="alert">{dateError}</p> : null}
+    </section>
+  );
+}
+
+export function DayLoggingStatusCard({
+  status,
+  pending,
+  failed,
+  commandPending,
+  onComplete,
+  onReopen,
+  onRetry
+}: {
+  status: DiaryDayStatusResponse | undefined;
+  pending: boolean;
+  failed: boolean;
+  commandPending: boolean;
+  onComplete: () => void;
+  onReopen: () => void;
+  onRetry: () => void;
+}) {
+  if (pending) return <section className="day-status-card is-loading" role="status">جارٍ تحميل حالة اليوم</section>;
+  if (failed || !status) return <section className="day-status-card" role="alert">تعذر تحميل حالة تسجيل اليوم <button type="button" onClick={onRetry}>إعادة المحاولة</button></section>;
+  const future = isFutureDiaryStatus(status);
+  return (
+    <section className={`day-status-card status-${status.logging_status}`} aria-labelledby="day-status-title">
+      <div>
+        <h2 id="day-status-title" tabIndex={-1}>حالة تسجيل اليوم</h2>
+        <strong>{dayLoggingStatusLabels[status.logging_status]}</strong>
+      </div>
+      {status.logging_status === "partial" ? <p>لن يُعامل هذا اليوم كاستهلاك صفري، ولن يدخل في التحليل حتى تنهي تسجيله.</p> : null}
+      {future ? <p>لا يمكن إنهاء تسجيل يوم مستقبلي.</p> : null}
+      {status.logging_status === "complete" ? (
+        <button type="button" disabled={commandPending || future} onClick={onReopen}>إعادة فتح اليوم</button>
+      ) : (
+        <button type="button" disabled={commandPending || future} onClick={onComplete}>إنهاء تسجيل اليوم</button>
+      )}
     </section>
   );
 }

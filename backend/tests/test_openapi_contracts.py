@@ -69,3 +69,47 @@ def test_registry_openapi_is_typed_without_changing_runtime_payload() -> None:
         "nutrients"
     ]
     assert validated.nova.model_dump(mode="json") == runtime_payload["nova"]
+
+
+def test_day_logging_status_openapi_is_structured_and_admin_is_read_only() -> None:
+    schema = app.openapi()
+    paths = schema["paths"]
+    components = schema["components"]["schemas"]
+
+    assert paths["/diary/days/{diary_date}/status"]["get"]["responses"]["200"]
+    for action in ("complete", "reopen"):
+        operation = paths[f"/diary/days/{{diary_date}}/{action}"]["put"]
+        body = operation["requestBody"]["content"]["application/json"]["schema"]
+        assert body == {"$ref": "#/components/schemas/DiaryDayStatusCommand"}
+    response = components["DiaryDayStatusResponse"]
+    assert set(response["required"]) == {
+        "date",
+        "logging_status",
+        "logging_status_version",
+        "entry_count",
+        "analysis_eligible",
+        "completed_at",
+        "calendar",
+    }
+    assert set(components["DiaryLoggingStatus"]["enum"]) == {
+        "unregistered",
+        "partial",
+        "complete",
+    }
+    admin_path = paths["/admin/users/{principal_id}/diary-days"]
+    assert set(admin_path) == {"get"}
+    assert not any(
+        path.startswith("/admin/") and path.endswith(("/complete", "/reopen"))
+        for path in paths
+    )
+    for path, method in (
+        ("/diary/entries", "post"),
+        ("/diary/entries/{entry_id}", "patch"),
+        ("/diary/entries/{entry_id}", "delete"),
+    ):
+        headers = {
+            item["name"]: item
+            for item in paths[path][method]["parameters"]
+            if item["in"] == "header"
+        }
+        assert headers["If-Match"]["required"] is True
