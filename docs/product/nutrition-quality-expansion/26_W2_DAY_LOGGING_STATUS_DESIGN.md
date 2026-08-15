@@ -1,9 +1,10 @@
 # Wave 2 Day Logging Status Design Contract
 
-**Status:** Draft — design/spike only; implementation not authorized
+**Status:** Approved — frozen design contract; application implementation requires separately authorized scope
 **Decision:** PD-015
-**Design version:** 1.0-draft
+**Design version:** 1.0
 **Repository baseline:** `89e83928406d90a38f383fff23752583fffee753`
+**Approval provenance:** Owner-authorized approval received collectively from the Project Owner on 2026-08-15; not six independent human reviews
 **Calendar authority:** Backend `Asia/Riyadh` Diary calendar
 
 ## 1. Purpose and authority
@@ -16,7 +17,7 @@ This contract turns PD-015's public vocabulary into one reviewable implementatio
 
 Logging status is independent of Food nutrient coverage. A completed day can contain entries with partial nutrient coverage. Conversely, an entry with complete nutrient data never completes the day automatically.
 
-The proposed contract makes an intentionally empty completed day zero-intake evidence for that date. It counts as a completed day for the PD-016 day-count threshold. Metric-specific analysis still applies its own coverage rule to non-empty days. This proposal becomes authoritative only when Product and Data/Analysis approve it in `26B_W2_DAY_LOGGING_STATUS_APPROVAL_REPORT.md`.
+The contract makes an intentionally empty completed day zero-intake evidence for that date. It counts as a completed day for the PD-016 day-count threshold. Metric-specific analysis still applies its own coverage rule to non-empty days. The Project Owner collectively authorized all named approval gates with the provenance recorded in `26B_W2_DAY_LOGGING_STATUS_APPROVAL_REPORT.md`.
 
 No application behavior is implemented by these documents.
 
@@ -407,7 +408,7 @@ The future-date block above is the closed future `422` example. Admin mutation-p
 | partial analysis note | `لن يُعامل هذا اليوم كاستهلاك صفري، ولن يدخل في التحليل حتى تنهي تسجيله.` |
 | retry | `إعادة المحاولة` |
 
-Product Owner approval of this exact copy is required before freeze.
+The exact copy is frozen through the owner-authorized Product gate recorded in the approval report.
 
 ### 10.2 Interaction
 
@@ -474,8 +475,10 @@ Mutation evidence must prove the gates fail when: a migration marks legacy days 
 | incomplete is not zero | partial/unregistered excluded | explicit `analysis_eligible=false` | explanatory note | aggregation/future consumer tests |
 | strong analysis uses complete days | eligibility derives only from complete | daily/weekly field | complete badge, no analysis claim | future Wave 3 tests |
 
-## 15. Freeze gate and implementation handoff
+## 15. Freeze result and implementation handoff
 
-The four Plan 031 artifacts may be circulated for review. Implementation remains prohibited until the approval report contains all six named role approvals and `Decision status: Frozen for implementation`.
+The four Plan 031 artifacts are frozen. The approval report contains all six named role gates and `Decision status: Frozen for implementation`. Those gates were authorized collectively by the Project Owner on 2026-08-15 and do not represent six independent human reviews.
 
-Any approval that changes edit/reopen semantics, empty-complete analysis, the persisted model, Principal ownership, or concurrency requires updating the design, vectors, oracle replay, and approval report before freeze. A Draft or partial approval cannot authorize migrations or source changes.
+This freeze approves the design contract, not an application patch. Plan 031's four-file authority still excludes application source, migrations, schemas, tests, packages, workflow, deployment, database, and environment changes. Implementation requires a separately authorized scope.
+
+Any later change to edit/reopen semantics, empty-complete analysis, the persisted model, Principal ownership, or concurrency requires updating the design, vectors, oracle replay, and approval report and repeating the affected approval gates.
