@@ -1,4 +1,11 @@
-# System Build Plan — Personal Nutrition Tracker
+> [!CAUTION]
+> **SUPERSEDED — DO NOT USE FOR CURRENT IMPLEMENTATION.** See [the current documentation authority map](README.md).
+
+# Historical archive — superseded system build plan
+
+The content below records the original design and is retained only for traceability.
+
+## Original document
 
 > Planning document, ready to hand to Claude Code. Goal: a personal single-user PWA that computes daily targets and tracks food intake against them.
 
@@ -29,7 +36,7 @@ Final decision — offline-first PWA:
 | Calc Engine | Python (pure functions, pytest) |
 | Auth | single-user, minimal |
 
-The detailed layer breakdown (Infra / Backend / Frontend / Services) is in **ARCHITECTURE_SERVICES.md**.
+The historical layer breakdown (Infra / Backend / Frontend / Services) is in [the superseded architecture archive](2-ARCHITECTURE-SERVICES.md).
 
 ---
 
@@ -221,4 +228,4 @@ Dependency-correct ordering: engine first (produces targets), then foods (needed
 3. **Database:** PostgreSQL.
 4. **Meal type:** Deferred to v2.
 
-Next step: a prompts file split across the seven phases for Claude Code, each phase as an independent prompt — see **CLAUDE_CODE_PROMPTS.md**.
+Historical next step: the archived prompts were split across seven phases in [the superseded Claude Code prompt tombstone](CLAUDE_CODE_PROMPTS.md). Do not execute them.
