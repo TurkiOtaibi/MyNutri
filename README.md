@@ -9,7 +9,7 @@ Start with the [documentation authority map](docs/README.md). The old system pla
 - Python 3.12
 - Node.js 24 with the npm version bundled for the committed lockfile
 - Docker with Compose
-- PostgreSQL 16, normally the disposable local Compose database
+- PostgreSQL 16, normally the isolated local Compose service with its persistent `postgres_data` volume
 
 ## Locked setup
 
@@ -26,7 +26,7 @@ npm ci
 Set-Location ..
 ```
 
-On a POSIX shell, activate the same environment with `source .venv/bin/activate`; all other commands are unchanged apart from path separators.
+All command blocks below use PowerShell. On a POSIX shell, activate the environment with `source .venv/bin/activate`, replace `Set-Location` with `cd`, and translate PowerShell environment checks rather than copying them verbatim.
 
 ## Local environment
 
@@ -60,13 +60,35 @@ Never expose a service-role key or database credential through a `NEXT_PUBLIC_` 
 
 ## Start the local stack
 
-Start the repository's local PostgreSQL and backend containers:
+The Compose PostgreSQL database is isolated for local development, but it is not disposable: its named `postgres_data` volume survives container restarts. For a clean checkout, start PostgreSQL first:
 
 ```powershell
-docker compose up --build db api
+docker compose up --detach db
 ```
 
-In another shell, start the frontend:
+Before initializing its schema, set `DATABASE_URL` in the current host shell to this repository's loopback Compose database. Verify the host without printing the URL or credentials:
+
+```powershell
+if (-not $env:DATABASE_URL) { throw "DATABASE_URL is required." }
+$localDatabaseUri = [System.Uri]::new(
+    ($env:DATABASE_URL -replace '^postgresql\+psycopg://', 'postgresql://')
+)
+if ($localDatabaseUri.Host -notin @('localhost', '127.0.0.1', '::1')) {
+    throw "DATABASE_URL must target the isolated loopback development database."
+}
+```
+
+Only after that check, apply the current migrations to this explicitly identified local database from the locked host environment, then start the backend:
+
+```powershell
+Set-Location backend
+python -m alembic current
+python -m alembic upgrade head
+Set-Location ..
+docker compose up --build api
+```
+
+This migration step is local initialization, not authorization to migrate any shared or production environment. In another shell, start the frontend:
 
 ```powershell
 Set-Location frontend
@@ -77,7 +99,7 @@ The frontend expects Supabase email/password authentication. Requests are author
 
 ## Database and migrations
 
-Alembic revisions live in `backend/alembic/versions`. Inspect and test migrations only against a database explicitly created for local testing:
+Alembic revisions live in `backend/alembic/versions`. Inspect and test migrations only against a database explicitly created for local development or testing:
 
 ```powershell
 Set-Location backend
@@ -88,7 +110,7 @@ python -m alembic check
 python -m alembic upgrade head --sql
 ```
 
-`upgrade head` mutates its target. Before running it, verify that `DATABASE_URL` names the disposable loopback database. Never use a staging, hosted Supabase, or production URL for routine development or CI parity. Do not use `alembic stamp`, edit the migration ledger, or run a production migration without explicit deployment authorization.
+`upgrade head` mutates its target. Before running it, verify that `DATABASE_URL` names the isolated loopback database intended for that local task. The normal Compose database is persistent local state; CI and E2E databases are the short-lived disposable databases. Never use a shared developer, staging, hosted Supabase, or production URL for routine development or CI parity. Do not use `alembic stamp`, edit the migration ledger, or run a production migration without explicit deployment authorization.
 
 CI and E2E use short-lived PostgreSQL databases populated only with synthetic fixtures. Tests must not point at a shared developer, staging, or production database. Provider acceptance uses an isolated local Supabase stack and removes its containers, volumes, network, logs, and browser state afterward.
 
