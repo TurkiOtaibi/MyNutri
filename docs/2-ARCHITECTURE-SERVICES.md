@@ -1,6 +1,13 @@
-# System Architecture — Services Breakdown
+> [!CAUTION]
+> **SUPERSEDED — DO NOT USE FOR CURRENT IMPLEMENTATION.** See [the current documentation authority map](README.md).
 
-> Companion to SYSTEM_PLAN.md. Splits the system into **4 layers** based on the final approved stack. The data model and calc formulas live in SYSTEM_PLAN.md (unchanged).
+# Historical archive — superseded system architecture
+
+The content below records the original architecture and is retained only for traceability.
+
+## Original document
+
+> Historical companion to [the superseded system plan](1-SYSTEM-PLAN.md). It split that earlier system into four layers.
 
 ---
 
@@ -137,4 +144,4 @@ Result: the engine (the complex logic) stays in one place in Python, and only tr
 
 ## Next Step
 
-All layers and decisions are settled. Next deliverable: a **prompts file split across the seven phases** for Claude Code, each phase as an independent prompt that implements part of these layers in dependency order — see **CLAUDE_CODE_PROMPTS.md**.
+This historical document once pointed to [the superseded Claude Code prompt tombstone](CLAUDE_CODE_PROMPTS.md). Do not use that prompt set for current work.
