@@ -14,10 +14,17 @@
     {
       "name": "complete-empty-days-are-valid-zero-evidence",
       "input_state": "eligible",
-      "complete_days": 4,
       "calories_relation": "within_target",
+      "days": [
+        {"logging_status": "complete", "analysis_eligible": true, "entry_count": 0, "metrics": {}},
+        {"logging_status": "complete", "analysis_eligible": true, "entry_count": 0, "metrics": {}},
+        {"logging_status": "complete", "analysis_eligible": true, "entry_count": 0, "metrics": {}},
+        {"logging_status": "complete", "analysis_eligible": true, "entry_count": 0, "metrics": {}},
+        {"logging_status": "partial", "analysis_eligible": false, "entry_count": 1, "metrics": {"fiber_g": 300}},
+        {"logging_status": "unregistered", "analysis_eligible": false, "entry_count": 0, "metrics": {"fiber_g": 300}}
+      ],
       "candidates": [
-        {"key": "fiber_gap", "tier": 2, "severity": 0.40, "coverage": 100, "persistent_weeks": 1, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
+        {"key": "fiber_gap", "tier": 2, "derive_from_days": true, "metric_key": "fiber_g", "target": 30, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
       ],
       "expected": {"main": "fiber_gap", "secondary": null, "reason": "selected"}
     },
@@ -27,7 +34,7 @@
       "complete_days": 6,
       "calories_relation": "within_target",
       "candidates": [
-        {"key": "fiber_gap", "tier": 2, "severity": 0.70, "coverage": 95, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170, "secondary_justified": true},
+        {"key": "fiber_gap", "tier": 2, "severity": 0.70, "coverage": 95, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170},
         {"key": "sodium_overage", "tier": 1, "severity": 0.15, "repeat_events": 3, "coverage": 90, "actionable": true, "conflict_group": "sodium", "taxonomy_order": 10}
       ],
       "expected": {"main": "sodium_overage", "secondary": "fiber_gap", "reason": "selected"}
@@ -71,7 +78,7 @@
         {"key": "fiber_gap", "tier": 2, "severity": 0.40, "coverage": 90, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170},
         {"key": "legumes_gap", "tier": 2, "severity": 0.40, "coverage": 90, "actionable": true, "conflict_group": "legumes", "taxonomy_order": 120}
       ],
-      "expected": {"main": "legumes_gap", "secondary": null, "reason": "selected"}
+      "expected": {"main": "legumes_gap", "secondary": "fiber_gap", "reason": "selected"}
     },
     {
       "name": "duplicate-evidence-blocks-secondary",
@@ -80,7 +87,7 @@
       "calories_relation": "within_target",
       "candidates": [
         {"key": "added_sugar_overage", "tier": 1, "severity": 0.40, "repeat_events": 3, "coverage": 95, "actionable": true, "conflict_group": "sweet-drinks", "taxonomy_order": 20},
-        {"key": "sugary_drink_frequency", "tier": 1, "severity": 0.35, "repeat_events": 3, "coverage": 95, "actionable": true, "conflict_group": "sweet-drinks", "taxonomy_order": 60, "secondary_justified": true}
+        {"key": "sugary_drink_frequency", "tier": 1, "severity": 0.35, "repeat_events": 3, "coverage": 95, "actionable": true, "conflict_group": "sweet-drinks", "taxonomy_order": 60}
       ],
       "expected": {"main": "added_sugar_overage", "secondary": null, "reason": "selected"}
     },
@@ -107,13 +114,43 @@
     },
     {
       "name": "rejected-goal-without-new-evidence-is-suppressed",
-      "input_state": "rejected_goal_suppression",
+      "input_state": "eligible",
       "complete_days": 7,
       "calories_relation": "within_target",
+      "rejection_context": {
+        "signature_matches": true,
+        "rejected_analysis_revision": 7,
+        "current_analysis_revision": 8,
+        "new_complete_dates_after_rejection": 0,
+        "rejected_severity": 0.40,
+        "current_severity": 0.55,
+        "rejected_action_key": "fiber_action",
+        "current_action_key": "fiber_action"
+      },
       "candidates": [
         {"key": "fiber_gap", "tier": 2, "severity": 0.50, "coverage": 100, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
       ],
       "expected": {"main": null, "secondary": null, "reason": "rejected_goal_suppression"}
+    },
+    {
+      "name": "rejected-goal-new-evidence-restores-eligibility",
+      "input_state": "eligible",
+      "complete_days": 7,
+      "calories_relation": "within_target",
+      "rejection_context": {
+        "signature_matches": true,
+        "rejected_analysis_revision": 7,
+        "current_analysis_revision": 8,
+        "new_complete_dates_after_rejection": 1,
+        "rejected_severity": 0.40,
+        "current_severity": 0.50,
+        "rejected_action_key": "fiber_action",
+        "current_action_key": "fiber_action"
+      },
+      "candidates": [
+        {"key": "fiber_gap", "tier": 2, "severity": 0.50, "coverage": 100, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
+      ],
+      "expected": {"main": "fiber_gap", "secondary": null, "reason": "selected"}
     },
     {
       "name": "stale-analysis-produces-none",
@@ -156,8 +193,8 @@
       "calories_relation": "within_target",
       "candidates": [
         {"key": "sodium_overage", "tier": 1, "severity": 0.30, "repeat_events": 3, "coverage": 100, "actionable": true, "conflict_group": "sodium", "taxonomy_order": 10},
-        {"key": "legumes_gap", "tier": 2, "severity": 0.50, "coverage": 100, "actionable": true, "conflict_group": "legumes", "taxonomy_order": 120, "secondary_justified": true},
-        {"key": "fiber_gap", "tier": 2, "severity": 0.45, "coverage": 100, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170, "secondary_justified": true}
+        {"key": "legumes_gap", "tier": 2, "severity": 0.50, "coverage": 100, "actionable": true, "conflict_group": "legumes", "taxonomy_order": 120},
+        {"key": "fiber_gap", "tier": 2, "severity": 0.45, "coverage": 100, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
       ],
       "expected": {"main": "sodium_overage", "secondary": "legumes_gap", "reason": "selected"}
     }
@@ -186,6 +223,20 @@
       "events": [
         {"type": "defer", "expected_version": 4, "expected": {"result": "deferred", "state": "deferred", "version": 5, "progress": null, "midweek_reminders": 0, "endweek_reviews": 0}},
         {"type": "accept", "expected_version": 5, "expected": {"result": "accepted", "state": "active", "version": 6, "progress": null, "midweek_reminders": 0, "endweek_reviews": 0}}
+      ]
+    },
+    {
+      "name": "deferred-offer-can-be-rejected",
+      "initial": {"state": "deferred", "version": 3, "progress": null, "midweek_reminders": 0, "endweek_reviews": 0},
+      "events": [
+        {"type": "reject", "expected_version": 3, "expected": {"result": "rejected", "state": "rejected", "version": 4, "progress": null, "midweek_reminders": 0, "endweek_reviews": 0}}
+      ]
+    },
+    {
+      "name": "existing-primary-blocks-second-accept",
+      "initial": {"state": "offered", "version": 1, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0, "other_primary_exists": true},
+      "events": [
+        {"type": "accept", "expected_version": 1, "expected": {"result": "primary_goal_exists", "state": "offered", "version": 1, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}}
       ]
     },
     {
@@ -250,6 +301,80 @@
       "events": [
         {"type": "midweek_reminder", "expected_version": 2, "midweek_eligible": true, "opted_out": true, "expected": {"result": "suppressed", "state": "active", "version": 2, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}}
       ]
+    }
+  ],
+  "progress_vectors": [
+    {
+      "name": "target-achievement-precedes-four-day-sufficiency",
+      "target_count": 1,
+      "window_ended": true,
+      "days": [
+        {"logging_status": "complete", "qualifies": true},
+        {"logging_status": "partial", "qualifies": true},
+        {"logging_status": "unregistered", "qualifies": true}
+      ],
+      "expected": {"progress_count": 1, "target_count": 1, "complete_day_count": 1, "progress_percent": 100, "status": "achieved"}
+    },
+    {
+      "name": "below-target-with-fewer-than-four-complete-days-is-insufficient",
+      "target_count": 2,
+      "window_ended": true,
+      "days": [
+        {"logging_status": "complete", "qualifies": true},
+        {"logging_status": "partial", "qualifies": true},
+        {"logging_status": "unregistered", "qualifies": true}
+      ],
+      "expected": {"progress_count": 1, "target_count": 2, "complete_day_count": 1, "progress_percent": 50, "status": "insufficient_evidence"}
+    }
+  ],
+  "mutation_vectors": [
+    {
+      "name": "unknown-priority-key-is-rejected",
+      "base_vector": "micronutrient-with-persistent-strong-evidence",
+      "candidate_index": 0,
+      "field": "key",
+      "value": "invented_gap",
+      "expected_error": "unknown priority key"
+    },
+    {
+      "name": "mismatched-closed-tier-is-rejected",
+      "base_vector": "limit-precedes-larger-positive-gap",
+      "candidate_index": 1,
+      "field": "tier",
+      "value": 3,
+      "expected_error": "tier does not match closed vocabulary"
+    },
+    {
+      "name": "mismatched-taxonomy-order-is-rejected",
+      "base_vector": "limit-precedes-larger-positive-gap",
+      "candidate_index": 1,
+      "field": "taxonomy_order",
+      "value": 999,
+      "expected_error": "taxonomy_order does not match closed vocabulary"
+    },
+    {
+      "name": "mismatched-action-mode-is-rejected",
+      "base_vector": "limit-precedes-larger-positive-gap",
+      "candidate_index": 1,
+      "field": "action_mode",
+      "value": "add",
+      "expected_error": "action_mode does not match closed vocabulary"
+    },
+    {
+      "name": "candidate-supplied-secondary-justification-is-rejected",
+      "base_vector": "limit-precedes-larger-positive-gap",
+      "candidate_index": 0,
+      "field": "secondary_justified",
+      "value": true,
+      "expected_error": "secondary_justified is derived"
+    },
+    {
+      "name": "unknown-input-state-is-rejected",
+      "base_vector": "invalid-input-fails-closed",
+      "candidate_index": null,
+      "field": "input_state",
+      "value": "invented_state",
+      "expected_error": "unknown input_state"
     }
   ]
 }

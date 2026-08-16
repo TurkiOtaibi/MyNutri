@@ -20,18 +20,18 @@ Steps 1–7 are complete in Draft form. Decision completeness, JSON syntax, gold
 The following nine lines are the complete required ledger. `Pending` is not approval; silence is never approval. Reviewers must explicitly decide against the exact artifact commit.
 
 - Product Owner: Pending | Decision: taxonomy, selector, optional-goal semantics, exact Arabic product copy
-- Data / Analysis: Pending | Decision: thresholds, evidence, persistence, progress, late-data semantics
-- API / Architecture: Pending | Decision: payloads, state machine, concurrency, persistence, migration, version replay
-- UX / Accessibility: Pending | Decision: Arabic copy, state presentation, focus, keyboard, RTL, 320–430 px
-- Security / Privacy: Pending | Decision: owner isolation, minimization, retention, audit and notification privacy
-- Behavioral Safety: Pending | Decision: exclusions, neutral language, replacement rule, no clinical authority or gamification
+- Nutrition/Safety: Pending | Decision: exclusions, neutral language, replacement rule, no clinical authority or gamification
+- Data/Analysis: Pending | Decision: thresholds, evidence, persistence, progress, late-data semantics
+- Architecture/API: Pending | Decision: payloads, state machine, concurrency, persistence, migration, version replay
+- Security/Privacy: Pending | Decision: owner isolation, minimization, retention, audit and notification privacy
+- UX/Arabic/Accessibility: Pending | Decision: Arabic copy, state presentation, focus, keyboard, RTL, 320–430 px
+- Notifications/Operations: Pending | Decision: reminder policy, shadow thresholds, observability, flag, rollback and launch evidence
 - QA: Pending | Decision: vectors, mutation oracles, coverage, concurrency, accessibility and regression matrix
-- Release / Operations: Pending | Decision: shadow thresholds, observability, flag, rollback and launch evidence
-- Decision status: Draft — design/spike only; implementation not authorized
+- Decision status: Pending
 
 ## Approval rules
 
 - Names, dates, signatures, and independent review are never inferred.
 - A material change invalidates approvals until affected roles review the new artifact commit.
-- Frozen status requires all eight named decisions to be explicit plus a separately recorded freeze decision.
+- The exact line `Decision status: Frozen for implementation` may replace the Pending line only after all eight named decisions are explicit and a separate freeze decision is recorded.
 - This checkpoint authorizes neither implementation nor launch.

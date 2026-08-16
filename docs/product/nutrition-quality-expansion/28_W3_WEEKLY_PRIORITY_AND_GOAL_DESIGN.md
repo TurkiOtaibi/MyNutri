@@ -14,7 +14,7 @@ This contract proposes a closed Backend-owned weekly priority selector and an op
 Invariants:
 
 1. A result contains zero or one main priority and zero or one justified secondary priority.
-2. The selector is deterministic for the same versioned input. AI may later rephrase only approved copy; it never chooses eligibility, rank, targets, or progress.
+2. The selector is deterministic for the same versioned input. Runtime copy is limited to approved versioned templates. AI rephrasing is not authorized; every copy change requires the affected approvals and a copy-version bump.
 3. Priority order is limit/minimize repeated overage, actionable positive gap, then persistent micronutrient gap.
 4. Missing evidence is never zero. Only PLAN 031 `complete` days are analysis evidence; `partial` and `unregistered` are excluded. An explicitly empty complete day is valid zero-intake evidence.
 5. A priority cannot override Profile/Target Plan safety, a Registry exclusion, or insufficient/stale evidence.
@@ -128,7 +128,7 @@ secondary = first remaining candidate satisfying every secondary rule, else null
 return immutable structured result with at most main + secondary
 ```
 
-Secondary rules are all mandatory: `severity >= 0.25`; `secondary_justified=true`; distinct conflict group and evidence dimension; no direct conflict; action is not duplicate; strong evidence; and addition is not used when calories are above target. A secondary never exists without a main. The cap is applied after conflict resolution and cannot be configured upward.
+Secondary justification is derived, never supplied by a candidate or client. The Backend admits the first remaining candidate only when every rule is true: `severity >= 0.25`; distinct conflict group and evidence dimension; no direct conflict; distinct action key; strong evidence; and no addition while calories are above target. A secondary never exists without a main. The cap is applied after conflict resolution and cannot be configured upward.
 
 ### 3.4 Conflict and exclusion matrix
 
@@ -173,7 +173,7 @@ none_reason: closed enum | null
 
 Each `PriorityV1` contains `rule_key`, `rank` (`main|secondary`), `category`, `title_ar`, `reason_ar`, `confidence="strong"`, `coverage_percent`, `complete_day_count`, `action_key`, `action_ar`, `action_mode`, `rules_version`, `copy_version`, sorted `facts_used`, sorted opaque `evidence_refs`, and sorted conflict decisions. `facts_used` uses typed `{metric_key,value,unit,target,comparison,period}` records; no free-form client facts are accepted.
 
-`none_reason` is exactly `invalid_analysis_input | insufficient_complete_days | insufficient_coverage | no_eligible_priority | stale_analysis | superseded_analysis | safety_exclusion | unsupported_version`.
+`none_reason` is exactly `invalid_analysis_input | insufficient_complete_days | insufficient_coverage | no_eligible_priority | stale_analysis | superseded_analysis | safety_exclusion | unsupported_version | rejected_goal_suppression`.
 
 The Frontend renders the response. It may format locale-safe numbers from the typed facts, but cannot re-rank, synthesize a missing secondary, change action mode, remove safety qualifiers, or recompute confidence. Unknown schema/rule/copy versions render a neutral unavailable state and request refresh.
 
@@ -230,11 +230,13 @@ Every command requires authenticated ownership, `Idempotency-Key`, and `expected
 | Prior state | Event | Next state | Required reason/timestamp | API result | UI result |
 | --- | --- | --- | --- | --- | --- |
 | none + current main | Backend `offer` | `offered` v1 | `offered_at`, recommendation ID | current GET includes offer | neutral card; no implied acceptance |
-| `offered`/`deferred` | owner `accept` | `active` | `accepted_at`, period bounds | `accepted` | announce active; focus goal heading |
+| `offered`/`deferred`, no other primary | owner `accept` | `active` | `accepted_at`, period bounds | `accepted` | announce active; focus goal heading |
+| `offered`/`deferred`, another active/paused primary | owner `accept` or offered `edit` | unchanged | no timestamp/history | `409 PRIMARY_GOAL_EXISTS` | retain offer and focus conflict alert |
 | `offered` | owner `edit` | `active` | validated edit + `accepted_at` | `edited_and_accepted` | show confirmed bounded plan |
 | `active` | owner `edit` | `active` | append revision, `changed_at` | `edited` | preserve progress recomputation notice |
 | `offered` | owner `defer` | `deferred` | `deferred_until` = next Diary date, max period end | `deferred` | hide prompt until date; show reversible state |
 | `offered` | owner `reject` | `rejected` | reason enum + `rejected_at` | `rejected` | neutral acknowledgement; no repeat |
+| `deferred` | owner `reject` | `rejected` | reason enum + `rejected_at` | `rejected` | neutral acknowledgement; no repeat |
 | `active` | owner `change` | `active` | new current eligible priority/action, reason, `changed_at` | `changed` | show old goal in history and new terms |
 | `active` | owner `pause` | `paused` | reason + `paused_at` | `paused` | progress retained; reminders suppressed |
 | `paused` | owner `resume` | `active` | `resumed_at` | `resumed` | resume derivation; no catch-up reminder |
@@ -300,11 +302,12 @@ eligible_dates = dates in goal window where logging_status == complete
 progress_count = count(distinct eligible date satisfying action predicate)
 progress_percent = min(100, round_half_even(100 * progress_count / weekly_target_count))
 progress_status = achieved when progress_count >= target
+                | insufficient_evidence when window ended, target not reached, and complete dates < 4
                 | in_progress when eligible date count > 0
                 | unknown when eligible date count == 0
 ```
 
-An explicitly empty complete day is eligible zero progress. `partial` and `unregistered` dates are omitted, not zero. Unknown snapshot fields cannot satisfy a predicate. At end of window, fewer than four complete days yields `insufficient_evidence`; the UI may say the observed count but cannot claim success or failure. With four or more complete days, below-target is `not_yet_reached`, never failure.
+An explicitly empty complete day is eligible zero progress. `partial` and `unregistered` dates are omitted, not zero. Unknown snapshot fields cannot satisfy a predicate. Achievement takes precedence: reaching the target from qualifying complete-date evidence is `achieved` even when fewer than four dates are complete. At end of window, `insufficient_evidence` applies only when the target was not reached and fewer than four dates are complete; the UI may say the observed count but cannot claim failure. With four or more complete days, below-target is `not_yet_reached`, never failure.
 
 Progress payload includes window, count, target, percent/null, complete/partial/unregistered counts, `as_of_diary_date`, source day versions, calculation rules version, and `last_recomputed_at`. The Backend is sole authority; the Frontend never increments optimistically.
 
@@ -325,7 +328,7 @@ External notifications default off and require an explicit owner preference. In-
 | Reminder | Exact eligibility | Cap and copy |
 | --- | --- | --- |
 | contextual midweek | active; fourth Diary date of window or later; progress exactly 0; at least two complete dates; not stale/unsafe; not opted out; not sent | at most one: `لم يظهر تقدم في الهدف ضمن الأيام المكتملة. يمكنك تقليل الخطوة أو تغييرها أو إنهاء الهدف.` |
-| end-of-week review | active or paused; window ended; final or insufficient-evidence projection available; not already sent | exactly one in-app review card: `راجع هدف الأسبوع وفق الأيام المكتملة. يمكنك تكراره أو تقليله أو تغييره أو إنهاؤه.` |
+| end-of-week review | active or paused; window ended; final or insufficient-evidence projection available; not already sent | exactly one in-app review card: `راجع هدف الأسبوع وفق الأيام المكتملة. يمكنك تقليله أو تغييره أو إنهاؤه.` |
 
 No reminder is sent for unknown progress, deferred/rejected/completed/ended/archived goals, during pause, or after a source safety exclusion. Quiet hours are 21:00–09:00 `Asia/Riyadh`; eligible external delivery is deferred to 09:00 without creating another reminder row. There are no retries that can exceed the cap: a unique `(goal_id, reminder_type, goal_revision)` delivery row and idempotent provider key enforce once-only delivery. Provider failure records a privacy-safe result and does not extend the period or punish the owner.
 
@@ -464,7 +467,7 @@ Immediate rollback triggers are any safety recommendation, cap violation, cross-
 
 ### 8.5 Checkpoint result
 
-Steps 1–7 produce a complete Draft, not an approval. The exact four artifacts must be circulated at one commit. Step 8 requires explicit decisions from Product Owner, Data / Analysis, API / Architecture, UX / Accessibility, Security / Privacy, Behavioral Safety, QA, and Release / Operations, followed by an explicit frozen status. Until then: `AWAITING APPROVAL`; implementation and launch remain unauthorized.
+Steps 1–7 produce a complete Draft, not an approval. The exact four artifacts must be circulated at one commit. Step 8 requires explicit decisions from Product Owner, Nutrition/Safety, Data/Analysis, Architecture/API, Security/Privacy, UX/Arabic/Accessibility, Notifications/Operations, and QA, followed by the exact line `Decision status: Frozen for implementation`. Until then: `AWAITING APPROVAL`; implementation and launch remain unauthorized.
 
 ## 9. Artifact authority
 
