@@ -10,7 +10,7 @@
 - Deterministic capped selector, goal lifecycle, progress, safety, persistence/API/UX, and launch gates.
 - Seeded golden vectors replayed by a docs-only standard-library oracle.
 - Shadow duration/sample, manual-review thresholds, privacy-safe observability, staged flag, and rollback triggers.
-- Deterministic incomplete-goal repeat/reduce creates a separately identified seven-date window, preserves prior evidence/history, and is covered for replay, concurrency, invalid state, and priority-order conflicts.
+- Deterministic incomplete-goal repeat/reduce creates a separately identified seven-date window, preserves prior evidence/history, and is covered for exact replay across date/recommendation rollover, concurrency, invalid state, and priority-order conflicts.
 
 ## Checkpoint package
 

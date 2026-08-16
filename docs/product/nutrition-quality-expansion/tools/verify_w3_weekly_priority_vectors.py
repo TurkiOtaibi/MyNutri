@@ -46,6 +46,15 @@ ALLOWED_INPUT_STATES = {
     "unsupported_version",
 }
 DAY_STATUSES = {"complete", "partial", "unregistered"}
+STABLE_REPEAT_IDENTITY_FIELDS = (
+    "principal_ref",
+    "operation",
+    "source_goal_id",
+    "event",
+    "repeat_mode",
+    "expected_version",
+    "weekly_target_count",
+)
 
 
 def complete_days(vector: dict[str, Any]) -> int:
@@ -397,24 +406,52 @@ def repeat_response(
     }
 
 
+def repeat_request_identity(
+    state: dict[str, Any], event: dict[str, Any], fields: list[str] | tuple[str, ...]
+) -> dict[str, Any]:
+    values = {
+        "principal_ref": state.get("principal_ref"),
+        "operation": "behavior_goal_repeat",
+        "source_goal_id": state["source_goal"]["goal_id"],
+        "event": event.get("type"),
+        "repeat_mode": event.get("repeat_mode"),
+        "expected_version": event.get("expected_version"),
+        "weekly_target_count": event.get("weekly_target_count"),
+        # These server-owned fields are intentionally available only to mutation
+        # tests. They are forbidden in the authoritative identity field list.
+        "captured_diary_date": state.get("captured_diary_date"),
+        "current_recommendation_id": state.get("current_priority", {}).get(
+            "recommendation_id"
+        ),
+    }
+    if not isinstance(state.get("principal_ref"), str) or not state["principal_ref"]:
+        raise ValueError("repeat requires a non-empty Principal reference")
+    unknown = [field for field in fields if field not in values]
+    if unknown:
+        raise ValueError(f"unknown repeat request identity field: {unknown[0]}")
+    return {field: values[field] for field in fields}
+
+
 def apply_repeat_event(
     state: dict[str, Any],
     event: dict[str, Any],
     replays: dict[str, dict[str, Any]],
+    identity_fields: list[str] | tuple[str, ...] = STABLE_REPEAT_IDENTITY_FIELDS,
 ) -> dict[str, Any]:
+    fixture_update = event.get("_server_state_before")
+    if fixture_update is not None:
+        if not isinstance(fixture_update, dict):
+            raise ValueError("server-state fixture must be an object")
+        if "captured_diary_date" in fixture_update:
+            state["captured_diary_date"] = fixture_update["captured_diary_date"]
+        if "current_priority" in fixture_update:
+            state["current_priority"] = deepcopy(fixture_update["current_priority"])
     if event.get("type") != "repeat":
         return repeat_response(state, "goal_state_conflict")
     key = event.get("idempotency_key")
     if not isinstance(key, str) or not key:
         raise ValueError("repeat requires a non-empty idempotency key")
-    request_identity = {
-        "source_goal_id": state["source_goal"]["goal_id"],
-        "expected_version": event.get("expected_version"),
-        "repeat_mode": event.get("repeat_mode"),
-        "weekly_target_count": event.get("weekly_target_count"),
-        "captured_diary_date": state["captured_diary_date"],
-        "recommendation_id": state["current_priority"].get("recommendation_id"),
-    }
+    request_identity = repeat_request_identity(state, event, identity_fields)
     if key in replays:
         recorded = replays[key]
         if recorded["request"] != request_identity:
@@ -461,14 +498,14 @@ def apply_repeat_event(
         result = "reduced_and_repeated"
     else:
         return repeat_response(state, "goal_state_conflict")
-    new_goal_id = event.get("new_goal_id")
+    new_goal_id = event.get("_server_generated_goal_id")
     if (
         not isinstance(new_goal_id, str)
         or not new_goal_id
         or new_goal_id == source["goal_id"]
         or new_goal_id in state.get("created_goal_ids", [])
     ):
-        raise ValueError("repeat new_goal_id must be unique and distinct")
+        raise ValueError("repeat server-generated goal ID must be unique and distinct")
     old_snapshot = deepcopy(source)
     new_start = max(captured, old_end + timedelta(days=1))
     new_goal = {
@@ -537,6 +574,16 @@ def validate(document: dict[str, Any]) -> tuple[int, list[str]]:
         failures.append("seed must be an integer")
     names: set[str] = set()
     passed = 0
+    identity_fields = document.get("repeat_request_identity_fields")
+    if (
+        not isinstance(identity_fields, list)
+        or any(not isinstance(field, str) for field in identity_fields)
+        or len(identity_fields) != len(set(identity_fields))
+    ):
+        failures.append("repeat_request_identity_fields must be a unique string list")
+        identity_fields = list(STABLE_REPEAT_IDENTITY_FIELDS)
+    elif tuple(identity_fields) != STABLE_REPEAT_IDENTITY_FIELDS:
+        failures.append("repeat request identity fields must match the frozen stable tuple")
     selection_vectors = document.get("selection_vectors", [])
     for vector in selection_vectors:
         name = vector.get("name", "<unnamed>")
@@ -584,7 +631,7 @@ def validate(document: dict[str, Any]) -> tuple[int, list[str]]:
         for index, event in enumerate(vector["events"], start=1):
             source_before = deepcopy(state["source_goal"])
             try:
-                actual = apply_repeat_event(state, event, replays)
+                actual = apply_repeat_event(state, event, replays, identity_fields)
             except (KeyError, TypeError, ValueError) as error:
                 failures.append(f"{name} event {index}: invalid repeat vector: {error}")
                 ok = False
@@ -644,7 +691,9 @@ def validate(document: dict[str, Any]) -> tuple[int, list[str]]:
         try:
             mutated = deepcopy(repeats_by_name[vector["base_vector"]])
             mutated["events"][vector["event_index"]][vector["field"]] = vector["value"]
-            apply_repeat_event(mutated["initial"], mutated["events"][0], {})
+            apply_repeat_event(
+                mutated["initial"], mutated["events"][0], {}, identity_fields
+            )
         except (KeyError, TypeError, ValueError) as error:
             if vector["expected_error"] not in str(error):
                 failures.append(f"{name}: wrong repeat mutation error: {error}")
@@ -652,6 +701,31 @@ def validate(document: dict[str, Any]) -> tuple[int, list[str]]:
                 passed += 1
         else:
             failures.append(f"{name}: repeat mutation was accepted")
+    for vector in document.get("repeat_identity_mutation_vectors", []):
+        name = vector.get("name", "<unnamed>")
+        if name in names:
+            failures.append(f"duplicate vector name: {name}")
+            continue
+        names.add(name)
+        mutated_fields = list(identity_fields) + list(vector["fields_to_add"])
+        base = deepcopy(repeats_by_name[vector["base_vector"]])
+        state = base["initial"]
+        replays: dict[str, dict[str, Any]] = {}
+        try:
+            actual = None
+            for event in base["events"][: vector["event_index"] + 1]:
+                actual = apply_repeat_event(state, event, replays, mutated_fields)
+        except (KeyError, TypeError, ValueError) as error:
+            failures.append(f"{name}: invalid identity mutation: {error}")
+            continue
+        if (
+            actual is not None
+            and actual["result"] == vector["expected_mutated_result"]
+            and actual != base["events"][vector["event_index"]]["expected"]
+        ):
+            passed += 1
+        else:
+            failures.append(f"{name}: mutable server identity fields did not break replay")
     if not names:
         failures.append("vectors must be non-empty")
     return passed, failures
