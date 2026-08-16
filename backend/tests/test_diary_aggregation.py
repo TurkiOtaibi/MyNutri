@@ -345,4 +345,6 @@ def test_plan015_postgresql_admin_week_query_budget_is_fixed(
             PRINCIPAL,
             date(2026, 7, 12),
         )
-    assert len(statements) == 6
+    # PLAN 031 adds the persisted day-status and legacy entry-count range
+    # projections. The budget remains fixed as entry volume changes.
+    assert len(statements) == 8

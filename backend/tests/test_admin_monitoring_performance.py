@@ -590,7 +590,7 @@ def test_plan025_migration_rehearsal_catalog_and_reversibility(
     plan025_postgresql_database: str,
 ) -> None:
     heads = _run_alembic(plan025_postgresql_database, "heads")
-    assert heads.stdout.strip() == "9f2a1b6c3d05 (head)"
+    assert heads.stdout.strip() == "b7e31a4c9d20 (head)"
     _run_alembic(plan025_postgresql_database, "upgrade", "head")
     engine = sa_create_engine(plan025_postgresql_database)
     try:
