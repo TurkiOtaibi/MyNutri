@@ -1,6 +1,51 @@
 import { formatLongArabicDate } from "@/lib/dates";
 import { defaultUnitLabels, formatServingMacro, unitBasisLabels } from "@/lib/food";
-import type { DiaryEntryResponse, FoodPickerItem, MealType, NutritionSnapshot, NutritionTotals } from "@/lib/types";
+import type { DiaryDayStatusResponse, DiaryEntryResponse, DiaryLoggingStatus, FoodPickerItem, MealType, NutritionSnapshot, NutritionTotals } from "@/lib/types";
+
+export const dayLoggingStatusLabels: Record<DiaryLoggingStatus, string> = {
+  unregistered: "غير مسجل",
+  partial: "التسجيل غير مكتمل",
+  complete: "تم تسجيل اليوم"
+};
+
+export type StatusCommandAttempt = {
+  action: "complete" | "reopen";
+  expectedVersion: number;
+  idempotencyKey: string;
+};
+
+export function stableStatusCommandAttempt(
+  existing: StatusCommandAttempt | null,
+  action: StatusCommandAttempt["action"],
+  expectedVersion: number,
+  createKey: () => string
+): StatusCommandAttempt {
+  if (existing?.action === action) return existing;
+  return { action, expectedVersion, idempotencyKey: createKey() };
+}
+
+export function statusCommandDialogCopy(action: "complete" | "reopen", empty: boolean, pending: boolean) {
+  if (action === "reopen") return {
+    title: "إعادة فتح اليوم؟",
+    description: "يمكنك بعد إعادة الفتح إضافة الوجبات أو تعديلها أو حذفها.",
+    confirmLabel: pending ? "جارٍ الحفظ…" : "إعادة فتح اليوم"
+  };
+  return {
+    title: empty ? "إنهاء يوم دون وجبات؟" : "إنهاء تسجيل اليوم؟",
+    description: empty
+      ? "سيُحتسب هذا اليوم المكتمل على أنه لم يُسجل فيه تناول غذائي. يمكنك إعادة فتحه لاحقًا."
+      : "تأكد من اكتمال وجباتك قبل إنهاء تسجيل اليوم.",
+    confirmLabel: pending ? "جارٍ الحفظ…" : empty ? "إنهاء اليوم دون وجبات" : "إنهاء تسجيل اليوم"
+  };
+}
+
+export function isDayAnalysisEligible(status: DiaryLoggingStatus): boolean {
+  return status === "complete";
+}
+
+export function isFutureDiaryStatus(status: DiaryDayStatusResponse): boolean {
+  return status.date > status.calendar.current_diary_date;
+}
 
 export const mealLabels: Record<MealType, string> = {
   breakfast: "فطور",

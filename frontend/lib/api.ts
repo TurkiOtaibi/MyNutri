@@ -2,6 +2,7 @@ import type {
   AdminDiaryPage,
   DiaryEntryInput,
   DiaryEntryResponse,
+  DiaryDayStatusResponse,
   MealType,
   FoodInput,
   FoodListResponse,
@@ -301,29 +302,63 @@ export function getAdminUserDiary(
 }
 
 export function listDiaryEntries(entryDate: string): Promise<DiaryEntryResponse[]> {
-  return apiFetch<DiaryEntryResponse[]>(`/diary?entry_date=${encodeURIComponent(entryDate)}`);
+  return apiFetch<DiaryEntryResponse[]>(`/diary/entries?entry_date=${encodeURIComponent(entryDate)}`);
 }
 
 export function listDiaryHistory(): Promise<DiaryEntryResponse[]> {
   return apiFetch<DiaryEntryResponse[]>("/diary");
 }
 
-export function createDiaryEntry(payload: DiaryEntryInput, accessToken: string | null | undefined, signal?: AbortSignal): Promise<DiaryEntryResponse> {
-  return apiFetch<DiaryEntryResponse>("/diary", authorizedInit(accessToken, signal, {
+export function createDiaryEntry(payload: DiaryEntryInput, dayVersion: number, accessToken: string | null | undefined, signal?: AbortSignal): Promise<DiaryEntryResponse> {
+  return apiFetch<DiaryEntryResponse>("/diary/entries", authorizedInit(accessToken, signal, {
     method: "POST",
+    headers: { "If-Match": `"day-${dayVersion}"` },
     body: JSON.stringify(payload)
   }));
 }
 
-export function updateDiaryEntry(entryId: string, quantity: number, mealType: MealType, accessToken: string | null | undefined, signal?: AbortSignal): Promise<DiaryEntryResponse> {
-  return apiFetch<DiaryEntryResponse>(`/diary/${entryId}`, authorizedInit(accessToken, signal, {
-    method: "PUT",
+export function updateDiaryEntry(entryId: string, quantity: number, mealType: MealType, dayVersion: number, accessToken: string | null | undefined, signal?: AbortSignal): Promise<DiaryEntryResponse> {
+  return apiFetch<DiaryEntryResponse>(`/diary/entries/${entryId}`, authorizedInit(accessToken, signal, {
+    method: "PATCH",
+    headers: { "If-Match": `"day-${dayVersion}"` },
     body: JSON.stringify({ quantity, meal_type: mealType })
   }));
 }
 
-export function deleteDiaryEntry(entryId: string, accessToken: string | null | undefined, signal?: AbortSignal): Promise<void> {
-  return apiFetch<void>(`/diary/${entryId}`, authorizedInit(accessToken, signal, { method: "DELETE" }));
+export function deleteDiaryEntry(entryId: string, dayVersion: number, accessToken: string | null | undefined, signal?: AbortSignal): Promise<void> {
+  return apiFetch<void>(`/diary/entries/${entryId}`, authorizedInit(accessToken, signal, {
+    method: "DELETE",
+    headers: { "If-Match": `"day-${dayVersion}"` }
+  }));
+}
+
+export function getDiaryDayStatus(
+  diaryDate: string,
+  accessToken: string | null | undefined,
+  signal?: AbortSignal
+): Promise<DiaryDayStatusResponse> {
+  return apiFetch<DiaryDayStatusResponse>(
+    `/diary/days/${diaryDate}/status`,
+    authorizedInit(accessToken, signal)
+  );
+}
+
+export function setDiaryDayStatus(
+  diaryDate: string,
+  action: "complete" | "reopen",
+  expectedVersion: number,
+  idempotencyKey: string,
+  accessToken: string | null | undefined,
+  signal?: AbortSignal
+): Promise<DiaryDayStatusResponse> {
+  return apiFetch<DiaryDayStatusResponse>(`/diary/days/${diaryDate}/${action}`, authorizedInit(accessToken, signal, {
+    method: "PUT",
+    headers: {
+      "Idempotency-Key": idempotencyKey,
+      "If-Match": `"day-${expectedVersion}"`
+    },
+    body: JSON.stringify({ expected_version: expectedVersion })
+  }));
 }
 
 export function getWeekSummary(start: string): Promise<WeekSummary> {

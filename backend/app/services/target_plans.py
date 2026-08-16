@@ -351,7 +351,10 @@ def activate_plan(
 
 
 def _query_target_binding(
-    session: Session, principal: PrincipalContext, requested_date: date
+    session: Session,
+    principal: PrincipalContext,
+    requested_date: date,
+    authoritative_current_date: date,
 ) -> TargetBinding:
     plan = session.exec(
         select(TargetPlan)
@@ -383,16 +386,21 @@ def _query_target_binding(
             LegacyTargetTransitionSnapshot.principal_id == principal.principal_id
         )
     ).first()
-    if profile and any_transition is None and requested_date <= current_diary_date():
+    if profile and any_transition is None and requested_date <= authoritative_current_date:
         return TargetBinding(provenance=TargetProvenance.legacy_unversioned, profile=profile)
     return TargetBinding(provenance=TargetProvenance.no_target_source)
 
 
 def resolve_target_binding(
-    session: Session, principal: PrincipalContext, requested_date: date
+    session: Session,
+    principal: PrincipalContext,
+    requested_date: date,
+    *,
+    authoritative_current_date: date | None = None,
 ) -> TargetBinding:
-    _advance_lifecycle(session, principal.principal_id, current_diary_date())
-    return _query_target_binding(session, principal, requested_date)
+    captured_date = authoritative_current_date or current_diary_date()
+    _advance_lifecycle(session, principal.principal_id, captured_date)
+    return _query_target_binding(session, principal, requested_date, captured_date)
 
 
 def _target_source_response(
@@ -528,8 +536,10 @@ def resolve_week_target_context(
     principal: PrincipalContext,
     week_start: date,
     week_end: date,
+    *,
+    authoritative_current_date: date | None = None,
 ) -> WeekTargetContext:
-    current_date = diary_calendar_authority().current_diary_date
+    current_date = authoritative_current_date or diary_calendar_authority().current_diary_date
     _advance_lifecycle(session, principal.principal_id, current_date)
     session.commit()
     return _load_week_target_context(
@@ -542,8 +552,10 @@ def project_week_target_context(
     principal: PrincipalContext,
     week_start: date,
     week_end: date,
+    *,
+    authoritative_current_date: date | None = None,
 ) -> WeekTargetContext:
-    current_date = diary_calendar_authority().current_diary_date
+    current_date = authoritative_current_date or diary_calendar_authority().current_diary_date
     return _load_week_target_context(
         session, principal, week_start, week_end, current_date
     )
@@ -560,7 +572,8 @@ def resolve_targets(
 def project_targets(
     session: Session, principal: PrincipalContext, requested_date: date
 ) -> TargetSourceResponse:
-    binding = _query_target_binding(session, principal, requested_date)
+    captured_date = current_diary_date()
+    binding = _query_target_binding(session, principal, requested_date, captured_date)
     return _target_source_response(binding, requested_date)
 
 

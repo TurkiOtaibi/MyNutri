@@ -15,7 +15,7 @@ async function certifyDiaryLoadingState(page: Page, authoritativeDate: string) {
   date.setUTCDate(date.getUTCDate() - date.getUTCDay());
   const authoritativeWeekStart = date.toISOString().slice(0, 10);
   const entriesPattern = (url: URL) =>
-    url.origin === apiOrigin && url.pathname === "/diary" && url.searchParams.get("entry_date") === authoritativeDate;
+    url.origin === apiOrigin && url.pathname === "/diary/entries" && url.searchParams.get("entry_date") === authoritativeDate;
   const summaryPattern = (url: URL) =>
     url.origin === apiOrigin && url.pathname === "/diary/week" && url.searchParams.get("start") === authoritativeWeekStart;
   let entriesHits = 0;

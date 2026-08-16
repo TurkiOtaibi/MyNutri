@@ -13,7 +13,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from pydantic import ValidationError
-from sqlalchemy import and_, delete, func, or_
+from sqlalchemy import and_, delete, func, or_, text
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
@@ -444,24 +444,47 @@ def ensure_not_duplicate(
             raise HTTPException(status_code=422, detail=_duplicate_detail())
 
 
-def _lock_food_namespace(session: Session) -> None:
-    """Serialize Food writers before they take an exclusive Food row lock."""
-    session.exec(select(Principal).order_by(Principal.id).with_for_update()).first()
+_FOOD_NAMESPACE_ADVISORY_KEY = 4_666_663_031
+
+
+def _food_namespace_lock(session: Session, *, shared: bool) -> None:
+    """Use one transaction-scoped namespace lock without taking an owner row.
+
+    Keeping this sentinel outside the Principal/Food row namespaces lets Diary
+    writers follow the frozen owner -> target -> day -> namespace -> Food order,
+    while Food writers serialize before locking Food rows.
+    """
+    if session.get_bind().dialect.name != "postgresql":
+        return
+    function = "pg_advisory_xact_lock_shared" if shared else "pg_advisory_xact_lock"
+    session.execute(
+        text(f"SELECT {function}(:lock_key)"),
+        {"lock_key": _FOOD_NAMESPACE_ADVISORY_KEY},
+    )
+
+
+def _lock_food_namespace(
+    session: Session, principal: PrincipalContext
+) -> None:
+    """Lock the actor before serializing Food writers and locking Food rows."""
+    session.exec(
+        select(Principal)
+        .where(Principal.id == principal.principal_id)
+        .with_for_update()
+    ).one()
+    _food_namespace_lock(session, shared=False)
 
 
 def lock_food_namespace_for_logging(session: Session) -> None:
     """Join the Food lock order with a reader-compatible namespace lock.
 
-    Diary capture holds ``FOR KEY SHARE`` on the same namespace sentinel before
-    resolving TargetPlan state or taking ``FOR SHARE`` on Food. Food writers
-    take ``FOR UPDATE`` here first, so neither side can hold Food while waiting
-    for the namespace lock. Concurrent Diary captures remain compatible.
+    Diary capture takes this only after owner/target/day locks and before Food.
+    Food writers first lock their Principal, then take the exclusive advisory
+    lock before Food. This matches Diary's Principal -> namespace -> Food
+    ordering and prevents an implicit Principal foreign-key lock from creating
+    an inversion after the namespace lock is held.
     """
-    session.exec(
-        select(Principal)
-        .order_by(Principal.id)
-        .with_for_update(read=True, key_share=True)
-    ).first()
+    _food_namespace_lock(session, shared=True)
 
 
 def _validated_update_data(
@@ -706,7 +729,7 @@ def get_food_for_update(
 def _create_food_uncommitted(
     session: Session, principal: PrincipalContext, payload: FoodCreate
 ) -> Food:
-    _lock_food_namespace(session)
+    _lock_food_namespace(session, principal)
     data = _persistence_data(payload)
     if payload.id is not None:
         existing = session.exec(
@@ -773,7 +796,7 @@ def _update_food_uncommitted(
     food: Food | None = None,
 ) -> Food:
     if food is None:
-        _lock_food_namespace(session)
+        _lock_food_namespace(session, principal)
         food = get_food_for_update(session, principal, food_id, include_archived=True)
     validated = _validated_update_data(session, principal, food, payload)
     data = _persistence_data(validated)
@@ -819,7 +842,7 @@ def update_food_response(
 def _archive_food_uncommitted(
     session: Session, principal: PrincipalContext, food_id: UUID
 ) -> Food:
-    _lock_food_namespace(session)
+    _lock_food_namespace(session, principal)
     food = get_food_for_update(session, principal, food_id, include_archived=True)
     _archive_locked_food(principal, food)
     session.add(food)
@@ -868,7 +891,7 @@ def _archive_locked_food(
 def _restore_food_uncommitted(
     session: Session, principal: PrincipalContext, food_id: UUID
 ) -> Food:
-    _lock_food_namespace(session)
+    _lock_food_namespace(session, principal)
     food = get_food_for_update(session, principal, food_id, include_archived=True)
     if _enum_value(food.status) == FoodStatus.active.value:
         return food
@@ -908,7 +931,7 @@ def restore_food_response(
 
 
 def delete_food(session: Session, principal: PrincipalContext, food_id: UUID) -> bool:
-    _lock_food_namespace(session)
+    _lock_food_namespace(session, principal)
     food = get_food_for_update(session, principal, food_id, include_archived=True)
     used = session.exec(select(DiaryEntry.id).where(DiaryEntry.food_id == food.id).limit(1)).first()
     if used is not None:

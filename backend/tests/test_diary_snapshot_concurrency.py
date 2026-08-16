@@ -6,7 +6,7 @@ import sys
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
-from threading import Barrier, Event
+from threading import Event
 from time import monotonic
 from uuid import UUID
 
@@ -392,21 +392,28 @@ def test_delete_race_delete_first_prevents_logging_missing_food(postgres_food, m
 
 
 @pytest.mark.migration
-def test_two_concurrent_diary_readers_share_food_lock(postgres_food, monkeypatch) -> None:
+def test_two_same_owner_diary_writers_serialize_before_food_snapshot(
+    postgres_food, monkeypatch
+) -> None:
     engine, food_id = postgres_food
-    readers = Barrier(2, timeout=10)
+    locked = Event()
+    release = Event()
     original = diary_service._create_snapshot_v3_from_locked_food
 
-    def synchronized_builder(session, food):
-        readers.wait()
+    def paused_builder(session, food):
+        locked.set()
+        assert release.wait(10)
         return original(session, food)
 
     monkeypatch.setattr(
-        diary_service, "_create_snapshot_v3_from_locked_food", synchronized_builder
+        diary_service, "_create_snapshot_v3_from_locked_food", paused_builder
     )
     with ThreadPoolExecutor(max_workers=2) as executor:
-        first = executor.submit(_log, engine, food_id, "reader-one")
-        second = executor.submit(_log, engine, food_id, "reader-two")
+        first = executor.submit(_log, engine, food_id, "writer-one")
+        assert locked.wait(10)
+        second = executor.submit(_log, engine, food_id, "writer-two")
+        _wait_for_lock_wait(engine, "writer-two")
+        release.set()
         first_id = first.result(timeout=15)
         second_id = second.result(timeout=15)
 

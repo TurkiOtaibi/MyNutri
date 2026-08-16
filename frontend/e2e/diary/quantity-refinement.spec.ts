@@ -33,7 +33,7 @@ test.describe("@diary quantity and UX refinement", () => {
   test("@p0 plus and minus adjust predictably, respect minimum, and never submit", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Stepper Controls"), default_unit_type: "piece" });
     let posts = 0;
-    await page.route("**/diary", async (route) => {
+    await page.route("**/diary/entries", async (route) => {
       if (route.request().method() === "POST") posts += 1;
       return route.continue();
     });
@@ -89,7 +89,7 @@ test.describe("@diary quantity and UX refinement", () => {
 
   test("@p0 quantity remains stable after search rerender and failed save", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Stable Quantity") });
-    await page.route("**/diary", (route) => route.request().method() === "POST" ? route.abort("failed") : route.continue());
+    await page.route("**/diary/entries", (route) => route.request().method() === "POST" ? route.abort("failed") : route.continue());
     await page.goto("/diary");
     const { dialog } = await openAddAndSelect(page, food.name);
     await dialog.getByRole("textbox", { name: "الكمية", exact: true }).fill("2.25");

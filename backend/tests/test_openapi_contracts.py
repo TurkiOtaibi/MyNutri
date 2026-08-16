@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from typing import get_type_hints
 
+import pytest
+from fastapi import HTTPException
 from pydantic import TypeAdapter
 
-from app.api.routes.diary import add_entry, edit_entry
+from app.api.routes.diary import _command_expected_version, add_entry, edit_entry
 from app.api.routes.foods import add_food, edit_food
 from app.main import app
 from app.nutrition_rules.manifest import registry_response
-from app.schemas import NutritionRegistryResponse
+from app.schemas import DiaryDayStatusCommand, NutritionRegistryResponse
 
 
 def _request_schema(path: str, method: str) -> dict[str, object]:
@@ -69,3 +71,63 @@ def test_registry_openapi_is_typed_without_changing_runtime_payload() -> None:
         "nutrients"
     ]
     assert validated.nova.model_dump(mode="json") == runtime_payload["nova"]
+
+
+def test_day_logging_status_openapi_is_structured_and_admin_is_read_only() -> None:
+    schema = app.openapi()
+    paths = schema["paths"]
+    components = schema["components"]["schemas"]
+
+    assert paths["/diary/days/{diary_date}/status"]["get"]["responses"]["200"]
+    for action in ("complete", "reopen"):
+        operation = paths[f"/diary/days/{{diary_date}}/{action}"]["put"]
+        body = operation["requestBody"]["content"]["application/json"]["schema"]
+        assert body == {"$ref": "#/components/schemas/DiaryDayStatusCommand"}
+        headers = {
+            item["name"]: item
+            for item in operation["parameters"]
+            if item["in"] == "header"
+        }
+        assert headers["If-Match"]["required"] is False
+    response = components["DiaryDayStatusResponse"]
+    assert set(response["required"]) == {
+        "date",
+        "logging_status",
+        "logging_status_version",
+        "entry_count",
+        "analysis_eligible",
+        "completed_at",
+        "calendar",
+    }
+    assert set(components["DiaryLoggingStatus"]["enum"]) == {
+        "unregistered",
+        "partial",
+        "complete",
+    }
+    admin_path = paths["/admin/users/{principal_id}/diary-days"]
+    assert set(admin_path) == {"get"}
+    assert not any(
+        path.startswith("/admin/") and path.endswith(("/complete", "/reopen"))
+        for path in paths
+    )
+    for path, method in (
+        ("/diary/entries", "post"),
+        ("/diary/entries/{entry_id}", "patch"),
+        ("/diary/entries/{entry_id}", "delete"),
+    ):
+        headers = {
+            item["name"]: item
+            for item in paths[path][method]["parameters"]
+            if item["in"] == "header"
+        }
+        assert headers["If-Match"]["required"] is True
+
+
+def test_day_command_if_match_must_agree_with_body_version() -> None:
+    payload = DiaryDayStatusCommand(expected_version=7)
+    assert _command_expected_version(payload, None) == 7
+    assert _command_expected_version(payload, '"day-7"') == 7
+    with pytest.raises(HTTPException) as mismatch:
+        _command_expected_version(payload, '"day-8"')
+    assert mismatch.value.status_code == 422
+    assert mismatch.value.detail["code"] == "VALIDATION_ERROR"

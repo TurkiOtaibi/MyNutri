@@ -221,7 +221,9 @@ def _assert_plan015_read_only_query_budget(session: Session, count: int) -> None
 
     assert len(summary.days) == 7
     assert sum(len(day.nutrient_aggregates) > 0 for day in summary.days) == 7
-    assert len(statements) == 5
+    # PLAN 031 adds two bounded projections: persisted day rows and legacy
+    # entry-date counts. The budget remains constant as entry volume changes.
+    assert len(statements) == 7
 
 
 @pytest.mark.parametrize("entry_count", [0, 1, 7])
@@ -257,7 +259,9 @@ def test_plan015_owner_week_advances_and_commits_once(
         authority_calls = 0
         commit_calls = 0
         real_advance = target_plan_service._advance_lifecycle
-        real_authority = target_plan_service.diary_calendar_authority
+        from app.services import aggregation as aggregation_service
+
+        real_authority = aggregation_service.diary_calendar_authority
         real_commit = session.commit
 
         def capture_advance(*args, **kwargs) -> None:
@@ -279,7 +283,7 @@ def test_plan015_owner_week_advances_and_commits_once(
             "app.services.target_plans._advance_lifecycle", capture_advance
         )
         monkeypatch.setattr(
-            "app.services.target_plans.diary_calendar_authority",
+            "app.services.aggregation.diary_calendar_authority",
             capture_authority,
         )
         monkeypatch.setattr(session, "commit", capture_commit)
@@ -290,7 +294,7 @@ def test_plan015_owner_week_advances_and_commits_once(
     assert advance_calls == 1
     assert authority_calls == 1
     assert commit_calls == 1
-    assert len(statements) == 6
+    assert len(statements) == 8
 
 
 @pytest.fixture
@@ -341,4 +345,6 @@ def test_plan015_postgresql_admin_week_query_budget_is_fixed(
             PRINCIPAL,
             date(2026, 7, 12),
         )
-    assert len(statements) == 6
+    # PLAN 031 adds the persisted day-status and legacy entry-count range
+    # projections. The budget remains fixed as entry volume changes.
+    assert len(statements) == 8

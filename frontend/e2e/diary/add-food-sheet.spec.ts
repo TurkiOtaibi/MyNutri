@@ -422,7 +422,7 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     const trigger = page.getByRole("button", { name: "إضافة طعام إلى فطور" });
     let posts = 0;
     const createPayloads: Array<Record<string, unknown>> = [];
-    await page.route("**/diary", async (route) => {
+    await page.route("**/diary/entries", async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       posts += 1;
       createPayloads.push(route.request().postDataJSON() as Record<string, unknown>);
@@ -446,7 +446,7 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
 
   test("@p0 failed save preserves Food, meal, quantity and provides Retry", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Modern failed save") });
-    await page.route("**/diary", (route) => route.request().method() === "POST" ? route.abort("failed") : route.continue());
+    await page.route("**/diary/entries", (route) => route.request().method() === "POST" ? route.abort("failed") : route.continue());
     const dialog = await openGeneral(page);
     await selectFood(page, food.name);
     await dialog.getByRole("radio", { name: "سناك" }).click();
@@ -545,7 +545,7 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     const releaseResponse = deferred();
     const apiOrigin = new URL(API_URL).origin;
     let postCount = 0;
-    await page.route((url) => url.origin === apiOrigin && url.pathname === "/diary", async (route) => {
+    await page.route((url) => url.origin === apiOrigin && url.pathname === "/diary/entries", async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       postCount += 1;
       requestStarted.resolve();

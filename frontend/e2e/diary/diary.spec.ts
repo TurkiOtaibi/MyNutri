@@ -102,7 +102,7 @@ test.describe("@diary daily-use redesign", () => {
 
   test("@p0 failed save preserves Food and quantity input", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Failed Diary Save") });
-    await page.route("**/diary", (route) => {
+    await page.route("**/diary/entries", (route) => {
       if (route.request().method() === "POST") return route.abort("failed");
       return route.continue();
     });
@@ -123,7 +123,7 @@ test.describe("@diary daily-use redesign", () => {
   test("@p0 duplicate save submission sends one POST", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Single Submit") });
     let postCount = 0;
-    await page.route("**/diary", async (route) => {
+    await page.route("**/diary/entries", async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       postCount += 1;
       await new Promise((resolve) => setTimeout(resolve, 350));
@@ -179,7 +179,7 @@ test.describe("@diary daily-use redesign", () => {
   test("@p1 day read error is distinct from empty state and Retry repeats the request", async ({ page }) => {
     let failed = true;
     let requestCount = 0;
-    await page.route("**/diary?entry_date=*", async (route) => {
+    await page.route("**/diary/entries?entry_date=*", async (route) => {
       requestCount += 1;
       if (failed) return route.abort("failed");
       return route.continue();

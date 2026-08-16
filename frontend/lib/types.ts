@@ -35,6 +35,7 @@ export type TargetResponse = Omit<
 export type NutrientTargetType = OpenApi.AdditionalNutrientTarget["target_type"];
 export type AdditionalNutrientTarget = DeepRequired<OpenApi.AdditionalNutrientTarget>;
 export type CalculationWarning = OpenApi.CalculationWarningResponse;
+export type CalendarAuthorityResponse = DeepRequired<OpenApi.CalendarAuthorityResponse>;
 
 /** Editable Profile domain input mapped to the generated transport request. */
 export type ProfileInput = Required<
@@ -99,6 +100,8 @@ export type DiaryEntryResponse = Omit<DeepRequired<OpenApi.DiaryEntryResponse>, 
 };
 export type AdminDiaryPage = DeepRequired<OpenApi.AdminDiaryPage>;
 export type AdminDiaryItem = DeepRequired<OpenApi.AdminDiaryItem>;
+export type DiaryLoggingStatus = OpenApi.DiaryLoggingStatus;
+export type DiaryDayStatusResponse = DeepRequired<OpenApi.DiaryDayStatusResponse>;
 export type DaySummary = Omit<DeepRequired<OpenApi.DaySummary>, "totals" | "targets"> & {
   totals: NutritionTotals;
   targets: TargetResponse | null;
