@@ -13,7 +13,7 @@ function sundayStart(input: string): string {
 
 function isExactDiaryResponse(
   response: Response,
-  pathname: "/diary" | "/diary/week",
+  pathname: "/diary/entries" | "/diary/week",
   queryKey: "entry_date" | "start",
   queryValue: string
 ) {
@@ -30,7 +30,7 @@ function isExactDiaryResponse(
 async function navigateToAuthoritativeDiary(page: Page, value: string) {
   const weekStart = sundayStart(value);
   const entriesResponse = page.waitForResponse((response) =>
-    isExactDiaryResponse(response, "/diary", "entry_date", value)
+    isExactDiaryResponse(response, "/diary/entries", "entry_date", value)
   );
   const weekResponse = page.waitForResponse((response) =>
     isExactDiaryResponse(response, "/diary/week", "start", weekStart)
@@ -115,8 +115,8 @@ test.describe("@diary @page-refinement compact Diary page", () => {
       (element as HTMLElement).style.getPropertyValue("--day-progress")
     );
 
-    await expect(days.nth(0).locator("small")).toHaveText("500");
-    await expect(days.nth(2).locator("small")).toHaveText("500");
+    await expect(days.nth(0).locator("small")).toHaveText("○ 500 · غير مسجل");
+    await expect(days.nth(2).locator("small")).toHaveText("○ 500 · غير مسجل");
     await expect(days.nth(2).locator("i")).toHaveCount(0);
     expect(await progress(0)).toBe("50%");
     expect(await progress(1)).toBe("25%");
@@ -242,7 +242,7 @@ test.describe("@diary @page-refinement compact Diary page", () => {
     await expect(dialog).toContainText("سيُحذف هذا الطعام من سجل اليوم.");
     await dialog.getByRole("button", { name: "إبقاء الطعام" }).click();
     await expect(row).toBeVisible();
-    await page.route("**/diary/*", (route) => route.request().method() === "DELETE" ? route.abort("failed") : route.continue());
+    await page.route("**/diary/entries/*", (route) => route.request().method() === "DELETE" ? route.abort("failed") : route.continue());
     await page.getByRole("button", { name: `خيارات ${food.name}` }).click();
     await page.getByRole("menuitem", { name: "حذف" }).click();
     const failedDialog = page.getByRole("dialog", { name: "حذف الطعام؟" });
@@ -253,7 +253,7 @@ test.describe("@diary @page-refinement compact Diary page", () => {
 
   test("@p1 date loading and error states preserve navigation and avoid mismatched empty data", async ({ page }) => {
     let fail = false;
-    await page.route("**/diary?entry_date=*", async (route) => {
+    await page.route("**/diary/entries?entry_date=*", async (route) => {
       if (fail) return route.abort("failed");
       await new Promise((resolve) => setTimeout(resolve, 500));
       return route.continue();

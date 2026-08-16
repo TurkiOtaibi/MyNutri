@@ -21,14 +21,14 @@ async function selectHistoricalDiaryDate(page: Page, value: string) {
   const matchedEntries: string[] = [];
   const matchedWeeks: string[] = [];
   const recordMatch = (response: Response) => {
-    if (isExactDiaryResponse(response, "/diary", "entry_date", value)) matchedEntries.push(response.url());
+    if (isExactDiaryResponse(response, "/diary/entries", "entry_date", value)) matchedEntries.push(response.url());
     if (isExactDiaryResponse(response, "/diary/week", "start", weekStart)) matchedWeeks.push(response.url());
   };
   page.on("response", recordMatch);
 
   try {
     const entriesResponse = page.waitForResponse((response) =>
-      isExactDiaryResponse(response, "/diary", "entry_date", value)
+      isExactDiaryResponse(response, "/diary/entries", "entry_date", value)
     );
     const weekResponse = page.waitForResponse((response) =>
       isExactDiaryResponse(response, "/diary/week", "start", weekStart)

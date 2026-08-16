@@ -8,7 +8,7 @@ const apiOrigin = new URL(API_URL).origin;
 
 function isExactDiaryResponse(
   response: Response,
-  pathname: "/diary" | "/diary/week",
+  pathname: "/diary/entries" | "/diary/week",
   queryKey: "entry_date" | "start",
   queryValue: string
 ) {
@@ -25,7 +25,7 @@ function isExactDiaryResponse(
 async function navigateToSnapshotDiary(page: Page, value: string, entryId: string) {
   const weekStart = weekStartSunday(value);
   const entriesResponse = page.waitForResponse((response) =>
-    isExactDiaryResponse(response, "/diary", "entry_date", value)
+    isExactDiaryResponse(response, "/diary/entries", "entry_date", value)
   );
   const weekResponse = page.waitForResponse((response) =>
     isExactDiaryResponse(response, "/diary/week", "start", weekStart)

@@ -69,7 +69,7 @@ test.describe("@diary day logging status", () => {
   test("@p0 Arabic status UI is reachable, non-color, and mobile-safe", async ({ page }) => {
     await page.goto("/diary");
     await expect(page.getByRole("heading", { name: "حالة تسجيل اليوم" })).toBeVisible();
-    await expect(page.getByText(/غير مسجل|التسجيل غير مكتمل|تم تسجيل اليوم/)).toBeVisible();
+    await expect(page.locator(".day-status-card strong")).toHaveText(/غير مسجل|التسجيل غير مكتمل|تم تسجيل اليوم/);
     await expect(page.locator(".day-status-card strong span[aria-hidden=true]")).toBeVisible();
     await expect(page.locator(".day-status-card")).toHaveAttribute("aria-label", /، (غير مسجل|التسجيل غير مكتمل|تم تسجيل اليوم)$/);
     for (const width of [320, 360, 390, 430]) {

@@ -109,6 +109,12 @@ export type FoodRecord = Omit<FoodPayload, "nutrition_source" | "nova" | "group_
   group_contributions: Array<FoodPayload["group_contributions"][number] & { food_group_rules_version: string }>;
 };
 
+type DiaryDayStatus = {
+  date: string;
+  logging_status: "unregistered" | "partial" | "complete";
+  logging_status_version: number;
+};
+
 export function uniqueName(label = "Food"): string {
   return `E2E-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -165,12 +171,36 @@ export function validFood(overrides: Partial<FoodPayload> = {}): FoodPayload {
 
 export class FoodsApi {
   private readonly foodIds = new Set<string>();
-  private readonly diaryIds = new Set<string>();
+  private readonly diaryIds = new Map<string, string>();
 
   constructor(private readonly request: APIRequestContext) {}
 
   private headers() {
     return { Authorization: `Bearer ${readFileSync(TOKEN_FILE, "utf8").trim()}` };
+  }
+
+  private async dayStatus(entryDate: string): Promise<DiaryDayStatus> {
+    const response = await this.request.get(`${API_URL}/diary/days/${entryDate}/status`, {
+      headers: this.headers()
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    return response.json() as Promise<DiaryDayStatus>;
+  }
+
+  private async writableDayStatus(entryDate: string): Promise<DiaryDayStatus> {
+    const status = await this.dayStatus(entryDate);
+    if (status.logging_status !== "complete") return status;
+
+    const response = await this.request.put(`${API_URL}/diary/days/${entryDate}/reopen`, {
+      headers: {
+        ...this.headers(),
+        "Idempotency-Key": `e2e-reopen-${crypto.randomUUID()}`,
+        "If-Match": `"day-${status.logging_status_version}"`
+      },
+      data: { expected_version: status.logging_status_version }
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    return response.json() as Promise<DiaryDayStatus>;
   }
 
   async create(payload: Partial<FoodPayload> = {}): Promise<FoodRecord> {
@@ -212,18 +242,22 @@ export class FoodsApi {
   }
 
   async createDiary(foodId: string, entryDate: string, quantity = 1, mealType = "breakfast") {
-    const response = await this.request.post(`${API_URL}/diary`, {
-      headers: this.headers(),
+    const status = await this.writableDayStatus(entryDate);
+    const response = await this.request.post(`${API_URL}/diary/entries`, {
+      headers: {
+        ...this.headers(),
+        "If-Match": `"day-${status.logging_status_version}"`
+      },
       data: { food_id: foodId, entry_date: entryDate, quantity, meal_type: mealType }
     });
     expect(response.status(), await response.text()).toBe(201);
     const entry = (await response.json()) as { id: string; nutrition_snapshot: { name: string }; totals: { calories: number } };
-    this.diaryIds.add(entry.id);
+    this.diaryIds.set(entry.id, entryDate);
     return entry;
   }
 
   async listDiary(entryDate: string) {
-    const response = await this.request.get(`${API_URL}/diary?entry_date=${entryDate}`, { headers: this.headers() });
+    const response = await this.request.get(`${API_URL}/diary/entries?entry_date=${entryDate}`, { headers: this.headers() });
     expect(response.status()).toBe(200);
     return response.json() as Promise<Array<{ id: string; nutrition_snapshot: { name: string }; totals: { calories: number } }>>;
   }
@@ -231,15 +265,22 @@ export class FoodsApi {
   async cleanup(): Promise<void> {
     const diaryResponse = await this.request.get(`${API_URL}/diary`, { headers: this.headers() });
     if (diaryResponse.ok()) {
-      const entries = (await diaryResponse.json()) as Array<{ id: string; nutrition_snapshot?: { name?: string } }>;
+      const entries = (await diaryResponse.json()) as Array<{ id: string; entry_date: string; nutrition_snapshot?: { name?: string } }>;
       for (const entry of entries) {
         if (entry.nutrition_snapshot?.name?.startsWith("E2E-")) {
-          await this.request.delete(`${API_URL}/diary/${entry.id}`, { headers: this.headers() });
+          this.diaryIds.set(entry.id, entry.entry_date);
         }
       }
     }
-    for (const id of this.diaryIds) {
-      await this.request.delete(`${API_URL}/diary/${id}`, { headers: this.headers() });
+    for (const [id, entryDate] of this.diaryIds) {
+      const status = await this.writableDayStatus(entryDate);
+      const response = await this.request.delete(`${API_URL}/diary/entries/${id}`, {
+        headers: {
+          ...this.headers(),
+          "If-Match": `"day-${status.logging_status_version}"`
+        }
+      });
+      expect([204, 404]).toContain(response.status());
     }
     for (const id of this.foodIds) {
       await this.request.delete(`${API_URL}/foods/${id}`, { headers: this.headers() });
