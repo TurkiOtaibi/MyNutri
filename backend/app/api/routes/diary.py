@@ -48,6 +48,21 @@ def _expected_version(if_match: str | None) -> int | None:
     return int(value[4:])
 
 
+def _command_expected_version(
+    payload: DiaryDayStatusCommand, if_match: str | None
+) -> int:
+    header_version = _expected_version(if_match)
+    if header_version is not None and header_version != payload.expected_version:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "VALIDATION_ERROR",
+                "message_ar": "يجب أن يتطابق إصدار اليوم في الرأس ومحتوى الطلب.",
+            },
+        )
+    return payload.expected_version
+
+
 @router.get("/entries", response_model=list[DiaryEntryResponse])
 @router.get("", response_model=list[DiaryEntryResponse], include_in_schema=False)
 def read_entries(
@@ -227,6 +242,7 @@ def _day_command(
     principal: PrincipalContext,
     session: Session,
     response: Response,
+    if_match: str | None,
 ) -> DiaryDayStatusResponse:
     try:
         result, replayed = command_day_status(
@@ -234,7 +250,7 @@ def _day_command(
             principal,
             diary_date,
             operation,
-            payload.expected_version,
+            _command_expected_version(payload, if_match),
             idempotency_key,
             diary_calendar_authority(),
         )
@@ -263,11 +279,12 @@ def complete_day(
     payload: DiaryDayStatusCommand,
     response: Response,
     idempotency_key: str = Header(alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
     principal: PrincipalContext = Depends(get_principal_context),
     session: Session = Depends(get_session),
 ) -> DiaryDayStatusResponse:
     return _day_command(
-        diary_date, "complete", payload, idempotency_key, principal, session, response
+        diary_date, "complete", payload, idempotency_key, principal, session, response, if_match
     )
 
 
@@ -277,9 +294,10 @@ def reopen_day(
     payload: DiaryDayStatusCommand,
     response: Response,
     idempotency_key: str = Header(alias="Idempotency-Key"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
     principal: PrincipalContext = Depends(get_principal_context),
     session: Session = Depends(get_session),
 ) -> DiaryDayStatusResponse:
     return _day_command(
-        diary_date, "reopen", payload, idempotency_key, principal, session, response
+        diary_date, "reopen", payload, idempotency_key, principal, session, response, if_match
     )

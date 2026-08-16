@@ -18,7 +18,8 @@ test.describe("@diary day logging status", () => {
       const reopen = await request.put(`${API_URL}/diary/days/${diaryDate}/reopen`, {
         headers: {
           Authorization: `Bearer ${API_TOKEN}`,
-          "Idempotency-Key": `e2e-reopen-${crypto.randomUUID()}`
+          "Idempotency-Key": `e2e-reopen-${crypto.randomUUID()}`,
+          "If-Match": `"day-${before.logging_status_version}"`
         },
         data: { expected_version: before.logging_status_version }
       });
@@ -31,7 +32,7 @@ test.describe("@diary day logging status", () => {
     const readyStatus = await ready.json();
     const key = `e2e-complete-${crypto.randomUUID()}`;
     const complete = await request.put(`${API_URL}/diary/days/${diaryDate}/complete`, {
-      headers: { Authorization: `Bearer ${API_TOKEN}`, "Idempotency-Key": key },
+      headers: { Authorization: `Bearer ${API_TOKEN}`, "Idempotency-Key": key, "If-Match": `"day-${readyStatus.logging_status_version}"` },
       data: { expected_version: readyStatus.logging_status_version }
     });
     expect(complete.ok()).toBe(true);
@@ -43,7 +44,7 @@ test.describe("@diary day logging status", () => {
     });
 
     const replay = await request.put(`${API_URL}/diary/days/${diaryDate}/complete`, {
-      headers: { Authorization: `Bearer ${API_TOKEN}`, "Idempotency-Key": key },
+      headers: { Authorization: `Bearer ${API_TOKEN}`, "Idempotency-Key": key, "If-Match": `"day-${readyStatus.logging_status_version}"` },
       data: { expected_version: readyStatus.logging_status_version }
     });
     expect(replay.ok()).toBe(true);
@@ -53,7 +54,8 @@ test.describe("@diary day logging status", () => {
     const reopened = await request.put(`${API_URL}/diary/days/${diaryDate}/reopen`, {
       headers: {
         Authorization: `Bearer ${API_TOKEN}`,
-        "Idempotency-Key": `e2e-reopen-${crypto.randomUUID()}`
+        "Idempotency-Key": `e2e-reopen-${crypto.randomUUID()}`,
+        "If-Match": `"day-${completed.logging_status_version}"`
       },
       data: { expected_version: completed.logging_status_version }
     });
@@ -64,11 +66,40 @@ test.describe("@diary day logging status", () => {
     });
   });
 
-  test("@p0 Arabic status UI is reachable and mobile-safe", async ({ page }) => {
-    await page.setViewportSize({ width: 320, height: 800 });
+  test("@p0 Arabic status UI is reachable, non-color, and mobile-safe", async ({ page }) => {
     await page.goto("/diary");
     await expect(page.getByRole("heading", { name: "حالة تسجيل اليوم" })).toBeVisible();
     await expect(page.getByText(/غير مسجل|التسجيل غير مكتمل|تم تسجيل اليوم/)).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await expect(page.locator(".day-status-card strong span[aria-hidden=true]")).toBeVisible();
+    await expect(page.locator(".day-status-card")).toHaveAttribute("aria-label", /، (غير مسجل|التسجيل غير مكتمل|تم تسجيل اليوم)$/);
+    for (const width of [320, 360, 390, 430]) {
+      await page.setViewportSize({ width, height: 800 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    }
+  });
+
+  test("@p0 an ambiguous command retry preserves its idempotency key and body", async ({ page }) => {
+    const requests: Array<{ key: string | null; body: string | null }> = [];
+    let attempt = 0;
+    await page.route(/\/diary\/days\/\d{4}-\d{2}-\d{2}\/(complete|reopen)$/, async (route) => {
+      requests.push({
+        key: route.request().headers()["idempotency-key"] ?? null,
+        body: route.request().postData()
+      });
+      const response = await route.fetch();
+      attempt += 1;
+      if (attempt === 1) await route.abort("connectionfailed");
+      else await route.fulfill({ response });
+    });
+
+    await page.goto("/diary");
+    await page.locator(".day-status-card button").click();
+    const dialog = page.locator(".diary-modal-panel");
+    await dialog.locator(".btn.danger").click();
+    await expect(dialog.getByText("تعذر حفظ حالة اليوم. لم تُفقد بياناتك؛ حاول مجددًا.")).toBeVisible();
+    await dialog.locator(".btn.danger").click();
+    await expect(dialog).toBeHidden();
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toEqual(requests[0]);
   });
 });

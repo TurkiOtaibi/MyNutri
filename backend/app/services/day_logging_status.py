@@ -3,9 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from copy import deepcopy
 from datetime import date, timedelta
-from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -27,94 +25,6 @@ from app.models import (
 from app.schemas import CalendarAuthorityResponse, DiaryDayStatusResponse
 
 _KEY_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
-
-
-def evaluate_status_event(
-    state: dict[str, Any],
-    event: dict[str, Any],
-    replays: dict[tuple[str, str], dict[str, Any]],
-) -> dict[str, Any]:
-    """Deterministic state oracle shared by acceptance tests and transition design.
-
-    It is event-generic (never vector-name-specific) and mirrors the persisted
-    command invariants used below: future guard, replay, version, complete-day
-    write guard, and explicit complete/reopen transitions.
-    """
-    def public_status() -> str:
-        if state["record"]:
-            return state["persisted_status"]
-        return "partial" if state["entry_count"] else "unregistered"
-
-    def result(name: str) -> dict[str, Any]:
-        return {
-            "result": name,
-            "public_status": public_status(),
-            "persisted_status": state["persisted_status"] if state["record"] else None,
-            "entry_count": state["entry_count"],
-            "version": state["version"],
-        }
-
-    kind = event["type"]
-    if kind == "read":
-        return result("projected")
-    if event.get("date_relation", "current") == "future":
-        return result("future_rejected")
-    key = event.get("idempotency_key")
-    replay_key = (kind, key) if key else None
-    identity = {"type": kind, "expected_version": event.get("expected_version")}
-    if replay_key and replay_key in replays:
-        replay = replays[replay_key]
-        if replay["request"] != identity:
-            return result("idempotency_key_conflict")
-        value = deepcopy(replay["response"])
-        value["result"] = "replayed"
-        return value
-    if event.get("expected_version") != state["version"]:
-        return result("stale_version_conflict")
-    current = public_status()
-    if kind in {"create_entry", "edit_entry", "delete_entry"} and current == "complete":
-        value = result("day_complete_conflict")
-    elif kind == "create_entry":
-        state.update(record=True, persisted_status="partial")
-        state["entry_count"] += 1
-        state["version"] += 1
-        value = result("created")
-    elif kind in {"edit_entry", "delete_entry"} and state["entry_count"] == 0:
-        value = result("entry_not_found")
-    elif kind == "edit_entry":
-        state.update(record=True, persisted_status="partial")
-        state["version"] += 1
-        value = result("edited")
-    elif kind == "delete_entry":
-        state.update(record=True, persisted_status="partial")
-        state["entry_count"] -= 1
-        state["version"] += 1
-        value = result("deleted")
-    elif kind == "complete":
-        if current == "complete":
-            value = result("no_change")
-        else:
-            state.update(record=True, persisted_status="complete")
-            state["version"] += 1
-            value = result("completed")
-    elif kind == "reopen":
-        if current != "complete":
-            value = result("no_change")
-        else:
-            state.update(record=True, persisted_status="partial")
-            state["version"] += 1
-            value = result("reopened")
-    else:
-        raise ValueError(f"Unknown day-status event: {kind}")
-    if replay_key and value["result"] not in {
-        "future_rejected",
-        "stale_version_conflict",
-        "day_complete_conflict",
-        "entry_not_found",
-        "idempotency_key_conflict",
-    }:
-        replays[replay_key] = {"request": identity, "response": deepcopy(value)}
-    return value
 
 
 def _error(status_code: int, code: str, message_ar: str, **extra: object) -> HTTPException:

@@ -353,7 +353,10 @@ export function setDiaryDayStatus(
 ): Promise<DiaryDayStatusResponse> {
   return apiFetch<DiaryDayStatusResponse>(`/diary/days/${diaryDate}/${action}`, authorizedInit(accessToken, signal, {
     method: "PUT",
-    headers: { "Idempotency-Key": idempotencyKey },
+    headers: {
+      "Idempotency-Key": idempotencyKey,
+      "If-Match": `"day-${expectedVersion}"`
+    },
     body: JSON.stringify({ expected_version: expectedVersion })
   }));
 }

@@ -1856,6 +1856,8 @@ export namespace Diary {
     export type RequestHeaders = {
       /** Idempotency-Key */
       "Idempotency-Key": string;
+      /** If-Match */
+      "If-Match"?: string | null;
     };
     export type ResponseBody = DiaryDayStatusResponse;
   }
@@ -2020,6 +2022,8 @@ export namespace Diary {
     export type RequestHeaders = {
       /** Idempotency-Key */
       "Idempotency-Key": string;
+      /** If-Match */
+      "If-Match"?: string | null;
     };
     export type ResponseBody = DiaryDayStatusResponse;
   }
