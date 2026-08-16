@@ -1,0 +1,255 @@
+{
+  "schema_version": 1,
+  "seed": 3302026,
+  "rules_version": "w3-priority-1.0.0",
+  "copy_version": "w3-priority-ar-1.0.0",
+  "selection_vectors": [
+    {
+      "name": "invalid-input-fails-closed",
+      "input_state": "invalid_analysis_input",
+      "calories_relation": "within_target",
+      "candidates": [],
+      "expected": {"main": null, "secondary": null, "reason": "invalid_analysis_input"}
+    },
+    {
+      "name": "complete-empty-days-are-valid-zero-evidence",
+      "input_state": "eligible",
+      "complete_days": 4,
+      "calories_relation": "within_target",
+      "candidates": [
+        {"key": "fiber_gap", "tier": 2, "severity": 0.40, "coverage": 100, "persistent_weeks": 1, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
+      ],
+      "expected": {"main": "fiber_gap", "secondary": null, "reason": "selected"}
+    },
+    {
+      "name": "limit-precedes-larger-positive-gap",
+      "input_state": "eligible",
+      "complete_days": 6,
+      "calories_relation": "within_target",
+      "candidates": [
+        {"key": "fiber_gap", "tier": 2, "severity": 0.70, "coverage": 95, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170, "secondary_justified": true},
+        {"key": "sodium_overage", "tier": 1, "severity": 0.15, "repeat_events": 3, "coverage": 90, "actionable": true, "conflict_group": "sodium", "taxonomy_order": 10}
+      ],
+      "expected": {"main": "sodium_overage", "secondary": "fiber_gap", "reason": "selected"}
+    },
+    {
+      "name": "single-limit-overage-is-not-repeated",
+      "input_state": "eligible",
+      "complete_days": 5,
+      "calories_relation": "within_target",
+      "candidates": [
+        {"key": "sodium_overage", "tier": 1, "severity": 0.50, "repeat_events": 1, "coverage": 100, "actionable": true, "conflict_group": "sodium", "taxonomy_order": 10}
+      ],
+      "expected": {"main": null, "secondary": null, "reason": "no_eligible_priority"}
+    },
+    {
+      "name": "micronutrient-requires-two-weeks",
+      "input_state": "eligible",
+      "complete_days": 7,
+      "calories_relation": "within_target",
+      "candidates": [
+        {"key": "iron_gap", "tier": 3, "severity": 0.60, "coverage": 90, "persistent_weeks": 1, "actionable": true, "conflict_group": "iron", "taxonomy_order": 230}
+      ],
+      "expected": {"main": null, "secondary": null, "reason": "no_eligible_priority"}
+    },
+    {
+      "name": "micronutrient-with-persistent-strong-evidence",
+      "input_state": "eligible",
+      "complete_days": 7,
+      "calories_relation": "within_target",
+      "candidates": [
+        {"key": "iron_gap", "tier": 3, "severity": 0.35, "coverage": 90, "persistent_weeks": 2, "actionable": true, "conflict_group": "iron", "taxonomy_order": 230}
+      ],
+      "expected": {"main": "iron_gap", "secondary": null, "reason": "selected"}
+    },
+    {
+      "name": "exact-tie-uses-taxonomy-order",
+      "input_state": "eligible",
+      "complete_days": 6,
+      "calories_relation": "within_target",
+      "candidates": [
+        {"key": "fiber_gap", "tier": 2, "severity": 0.40, "coverage": 90, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170},
+        {"key": "legumes_gap", "tier": 2, "severity": 0.40, "coverage": 90, "actionable": true, "conflict_group": "legumes", "taxonomy_order": 120}
+      ],
+      "expected": {"main": "legumes_gap", "secondary": null, "reason": "selected"}
+    },
+    {
+      "name": "duplicate-evidence-blocks-secondary",
+      "input_state": "eligible",
+      "complete_days": 6,
+      "calories_relation": "within_target",
+      "candidates": [
+        {"key": "added_sugar_overage", "tier": 1, "severity": 0.40, "repeat_events": 3, "coverage": 95, "actionable": true, "conflict_group": "sweet-drinks", "taxonomy_order": 20},
+        {"key": "sugary_drink_frequency", "tier": 1, "severity": 0.35, "repeat_events": 3, "coverage": 95, "actionable": true, "conflict_group": "sweet-drinks", "taxonomy_order": 60, "secondary_justified": true}
+      ],
+      "expected": {"main": "added_sugar_overage", "secondary": null, "reason": "selected"}
+    },
+    {
+      "name": "above-calorie-target-prefers-replacement",
+      "input_state": "eligible",
+      "complete_days": 6,
+      "calories_relation": "above_target",
+      "candidates": [
+        {"key": "fiber_gap", "tier": 2, "severity": 0.50, "coverage": 95, "actionable": true, "action_mode": "add", "conflict_group": "fiber", "taxonomy_order": 170},
+        {"key": "fiber_gap", "tier": 2, "severity": 0.50, "coverage": 95, "actionable": true, "action_mode": "replace", "conflict_group": "fiber", "taxonomy_order": 170}
+      ],
+      "expected": {"main": "fiber_gap", "secondary": null, "reason": "selected"}
+    },
+    {
+      "name": "insufficient-complete-days-produces-none",
+      "input_state": "eligible",
+      "complete_days": 3,
+      "calories_relation": "within_target",
+      "candidates": [
+        {"key": "fiber_gap", "tier": 2, "severity": 0.80, "coverage": 100, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
+      ],
+      "expected": {"main": null, "secondary": null, "reason": "insufficient_complete_days"}
+    },
+    {
+      "name": "rejected-goal-without-new-evidence-is-suppressed",
+      "input_state": "rejected_goal_suppression",
+      "complete_days": 7,
+      "calories_relation": "within_target",
+      "candidates": [
+        {"key": "fiber_gap", "tier": 2, "severity": 0.50, "coverage": 100, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
+      ],
+      "expected": {"main": null, "secondary": null, "reason": "rejected_goal_suppression"}
+    },
+    {
+      "name": "stale-analysis-produces-none",
+      "input_state": "stale_analysis",
+      "complete_days": 7,
+      "calories_relation": "within_target",
+      "candidates": [],
+      "expected": {"main": null, "secondary": null, "reason": "stale_analysis"}
+    },
+    {
+      "name": "superseded-analysis-produces-none",
+      "input_state": "superseded_analysis",
+      "complete_days": 7,
+      "calories_relation": "within_target",
+      "candidates": [],
+      "expected": {"main": null, "secondary": null, "reason": "superseded_analysis"}
+    },
+    {
+      "name": "safety-exclusion-produces-none",
+      "input_state": "safety_exclusion",
+      "complete_days": 7,
+      "calories_relation": "within_target",
+      "candidates": [],
+      "expected": {"main": null, "secondary": null, "reason": "safety_exclusion"}
+    },
+    {
+      "name": "low-metric-coverage-excludes-candidate",
+      "input_state": "eligible",
+      "complete_days": 7,
+      "calories_relation": "within_target",
+      "candidates": [
+        {"key": "fiber_gap", "tier": 2, "severity": 0.75, "coverage": 74.99, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
+      ],
+      "expected": {"main": null, "secondary": null, "reason": "no_eligible_priority"}
+    },
+    {
+      "name": "secondary-cap-never-admits-third",
+      "input_state": "eligible",
+      "complete_days": 7,
+      "calories_relation": "within_target",
+      "candidates": [
+        {"key": "sodium_overage", "tier": 1, "severity": 0.30, "repeat_events": 3, "coverage": 100, "actionable": true, "conflict_group": "sodium", "taxonomy_order": 10},
+        {"key": "legumes_gap", "tier": 2, "severity": 0.50, "coverage": 100, "actionable": true, "conflict_group": "legumes", "taxonomy_order": 120, "secondary_justified": true},
+        {"key": "fiber_gap", "tier": 2, "severity": 0.45, "coverage": 100, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170, "secondary_justified": true}
+      ],
+      "expected": {"main": "sodium_overage", "secondary": "legumes_gap", "reason": "selected"}
+    }
+  ],
+  "goal_vectors": [
+    {
+      "name": "offer-accept-pause-resume-end",
+      "initial": {"state": "offered", "version": 1, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0},
+      "events": [
+        {"type": "accept", "expected_version": 1, "expected": {"result": "accepted", "state": "active", "version": 2, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}},
+        {"type": "pause", "expected_version": 2, "expected": {"result": "paused", "state": "paused", "version": 3, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}},
+        {"type": "resume", "expected_version": 3, "expected": {"result": "resumed", "state": "active", "version": 4, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}},
+        {"type": "end", "expected_version": 4, "expected": {"result": "ended", "state": "ended", "version": 5, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}}
+      ]
+    },
+    {
+      "name": "offer-edit-activates",
+      "initial": {"state": "offered", "version": 1, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0},
+      "events": [
+        {"type": "edit", "expected_version": 1, "expected": {"result": "edited", "state": "active", "version": 2, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}}
+      ]
+    },
+    {
+      "name": "defer-then-accept",
+      "initial": {"state": "offered", "version": 4, "progress": null, "midweek_reminders": 0, "endweek_reviews": 0},
+      "events": [
+        {"type": "defer", "expected_version": 4, "expected": {"result": "deferred", "state": "deferred", "version": 5, "progress": null, "midweek_reminders": 0, "endweek_reviews": 0}},
+        {"type": "accept", "expected_version": 5, "expected": {"result": "accepted", "state": "active", "version": 6, "progress": null, "midweek_reminders": 0, "endweek_reviews": 0}}
+      ]
+    },
+    {
+      "name": "reject-is-terminal",
+      "initial": {"state": "offered", "version": 1, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0},
+      "events": [
+        {"type": "reject", "expected_version": 1, "expected": {"result": "rejected", "state": "rejected", "version": 2, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}},
+        {"type": "accept", "expected_version": 2, "expected": {"result": "invalid_transition", "state": "rejected", "version": 2, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}}
+      ]
+    },
+    {
+      "name": "concurrent-command-stale-version",
+      "initial": {"state": "active", "version": 8, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0},
+      "events": [
+        {"type": "pause", "expected_version": 8, "expected": {"result": "paused", "state": "paused", "version": 9, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}},
+        {"type": "end", "expected_version": 8, "expected": {"result": "stale_version_conflict", "state": "paused", "version": 9, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}}
+      ]
+    },
+    {
+      "name": "progress-is-derived-and-can-complete",
+      "initial": {"state": "active", "version": 2, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0},
+      "events": [
+        {"type": "progress", "expected_version": 2, "derived_progress": 50, "expected": {"result": "progress_updated", "state": "active", "version": 3, "progress": 50, "midweek_reminders": 0, "endweek_reviews": 0}},
+        {"type": "progress", "expected_version": 3, "derived_progress": 100, "expected": {"result": "progress_updated", "state": "active", "version": 4, "progress": 100, "midweek_reminders": 0, "endweek_reviews": 0}},
+        {"type": "complete", "expected_version": 4, "expected": {"result": "completed", "state": "completed", "version": 5, "progress": 100, "midweek_reminders": 0, "endweek_reviews": 0}}
+      ]
+    },
+    {
+      "name": "reopen-revokes-provisional-completion",
+      "initial": {"state": "completed", "version": 5, "progress": 100, "midweek_reminders": 0, "endweek_reviews": 0},
+      "events": [
+        {"type": "evidence_reopened", "expected_version": 5, "expected": {"result": "evidence_reopened", "state": "active", "version": 6, "progress": 100, "midweek_reminders": 0, "endweek_reviews": 0}},
+        {"type": "progress", "expected_version": 6, "derived_progress": 50, "expected": {"result": "progress_updated", "state": "active", "version": 7, "progress": 50, "midweek_reminders": 0, "endweek_reviews": 0}}
+      ]
+    },
+    {
+      "name": "midweek-reminder-once-only-at-zero-progress",
+      "initial": {"state": "active", "version": 1, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0},
+      "events": [
+        {"type": "midweek_reminder", "expected_version": 1, "midweek_eligible": true, "expected": {"result": "sent", "state": "active", "version": 2, "progress": 0, "midweek_reminders": 1, "endweek_reviews": 0}},
+        {"type": "midweek_reminder", "expected_version": 2, "midweek_eligible": true, "expected": {"result": "suppressed", "state": "active", "version": 2, "progress": 0, "midweek_reminders": 1, "endweek_reviews": 0}}
+      ]
+    },
+    {
+      "name": "midweek-reminder-suppressed-after-progress",
+      "initial": {"state": "active", "version": 3, "progress": 25, "midweek_reminders": 0, "endweek_reviews": 0},
+      "events": [
+        {"type": "midweek_reminder", "expected_version": 3, "midweek_eligible": true, "expected": {"result": "suppressed", "state": "active", "version": 3, "progress": 25, "midweek_reminders": 0, "endweek_reviews": 0}}
+      ]
+    },
+    {
+      "name": "endweek-review-once-for-paused-goal",
+      "initial": {"state": "paused", "version": 6, "progress": null, "midweek_reminders": 0, "endweek_reviews": 0},
+      "events": [
+        {"type": "endweek_review", "expected_version": 6, "endweek_eligible": true, "expected": {"result": "sent", "state": "paused", "version": 7, "progress": null, "midweek_reminders": 0, "endweek_reviews": 1}},
+        {"type": "endweek_review", "expected_version": 7, "endweek_eligible": true, "expected": {"result": "suppressed", "state": "paused", "version": 7, "progress": null, "midweek_reminders": 0, "endweek_reviews": 1}}
+      ]
+    },
+    {
+      "name": "midweek-reminder-respects-opt-out",
+      "initial": {"state": "active", "version": 2, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0},
+      "events": [
+        {"type": "midweek_reminder", "expected_version": 2, "midweek_eligible": true, "opted_out": true, "expected": {"result": "suppressed", "state": "active", "version": 2, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}}
+      ]
+    }
+  ]
+}
