@@ -1,15 +1,15 @@
 # Wave 3 Weekly Priority and Behavior Goal Design Contract
 
-**Status:** Draft — design/spike only; implementation not authorized
+**Status:** Frozen for implementation — design gate complete; no implementation or launch performed
 **Decisions:** PD-017, PD-018, PD-027
-**Design version:** 0.1-draft
+**Design version:** 1.0-frozen
 **Repository baseline:** `de736c6cb681c652fb17244cebad64f62665f487`
 **Dependency:** Plan 031 is frozen and implemented at the repository baseline
 **Authority:** Backend deterministic rules; AI and Frontend are never decision authorities
 
 ## 1. Purpose, boundary, and invariants
 
-This contract proposes a closed Backend-owned weekly priority selector and an optional owner-controlled behavior-goal lifecycle. It is review evidence only. It adds no routes, models, UI, reminders, notifications, or runtime behavior.
+This frozen contract defines a closed Backend-owned weekly priority selector and an optional owner-controlled behavior-goal lifecycle. The design artifact itself adds no routes, models, UI, reminders, notifications, or runtime behavior.
 
 Invariants:
 
@@ -38,7 +38,7 @@ Invariants:
 | Rules | `backend/app/nutrition_rules/versions.py` | non-null recommendation/analysis version only after implementation approval |
 | Notifications | none implemented | goal preference and delivery receipt only in a later authorized implementation |
 
-The existing `analysis_rules_version=null` and `analysis_rules_status=reserved_for_wave_3` are honest baseline facts. This Draft proposes `weekly_priority_rules_version="w3-priority-1.0.0"`; it does not change the manifest or claim the engine exists.
+The existing `analysis_rules_version=null` and `analysis_rules_status=reserved_for_wave_3` are honest baseline facts. This contract freezes `weekly_priority_rules_version="w3-priority-1.0.0"`; it does not change the manifest or claim the engine exists.
 
 ### 2.2 `WeeklyPriorityAnalysisInputV1`
 
@@ -150,7 +150,7 @@ Excluded alternatives are stored as `{rule_key, reason_code}` sorted by rule key
 
 ### 4.1 Versions and immutable result
 
-The proposed independent versions are:
+The frozen independent versions are:
 
 - `weekly_priority_rules_version="w3-priority-1.0.0"` for eligibility, severity, ordering, conflicts, and cap;
 - `weekly_priority_copy_version="w3-priority-ar-1.0.0"` for Arabic titles, reasons, actions, and safety copy;
@@ -204,7 +204,7 @@ When calories are above target, the Backend selects the replacement sentence and
 - safety suppressed: `لا يمكن اقتراح أولوية آمنة من هذه البيانات. راجع إعدادات أهدافك أو مختصًا مؤهلًا عند الحاجة.`
 - evidence disclosure: `بُني هذا الاقتراح على الأيام المكتملة والتغطية المتاحة، وليس على الأيام غير المكتملة.`
 
-These are proposed final templates awaiting the eight approvals. A copy-only correction still bumps `copy_version`; it never silently rewrites stored historical wording.
+These are the approved final templates. A copy-only correction still requires affected review, bumps `copy_version`, and never silently rewrites stored historical wording.
 
 ### 4.3 Freshness, supersession, retention, and replay
 
@@ -274,7 +274,7 @@ Every `BehaviorGoalResponseV1` contains `schema_version`, opaque goal ID, state,
 
 ### 5.4 Goal lifecycle Arabic and accessibility
 
-| State/action | Exact proposed copy |
+| State/action | Exact approved copy |
 | --- | --- |
 | offer heading | `هل ترغب في تحويل الأولوية إلى هدف أسبوعي؟` |
 | accept | `بدء الهدف` |
@@ -506,10 +506,10 @@ Immediate rollback triggers are any safety recommendation, cap violation, cross-
 
 ### 8.5 Checkpoint result
 
-Steps 1–7 produce a complete Draft, not an approval. The exact four artifacts must be circulated at one commit. Step 8 requires explicit decisions from Product Owner, Nutrition/Safety, Data/Analysis, Architecture/API, Security/Privacy, UX/Arabic/Accessibility, Notifications/Operations, and QA, followed by the exact line `Decision status: Frozen for implementation`. Until then: `AWAITING APPROVAL`; implementation and launch remain unauthorized.
+Steps 1–7 and the formal design review are complete. At the Project Owner's explicit authorization/request, Codex performed the eight role-based discipline assessments recorded in `28B_W3_WEEKLY_PRIORITY_AND_GOAL_APPROVAL_REPORT.md`; they are not eight independently submitted named human reviews, and no reviewer names, timestamps, signatures, or comments are inferred. Every role recorded `APPROVED` with no blocking finding, the executable evidence passed, and the exact decision is `Frozen for implementation`. Any material contract change invalidates the affected assessments and requires a versioned review before implementation continues. Launch remains a separate authorization.
 
 ## 9. Artifact authority
 
 - `28A_W3_WEEKLY_PRIORITY_AND_GOAL_GOLDEN_VECTORS.json` is seeded design evidence.
 - `tools/verify_w3_weekly_priority_vectors.py` is a standard-library oracle and must never be imported by application code.
-- `28B_W3_WEEKLY_PRIORITY_AND_GOAL_APPROVAL_REPORT.md` is the only approval ledger for this Draft.
+- `28B_W3_WEEKLY_PRIORITY_AND_GOAL_APPROVAL_REPORT.md` is the only approval ledger for this frozen design.
