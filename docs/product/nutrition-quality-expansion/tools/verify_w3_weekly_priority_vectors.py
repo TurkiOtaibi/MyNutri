@@ -313,9 +313,12 @@ def apply_goal_event(state: dict[str, Any], event: dict[str, Any]) -> dict[str, 
         ("active", "pause"): "paused",
         ("paused", "resume"): "active",
         ("active", "complete"): "completed",
+        ("active", "finalize_incomplete"): "incomplete",
+        ("paused", "finalize_incomplete"): "incomplete",
         ("completed", "evidence_reopened"): "active",
         ("active", "end"): "ended",
         ("paused", "end"): "ended",
+        ("incomplete", "end"): "ended",
         ("rejected", "archive"): "archived",
         ("completed", "archive"): "archived",
         ("ended", "archive"): "archived",
@@ -338,6 +341,12 @@ def apply_goal_event(state: dict[str, Any], event: dict[str, Any]) -> dict[str, 
         state["endweek_reviews"] = 1
         state["version"] += 1
         return goal_response(state, "sent")
+    if kind == "finalize_incomplete" and (
+        current not in {"active", "paused"}
+        or event.get("window_ended") is not True
+        or event.get("target_reached") is not False
+    ):
+        return goal_response(state, "invalid_transition")
     if (
         kind in {"accept", "edit"}
         and current in {"offered", "deferred"}
@@ -358,11 +367,135 @@ def apply_goal_event(state: dict[str, Any], event: dict[str, Any]) -> dict[str, 
         "pause": "paused",
         "resume": "resumed",
         "complete": "completed",
+        "finalize_incomplete": "finalized_incomplete",
         "evidence_reopened": "evidence_reopened",
         "end": "ended",
         "archive": "archived",
     }
     return goal_response(state, results[kind])
+
+
+def repeat_response(
+    state: dict[str, Any], result: str, new_goal: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    source = state["source_goal"]
+    priority = state["current_priority"]
+    return {
+        "result": result,
+        "source_goal_id": source["goal_id"],
+        "source_state": source["state"],
+        "source_version": source["version"],
+        "source_window": [source["window_start"], source["window_end"]],
+        "source_progress_status": source["progress_status"],
+        "source_history_count": source["history_count"],
+        "source_midweek_reminders": source.get("midweek_reminders", 0),
+        "source_endweek_reviews": source.get("endweek_reviews", 0),
+        "new_goal": deepcopy(new_goal),
+        "created_goal_count": len(state.get("created_goal_ids", [])),
+        "priority_main": priority.get("main_rule_key"),
+        "priority_secondary": priority.get("secondary_rule_key"),
+    }
+
+
+def apply_repeat_event(
+    state: dict[str, Any],
+    event: dict[str, Any],
+    replays: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    if event.get("type") != "repeat":
+        return repeat_response(state, "goal_state_conflict")
+    key = event.get("idempotency_key")
+    if not isinstance(key, str) or not key:
+        raise ValueError("repeat requires a non-empty idempotency key")
+    request_identity = {
+        "source_goal_id": state["source_goal"]["goal_id"],
+        "expected_version": event.get("expected_version"),
+        "repeat_mode": event.get("repeat_mode"),
+        "weekly_target_count": event.get("weekly_target_count"),
+        "captured_diary_date": state["captured_diary_date"],
+        "recommendation_id": state["current_priority"].get("recommendation_id"),
+    }
+    if key in replays:
+        recorded = replays[key]
+        if recorded["request"] != request_identity:
+            return repeat_response(state, "idempotency_key_conflict")
+        return deepcopy(recorded["response"])
+    source = state["source_goal"]
+    if event.get("expected_version") != source["version"]:
+        return repeat_response(state, "goal_version_conflict")
+    if source["state"] != "incomplete":
+        return repeat_response(state, "goal_state_conflict")
+    captured = date.fromisoformat(state["captured_diary_date"])
+    old_start = date.fromisoformat(source["window_start"])
+    old_end = date.fromisoformat(source["window_end"])
+    if old_end - old_start != timedelta(days=6) or captured <= old_end:
+        return repeat_response(state, "goal_state_conflict")
+    if source["progress_status"] not in {"not_yet_reached", "insufficient_evidence"}:
+        return repeat_response(state, "goal_state_conflict")
+    if state.get("created_goal_ids"):
+        return repeat_response(state, "goal_version_conflict")
+    if state.get("other_primary_exists") is True:
+        return repeat_response(state, "primary_goal_exists")
+    priority = state["current_priority"]
+    if (
+        priority.get("status") != "selected"
+        or priority.get("main_rule_key") != source["rule_key"]
+        or priority.get("rules_version") != source["rules_version"]
+        or priority.get("action_key") != source["action_key"]
+    ):
+        return repeat_response(state, "goal_repeat_priority_conflict")
+    mode = event.get("repeat_mode")
+    if mode == "same":
+        if event.get("weekly_target_count") is not None:
+            return repeat_response(state, "goal_state_conflict")
+        new_target = source["weekly_target_count"]
+        result = "repeated"
+    elif mode == "reduce":
+        new_target = event.get("weekly_target_count")
+        if (
+            not isinstance(new_target, int)
+            or isinstance(new_target, bool)
+            or not 1 <= new_target < source["weekly_target_count"]
+        ):
+            return repeat_response(state, "goal_state_conflict")
+        result = "reduced_and_repeated"
+    else:
+        return repeat_response(state, "goal_state_conflict")
+    new_goal_id = event.get("new_goal_id")
+    if (
+        not isinstance(new_goal_id, str)
+        or not new_goal_id
+        or new_goal_id == source["goal_id"]
+        or new_goal_id in state.get("created_goal_ids", [])
+    ):
+        raise ValueError("repeat new_goal_id must be unique and distinct")
+    old_snapshot = deepcopy(source)
+    new_start = max(captured, old_end + timedelta(days=1))
+    new_goal = {
+        "goal_id": new_goal_id,
+        "root_goal_id": old_snapshot.get("root_goal_id", old_snapshot["goal_id"]),
+        "previous_goal_id": old_snapshot["goal_id"],
+        "sequence_number": old_snapshot.get("sequence_number", 1) + 1,
+        "state": "active",
+        "version": 1,
+        "window_start": new_start.isoformat(),
+        "window_end": (new_start + timedelta(days=6)).isoformat(),
+        "progress": 0,
+        "progress_status": "unknown",
+        "weekly_target_count": new_target,
+        "rule_key": source["rule_key"],
+        "action_key": source["action_key"],
+        "rules_version": source["rules_version"],
+        "recommendation_id": priority["recommendation_id"],
+        "history_count": 1,
+        "midweek_reminders": 0,
+        "endweek_reviews": 0,
+    }
+    state.setdefault("created_goal_ids", []).append(new_goal_id)
+    state["new_goal"] = deepcopy(new_goal)
+    response = repeat_response(state, result, new_goal)
+    replays[key] = {"request": request_identity, "response": deepcopy(response)}
+    return response
 
 
 def evaluate_progress(vector: dict[str, Any]) -> dict[str, Any]:
@@ -438,6 +571,34 @@ def validate(document: dict[str, Any]) -> tuple[int, list[str]]:
                 ok = False
         if ok:
             passed += 1
+    repeat_vectors = document.get("repeat_vectors", [])
+    for vector in repeat_vectors:
+        name = vector.get("name", "<unnamed>")
+        if name in names:
+            failures.append(f"duplicate vector name: {name}")
+            continue
+        names.add(name)
+        state = deepcopy(vector["initial"])
+        replays: dict[str, dict[str, Any]] = {}
+        ok = True
+        for index, event in enumerate(vector["events"], start=1):
+            source_before = deepcopy(state["source_goal"])
+            try:
+                actual = apply_repeat_event(state, event, replays)
+            except (KeyError, TypeError, ValueError) as error:
+                failures.append(f"{name} event {index}: invalid repeat vector: {error}")
+                ok = False
+                continue
+            if actual != event["expected"]:
+                failures.append(
+                    f"{name} event {index}: expected {event['expected']!r}, got {actual!r}"
+                )
+                ok = False
+            if actual["result"] in {"repeated", "reduced_and_repeated"} and state["source_goal"] != source_before:
+                failures.append(f"{name} event {index}: repeat mutated frozen source goal")
+                ok = False
+        if ok:
+            passed += 1
     for vector in document.get("progress_vectors", []):
         name = vector.get("name", "<unnamed>")
         if name in names:
@@ -473,6 +634,24 @@ def validate(document: dict[str, Any]) -> tuple[int, list[str]]:
                 passed += 1
         else:
             failures.append(f"{name}: mutation was accepted")
+    repeats_by_name = {vector["name"]: vector for vector in repeat_vectors}
+    for vector in document.get("repeat_mutation_vectors", []):
+        name = vector.get("name", "<unnamed>")
+        if name in names:
+            failures.append(f"duplicate vector name: {name}")
+            continue
+        names.add(name)
+        try:
+            mutated = deepcopy(repeats_by_name[vector["base_vector"]])
+            mutated["events"][vector["event_index"]][vector["field"]] = vector["value"]
+            apply_repeat_event(mutated["initial"], mutated["events"][0], {})
+        except (KeyError, TypeError, ValueError) as error:
+            if vector["expected_error"] not in str(error):
+                failures.append(f"{name}: wrong repeat mutation error: {error}")
+            else:
+                passed += 1
+        else:
+            failures.append(f"{name}: repeat mutation was accepted")
     if not names:
         failures.append("vectors must be non-empty")
     return passed, failures

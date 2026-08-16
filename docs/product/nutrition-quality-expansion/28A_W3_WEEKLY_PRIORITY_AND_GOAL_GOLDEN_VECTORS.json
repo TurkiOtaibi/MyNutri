@@ -372,6 +372,118 @@
       "events": [
         {"type": "midweek_reminder", "expected_version": 2, "midweek_eligible": true, "opted_out": true, "expected": {"result": "suppressed", "state": "active", "version": 2, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}}
       ]
+    },
+    {
+      "name": "ended-window-finalizes-as-immutable-incomplete",
+      "initial": {"state": "active", "version": 4, "progress": 1, "midweek_reminders": 1, "endweek_reviews": 1},
+      "events": [
+        {"type": "finalize_incomplete", "expected_version": 4, "window_ended": true, "target_reached": false, "expected": {"result": "finalized_incomplete", "state": "incomplete", "version": 5, "progress": 1, "midweek_reminders": 1, "endweek_reviews": 1}}
+      ]
+    },
+    {
+      "name": "incomplete-review-can-end-without-successor",
+      "initial": {"state": "incomplete", "version": 5, "progress": 1, "midweek_reminders": 1, "endweek_reviews": 1},
+      "events": [
+        {"type": "end", "expected_version": 5, "expected": {"result": "ended", "state": "ended", "version": 6, "progress": 1, "midweek_reminders": 1, "endweek_reviews": 1}}
+      ]
+    }
+  ],
+  "repeat_vectors": [
+    {
+      "name": "repeat-creates-new-window-preserves-source-and-replays",
+      "initial": {
+        "captured_diary_date": "2026-08-17",
+        "source_goal": {"goal_id": "goal-week-1", "root_goal_id": "goal-root", "sequence_number": 1, "state": "incomplete", "version": 5, "window_start": "2026-08-10", "window_end": "2026-08-16", "progress_status": "insufficient_evidence", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "history_count": 7, "midweek_reminders": 1, "endweek_reviews": 1},
+        "current_priority": {"status": "selected", "main_rule_key": "fiber_gap", "secondary_rule_key": "legumes_gap", "rules_version": "w3-priority-1.0.0", "action_key": "replace_with_fiber_source", "recommendation_id": "recommendation-week-2"},
+        "other_primary_exists": false,
+        "created_goal_ids": []
+      },
+      "events": [
+        {
+          "type": "repeat", "repeat_mode": "same", "expected_version": 5, "weekly_target_count": null, "idempotency_key": "repeat-same", "new_goal_id": "goal-week-2",
+          "expected": {"result": "repeated", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "insufficient_evidence", "source_history_count": 7, "source_midweek_reminders": 1, "source_endweek_reviews": 1, "new_goal": {"goal_id": "goal-week-2", "root_goal_id": "goal-root", "previous_goal_id": "goal-week-1", "sequence_number": 2, "state": "active", "version": 1, "window_start": "2026-08-17", "window_end": "2026-08-23", "progress": 0, "progress_status": "unknown", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "recommendation_id": "recommendation-week-2", "history_count": 1, "midweek_reminders": 0, "endweek_reviews": 0}, "created_goal_count": 1, "priority_main": "fiber_gap", "priority_secondary": "legumes_gap"}
+        },
+        {
+          "type": "repeat", "repeat_mode": "same", "expected_version": 5, "weekly_target_count": null, "idempotency_key": "repeat-same", "new_goal_id": "ignored-on-replay",
+          "expected": {"result": "repeated", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "insufficient_evidence", "source_history_count": 7, "source_midweek_reminders": 1, "source_endweek_reviews": 1, "new_goal": {"goal_id": "goal-week-2", "root_goal_id": "goal-root", "previous_goal_id": "goal-week-1", "sequence_number": 2, "state": "active", "version": 1, "window_start": "2026-08-17", "window_end": "2026-08-23", "progress": 0, "progress_status": "unknown", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "recommendation_id": "recommendation-week-2", "history_count": 1, "midweek_reminders": 0, "endweek_reviews": 0}, "created_goal_count": 1, "priority_main": "fiber_gap", "priority_secondary": "legumes_gap"}
+        },
+        {
+          "type": "repeat", "repeat_mode": "reduce", "expected_version": 5, "weekly_target_count": 2, "idempotency_key": "repeat-same", "new_goal_id": "ignored-on-conflict",
+          "expected": {"result": "idempotency_key_conflict", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "insufficient_evidence", "source_history_count": 7, "source_midweek_reminders": 1, "source_endweek_reviews": 1, "new_goal": null, "created_goal_count": 1, "priority_main": "fiber_gap", "priority_secondary": "legumes_gap"}
+        }
+      ]
+    },
+    {
+      "name": "concurrent-repeat-winner-makes-second-version-stale",
+      "initial": {
+        "captured_diary_date": "2026-08-17",
+        "source_goal": {"goal_id": "goal-week-1", "root_goal_id": "goal-root", "sequence_number": 1, "state": "incomplete", "version": 5, "window_start": "2026-08-10", "window_end": "2026-08-16", "progress_status": "not_yet_reached", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "history_count": 4, "midweek_reminders": 0, "endweek_reviews": 1},
+        "current_priority": {"status": "selected", "main_rule_key": "fiber_gap", "secondary_rule_key": null, "rules_version": "w3-priority-1.0.0", "action_key": "replace_with_fiber_source", "recommendation_id": "recommendation-week-2"},
+        "other_primary_exists": false,
+        "created_goal_ids": []
+      },
+      "events": [
+        {
+          "type": "repeat", "repeat_mode": "same", "expected_version": 5, "weekly_target_count": null, "idempotency_key": "winner", "new_goal_id": "goal-week-2",
+          "expected": {"result": "repeated", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "not_yet_reached", "source_history_count": 4, "source_midweek_reminders": 0, "source_endweek_reviews": 1, "new_goal": {"goal_id": "goal-week-2", "root_goal_id": "goal-root", "previous_goal_id": "goal-week-1", "sequence_number": 2, "state": "active", "version": 1, "window_start": "2026-08-17", "window_end": "2026-08-23", "progress": 0, "progress_status": "unknown", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "recommendation_id": "recommendation-week-2", "history_count": 1, "midweek_reminders": 0, "endweek_reviews": 0}, "created_goal_count": 1, "priority_main": "fiber_gap", "priority_secondary": null}
+        },
+        {
+          "type": "repeat", "repeat_mode": "same", "expected_version": 5, "weekly_target_count": null, "idempotency_key": "loser", "new_goal_id": "goal-week-3",
+          "expected": {"result": "goal_version_conflict", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "not_yet_reached", "source_history_count": 4, "source_midweek_reminders": 0, "source_endweek_reviews": 1, "new_goal": null, "created_goal_count": 1, "priority_main": "fiber_gap", "priority_secondary": null}
+        }
+      ]
+    },
+    {
+      "name": "completed-goal-cannot-repeat",
+      "initial": {
+        "captured_diary_date": "2026-08-17",
+        "source_goal": {"goal_id": "goal-week-1", "root_goal_id": "goal-root", "sequence_number": 1, "state": "completed", "version": 5, "window_start": "2026-08-10", "window_end": "2026-08-16", "progress_status": "achieved", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "history_count": 5, "midweek_reminders": 0, "endweek_reviews": 0},
+        "current_priority": {"status": "selected", "main_rule_key": "fiber_gap", "secondary_rule_key": null, "rules_version": "w3-priority-1.0.0", "action_key": "replace_with_fiber_source", "recommendation_id": "recommendation-week-2"},
+        "other_primary_exists": false,
+        "created_goal_ids": []
+      },
+      "events": [
+        {"type": "repeat", "repeat_mode": "same", "expected_version": 5, "weekly_target_count": null, "idempotency_key": "invalid-state", "new_goal_id": "goal-week-2", "expected": {"result": "goal_state_conflict", "source_goal_id": "goal-week-1", "source_state": "completed", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "achieved", "source_history_count": 5, "source_midweek_reminders": 0, "source_endweek_reviews": 0, "new_goal": null, "created_goal_count": 0, "priority_main": "fiber_gap", "priority_secondary": null}}
+      ]
+    },
+    {
+      "name": "secondary-priority-does-not-authorize-repeat",
+      "initial": {
+        "captured_diary_date": "2026-08-17",
+        "source_goal": {"goal_id": "goal-week-1", "root_goal_id": "goal-root", "sequence_number": 1, "state": "incomplete", "version": 5, "window_start": "2026-08-10", "window_end": "2026-08-16", "progress_status": "not_yet_reached", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "history_count": 5, "midweek_reminders": 0, "endweek_reviews": 1},
+        "current_priority": {"status": "selected", "main_rule_key": "sodium_overage", "secondary_rule_key": "fiber_gap", "rules_version": "w3-priority-1.0.0", "action_key": "replace_high_sodium_choice", "recommendation_id": "recommendation-week-2"},
+        "other_primary_exists": false,
+        "created_goal_ids": []
+      },
+      "events": [
+        {"type": "repeat", "repeat_mode": "same", "expected_version": 5, "weekly_target_count": null, "idempotency_key": "secondary", "new_goal_id": "goal-week-2", "expected": {"result": "goal_repeat_priority_conflict", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "not_yet_reached", "source_history_count": 5, "source_midweek_reminders": 0, "source_endweek_reviews": 1, "new_goal": null, "created_goal_count": 0, "priority_main": "sodium_overage", "priority_secondary": "fiber_gap"}}
+      ]
+    },
+    {
+      "name": "existing-primary-blocks-repeat-without-source-mutation",
+      "initial": {
+        "captured_diary_date": "2026-08-17",
+        "source_goal": {"goal_id": "goal-week-1", "root_goal_id": "goal-root", "sequence_number": 1, "state": "incomplete", "version": 5, "window_start": "2026-08-10", "window_end": "2026-08-16", "progress_status": "not_yet_reached", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "history_count": 5, "midweek_reminders": 0, "endweek_reviews": 1},
+        "current_priority": {"status": "selected", "main_rule_key": "fiber_gap", "secondary_rule_key": null, "rules_version": "w3-priority-1.0.0", "action_key": "replace_with_fiber_source", "recommendation_id": "recommendation-week-2"},
+        "other_primary_exists": true,
+        "created_goal_ids": []
+      },
+      "events": [
+        {"type": "repeat", "repeat_mode": "same", "expected_version": 5, "weekly_target_count": null, "idempotency_key": "primary-conflict", "new_goal_id": "goal-week-2", "expected": {"result": "primary_goal_exists", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "not_yet_reached", "source_history_count": 5, "source_midweek_reminders": 0, "source_endweek_reviews": 1, "new_goal": null, "created_goal_count": 0, "priority_main": "fiber_gap", "priority_secondary": null}}
+      ]
+    },
+    {
+      "name": "reduce-creates-new-lower-target-window",
+      "initial": {
+        "captured_diary_date": "2026-08-19",
+        "source_goal": {"goal_id": "goal-week-1", "root_goal_id": "goal-root", "sequence_number": 2, "state": "incomplete", "version": 9, "window_start": "2026-08-10", "window_end": "2026-08-16", "progress_status": "not_yet_reached", "weekly_target_count": 4, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "history_count": 9, "midweek_reminders": 1, "endweek_reviews": 1},
+        "current_priority": {"status": "selected", "main_rule_key": "fiber_gap", "secondary_rule_key": null, "rules_version": "w3-priority-1.0.0", "action_key": "replace_with_fiber_source", "recommendation_id": "recommendation-week-3"},
+        "other_primary_exists": false,
+        "created_goal_ids": []
+      },
+      "events": [
+        {"type": "repeat", "repeat_mode": "reduce", "expected_version": 9, "weekly_target_count": 2, "idempotency_key": "reduce", "new_goal_id": "goal-week-3", "expected": {"result": "reduced_and_repeated", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 9, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "not_yet_reached", "source_history_count": 9, "source_midweek_reminders": 1, "source_endweek_reviews": 1, "new_goal": {"goal_id": "goal-week-3", "root_goal_id": "goal-root", "previous_goal_id": "goal-week-1", "sequence_number": 3, "state": "active", "version": 1, "window_start": "2026-08-19", "window_end": "2026-08-25", "progress": 0, "progress_status": "unknown", "weekly_target_count": 2, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "recommendation_id": "recommendation-week-3", "history_count": 1, "midweek_reminders": 0, "endweek_reviews": 0}, "created_goal_count": 1, "priority_main": "fiber_gap", "priority_secondary": null}}
+      ]
     }
   ],
   "progress_vectors": [
@@ -446,6 +558,16 @@
       "field": "input_state",
       "value": "invented_state",
       "expected_error": "unknown input_state"
+    }
+  ],
+  "repeat_mutation_vectors": [
+    {
+      "name": "repeat-reusing-source-goal-id-is-rejected",
+      "base_vector": "repeat-creates-new-window-preserves-source-and-replays",
+      "event_index": 0,
+      "field": "new_goal_id",
+      "value": "goal-week-1",
+      "expected_error": "new_goal_id must be unique and distinct"
     }
   ]
 }

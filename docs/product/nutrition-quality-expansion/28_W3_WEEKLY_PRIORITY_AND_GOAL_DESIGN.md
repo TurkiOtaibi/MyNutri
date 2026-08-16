@@ -219,7 +219,7 @@ These are proposed final templates awaiting the eight approvals. A copy-only cor
 
 ### 5.1 State and ownership model
 
-Persisted state is exactly `offered | deferred | active | paused | rejected | completed | ended | archived`. An offer is generated only from the current non-stale main priority. The secondary is informational and cannot independently become a concurrent goal. A partial unique constraint permits at most one `active` or `paused` primary goal per Principal.
+Persisted state is exactly `offered | deferred | active | paused | incomplete | rejected | completed | ended | archived`. An offer is generated only from the current non-stale main priority. The secondary is informational and cannot independently become a concurrent goal. A partial unique constraint permits at most one `active` or `paused` primary goal per Principal.
 
 The editable behavior contract is a bounded action plan, not a nutrient target: `action_key`, `weekly_target_count` integer 1–7, `scheduled_day_mask` optional unique weekdays, and `owner_note` optional 0–280 characters. Edit cannot change the evidence metric, direction, safety exclusions, priority key, or rules version. The Backend validates action-key-specific count bounds. Free text is never used for selector/progress logic.
 
@@ -242,6 +242,8 @@ Every command requires authenticated ownership, `Idempotency-Key`, and `expected
 | `paused` | owner `resume` | `active` | `resumed_at` | `resumed` | resume derivation; no catch-up reminder |
 | `active` | Backend `complete` | `completed` | derived progress reached target + `completed_at` | read returns completed | neutral completion; no reward/streak |
 | `completed` before finalization | Backend `evidence_reopened` | `active` | clear completion; append evidence revision | `evidence_reopened` | neutral recomputation notice |
+| ended window in `active`/`paused`, target not reached | Backend `finalize_incomplete` | `incomplete` | freeze final progress revision + `reviewed_at` | read returns incomplete | show repeat/reduce/change/end review |
+| `incomplete`, no successor | owner `end` | `ended` | append reason + `ended_at`; retain frozen evidence | `ended` | close review without a new week |
 | `active`/`paused` | owner `end` | `ended` | reason + `ended_at` | `ended` | neutral end; offer alternatives next analysis only |
 | `rejected`/`completed`/`ended` | retention `archive` | `archived` | `archived_at` | history only | read-only history |
 
@@ -254,8 +256,8 @@ Invalid transitions return `409 GOAL_STATE_CONFLICT` and the current safe projec
 Proposed additive endpoints, all under owner authentication:
 
 - `GET /progress/weekly-priorities/current` returns `WeeklyPriorityResultV1`;
-- `GET /progress/behavior-goals/current` returns the current offered/deferred/active/paused goal or `null` plus its source priority;
-- `GET /progress/behavior-goals/history?cursor=&limit=20` returns bounded newest-first completed/rejected/ended/archived projections;
+- `GET /progress/behavior-goals/current` returns the current offered/deferred/active/paused/incomplete goal or `null` plus its source priority;
+- `GET /progress/behavior-goals/history?cursor=&limit=20` returns bounded newest-first incomplete/completed/rejected/ended/archived projections;
 - `POST /progress/behavior-goals/{goal_id}/commands` accepts the closed event union and returns `BehaviorGoalResponseV1`;
 - no Admin mutation route; a bounded Admin monitoring projection may expose state/version/timestamps but not notes, evidence facts, rejection reason, or reminder content.
 
@@ -267,6 +269,7 @@ Every `BehaviorGoalResponseV1` contains `schema_version`, opaque goal ID, state,
 | `deferred` | accept, reject |
 | `active` | edit, change, pause, end |
 | `paused` | resume, end |
+| `incomplete` | repeat, reduce, change, end |
 | `rejected`, `completed`, `ended`, `archived` | none |
 
 ### 5.4 Goal lifecycle Arabic and accessibility
@@ -286,8 +289,36 @@ Every `BehaviorGoalResponseV1` contains `schema_version`, opaque goal ID, state,
 | completed | `اكتملت الخطوة وفق الأيام المسجلة.` |
 | insufficient | `لا تكفي الأيام المكتملة لتحديد التقدم.` |
 | ended | `تم إنهاء الهدف دون حكم على النتيجة.` |
+| repeat | `تكرار الهدف لأسبوع جديد` |
+| reduce | `تخفيف الخطوة للأسبوع الجديد` |
+| repeat success | `بدأ أسبوع جديد للهدف مع الاحتفاظ بنتيجة الأسبوع السابق.` |
+| repeat unavailable | `لا يمكن تكرار هذا الهدف الآن. راجع أولوية الأسبوع الحالية.` |
 
 Cards use a heading plus text/icon state, never color alone. Dialogs trap focus; Escape cancels. Success focuses the goal heading and uses one polite live announcement. Errors focus the alert/retry action. Numeric progress uses `<bdi>`. At 320, 360, 390, and 430 px actions wrap without horizontal scroll and retain 44×44 CSS-pixel targets. RTL reading order, reduced motion, screen-reader names, loading skeleton with `aria-busy`, initial `role=alert`, and stale-last-known labeling are mandatory.
+
+### 5.5 Deterministic end-of-week repeat
+
+At end-of-window finalization, an `active` or `paused` goal that is not achieved transitions once to `incomplete`; this system transition freezes the prior window's final progress/evidence/history before any owner choice. Repeat is available only from that frozen `incomplete` state with progress `not_yet_reached` or `insufficient_evidence`. An achieved, offered, deferred, active, paused, rejected, completed, ended, or archived goal cannot repeat. A current fresh `selected` weekly-priority result must name the same `rule_key` as its main priority, with the same rules version and compatible action key. A matching secondary never authorizes repeat and repeat never changes the main/secondary cap or selector order. A stale, none, safety-suppressed, different-main, changed-rules, or incompatible-action result offers `change` or `end`, not repeat.
+
+Repeat is one atomic Backend command, never an overwrite:
+
+1. capture one Backend Diary date and lock Principal, source goal, and current recommendation;
+2. verify `expected_version`, frozen incomplete state, ended window, current-main binding, absence of an existing successor, and absence of another primary;
+3. leave every column and history row of the old goal unchanged;
+4. create a distinct `behavior_goal` row with a new server UUID, `root_goal_id` copied from the source, `previous_goal_id=source.id`, `sequence_number=source.sequence_number+1`, `state=active`, and version `1`;
+5. bind the new row to the current recommendation ID and preserve the source rule/action/target for `repeat_mode=same`; append only the new goal's `repeated_from_previous_window` activation history and commit once.
+
+The old goal retains its `incomplete` state, identity, version, window, progress/evidence revision, reminders, terms, timestamps, and full history byte-for-byte. The new goal starts with progress zero, no reminder deliveries, and a new window. `new_window_start=max(captured_current_diary_date, source.window_end + 1 day)` and `new_window_end=new_window_start + 6 days` in `Asia/Riyadh`; windows never overlap and no skipped date is backfilled. Repeating after a delay starts on the captured request date. The current recommendation is evidence for eligibility, not permission to rewrite the prior result.
+
+`repeat_mode=reduce` uses the same new-row transaction but requires an owner-selected `weekly_target_count` that is an integer >=1 and strictly lower than the source target while preserving rule/action/direction. It returns `reduced_and_repeated`. The review's `change` action opens the current main offer; it does not command or mutate the incomplete source, and ordinary offer acceptance creates the new goal under the current priority. The review's `end` command changes only lifecycle state to `ended`, appends `ended_at`/reason, preserves the frozen evidence snapshot, and creates no successor. Principal serialization plus unique `(principal_id, previous_goal_id)` makes repeat/reduce mutually exclusive successor choices: the first committed successor wins without changing the source version. If an ordinary current offer is accepted first, repeat/reduce returns `PRIMARY_GOAL_EXISTS`; if repeat/reduce wins first, offer acceptance returns the same conflict. If end wins first, later repeat/reduce returns `GOAL_STATE_CONFLICT`; if a successor wins first, end returns `GOAL_VERSION_CONFLICT` because a successor already exists.
+
+The exact API command is `POST /progress/behavior-goals/{source_goal_id}/commands` with `{event:"repeat", repeat_mode:"same|reduce", expected_version, weekly_target_count?}` plus `Idempotency-Key`. Operation name is `behavior_goal_repeat`. The canonical request hash covers Principal, source goal ID, expected version, repeat mode/target, captured Diary date, and current recommendation ID. Success returns `BehaviorGoalRepeatResponseV1` containing `result=repeated|reduced_and_repeated`, immutable `previous_goal`, new `goal`, current recommendation/rule/copy versions, and calendar snapshot. It also returns `ETag: "goal-1"` for the new row.
+
+Same Principal/key/hash replays the exact response and status with `Idempotent-Replayed: true`, creating no row/history/reminder. Same key with different content returns `409 IDEMPOTENCY_KEY_REUSED`. A stale source version or an already-created successor from a concurrent command returns `409 GOAL_VERSION_CONFLICT`; an ineligible source state returns `409 GOAL_STATE_CONFLICT`; another primary returns `409 PRIMARY_GOAL_EXISTS`; a current-priority mismatch returns `409 GOAL_REPEAT_PRIORITY_CONFLICT`. All conflicts leave both source and prospective successor unchanged. Cross-owner IDs remain `404`.
+
+Successful repeat moves focus to the new goal heading and announces the exact repeat-success copy once. Replay does not repeat the live announcement. Failure retains focus in the end-week review and focuses its non-color alert. The previous-week card remains reachable in history and is labelled `الأسبوع السابق — غير مكتمل` or `الأسبوع السابق — بيانات غير كافية` from its frozen result. The new card is labelled with its full Arabic date range; `<bdi>` isolates dates.
+
+The prior end-week review and reminder receipts remain immutable. The new goal receives a fresh reminder namespace `(new_goal_id, sequence_number)` and may receive at most its own one midweek reminder and one end-week review under section 6.3. Repeat itself sends no external notification. Audit records opaque source/new/root IDs, sequence, result code, versions, request ID, and timestamps; it excludes nutrition evidence, owner note, destination, idempotency key, and message copy.
 
 ## 6. Diary-derived progress, reminders, and rejection suppression
 
@@ -363,11 +394,11 @@ Stores `(recommendation_id, principal_id, metric_key, evidence_kind, opaque_sour
 
 #### `behavior_goal`
 
-Stores owner/source IDs, state/version, action key, target count, day mask, bounded private note, start/end dates, source rule/copy versions, current progress document/revision, all state timestamps, reminder preference, created/updated timestamps. Checks enforce the state/timestamp matrix, version >=1, target 1–7, period <=7 days, note <=280, and external notifications default false. Partial unique `(principal_id) WHERE state IN ('active','paused')` enforces one primary.
+Stores owner/source IDs, `root_goal_id`, nullable `previous_goal_id`, positive `sequence_number`, state/version, action key, target count, day mask, bounded private note, start/end dates, source rule/copy versions, current progress document/revision, all state timestamps including `reviewed_at` for `incomplete`, reminder preference, created/updated timestamps. Root points to the first same-owner goal; previous points to the immediately preceding same-owner sequence. Unique `(principal_id, root_goal_id, sequence_number)` and `(principal_id, previous_goal_id)` prevent duplicate/forked successors. Checks enforce the state/timestamp matrix, version >=1, target 1–7, exact non-overlapping seven-date repeat windows, note <=280, and external notifications default false. Partial unique `(principal_id) WHERE state IN ('active','paused')` enforces one primary.
 
 #### `behavior_goal_history`
 
-Append-only rows store goal/owner IDs, goal version, event enum, from/to states, canonical request digest, actor type `owner|system`, reason enum, terms/progress snapshot, occurred time, request ID. Unique `(goal_id, goal_version)` prevents double history. Notes and provider data are excluded.
+Append-only rows store goal/owner/root/previous IDs, sequence, goal version, event enum including `finalized_incomplete` and `repeated_from_previous_window`, from/to states, canonical request digest, actor type `owner|system`, reason enum, terms/progress snapshot, occurred time, request ID. Unique `(goal_id, goal_version)` prevents double history. Finalization writes the source goal's terminal incomplete evidence before an owner choice. Repeat appends only the new goal's activation event; it never appends to or changes source history. Notes and provider data are excluded.
 
 #### `behavior_goal_reminder_delivery`
 
@@ -395,6 +426,7 @@ Application rollback leaves additive tables. Downgrade fails closed when any new
 | 409 | `GOAL_VERSION_CONFLICT` | `تغيّر الهدف. حدّث الصفحة ثم حاول مجددًا.` |
 | 409 | `GOAL_STATE_CONFLICT` | `لا يتاح هذا الإجراء في حالة الهدف الحالية.` |
 | 409 | `PRIMARY_GOAL_EXISTS` | `لديك هدف أساسي حالي. غيّره أو أنهه أولًا.` |
+| 409 | `GOAL_REPEAT_PRIORITY_CONFLICT` | `لا تتوافق أولوية الأسبوع الحالية مع تكرار هذا الهدف.` |
 | 409 | `IDEMPOTENCY_KEY_REUSED` | `تعارض الطلب مع محاولة سابقة.` |
 | 422 | `GOAL_ACTION_NOT_ALLOWED` | `لا تتوافق الخطوة المختارة مع هذه الأولوية.` |
 | 422 | `VALIDATION_ERROR` | `تحقق من بيانات الطلب.` plus bounded field map |
@@ -416,9 +448,9 @@ No error discloses whether another Principal owns an ID. Responses and OpenAPI u
 
 ### 8.1 Golden and mutation coverage
 
-The seeded corpus covers invalid/stale/safety inputs, complete-empty evidence, insufficient days/coverage, priority tier order, repeated-overage threshold, micronutrient persistence, exact ties, duplicate/conflicting evidence, replacement-over-addition, secondary cap, rejection suppression, lifecycle transitions, stale writers, derived progress, reopen reversal, and reminder caps.
+The seeded corpus covers invalid/stale/safety inputs, complete-empty evidence, insufficient days/coverage, priority tier order, repeated-overage threshold, micronutrient persistence, exact ties, duplicate/conflicting evidence, replacement-over-addition, secondary cap, rejection suppression, lifecycle transitions, stale writers, derived progress, reopen reversal, reminder caps, and incomplete-goal repeat/reduce with distinct identity/window, exact replay, stale concurrency, invalid state, history preservation, and main-priority enforcement.
 
-The docs-only checker must reproduce every expected result and prove each selection has at most one main and one secondary. Future implementation tests must mutate each of these and observe failure: swap tier order; remove 75% coverage; treat partial as zero; permit one-event limit priority; remove micronutrient persistence; allow addition above calories; add a third priority; repeat a rejected goal; accept a second primary; increment progress in the client; preserve completion after reopen; or send a second reminder.
+The docs-only checker must reproduce every expected result and prove each selection has at most one main and one secondary. Future implementation tests must mutate each of these and observe failure: swap tier order; remove 75% coverage; treat partial as zero; permit one-event limit priority; remove micronutrient persistence; allow addition above calories; add a third priority; repeat a rejected goal; accept a second primary; increment progress in the client; preserve completion after reopen; reuse a source goal ID/window during repeat; overwrite prior repeat evidence; authorize repeat from a secondary; or send a second reminder.
 
 ### 8.2 Future acceptance matrix
 
@@ -431,6 +463,7 @@ The docs-only checker must reproduce every expected result and prove each select
 | History | original facts/rules/copy replay | new version never rewrites old result | Postgres revision |
 | Ownership | owner reads/commands own records | cross-owner 404; spoofed Principal rejected | two-owner API |
 | Goal lifecycle | every valid state event | invalid/stale/duplicate/racing commands | state + Postgres concurrency |
+| Incomplete-goal repeat | frozen incomplete source plus distinct new active window | replay, concurrent successor, invalid state, ID reuse, existing-primary and secondary-priority mismatch | state oracle + Postgres transaction |
 | Progress | distinct complete dates derive count | unknown/partial/late reopen/reset semantics | service + clock |
 | Reminders | one eligible midweek and one end review | opt-out/quiet/pause/progress/cap suppression | scheduler + delivery uniqueness |
 | Migration | fresh/populated upgrade and compatible rollback | no backfill; downgrade refuses data | Alembic PostgreSQL |
