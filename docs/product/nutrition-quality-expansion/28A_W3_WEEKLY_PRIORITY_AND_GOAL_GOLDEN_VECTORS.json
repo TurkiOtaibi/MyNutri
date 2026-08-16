@@ -16,17 +16,36 @@
       "input_state": "eligible",
       "calories_relation": "within_target",
       "days": [
-        {"logging_status": "complete", "analysis_eligible": true, "entry_count": 0, "metrics": {}},
-        {"logging_status": "complete", "analysis_eligible": true, "entry_count": 0, "metrics": {}},
-        {"logging_status": "complete", "analysis_eligible": true, "entry_count": 0, "metrics": {}},
-        {"logging_status": "complete", "analysis_eligible": true, "entry_count": 0, "metrics": {}},
-        {"logging_status": "partial", "analysis_eligible": false, "entry_count": 1, "metrics": {"fiber_g": 300}},
-        {"logging_status": "unregistered", "analysis_eligible": false, "entry_count": 0, "metrics": {"fiber_g": 300}}
+        {"date": "2026-08-10", "logging_status": "complete", "analysis_eligible": true, "entry_count": 0, "known_metric_entry_count": 0, "metrics": {}},
+        {"date": "2026-08-11", "logging_status": "complete", "analysis_eligible": true, "entry_count": 0, "known_metric_entry_count": 0, "metrics": {}},
+        {"date": "2026-08-12", "logging_status": "complete", "analysis_eligible": true, "entry_count": 0, "known_metric_entry_count": 0, "metrics": {}},
+        {"date": "2026-08-13", "logging_status": "complete", "analysis_eligible": true, "entry_count": 0, "known_metric_entry_count": 0, "metrics": {}},
+        {"date": "2026-08-14", "logging_status": "partial", "analysis_eligible": false, "entry_count": 1, "metrics": {"fiber_g": 300}},
+        {"date": "2026-08-15", "logging_status": "unregistered", "analysis_eligible": false, "entry_count": 0, "metrics": {"fiber_g": 300}},
+        {"date": "2026-08-16", "logging_status": "unregistered", "analysis_eligible": false, "entry_count": 0, "metrics": {}}
       ],
       "candidates": [
         {"key": "fiber_gap", "tier": 2, "derive_from_days": true, "metric_key": "fiber_g", "target": 30, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
       ],
       "expected": {"main": "fiber_gap", "secondary": null, "reason": "selected"}
+    },
+    {
+      "name": "nonempty-unknown-metric-is-not-zero-and-incomplete-values-are-excluded",
+      "input_state": "eligible",
+      "calories_relation": "within_target",
+      "days": [
+        {"date": "2026-08-10", "logging_status": "complete", "analysis_eligible": true, "entry_count": 1, "known_metric_entry_count": 1, "metrics": {"fiber_g": 30}},
+        {"date": "2026-08-11", "logging_status": "complete", "analysis_eligible": true, "entry_count": 1, "known_metric_entry_count": 1, "metrics": {"fiber_g": 30}},
+        {"date": "2026-08-12", "logging_status": "complete", "analysis_eligible": true, "entry_count": 1, "known_metric_entry_count": 1, "metrics": {"fiber_g": 30}},
+        {"date": "2026-08-13", "logging_status": "complete", "analysis_eligible": true, "entry_count": 1, "known_metric_entry_count": 0, "metrics": {}},
+        {"date": "2026-08-14", "logging_status": "partial", "analysis_eligible": false, "entry_count": 1, "metrics": {"fiber_g": 0}},
+        {"date": "2026-08-15", "logging_status": "unregistered", "analysis_eligible": false, "entry_count": 0, "metrics": {"fiber_g": 0}},
+        {"date": "2026-08-16", "logging_status": "unregistered", "analysis_eligible": false, "entry_count": 0, "metrics": {}}
+      ],
+      "candidates": [
+        {"key": "fiber_gap", "tier": 2, "derive_from_days": true, "metric_key": "fiber_g", "target": 30, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
+      ],
+      "expected": {"main": null, "secondary": null, "reason": "no_eligible_priority"}
     },
     {
       "name": "limit-precedes-larger-positive-gap",
@@ -118,14 +137,17 @@
       "complete_days": 7,
       "calories_relation": "within_target",
       "rejection_context": {
-        "signature_matches": true,
+        "rejected_principal_ref": "principal-a",
+        "current_principal_ref": "principal-a",
+        "rejected_rule_key": "fiber_gap",
+        "current_rule_key": "fiber_gap",
+        "rejected_rules_version": "w3-priority-1.0.0",
+        "current_rules_version": "w3-priority-1.0.0",
         "rejected_analysis_revision": 7,
         "current_analysis_revision": 8,
         "new_complete_dates_after_rejection": 0,
         "rejected_severity": 0.40,
-        "current_severity": 0.55,
-        "rejected_action_key": "fiber_action",
-        "current_action_key": "fiber_action"
+        "rejected_action_key": "replace_with_fiber_source"
       },
       "candidates": [
         {"key": "fiber_gap", "tier": 2, "severity": 0.50, "coverage": 100, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
@@ -138,17 +160,66 @@
       "complete_days": 7,
       "calories_relation": "within_target",
       "rejection_context": {
-        "signature_matches": true,
+        "rejected_principal_ref": "principal-a",
+        "current_principal_ref": "principal-a",
+        "rejected_rule_key": "fiber_gap",
+        "current_rule_key": "fiber_gap",
+        "rejected_rules_version": "w3-priority-1.0.0",
+        "current_rules_version": "w3-priority-1.0.0",
         "rejected_analysis_revision": 7,
         "current_analysis_revision": 8,
         "new_complete_dates_after_rejection": 1,
         "rejected_severity": 0.40,
-        "current_severity": 0.50,
-        "rejected_action_key": "fiber_action",
-        "current_action_key": "fiber_action"
+        "rejected_action_key": "replace_with_fiber_source"
       },
       "candidates": [
         {"key": "fiber_gap", "tier": 2, "severity": 0.50, "coverage": 100, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
+      ],
+      "expected": {"main": "fiber_gap", "secondary": null, "reason": "selected"}
+    },
+    {
+      "name": "rejected-rule-action-change-without-new-complete-day-remains-suppressed",
+      "input_state": "eligible",
+      "complete_days": 7,
+      "calories_relation": "within_target",
+      "rejection_context": {
+        "rejected_principal_ref": "principal-a",
+        "current_principal_ref": "principal-a",
+        "rejected_rule_key": "fiber_gap",
+        "current_rule_key": "fiber_gap",
+        "rejected_rules_version": "w3-priority-1.0.0",
+        "current_rules_version": "w3-priority-1.0.0",
+        "rejected_analysis_revision": 7,
+        "current_analysis_revision": 8,
+        "new_complete_dates_after_rejection": 0,
+        "rejected_severity": 0.40,
+        "rejected_action_key": "replace_with_fiber_source"
+      },
+      "candidates": [
+        {"key": "fiber_gap", "tier": 2, "severity": 0.40, "coverage": 100, "actionable": true, "action_mode": "add", "conflict_group": "fiber", "taxonomy_order": 170}
+      ],
+      "expected": {"main": null, "secondary": null, "reason": "rejected_goal_suppression"}
+    },
+    {
+      "name": "rejected-rule-action-change-with-new-complete-day-restores-eligibility",
+      "input_state": "eligible",
+      "complete_days": 7,
+      "calories_relation": "within_target",
+      "rejection_context": {
+        "rejected_principal_ref": "principal-a",
+        "current_principal_ref": "principal-a",
+        "rejected_rule_key": "fiber_gap",
+        "current_rule_key": "fiber_gap",
+        "rejected_rules_version": "w3-priority-1.0.0",
+        "current_rules_version": "w3-priority-1.0.0",
+        "rejected_analysis_revision": 7,
+        "current_analysis_revision": 8,
+        "new_complete_dates_after_rejection": 1,
+        "rejected_severity": 0.40,
+        "rejected_action_key": "replace_with_fiber_source"
+      },
+      "candidates": [
+        {"key": "fiber_gap", "tier": 2, "severity": 0.40, "coverage": 100, "actionable": true, "action_mode": "add", "conflict_group": "fiber", "taxonomy_order": 170}
       ],
       "expected": {"main": "fiber_gap", "secondary": null, "reason": "selected"}
     },

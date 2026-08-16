@@ -7,6 +7,7 @@ import json
 import math
 import sys
 from copy import deepcopy
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -54,17 +55,32 @@ def complete_days(vector: dict[str, Any]) -> int:
         if not isinstance(value, int) or value < 0:
             raise ValueError("complete_days must be a non-negative integer")
         return value
+    if len(days) != 7:
+        raise ValueError("structured days must contain exactly seven records")
+    parsed_dates: list[date] = []
     complete = 0
     for day in days:
+        try:
+            parsed_dates.append(date.fromisoformat(day["date"]))
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("every structured day requires an ISO date") from error
         status = day.get("logging_status")
         if status not in DAY_STATUSES:
             raise ValueError(f"unknown logging_status: {status!r}")
         if day.get("analysis_eligible") is not (status == "complete"):
             raise ValueError("analysis_eligible must be true exactly for complete days")
-        if not isinstance(day.get("entry_count"), int) or day["entry_count"] < 0:
+        if (
+            not isinstance(day.get("entry_count"), int)
+            or isinstance(day["entry_count"], bool)
+            or day["entry_count"] < 0
+        ):
             raise ValueError("entry_count must be a non-negative integer")
         if status == "complete":
             complete += 1
+    if len(set(parsed_dates)) != 7 or parsed_dates != sorted(parsed_dates):
+        raise ValueError("structured day dates must be unique and sorted")
+    if any(right - left != timedelta(days=1) for left, right in zip(parsed_dates, parsed_dates[1:])):
+        raise ValueError("structured day dates must be consecutive")
     return complete
 
 
@@ -106,36 +122,91 @@ def normalize_candidate(
         total_entries = 0
         for day in days:
             total_entries += day["entry_count"]
-            known_entries += day.get("known_metric_entry_count", 0)
+            known_count = day.get("known_metric_entry_count")
+            if (
+                not isinstance(known_count, int)
+                or isinstance(known_count, bool)
+                or not 0 <= known_count <= day["entry_count"]
+            ):
+                raise ValueError(
+                    f"{key}: known_metric_entry_count must be between zero and entry_count"
+                )
+            known_entries += known_count
             if day["entry_count"] == 0:
                 values.append(0.0)
             elif metric_key in day.get("metrics", {}):
-                values.append(day["metrics"][metric_key])
+                value = day["metrics"][metric_key]
+                if (
+                    known_count == 0
+                    or not isinstance(value, (int, float))
+                    or isinstance(value, bool)
+                    or not math.isfinite(value)
+                ):
+                    raise ValueError(f"{key}: known metric value must be finite")
+                values.append(value)
+            elif known_count != 0:
+                raise ValueError(f"{key}: known metric count requires a metric value")
         if not values:
             raise ValueError(f"{key}: no complete-day metric evidence")
         normalized["coverage"] = (
             100.0 if total_entries == 0 else 100.0 * known_entries / total_entries
         )
-        average = sum(values) / len(days)
+        average = sum(values) / len(values)
         normalized["severity"] = round((target - average) / target, 6)
     if not math.isfinite(normalized.get("severity", math.nan)):
         raise ValueError(f"{key}: severity must be finite")
     return normalized
 
 
-def rejection_is_suppressed(context: dict[str, Any]) -> bool:
-    if not context.get("signature_matches"):
+def rejection_is_suppressed(
+    context: dict[str, Any], candidates: list[dict[str, Any]]
+) -> bool:
+    required_text = (
+        "rejected_principal_ref",
+        "current_principal_ref",
+        "rejected_rule_key",
+        "current_rule_key",
+        "rejected_rules_version",
+        "current_rules_version",
+        "rejected_action_key",
+    )
+    if any(not isinstance(context.get(field), str) or not context[field] for field in required_text):
+        raise ValueError("rejection context requires explicit non-empty identity fields")
+    for field in (
+        "rejected_analysis_revision",
+        "current_analysis_revision",
+        "new_complete_dates_after_rejection",
+    ):
+        if (
+            not isinstance(context.get(field), int)
+            or isinstance(context[field], bool)
+            or context[field] < 0
+        ):
+            raise ValueError("rejection context revisions and day count must be non-negative integers")
+    rejected_severity = context.get("rejected_severity")
+    if (
+        not isinstance(rejected_severity, (int, float))
+        or isinstance(rejected_severity, bool)
+        or not math.isfinite(rejected_severity)
+    ):
+        raise ValueError("rejected_severity must be finite")
+    same_scope = (
+        context.get("rejected_principal_ref") == context.get("current_principal_ref")
+        and context.get("rejected_rule_key") == context.get("current_rule_key")
+        and context.get("rejected_rules_version") == context.get("current_rules_version")
+    )
+    if not same_scope:
         return False
+    matching = [candidate for candidate in candidates if candidate["key"] == context.get("current_rule_key")]
+    if len(matching) != 1:
+        raise ValueError("rejection context must resolve exactly one current rule candidate")
+    current = matching[0]
     later_revision = context.get("current_analysis_revision", 0) > context.get(
         "rejected_analysis_revision", 0
     )
     new_complete_day = context.get("new_complete_dates_after_rejection", 0) >= 1
-    severity_changed = round(
-        context.get("current_severity", 0) - context.get("rejected_severity", 0), 6
-    ) >= 0.10
-    action_changed = context.get("current_action_key") != context.get(
-        "rejected_action_key"
-    )
+    severity_changed = round(current["severity"] - rejected_severity, 6) >= 0.10
+    action_changed = current["action_key"] != context.get("rejected_action_key")
     return not (later_revision and new_complete_day and (severity_changed or action_changed))
 
 
@@ -171,18 +242,18 @@ def select(vector: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"unknown input_state: {state!r}")
     if state != "eligible":
         return {"main": None, "secondary": None, "reason": state}
+    day_count = complete_days(vector)
+    if day_count < 4:
+        return {"main": None, "secondary": None, "reason": "insufficient_complete_days"}
+    normalized = [normalize_candidate(c, vector, day_count) for c in vector.get("candidates", [])]
     if vector.get("rejection_context") and rejection_is_suppressed(
-        vector["rejection_context"]
+        vector["rejection_context"], normalized
     ):
         return {
             "main": None,
             "secondary": None,
             "reason": "rejected_goal_suppression",
         }
-    day_count = complete_days(vector)
-    if day_count < 4:
-        return {"main": None, "secondary": None, "reason": "insufficient_complete_days"}
-    normalized = [normalize_candidate(c, vector, day_count) for c in vector.get("candidates", [])]
     candidates = [
         c
         for c in normalized
