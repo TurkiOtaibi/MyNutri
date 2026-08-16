@@ -240,7 +240,6 @@
 :global(.diary-modal-backdrop) {
   position: fixed;
   inset: 0;
-  width: 100vw;
   z-index: 90;
   display: grid;
   place-items: center;
