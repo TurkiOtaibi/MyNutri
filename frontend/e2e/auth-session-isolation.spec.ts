@@ -409,7 +409,7 @@ test("same browser context isolates cached profile and diary data across A to B 
   let releaseDiaryB!: () => void;
   let diaryBWasBlocked = false;
   const diaryBBlocked = new Promise<void>((resolve) => { releaseDiaryB = resolve; });
-  await page.route(`${API_URL}/diary*`, async (route) => {
+  await page.route(`${API_URL}/diary/entries*`, async (route) => {
     diaryBWasBlocked = true;
     await diaryBBlocked;
     await route.continue();
