@@ -304,6 +304,18 @@ def activate_plan(
         session.add(new_plan)
         session.flush()
 
+        # A newly effective target changes the replayable source bundle for any
+        # current analysis whose 14-day evidence window contains that date.
+        from app.services.pattern_analysis import append_stale_events_for_date
+
+        append_stale_events_for_date(
+            session,
+            principal.principal_id,
+            effective_from,
+            "target_source_changed",
+            f"target_plan:{new_plan.id}",
+        )
+
         if was_new_profile and status == TargetPlanStatus.active:
             same_date_entries = session.exec(
                 select(DiaryEntry)

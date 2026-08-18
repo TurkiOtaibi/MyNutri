@@ -12,6 +12,8 @@ import type {
   ProfileInput,
   ProfileResponse,
   NutritionRegistryResponse,
+  PatternAnalysisHistory,
+  PatternAnalysisResponse,
   TargetResponse,
   TargetPlanActivationResponse,
   TargetPlanHistoryResponse,
@@ -363,4 +365,55 @@ export function setDiaryDayStatus(
 
 export function getWeekSummary(start: string): Promise<WeekSummary> {
   return apiFetch<WeekSummary>(`/diary/week?start=${encodeURIComponent(start)}`);
+}
+
+export async function getCurrentPatternAnalysis(
+  accessToken: string | null | undefined,
+  signal?: AbortSignal
+): Promise<PatternAnalysisResponse | null> {
+  try {
+    return await apiFetch<PatternAnalysisResponse>(
+      "/progress/nutrition-analysis/current",
+      authorizedInit(accessToken, signal)
+    );
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404 && error.code === "ANALYSIS_NOT_FOUND") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export function listPatternAnalysisHistory(
+  accessToken: string | null | undefined,
+  cursor?: string | null,
+  limit = 20,
+  signal?: AbortSignal
+): Promise<PatternAnalysisHistory> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
+  return apiFetch<PatternAnalysisHistory>(
+    `/progress/nutrition-analysis/history?${params.toString()}`,
+    authorizedInit(accessToken, signal)
+  );
+}
+
+export function evaluatePatternAnalysis(
+  expectedRevision: number | null,
+  etag: string | null,
+  idempotencyKey: string,
+  accessToken: string | null | undefined,
+  signal?: AbortSignal
+): Promise<PatternAnalysisResponse> {
+  return apiFetch<PatternAnalysisResponse>(
+    "/progress/nutrition-analysis/evaluate",
+    authorizedInit(accessToken, signal, {
+      method: "POST",
+      headers: {
+        "Idempotency-Key": idempotencyKey,
+        "If-Match": etag ?? '"analysis-none"'
+      },
+      body: JSON.stringify({ expected_current_revision: expectedRevision })
+    })
+  );
 }

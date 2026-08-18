@@ -352,6 +352,19 @@ def command_day_status(
             occurred_at=now,
         )
     )
+    if operation == "reopen":
+        # PLAN 032 consumes PLAN 031's owner/day lock order and appends lifecycle
+        # evidence without changing the immutable analysis document.
+        from app.services.pattern_analysis import append_stale_events_for_date
+
+        append_stale_events_for_date(
+            session,
+            principal.principal_id,
+            diary_date,
+            "day_reopened",
+            "completed_day_reopened",
+            row.version,
+        )
     response = _project(row, diary_date, count, authority)
     record = IdempotencyRecord(
         principal_id=principal.principal_id,

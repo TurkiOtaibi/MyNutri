@@ -10,7 +10,11 @@ from app.api.routes.diary import _command_expected_version, add_entry, edit_entr
 from app.api.routes.foods import add_food, edit_food
 from app.main import app
 from app.nutrition_rules.manifest import registry_response
-from app.schemas import DiaryDayStatusCommand, NutritionRegistryResponse
+from app.schemas import (
+    DiaryDayStatusCommand,
+    NutritionRegistryResponse,
+    WeeklyPriorityAnalysisInputV1,
+)
 
 
 def _request_schema(path: str, method: str) -> dict[str, object]:
@@ -131,3 +135,36 @@ def test_day_command_if_match_must_agree_with_body_version() -> None:
         _command_expected_version(payload, '"day-8"')
     assert mismatch.value.status_code == 422
     assert mismatch.value.detail["code"] == "VALIDATION_ERROR"
+
+
+def test_pattern_analysis_openapi_is_closed_versioned_and_owner_only() -> None:
+    schema = app.openapi()
+    paths = schema["paths"]
+    for path, methods in {
+        "/progress/nutrition-analysis/current": {"get"},
+        "/progress/nutrition-analysis/history": {"get"},
+        "/progress/nutrition-analysis/{analysis_id}/revisions/{revision}": {"get"},
+        "/progress/nutrition-analysis/evaluate": {"post"},
+        "/admin/nutrition-analysis/monitoring": {"get"},
+    }.items():
+        assert set(paths[path]) == methods
+    evaluate = paths["/progress/nutrition-analysis/evaluate"]["post"]
+    headers = {
+        item["name"]: item
+        for item in evaluate["parameters"]
+        if item["in"] == "header"
+    }
+    assert headers["If-Match"]["required"] is True
+    assert headers["Idempotency-Key"]["required"] is True
+    priority = schema["components"]["schemas"]["WeeklyPriorityAnalysisInputV1"]
+    assert priority["additionalProperties"] is False
+    assert set(priority["required"]) >= {
+        "principal_ref",
+        "source_analysis_id",
+        "source_analysis_revision",
+        "days",
+        "previous_period",
+        "metric_facts",
+        "safety_flags",
+    }
+    assert WeeklyPriorityAnalysisInputV1.model_config["extra"] == "forbid"

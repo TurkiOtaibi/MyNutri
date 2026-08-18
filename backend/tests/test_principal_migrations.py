@@ -61,6 +61,7 @@ BASELINE_HASHES = {
     "7c4a9d2e1f06_enforce_positive_diary_quantity.py": "56466eef64421d14104ab174cf0745e3664c11df3c9d515c032dea20bfd9bb2e",
     "9f2a1b6c3d05_plan025_admin_diary_order_index.py": "727052a802eeee1d6e4f493fc7d21e963cf6f6de7a7b78b102bf42c3d7c2c152",
     "b7e31a4c9d20_add_diary_day_status.py": "cef968f1e3786213eef07a337e5a178501305dfb07a47a772a370a2f8c50d939",
+    "c3a7e6d5f210_add_nutrition_pattern_analysis.py": "eb23950260d4e338c4a2db537a65eff594aad76d3caaee17aa4e3c32896f7617",
     "df46234d2a7e_constrain_finite_food_nutrients.py": "70767434911230795129b4702f8d4bf2e9a4add9dcf1607c3fa648dfebdd0674",
 }
 DEPLOYMENT_PRINCIPAL = UUID("00000000-0000-0000-0000-000000000001")
@@ -75,6 +76,7 @@ PLAN021_REVISION = "3f2e7b1c9a04"
 PLAN023_REVISION = "7c4a9d2e1f06"
 PLAN025_REVISION = "9f2a1b6c3d05"
 PLAN031_REVISION = "b7e31a4c9d20"
+PLAN032_REVISION = "c3a7e6d5f210"
 PLAN023_CONSTRAINT = "ck_diary_entry_quantity_positive_finite"
 PLAN023_PREFLIGHT_ERROR = "PLAN023_DIARY_QUANTITY_PREFLIGHT_BLOCKED"
 PLAN023_PREFLIGHT_GUARD = "plan023_diary_quantity_positive_finite_preflight"
@@ -113,6 +115,25 @@ def test_plan031_migration_is_additive_without_completion_backfill_and_fails_clo
     assert "PLAN031_BACKFILL_MUST_REMAIN_EMPTY" in migration
     assert "PLAN031 downgrade requires an online empty-table preflight" in migration
     assert "status_count={status_count}, history_count={history_count}" in migration
+
+
+def test_plan032_migration_is_additive_and_populated_downgrade_fails_closed() -> None:
+    migration = (
+        Path(__file__).parents[1]
+        / "alembic/versions/c3a7e6d5f210_add_nutrition_pattern_analysis.py"
+    ).read_text(encoding="utf-8")
+    for table in (
+        "nutrition_analysis",
+        "nutrition_analysis_revision",
+        "nutrition_analysis_evidence_ref",
+        "nutrition_analysis_revision_event",
+        "nutrition_analysis_command_idempotency",
+    ):
+        assert f'"{table}"' in migration
+    assert 'down_revision = "b7e31a4c9d20"' in migration
+    assert "PLAN032 downgrade requires an online empty-table preflight" in migration
+    assert "preserve immutable analysis history" in migration
+    assert "INSERT INTO nutrition_analysis" not in migration
 POSTGRESQL_AUTHORITATIVE_CHECK_DEFINITIONS = {
     "ck_diary_entry_versioned_shape": (
         "CHECK (snapshot_schema_version IS NULL OR "
@@ -454,7 +475,7 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            PLAN031_REVISION
+            PLAN032_REVISION
         )
         authoritative_checks = connection.execute(
             text(
@@ -2630,3 +2651,50 @@ def test_plan012_snapshot_v3_baseline_condition_blocks_at_historical_boundary() 
         before_food=_plan012_food_signature(url),
         before_schema=_plan012_schema_signature(url),
     )
+
+
+@pytest.mark.migration
+def test_plan032_empty_downgrade_and_reupgrade_are_reversible() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "downgrade", PLAN031_REVISION)
+    engine = create_engine(url)
+    try:
+        assert "nutrition_analysis" not in inspect(engine).get_table_names()
+    finally:
+        engine.dispose()
+    _run_alembic(url, "upgrade", "head")
+
+
+@pytest.mark.migration
+def test_plan032_populated_downgrade_refuses_without_deleting_history() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "head")
+    principal_id = uuid4()
+    analysis_id = uuid4()
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO principal (id,auth_user_id,role,status,created_at,updated_at) "
+                "VALUES (:id,:auth,'user','active',now(),now())"
+            ),
+            {"id": principal_id, "auth": uuid4()},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO nutrition_analysis "
+                "(id,principal_id,as_of_diary_date,calendar_timezone,interface_version,created_at,updated_at) "
+                "VALUES (:id,:principal,'2026-08-17','Asia/Riyadh',1,now(),now())"
+            ),
+            {"id": analysis_id, "principal": principal_id},
+        )
+    result = _run_alembic(url, "downgrade", PLAN031_REVISION, check=False)
+    assert result.returncode != 0
+    assert "PLAN032 downgrade blocked" in result.stdout + result.stderr
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM nutrition_analysis")).scalar_one() == 1
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == PLAN032_REVISION
+    engine.dispose()

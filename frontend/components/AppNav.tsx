@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, LogOut, Salad, Shield, UserRound, Utensils } from "lucide-react";
+import { BarChart3, CalendarDays, LogOut, Salad, Shield, UserRound, Utensils } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "./AuthProvider";
@@ -9,6 +9,7 @@ import { useUnsavedChanges } from "./UnsavedChangesProvider";
 const links = [
   { href: "/diary", label: "اليوميات", icon: CalendarDays },
   { href: "/foods", label: "الأطعمة", icon: Utensils },
+  { href: "/progress", label: "التقدم", icon: BarChart3 },
   { href: "/profile", label: "الملف", icon: UserRound }
 ];
 

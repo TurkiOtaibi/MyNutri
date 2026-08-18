@@ -102,6 +102,11 @@ export type AdminDiaryPage = DeepRequired<OpenApi.AdminDiaryPage>;
 export type AdminDiaryItem = DeepRequired<OpenApi.AdminDiaryItem>;
 export type DiaryLoggingStatus = OpenApi.DiaryLoggingStatus;
 export type DiaryDayStatusResponse = DeepRequired<OpenApi.DiaryDayStatusResponse>;
+export type PatternAnalysisResponse = DeepRequired<OpenApi.NutritionPatternAnalysisResponseV1>;
+export type PatternAnalysisHistory = DeepRequired<OpenApi.NutritionPatternAnalysisHistoryPageV1>;
+export type PatternAnalysisHistoryItem = DeepRequired<OpenApi.NutritionPatternAnalysisHistoryItemV1>;
+export type PatternAnalysisMetric = DeepRequired<OpenApi.AnalysisMetricFactV1>;
+export type WeeklyPriorityAnalysisInputV1 = DeepRequired<OpenApi.WeeklyPriorityAnalysisInputV1>;
 export type DaySummary = Omit<DeepRequired<OpenApi.DaySummary>, "totals" | "targets"> & {
   totals: NutritionTotals;
   targets: TargetResponse | null;
