@@ -7,11 +7,11 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from threading import Barrier
+from threading import Barrier, Event
 from uuid import UUID
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import make_url
 from sqlmodel import Session, select
 
@@ -64,7 +64,7 @@ def _prepare(url: str) -> None:
     with Session(engine) as session:
         session.add(Principal(id=PRINCIPAL_ID))
         session.flush()
-        for offset in range(4):
+        for offset in range(5):
             session.add(
                 DiaryDayStatus(
                     principal_id=PRINCIPAL_ID,
@@ -168,13 +168,20 @@ def test_reopen_and_evaluation_serialize_without_losing_stale_event() -> None:
             '"analysis-none"',
         )
     engine.dispose()
-    barrier = Barrier(2)
+    owner_locked = Event()
+    evaluation_attempted = Event()
 
     def reopen() -> str:
         worker_engine = create_engine(url)
         try:
             with Session(worker_engine) as session:
-                barrier.wait()
+                session.exec(
+                    select(Principal)
+                    .where(Principal.id == PRINCIPAL_ID)
+                    .with_for_update()
+                ).one()
+                owner_locked.set()
+                assert evaluation_attempted.wait(timeout=10)
                 command_day_status(
                     session,
                     PRINCIPAL,
@@ -190,9 +197,22 @@ def test_reopen_and_evaluation_serialize_without_losing_stale_event() -> None:
 
     def evaluate() -> str:
         worker_engine = create_engine(url)
+
+        @event.listens_for(worker_engine, "before_cursor_execute")
+        def observe_owner_lock(
+            _connection,
+            _cursor,
+            statement,
+            _parameters,
+            _context,
+            _executemany,
+        ):
+            if "FROM principal" in statement and "FOR UPDATE" in statement:
+                evaluation_attempted.set()
+
         try:
             with Session(worker_engine) as session:
-                barrier.wait()
+                assert owner_locked.wait(timeout=10)
                 try:
                     _, status, _ = evaluate_analysis(
                         session,
@@ -211,10 +231,11 @@ def test_reopen_and_evaluation_serialize_without_losing_stale_event() -> None:
         reopen_future = executor.submit(reopen)
         evaluate_future = executor.submit(evaluate)
         outcomes = {reopen_future.result(), evaluate_future.result()}
-    assert "reopened" in outcomes
-    assert outcomes & {"200", "INSUFFICIENT_ANALYSIS_EVIDENCE"}
+    assert outcomes == {"reopened", "201"}
     engine = create_engine(url)
     with Session(engine) as session:
         events = session.exec(select(NutritionAnalysisRevisionEvent)).all()
         assert sum(event.event_type == "day_reopened" for event in events) == 1
+        assert sum(event.event_type == "superseded_by_revision" for event in events) == 1
+        assert len(session.exec(select(NutritionAnalysisRevision)).all()) == 2
     engine.dispose()
