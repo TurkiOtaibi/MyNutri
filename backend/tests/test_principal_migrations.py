@@ -599,14 +599,31 @@ def _plan021_activate(
     *,
     replace_pending: bool = False,
 ) -> tuple[str, bool]:
+    stale_call_count = 0
+
+    def isolate_post_plan021_stale_side_effect(*_args, **_kwargs) -> int:
+        nonlocal stale_call_count
+        stale_call_count += 1
+        return 0
+
     with Session(engine) as session:
-        response, replayed = activate_plan(
-            session,
-            PrincipalContext(principal_id=DEPLOYMENT_PRINCIPAL),
-            request,
-            key,
-            replace_pending=replace_pending,
-        )
+        # These fixtures intentionally exercise the service against the
+        # historical PLAN 021 schema, before PLAN 032's stale-event tables
+        # exist. Isolate only that later side effect while retaining the full
+        # Target Plan transaction and migration assertions.
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            monkeypatch.setattr(
+                "app.services.pattern_analysis.append_stale_events_for_date",
+                isolate_post_plan021_stale_side_effect,
+            )
+            response, replayed = activate_plan(
+                session,
+                PrincipalContext(principal_id=DEPLOYMENT_PRINCIPAL),
+                request,
+                key,
+                replace_pending=replace_pending,
+            )
+        assert stale_call_count == (0 if replayed else 1)
         return str(response.plan.id), replayed
 
 
