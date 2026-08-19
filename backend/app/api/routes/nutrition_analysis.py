@@ -41,13 +41,15 @@ def _error(error: PatternAnalysisError) -> JSONResponse:
     )
 
 
-def _unexpected_error() -> JSONResponse:
+def _unexpected_error(
+    code: str = "INTERNAL_ERROR", message_ar: str = "تعذر إكمال الطلب."
+) -> JSONResponse:
     return JSONResponse(
         status_code=500,
         content={
             "error": {
-                "code": "INTERNAL_ERROR",
-                "message_ar": "تعذر إكمال الطلب.",
+                "code": code,
+                "message_ar": message_ar,
                 "details": {},
                 "request_id": str(uuid4()),
             }
@@ -134,7 +136,7 @@ def evaluate(
     except PatternAnalysisError as error:
         return _error(error)
     except Exception:
-        return _unexpected_error()
+        return _unexpected_error("ANALYSIS_EVALUATION_FAILED", "تعذر إنشاء التحليل. حاول مرة أخرى.")
 
 
 @admin_router.get("/monitoring", response_model=NutritionAnalysisMonitoringResponseV1)

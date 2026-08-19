@@ -21,7 +21,19 @@ from app.api.routes import admin as admin_route
 from app.core.auth import AuthClaims, PrincipalContext, get_token_verifier
 from app.db.session import get_session
 from app.main import app
-from app.models import ActivityLevel, DiaryEntry, Goal, Principal, PrincipalRole, Profile, Sex, TargetProvenance
+from app.models import (
+    ActivityLevel,
+    DiaryEntry,
+    Goal,
+    NutritionAnalysis,
+    NutritionAnalysisRevision,
+    Principal,
+    PrincipalRole,
+    Profile,
+    Sex,
+    TargetProvenance,
+)
+from app.services.pattern_analysis import analysis_history
 from app.services.diary import AdminDiaryCursorError, _encode_admin_diary_cursor
 
 ADMIN_ID = UUID("00000000-0000-0000-0000-0000000000aa")
@@ -218,18 +230,22 @@ def _run_alembic(url: str, *arguments: str) -> subprocess.CompletedProcess[str]:
 
 
 def _index_catalog(session: Session) -> dict[str, object]:
-    row = session.execute(
-        text(
-            "SELECT pg_get_indexdef(indexrelid) AS definition, indpred IS NULL AS no_predicate, "
-            "indnkeyatts, indnatts, indoption::smallint[] AS options, "
-            "array_agg(pg_get_indexdef(indexrelid, key_position, true) ORDER BY key_position) AS keys "
-            "FROM pg_index JOIN pg_class ON pg_class.oid = indexrelid "
-            "CROSS JOIN LATERAL generate_series(1, indnkeyatts) AS key_position "
-            "WHERE indrelid = 'diary_entry'::regclass "
-            "AND relname = 'ix_diary_entry_principal_date_created_id_desc' "
-            "GROUP BY indexrelid, indpred, indnkeyatts, indnatts, indoption"
+    row = (
+        session.execute(
+            text(
+                "SELECT pg_get_indexdef(indexrelid) AS definition, indpred IS NULL AS no_predicate, "
+                "indnkeyatts, indnatts, indoption::smallint[] AS options, "
+                "array_agg(pg_get_indexdef(indexrelid, key_position, true) ORDER BY key_position) AS keys "
+                "FROM pg_index JOIN pg_class ON pg_class.oid = indexrelid "
+                "CROSS JOIN LATERAL generate_series(1, indnkeyatts) AS key_position "
+                "WHERE indrelid = 'diary_entry'::regclass "
+                "AND relname = 'ix_diary_entry_principal_date_created_id_desc' "
+                "GROUP BY indexrelid, indpred, indnkeyatts, indnatts, indoption"
+            )
         )
-    ).mappings().one()
+        .mappings()
+        .one()
+    )
     return dict(row)
 
 
@@ -253,7 +269,10 @@ def _assert_diary_index_catalog(session: Session) -> None:
 
 
 def _walk_plan(node: dict) -> list[dict]:
-    return [node, *[descendant for child in node.get("Plans", []) for descendant in _walk_plan(child)]]
+    return [
+        node,
+        *[descendant for child in node.get("Plans", []) for descendant in _walk_plan(child)],
+    ]
 
 
 def _explain(session: Session, statement: str, **params: object) -> dict:
@@ -324,14 +343,20 @@ def test_plan025_admin_user_list_summary_queries_are_constant(admin_context) -> 
     counts: list[int] = []
     for page_size in (1, 20, 100):
         with _capture_statements(session) as statements:
-            response = client.get("/admin/users", params={"page_size": page_size}, headers=_headers())
+            response = client.get(
+                "/admin/users", params={"page_size": page_size}, headers=_headers()
+            )
         assert response.status_code == 200, response.text
         assert len(response.json()["items"]) == page_size
         assert all(" for update" not in statement for statement in statements)
-        assert not any(statement.startswith(("insert ", "update ", "delete ")) for statement in statements)
+        assert not any(
+            statement.startswith(("insert ", "update ", "delete ")) for statement in statements
+        )
         counts.append(len(statements))
     assert counts == [3, 3, 3]
-    profiled = client.get("/admin/users", params={"search": "user-0@example.com"}, headers=_headers())
+    profiled = client.get(
+        "/admin/users", params={"search": "user-0@example.com"}, headers=_headers()
+    )
     assert profiled.status_code == 200, profiled.text
     summary = profiled.json()["items"][0]
     assert summary["profile_complete"] is True
@@ -349,8 +374,12 @@ def test_plan025_admin_diary_is_bounded_stable_and_owner_isolated(admin_context)
     first_page = first.json()
     assert len(first_page["items"]) == 50
     assert first_page["next_cursor"]
-    assert all(item["id"] not in {str(entry.id) for entry in other_entries} for item in first_page["items"])
-    assert not any(statement.startswith(("insert ", "update ", "delete ")) for statement in statements)
+    assert all(
+        item["id"] not in {str(entry.id) for entry in other_entries} for item in first_page["items"]
+    )
+    assert not any(
+        statement.startswith(("insert ", "update ", "delete ")) for statement in statements
+    )
     assert all(" for update" not in statement for statement in statements)
     cross_owner = client.get(
         f"/admin/users/{OTHER_ID}/diary",
@@ -400,9 +429,12 @@ def test_plan025_admin_diary_is_bounded_stable_and_owner_isolated(admin_context)
     )
     assert empty.status_code == 200, empty.text
     assert empty.json() == {"items": [], "next_cursor": None}
-    assert client.get(
-        f"/admin/users/{USER_ID}/diary", params={"limit": 101}, headers=_headers()
-    ).status_code == 422
+    assert (
+        client.get(
+            f"/admin/users/{USER_ID}/diary", params={"limit": 101}, headers=_headers()
+        ).status_code
+        == 422
+    )
     for cursor in (
         "not-a-cursor",
         _cursor({"entry_date": 1, "created_at": "2026-08-01T12:00:00", "id": str(uuid4())}),
@@ -410,7 +442,11 @@ def test_plan025_admin_diary_is_bounded_stable_and_owner_isolated(admin_context)
             {"entry_date": "2026-08-01", "created_at": "2026-08-01T12:00:00", "id": str(uuid4())}
         ),
         _cursor(
-            {"entry_date": "20260801", "created_at": "2026-08-01T12:00:00+00:00", "id": str(uuid4())}
+            {
+                "entry_date": "20260801",
+                "created_at": "2026-08-01T12:00:00+00:00",
+                "id": str(uuid4()),
+            }
         ),
         _cursor(
             {
@@ -422,9 +458,12 @@ def test_plan025_admin_diary_is_bounded_stable_and_owner_isolated(admin_context)
         ),
         "e30",
     ):
-        assert client.get(
-            f"/admin/users/{USER_ID}/diary", params={"cursor": cursor}, headers=_headers()
-        ).status_code == 422
+        assert (
+            client.get(
+                f"/admin/users/{USER_ID}/diary", params={"cursor": cursor}, headers=_headers()
+            ).status_code
+            == 422
+        )
 
 
 @pytest.mark.parametrize("size", [1, 20, 100])
@@ -433,7 +472,9 @@ def test_plan025_postgresql_budgets_read_only_and_bounded_pages(
 ) -> None:
     session = plan025_postgresql_session
     for index in range(100):
-        principal = Principal(id=uuid4(), auth_user_id=uuid4(), email=f"postgres-{index}@example.com")
+        principal = Principal(
+            id=uuid4(), auth_user_id=uuid4(), email=f"postgres-{index}@example.com"
+        )
         session.add(principal)
         session.flush()
         if index % 2 == 0:
@@ -468,7 +509,9 @@ def test_plan025_postgresql_budgets_read_only_and_bounded_pages(
         )
     assert len(page.items) == size
     assert len(statements) == 2
-    assert not any(statement.startswith(("insert ", "update ", "delete ")) for statement in statements)
+    assert not any(
+        statement.startswith(("insert ", "update ", "delete ")) for statement in statements
+    )
     assert not any(" for update" in statement for statement in statements)
 
     principal = PrincipalContext(USER_ID)
@@ -613,17 +656,26 @@ def test_plan025_migration_rehearsal_catalog_and_reversibility(
                     "'unspecified', 1, "
                     "'no_target_source', CAST(:snapshot AS jsonb), TIMESTAMPTZ '2026-08-01 12:00:00+00')"
                 ),
-                {"entry_id": str(uuid4()), "principal_id": str(USER_ID), "snapshot": json.dumps(_snapshot())},
+                {
+                    "entry_id": str(uuid4()),
+                    "principal_id": str(USER_ID),
+                    "snapshot": json.dumps(_snapshot()),
+                },
             )
             session.commit()
             before = session.execute(text("SELECT count(*) FROM diary_entry")).scalar_one()
         _run_alembic(plan025_postgresql_database, "downgrade", "7c4a9d2e1f06")
         with Session(engine) as session:
             assert session.execute(text("SELECT count(*) FROM diary_entry")).scalar_one() == before
-            assert session.execute(
-                text("SELECT count(*) FROM pg_indexes WHERE tablename = 'diary_entry' "
-                     "AND indexname = 'ix_diary_entry_principal_date_created_id_desc'")
-            ).scalar_one() == 0
+            assert (
+                session.execute(
+                    text(
+                        "SELECT count(*) FROM pg_indexes WHERE tablename = 'diary_entry' "
+                        "AND indexname = 'ix_diary_entry_principal_date_created_id_desc'"
+                    )
+                ).scalar_one()
+                == 0
+            )
         _run_alembic(plan025_postgresql_database, "upgrade", "head")
         with Session(engine) as session:
             _assert_diary_index_catalog(session)
@@ -631,3 +683,63 @@ def test_plan025_migration_rehearsal_catalog_and_reversibility(
     finally:
         engine.dispose()
     _run_alembic(plan025_postgresql_database, "check")
+
+
+def test_plan032_history_limit_100_uses_constant_bulk_queries(admin_context) -> None:
+    _client, session = admin_context
+    revisions = []
+    for index in range(100):
+        period_end = date(2026, 8, 17) - timedelta(days=index)
+        series = NutritionAnalysis(
+            principal_id=USER_ID,
+            as_of_diary_date=period_end,
+            calendar_timezone="Asia/Riyadh",
+            interface_version=1,
+        )
+        session.add(series)
+        session.flush()
+        revision = NutritionAnalysisRevision(
+            analysis_id=series.id,
+            principal_id=USER_ID,
+            revision=1,
+            period_start=period_end - timedelta(days=6),
+            period_end=period_end,
+            previous_period_start=period_end - timedelta(days=13),
+            previous_period_end=period_end - timedelta(days=7),
+            analysis_rules_version="w3-analysis-1.1.0",
+            source_versions={},
+            source_input_hash=f"{index:064x}",
+            content_hash=f"{index + 100:064x}",
+            complete_day_count=4,
+            previous_complete_day_count=4,
+            result_status="available",
+            analysis_document={},
+            generated_at=datetime(2026, 8, 17, 8, tzinfo=timezone.utc),
+            finalized_at=datetime(2026, 8, 17, 8, 0, 0, 1000, tzinfo=timezone.utc),
+        )
+        revisions.append(revision)
+        session.add(revision)
+    session.commit()
+
+    with _capture_statements(session) as statements:
+        page = analysis_history(session, PrincipalContext(USER_ID), 100, None)
+
+    analysis_selects = [
+        statement
+        for statement in statements
+        if statement.startswith("select ")
+        and any(
+            f" from {table} " in statement
+            for table in (
+                "nutrition_analysis_revision",
+                "nutrition_analysis",
+                "nutrition_analysis_revision_event",
+            )
+        )
+    ]
+    assert len(page.items) == 100
+    assert page.next_cursor is None
+    assert len(analysis_selects) == 3
+    assert [item.period_end for item in page.items] == sorted(
+        (item.period_end for item in page.items), reverse=True
+    )

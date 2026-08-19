@@ -52,7 +52,7 @@ def test_registry_exposes_exact_version_bundle_and_authoritative_metadata(
     assert body["rules_manifest_hash"] == rules_manifest_hash()
     assert len(body["nutrients"]) == 16
     assert len(body["target_types"]) == 7
-    assert body["analysis_rules_version"] == "w3-analysis-1.0.0"
+    assert body["analysis_rules_version"] == "w3-analysis-1.1.0"
     assert body["analysis_rules_status"] == "active"
     assert {item["key"] for item in body["analysis_metrics"]} >= {
         "energy:calories_kcal_per_day",

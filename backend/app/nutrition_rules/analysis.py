@@ -8,11 +8,11 @@ production golden-vector oracle.
 from __future__ import annotations
 
 import math
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_EVEN
 from typing import Any, Final
 
-ANALYSIS_RULES_VERSION: Final = "w3-analysis-1.0.0"
+ANALYSIS_RULES_VERSION: Final = "w3-analysis-1.1.0"
 CALENDAR_TIMEZONE: Final = "Asia/Riyadh"
 MIN_COMPLETE_DAYS: Final = 4
 LIMITED_COVERAGE_PERCENT: Final = Decimal("50")
@@ -76,7 +76,11 @@ def round6(value: Decimal | float | int) -> float:
 
 
 def analysis_windows(as_of_diary_date: date | str) -> dict[str, str]:
-    end = date.fromisoformat(as_of_diary_date) if isinstance(as_of_diary_date, str) else as_of_diary_date
+    end = (
+        date.fromisoformat(as_of_diary_date)
+        if isinstance(as_of_diary_date, str)
+        else as_of_diary_date
+    )
     start = end - timedelta(days=6)
     previous_end = start - timedelta(days=1)
     previous_start = previous_end - timedelta(days=6)
@@ -130,6 +134,183 @@ def metric_coverage(days: list[dict[str, Any]]) -> dict[str, Any]:
         "amount_qualifier": qualifier,
         "confidence": confidence,
     }
+
+
+def aggregate_period_values(observations: list[float | None]) -> dict[str, Any]:
+    known = [decimal_value(value) for value in observations if value is not None]
+    if not known:
+        return {
+            "value": None,
+            "value_state": "unknown",
+            "known_count": 0,
+            "amount_qualifier": "unavailable",
+        }
+    value = round6(sum(known, Decimal(0)))
+    return {
+        "value": value,
+        "value_state": "explicit_zero" if value == 0 else "numeric",
+        "known_count": len(known),
+        "amount_qualifier": "exact" if len(known) == len(observations) else "at_least",
+    }
+
+
+def scalar_range_target(value: Any, unit: str, plan_id: str) -> dict[str, Any]:
+    numeric = decimal_value(value)
+    if numeric <= 0:
+        return {"target": None, "valid": False, "reason": "invalid_target"}
+    published = float(numeric)
+    return {
+        "target": {
+            "type": "range",
+            "unit": unit,
+            "lower": published,
+            "upper": published,
+            "source_plan_ids": [plan_id],
+        },
+        "valid": True,
+        "reason": "authoritative_scalar",
+    }
+
+
+def range_metric_status(value: Any, lower: Any, upper: Any) -> dict[str, Any]:
+    observed = decimal_value(value)
+    minimum = decimal_value(lower)
+    maximum = decimal_value(upper)
+    if minimum <= 0 or maximum <= 0 or minimum > maximum:
+        raise ValueError("invalid_target")
+    if observed < minimum:
+        status = "below_target"
+        distance = (minimum - observed) / minimum
+    elif observed > maximum:
+        status = "above_target"
+        distance = (observed - maximum) / maximum
+    elif minimum == maximum and observed == minimum:
+        status = "at_target"
+        distance = Decimal(0)
+    else:
+        status = "within_target"
+        distance = Decimal(0)
+    return {"status": status, "adverse_distance": round6(distance)}
+
+
+def project_target_compatibility(payload: dict[str, Any]) -> dict[str, Any]:
+    targets = payload.get("targets", [])
+    current_numeric = bool(payload.get("current_numeric"))
+    previous_numeric = bool(payload.get("previous_numeric"))
+    if not targets:
+        return {
+            "target": None,
+            "current_status": "observed" if current_numeric else "unavailable",
+            "previous_status": "observed" if previous_numeric else "unavailable",
+            "comparison": {"status": "not_comparable", "reason": "unavailable_value"},
+            "persistence": {"qualifies": False, "reason": "current_not_qualifying"},
+            "safety_flags": ["missing_target"] if current_numeric or previous_numeric else [],
+        }
+    semantic_keys = ("type", "unit", "value", "lower", "upper")
+    semantics = {tuple(item.get(key) for key in semantic_keys) for item in targets}
+    if len(semantics) != 1:
+        return {
+            "target": None,
+            "current_status": "target_incompatible" if current_numeric else "unavailable",
+            "previous_status": "target_incompatible" if previous_numeric else "unavailable",
+            "comparison": {"status": "not_comparable", "reason": "target_incompatible"},
+            "persistence": {"qualifies": False, "reason": "target_changed"},
+            "safety_flags": ["incompatible_target"],
+        }
+    target = {key: value for key, value in targets[0].items() if key != "plan_id"}
+    target["source_plan_ids"] = sorted({item["plan_id"] for item in targets})
+    return {"target": target, "compatible": True, "safety_flags": []}
+
+
+def validate_metric_target_shape(payload: dict[str, Any]) -> dict[str, Any]:
+    direction = payload["direction"]
+    target = payload.get("target")
+    null_reason = payload.get("null_reason")
+    errors: list[str] = []
+    expected_type = {"minimum": "minimum", "maximum": "maximum", "range": "range"}.get(direction)
+    if direction in {"minimize", "monitor_only"} and target is not None:
+        errors.append("target_forbidden")
+    elif expected_type and target is not None and target.get("type") != expected_type:
+        errors.append("target_type_mismatch")
+    elif (
+        expected_type
+        and target is None
+        and null_reason
+        not in {
+            "missing",
+            "legacy",
+            "unsafe",
+            "incompatible",
+        }
+    ):
+        errors.append("target_required")
+    return {"valid": not errors, "errors": errors}
+
+
+def coverage_band_counts(current_coverages: list[float | None]) -> dict[str, int]:
+    result = {"unknown": 0, "0_to_lt_50": 0, "50_to_lt_75": 0, "75_to_100": 0}
+    for value in current_coverages:
+        if value is None:
+            result["unknown"] += 1
+        elif value < 50:
+            result["0_to_lt_50"] += 1
+        elif value < 75:
+            result["50_to_lt_75"] += 1
+        else:
+            result["75_to_100"] += 1
+    return result
+
+
+def stale_reason_counts(events: list[dict[str, str]]) -> dict[str, int]:
+    keys = (
+        "day_reopened",
+        "day_version_changed",
+        "target_source_changed",
+        "source_snapshot_corrected",
+        "source_version_unsupported",
+    )
+    result = {key: 0 for key in keys}
+    seen: set[tuple[str, str]] = set()
+    for event in events:
+        pair = (event["revision"], event["reason"])
+        if event["reason"] not in result or pair in seen:
+            continue
+        seen.add(pair)
+        result[event["reason"]] += 1
+    return result
+
+
+def latency_band_counts(durations_ms: list[float | None]) -> dict[str, int]:
+    result = {
+        "unknown": 0,
+        "lt_250_ms": 0,
+        "250_to_lt_500_ms": 0,
+        "500_to_lt_1000_ms": 0,
+        "gte_1000_ms": 0,
+    }
+    for value in durations_ms:
+        if value is None or value < 0:
+            result["unknown"] += 1
+        elif value < 250:
+            result["lt_250_ms"] += 1
+        elif value < 500:
+            result["250_to_lt_500_ms"] += 1
+        elif value < 1000:
+            result["500_to_lt_1000_ms"] += 1
+        else:
+            result["gte_1000_ms"] += 1
+    return result
+
+
+def monitoring_cohort_count(week_monday: str, finalized_at: list[str]) -> dict[str, int]:
+    monday = date.fromisoformat(week_monday)
+    start = datetime.combine(monday, datetime.min.time(), tzinfo=timezone.utc)
+    end = start + timedelta(days=7)
+    count = sum(
+        start <= datetime.fromisoformat(value.replace("Z", "+00:00")) < end
+        for value in finalized_at
+    )
+    return {"total_count": count}
 
 
 def _adverse_distance(value: float, target: float, direction: str) -> Decimal:
@@ -219,8 +400,13 @@ def persistence_evidence(payload: dict[str, Any]) -> dict[str, Any]:
 
 def rank_contributors(items: list[dict[str, Any]]) -> dict[str, Any]:
     rows = [item for item in items if item.get("known", True)]
-    rows.sort(key=lambda item: (-abs(decimal_value(item["value"])), item["date"], item["ref"].lower()))
-    return {"refs": [item["ref"] for item in rows[:CONTRIBUTOR_CAP]], "count": min(len(rows), CONTRIBUTOR_CAP)}
+    rows.sort(
+        key=lambda item: (-abs(decimal_value(item["value"])), item["date"], item["ref"].lower())
+    )
+    return {
+        "refs": [item["ref"] for item in rows[:CONTRIBUTOR_CAP]],
+        "count": min(len(rows), CONTRIBUTOR_CAP),
+    }
 
 
 def revision_transition(payload: dict[str, Any]) -> dict[str, Any]:
@@ -228,20 +414,38 @@ def revision_transition(payload: dict[str, Any]) -> dict[str, Any]:
     if action == "first":
         return {"result": "created", "revision": 1, "historical_mutated": False}
     if action == "same_hash":
-        return {"result": "no_change", "revision": payload["current_revision"], "historical_mutated": False}
+        return {
+            "result": "no_change",
+            "revision": payload["current_revision"],
+            "historical_mutated": False,
+        }
     if action == "changed_hash":
-        return {"result": "created", "revision": payload["current_revision"] + 1, "historical_mutated": False}
+        return {
+            "result": "created",
+            "revision": payload["current_revision"] + 1,
+            "historical_mutated": False,
+        }
     if action == "new_date":
         return {"result": "created_new_series", "revision": 1, "historical_mutated": False}
     if action == "unsupported_replay":
-        return {"result": "error", "code": "UNSUPPORTED_HISTORICAL_VERSION", "historical_mutated": False}
+        return {
+            "result": "error",
+            "code": "UNSUPPORTED_HISTORICAL_VERSION",
+            "historical_mutated": False,
+        }
     if action == "stale":
-        return {"result": "stale_event_appended", "revision": payload["current_revision"], "historical_mutated": False}
+        return {
+            "result": "stale_event_appended",
+            "revision": payload["current_revision"],
+            "historical_mutated": False,
+        }
     raise ValueError("invalid_revision_action")
 
 
 def validate_priority_projection(payload: dict[str, Any]) -> dict[str, Any]:
     errors: list[str] = []
+    if payload.get("interface_version", 1) != 1:
+        errors.append("unsupported_interface_version")
     if payload.get("analysis_version") != ANALYSIS_RULES_VERSION:
         errors.append("unsupported_analysis_rules")
     if payload.get("timezone") != CALENDAR_TIMEZONE:
@@ -255,9 +459,15 @@ def validate_priority_projection(payload: dict[str, Any]) -> dict[str, Any]:
     if current and previous:
         current_dates = [date.fromisoformat(value) for value in current]
         previous_dates = [date.fromisoformat(value) for value in previous]
-        if any(right - left != timedelta(days=1) for left, right in zip(current_dates, current_dates[1:])):
+        if any(
+            right - left != timedelta(days=1)
+            for left, right in zip(current_dates, current_dates[1:])
+        ):
             errors.append("non_contiguous_current")
-        if any(right - left != timedelta(days=1) for left, right in zip(previous_dates, previous_dates[1:])):
+        if any(
+            right - left != timedelta(days=1)
+            for left, right in zip(previous_dates, previous_dates[1:])
+        ):
             errors.append("non_contiguous_previous")
         if previous_dates[-1] + timedelta(days=1) != current_dates[0]:
             errors.append("windows_not_contiguous")
@@ -267,6 +477,11 @@ def validate_priority_projection(payload: dict[str, Any]) -> dict[str, Any]:
     flags = payload.get("safety_flags", [])
     if flags != sorted(flags) or len(flags) != len(set(flags)):
         errors.append("invalid_safety_order")
+    incompatible = any(
+        metric.get("status") == "target_incompatible" for metric in payload.get("metric_facts", [])
+    )
+    if incompatible and "incompatible_target" not in flags:
+        errors.append("missing_incompatible_target_flag")
     return {"valid": not errors, "errors": sorted(errors)}
 
 
@@ -288,6 +503,25 @@ def evaluate_contract_case(kind: str, payload: dict[str, Any]) -> dict[str, Any]
         return revision_transition(payload)
     if kind == "projection":
         return validate_priority_projection(payload)
+    if kind == "period_aggregate":
+        return aggregate_period_values(payload["observations"])
+    if kind == "target_projection":
+        return scalar_range_target(payload["scalar"], payload["unit"], payload["plan_id"])
+    if kind == "range_status":
+        return range_metric_status(payload["value"], payload["lower"], payload["upper"])
+    if kind == "target_compatibility":
+        return project_target_compatibility(payload)
+    if kind == "metric_schema":
+        return validate_metric_target_shape(payload)
+    if kind == "monitoring_coverage":
+        return coverage_band_counts(payload["current_coverages"])
+    if kind == "monitoring_stale":
+        return stale_reason_counts(payload["events"])
+    if kind == "monitoring_latency":
+        durations = [] if payload.get("replay") else payload["durations_ms"]
+        return latency_band_counts(durations)
+    if kind == "monitoring_cohort":
+        return monitoring_cohort_count(payload["week_monday"], payload["finalized_at"])
     raise ValueError(f"unsupported contract case: {kind}")
 
 

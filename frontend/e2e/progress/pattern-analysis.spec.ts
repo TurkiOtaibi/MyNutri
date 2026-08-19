@@ -46,7 +46,7 @@ function analysisResponse(lifecycle: "current" | "stale" = "current") {
     previous_complete_day_count: 5,
     metric_summaries: [metric],
     source_versions: {
-      analysis_rules_version: "w3-analysis-1.0.0",
+      analysis_rules_version: "w3-analysis-1.1.0",
       nutrition_registry_version: "2.0.0",
       calculation_engine_version: "2.0.0",
       food_group_rules_version: "1.0.0",
@@ -70,7 +70,7 @@ function analysisResponse(lifecycle: "current" | "stale" = "current") {
       period_end: "2026-08-17",
       previous_period_start: "2026-08-04",
       previous_period_end: "2026-08-10",
-      analysis_rules_version: "w3-analysis-1.0.0",
+      analysis_rules_version: "w3-analysis-1.1.0",
       nutrition_registry_version: "2.0.0",
       food_group_rules_version: "1.0.0",
       nova_rules_version: "1.0.0",
@@ -160,5 +160,42 @@ test.describe("@plan032 nutrition pattern analysis", () => {
       await page.setViewportSize({ width, height: 844 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     }
+  });
+
+  test("history loading is distinct from a successful empty history", async ({ page }) => {
+    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/current", (route) => route.fulfill({ status: 200, contentType: "application/json", json: analysisResponse() }));
+    let releaseHistory: (() => void) | undefined;
+    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/history", async (route) => {
+      await new Promise<void>((resolve) => { releaseHistory = resolve; });
+      await route.fulfill({ status: 200, contentType: "application/json", json: { items: [], next_cursor: null } });
+    });
+    await page.goto("/progress");
+    await expect(page.getByText("الألياف")).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "جارٍ تحميل سجل التحليلات" })).toBeVisible();
+    await expect(page.getByText("لا توجد نسخ سابقة.")).toHaveCount(0);
+    releaseHistory?.();
+    await expect(page.getByText("لا توجد نسخ سابقة.")).toBeVisible();
+  });
+
+  test("history failure preserves current analysis and exposes accessible retry", async ({ page }) => {
+    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/current", (route) => route.fulfill({ status: 200, contentType: "application/json", json: analysisResponse() }));
+    let historyRequests = 0;
+    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/history", (route) => {
+      historyRequests += 1;
+      return route.fulfill(historyRequests === 1
+        ? { status: 500, contentType: "application/json", json: { error: { code: "INTERNAL_ERROR", message_ar: "تعذر إكمال الطلب.", details: {}, request_id: "history-failure" } } }
+        : { status: 200, contentType: "application/json", json: { items: [], next_cursor: null } });
+    });
+    await page.goto("/progress");
+    await expect(page.getByText("الألياف")).toBeVisible();
+    const alert = page.getByRole("alert").filter({ hasText: "تعذر تحميل سجل التحليلات" });
+    await expect(alert).toBeVisible();
+    await expect(alert).toBeFocused();
+    await expect(page.getByText("لا توجد نسخ سابقة.")).toHaveCount(0);
+    const accessibility = await new AxeBuilder({ page }).include('main [dir="rtl"]').analyze();
+    expect(accessibility.violations).toEqual([]);
+    await alert.getByRole("button", { name: "إعادة المحاولة" }).click();
+    await expect(page.getByText("لا توجد نسخ سابقة.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "سجل تحليلات نمط التغذية" })).toBeFocused();
   });
 });

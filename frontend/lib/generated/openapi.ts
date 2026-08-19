@@ -177,6 +177,25 @@ export interface AnalysisComparisonV1 {
     | "not_comparable";
 }
 
+/** AnalysisCompleteDayBandCountsV1 */
+export interface AnalysisCompleteDayBandCountsV1 {
+  /**
+   * 0-3
+   * @min 0
+   */
+  "0-3": number;
+  /**
+   * 4-5
+   * @min 0
+   */
+  "4-5": number;
+  /**
+   * 6-7
+   * @min 0
+   */
+  "6-7": number;
+}
+
 /** AnalysisContributorV1 */
 export interface AnalysisContributorV1 {
   /**
@@ -223,6 +242,30 @@ export interface AnalysisContributorsV1 {
    * @maxItems 5
    */
   previous: AnalysisContributorV1[];
+}
+
+/** AnalysisCoverageBandCountsV1 */
+export interface AnalysisCoverageBandCountsV1 {
+  /**
+   * 0 To Lt 50
+   * @min 0
+   */
+  "0_to_lt_50": number;
+  /**
+   * 50 To Lt 75
+   * @min 0
+   */
+  "50_to_lt_75": number;
+  /**
+   * 75 To 100
+   * @min 0
+   */
+  "75_to_100": number;
+  /**
+   * Unknown
+   * @min 0
+   */
+  unknown: number;
 }
 
 /** AnalysisDayFactV1 */
@@ -288,6 +331,35 @@ export interface AnalysisDayMetricValueV1 {
 export interface AnalysisEvaluateCommandV1 {
   /** Expected Current Revision */
   expected_current_revision?: number | null;
+}
+
+/** AnalysisLatencyBandCountsV1 */
+export interface AnalysisLatencyBandCountsV1 {
+  /**
+   * 250 To Lt 500 Ms
+   * @min 0
+   */
+  "250_to_lt_500_ms": number;
+  /**
+   * 500 To Lt 1000 Ms
+   * @min 0
+   */
+  "500_to_lt_1000_ms": number;
+  /**
+   * Gte 1000 Ms
+   * @min 0
+   */
+  gte_1000_ms: number;
+  /**
+   * Lt 250 Ms
+   * @min 0
+   */
+  lt_250_ms: number;
+  /**
+   * Unknown
+   * @min 0
+   */
+  unknown: number;
 }
 
 /** AnalysisMetricFactV1 */
@@ -399,6 +471,35 @@ export interface AnalysisSourceVersionBundleV1 {
    * @min 1
    */
   status_evidence_version: number;
+}
+
+/** AnalysisStaleReasonCountsV1 */
+export interface AnalysisStaleReasonCountsV1 {
+  /**
+   * Day Reopened
+   * @min 0
+   */
+  day_reopened: number;
+  /**
+   * Day Version Changed
+   * @min 0
+   */
+  day_version_changed: number;
+  /**
+   * Source Snapshot Corrected
+   * @min 0
+   */
+  source_snapshot_corrected: number;
+  /**
+   * Source Version Unsupported
+   * @min 0
+   */
+  source_version_unsupported: number;
+  /**
+   * Target Source Changed
+   * @min 0
+   */
+  target_source_changed: number;
 }
 
 /** BakedGoodType */
@@ -941,16 +1042,12 @@ export type NovaReviewStatus = "unreviewed" | "reviewed";
 
 /** NutritionAnalysisMonitoringResponseV1 */
 export interface NutritionAnalysisMonitoringResponseV1 {
-  /** Complete Day Band Counts */
-  complete_day_band_counts: Record<string, number>;
-  /** Coverage Band Counts */
-  coverage_band_counts: Record<string, number>;
+  complete_day_band_counts: AnalysisCompleteDayBandCountsV1;
+  coverage_band_counts: AnalysisCoverageBandCountsV1;
   /** Iso Week */
   iso_week: string;
-  /** Latency Band Counts */
-  latency_band_counts: Record<string, number>;
-  /** Stale Reason Counts */
-  stale_reason_counts: Record<string, number>;
+  latency_band_counts: AnalysisLatencyBandCountsV1;
+  stale_reason_counts: AnalysisStaleReasonCountsV1;
   /** Status Counts */
   status_counts: Record<string, number>;
   /**
@@ -1124,7 +1221,7 @@ export interface NutritionRegistryResponse {
   /** Analysis Rules Status */
   analysis_rules_status: "active";
   /** Analysis Rules Version */
-  analysis_rules_version: "w3-analysis-1.0.0";
+  analysis_rules_version: "w3-analysis-1.1.0";
   /** Baked Good Type Definitions */
   baked_good_type_definitions: RegistryLabelDefinition[];
   /** Calculation Engine Version */

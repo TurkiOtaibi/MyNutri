@@ -26,6 +26,8 @@ export function ProgressPage() {
   const queryClient = useQueryClient();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const errorRef = useRef<HTMLDivElement>(null);
+  const historyErrorRef = useRef<HTMLDivElement>(null);
+  const historyHeadingRef = useRef<HTMLHeadingElement>(null);
   const attemptRef = useRef<AnalysisAttempt | null>(null);
   const previousSubjectRef = useRef(subject);
   const [actionError, setActionError] = useState("");
@@ -39,7 +41,8 @@ export function ProgressPage() {
   const historyQuery = useQuery({
     queryKey: ["pattern-analysis-history", subject],
     queryFn: () => listPatternAnalysisHistory(accessToken, null, 20, signal),
-    enabled: Boolean(accessToken && subject)
+    enabled: Boolean(accessToken && subject),
+    retry: false
   });
 
   useEffect(() => {
@@ -48,6 +51,12 @@ export function ProgressPage() {
     attemptRef.current = null;
     setActionError("");
   }, [subject]);
+
+  useEffect(() => {
+    if (historyQuery.isError && analysisQuery.data) {
+      requestAnimationFrame(() => historyErrorRef.current?.focus());
+    }
+  }, [analysisQuery.data, historyQuery.isError]);
 
   const evaluation = useMutation({
     mutationFn: async () => {
@@ -88,14 +97,23 @@ export function ProgressPage() {
     <ProgressView
       analysis={analysisQuery.data ?? null}
       history={historyQuery.data}
+      historyLoading={historyQuery.isPending}
+      historyError={historyQuery.isError}
       loading={analysisQuery.isPending}
       loadError={analysisQuery.isError}
       evaluating={evaluation.isPending}
       actionError={actionError}
       headingRef={headingRef}
       errorRef={errorRef}
+      historyErrorRef={historyErrorRef}
+      historyHeadingRef={historyHeadingRef}
       onEvaluate={() => evaluation.mutate()}
       onRetryLoad={() => void analysisQuery.refetch()}
+      onRetryHistory={() => {
+        void historyQuery.refetch().then((result) => {
+          if (!result.isError) historyHeadingRef.current?.focus();
+        });
+      }}
     />
   );
 }

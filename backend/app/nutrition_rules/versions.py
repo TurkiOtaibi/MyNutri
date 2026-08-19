@@ -10,7 +10,7 @@ class RuleVersions:
     nova_rules_version: str = "1.0.0"
     registry_schema_version: int = 2
     snapshot_schema_version: int = 3
-    analysis_rules_version: str = "w3-analysis-1.0.0"
+    analysis_rules_version: str = "w3-analysis-1.1.0"
     analysis_rules_status: str = "active"
 
     def as_dict(self) -> dict[str, str | int | None]:

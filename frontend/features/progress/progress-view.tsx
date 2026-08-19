@@ -15,27 +15,37 @@ import styles from "./progress.module.css";
 type ProgressViewProps = {
   analysis: PatternAnalysisResponse | null;
   history: PatternAnalysisHistory | undefined;
+  historyLoading: boolean;
+  historyError: boolean;
   loading: boolean;
   loadError: boolean;
   evaluating: boolean;
   actionError: string;
   headingRef: RefObject<HTMLHeadingElement | null>;
   errorRef: RefObject<HTMLDivElement | null>;
+  historyErrorRef: RefObject<HTMLDivElement | null>;
+  historyHeadingRef: RefObject<HTMLHeadingElement | null>;
   onEvaluate: () => void;
   onRetryLoad: () => void;
+  onRetryHistory: () => void;
 };
 
 export function ProgressView({
   analysis,
   history,
+  historyLoading,
+  historyError,
   loading,
   loadError,
   evaluating,
   actionError,
   headingRef,
   errorRef,
+  historyErrorRef,
+  historyHeadingRef,
   onEvaluate,
-  onRetryLoad
+  onRetryLoad,
+  onRetryHistory
 }: ProgressViewProps) {
   const state = displayState(analysis);
   const metrics = analysis ? visibleMetrics(analysis) : [];
@@ -117,8 +127,15 @@ export function ProgressView({
             ))}
           </section>
           <section className={styles.history} aria-labelledby="analysis-history-heading">
-            <h2 id="analysis-history-heading"><History aria-hidden="true" /> {ANALYSIS_COPY.history}</h2>
-            {history?.items.length ? (
+            <h2 id="analysis-history-heading" ref={historyHeadingRef} tabIndex={-1}><History aria-hidden="true" /> {ANALYSIS_COPY.history}</h2>
+            {historyLoading ? <p role="status">جارٍ تحميل سجل التحليلات…</p> : null}
+            {historyError ? (
+              <div role="alert" ref={historyErrorRef} tabIndex={-1}>
+                <p>تعذر تحميل سجل التحليلات.</p>
+                <button type="button" onClick={onRetryHistory}>إعادة المحاولة</button>
+              </div>
+            ) : null}
+            {!historyLoading && !historyError && history?.items.length ? (
               <ol>
                 {history.items.map((item) => (
                   <li key={`${item.source_analysis_id}-${item.source_analysis_revision}`}>
@@ -128,7 +145,8 @@ export function ProgressView({
                   </li>
                 ))}
               </ol>
-            ) : <p>لا توجد نسخ سابقة.</p>}
+            ) : null}
+            {!historyLoading && !historyError && history?.items.length === 0 ? <p>لا توجد نسخ سابقة.</p> : null}
           </section>
         </>
       ) : null}
