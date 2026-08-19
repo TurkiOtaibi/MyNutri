@@ -1,14 +1,18 @@
 # PLAN 032 — Versioned Nutrition Pattern Analysis design
 
-**Status:** Approved — frozen for implementation; implementation requires separate path authorization
+**Status:** Approved — design 1.1 refrozen for implementation remediation; implementation remediation requires separate authorization
 
-**Design version:** `1.0`
+**Design version:** `1.1`
 
 **Analysis contract version:** `1`
 
-**First active analysis rules version:** `w3-analysis-1.0.0`
+**First implementation-candidate analysis rules version:** `w3-analysis-1.1.0`
+
+**Withdrawn pre-release rules version:** `w3-analysis-1.0.0` — never merged as an accepted PLAN 032 implementation, deployed, or used for shared/production revisions; it is not dispatchable and is never aliased to 1.1.0
 
 **Repository baseline:** `b44549291ccd950f12742467bbbe3a69ff455626`
+
+**Design 1.1 amendment review baseline:** `e98ed022be045e649a58d0c9eb946f52f5a778af`
 
 **Upstream authority:** PLAN 031 merge `de736c6cb681c652fb17244cebad64f62665f487`
 
@@ -55,7 +59,7 @@ The existing Sunday-aligned `WeekSummary` is presentation data and is not an ana
 | `PD-019` | Auditable finalized snapshots, immutable revisions, stale/supersession and original-rule replay are frozen in sections 8–9 and 13. |
 | `PD-025` | The Backend alone calculates and persists analysis; additive owner-only APIs expose stable null/error/idempotency semantics; the client supplies no nutrition facts. |
 | `PD-026` | Registry, calculation, group, source-reliability, NOVA, snapshot and analysis identities remain independent; no umbrella version substitutes for them. |
-| `H10` | PLAN 032 activates the previously reserved analysis slot as `w3-analysis-1.0.0`, uses exact version dispatch and immutable manifest semantics, and never assigns versions retroactively. |
+| `H10` | PLAN 032 uses `w3-analysis-1.1.0` as its first implementation candidate after the pre-release 1.0 semantic defects were found. Exact dispatch remains mandatory; withdrawn `w3-analysis-1.0.0` has no alias or fallback and versions are never assigned retroactively. |
 
 ## 3. Calendar and window contract
 
@@ -158,15 +162,23 @@ When `0 < known_entry_count < total_entry_count`, `amount_qualifier="at_least"`;
 
 Weekly servings, gram totals, occurrence-day counts, diversity counts, and shares use their explicitly named formulas below rather than a daily-average denominator.
 
+For every aggregation family, a wholly unknown non-empty evidence set publishes `value=null`, `value_state=unknown`, and never obtains numeric zero from an empty sum, falsey substitution, absent classification, or a missing denominator. A real numeric zero is `explicit_zero` only when at least one authoritative known observation establishes zero: for example a supported known group snapshot with zero contribution, or reviewed NOVA evidence with zero qualifying occurrence/share. With mixed known and unknown entries, arithmetic uses only known values, coverage counts both known and total entries, and `amount_qualifier=at_least`; the observed result may be explicit zero only when its known subset actually establishes zero. These rules apply equally to period totals, occurrence days, diversity, shares, group facts and NOVA facts.
+
 ### 5.3 Target compatibility
 
-Target-dependent status requires one semantically identical target type/unit/value or lower/upper pair on every numeric day in that period. Multiple Target Plan IDs are allowed only when the resolved target document is identical. Otherwise the raw metric may be returned as `observed`, but target status is `target_incompatible` and `safety_flags` includes `incompatible_target`; PLAN 033 cannot select it.
+`AnalysisMetricFactV1` has one target covering both periods. A non-null target is permitted only when one semantically identical target truthfully represents every target-bearing numeric day across the current and previous periods. Compatibility requires identical target type, unit, scalar value for minimum/maximum, or both lower and upper for a range. Different Target Plan IDs are permitted only when those target semantics are identical.
 
-Legacy-unversioned or absent target sources may provide display-only raw facts. They never create target-relative eligibility. A `very_low_energy_blocked` or `specialist_review_required` source suppresses target-relative analysis and adds the matching safety flag.
+For `macro:carb_g_per_day` and `macro:fat_g_per_day`, the sole authority is the exact effective Target Plan scalar `TargetResponse.carb_g` or `TargetResponse.fat_g`. A finite strictly positive scalar `v` is represented without tolerance as the degenerate closed range `type=range, lower=v, upper=v`. This expresses the exact allocated point; it is not a clinical or population range. No percentage, margin, external range, averaging, union or intersection is permitted. Non-finite or non-positive values are invalid source evidence and fail closed before division or target-relative output.
+
+When target-bearing numeric days disagree so that no single truthful target exists, `target=null`; safe raw facts remain published. Every period with numeric evidence requiring the conflicting target has `status=target_incompatible`; a period without numeric evidence remains `unavailable`. Comparison is exactly `not_comparable/target_incompatible`, persistence is exactly `false/target_changed`, and `safety_flags` includes `incompatible_target`. The system never chooses the newest/current target or synthesizes one. PLAN 033 cannot select the fact.
+
+Legacy-unversioned or absent target sources are distinct from incompatible targets: `target=null`, known raw facts may remain display-only with `status=observed`, target-relative comparison/persistence/eligibility is suppressed, comparison is `not_comparable/unavailable_value`, persistence is `false/current_not_qualifying`, and `missing_target` is added where applicable. These existing reasons do not claim a target comparison occurred. Absence never becomes zero. A `very_low_energy_blocked` or `specialist_review_required` source likewise suppresses target-relative analysis and adds the matching safety flag.
+
+Direction/target consistency is closed and validated: `minimum -> minimum`, `maximum -> maximum`, and `range -> range` whenever a target exists; `minimize|monitor_only` requires null. For `minimum|maximum|range`, null is legal only for the closed missing, legacy, unsafe or incompatible target states above. Any other contradiction invalidates the projection; validation never repairs it.
 
 ## 6. Exact v1 metric registry
 
-Every ID below is closed for `w3-analysis-1.0.0`. Unknown IDs fail validation. All arithmetic uses unrounded source values and rounds only published facts to six decimal places using decimal half-even.
+Every ID below is closed for `w3-analysis-1.1.0`. Unknown IDs fail validation. All arithmetic uses unrounded source values and rounds only published facts to six decimal places using decimal half-even.
 
 ### 6.1 Daily averages
 
@@ -176,7 +188,7 @@ Every ID below is closed for `w3-analysis-1.0.0`. Unknown IDs fail validation. A
 | `macro:protein_g_per_day`, `macro:carb_g_per_day`, `macro:fat_g_per_day` | `g/day` | scaled snapshot macros | effective Target Plan value/range |
 | `nutrient:fiber_g`, `nutrient:added_sugar_g`, `nutrient:saturated_fat_g`, `nutrient:trans_fat_g`, `nutrient:sodium_mg`, `nutrient:potassium_mg`, `nutrient:cholesterol_mg`, `nutrient:calcium_mg`, `nutrient:iron_mg`, `nutrient:magnesium_mg`, `nutrient:zinc_mg`, `nutrient:selenium_mcg`, `nutrient:vitamin_b12_mcg`, `nutrient:folate_dfe_mcg`, `nutrient:vitamin_a_rae_mcg`, `nutrient:iodine_mcg` | Registry unit per day | matching supported snapshot field | exact effective Target Plan/Registry target; cholesterol is `monitor_only` |
 
-Daily status is `below_target | at_target | within_target | above_target | observed | unavailable`. Exact equality is `at_target`. For minimum/recommended/adequate, below is adverse direction and at/above is within target. For maximum, above is adverse and at/below is within target. A range uses its closed endpoints.
+Daily/period status is `below_target | at_target | within_target | above_target | observed | target_incompatible | unavailable`. Exact equality is `at_target`. For minimum/recommended/adequate, below is adverse direction and at/above is within target. For maximum, above is adverse and at/below is within target. A range uses its closed endpoints. `target_incompatible` is used only under section 5.3 and never synthesized from missing numeric evidence.
 
 ### 6.2 Food-pattern metrics
 
@@ -297,7 +309,7 @@ Canonical `content_hash` covers the complete stored analysis result plus `source
 | rule version intentionally upgraded | create next revision under new version; preserve old revision |
 | unsupported original version requested | fail `UNSUPPORTED_ANALYSIS_RULE_VERSION`; no mutation |
 
-`generated_at` and `finalized_at` are Backend UTC timestamps. They do not affect deterministic calculation or no-op detection.
+`generated_at` and `finalized_at` are Backend UTC timestamps in the same successful transaction and do not affect deterministic calculation or no-op detection. For a new successful revision only, `generated_at` is captured immediately before deterministic rule/document construction, after the locked source bundle is collected and validated. `finalized_at` is captured after calculation, document/schema/hash validation, and staging revision/evidence/lifecycle writes, immediately before command-result persistence and commit. Their non-negative difference is the analysis-finalization latency sample. Replay and no-change requests create no revision and no latency sample.
 
 A completed evaluation idempotency record is retained for exactly seven days after `completed_at`; during that interval replay is byte-for-byte status/body/safe-header identical. The record is inserted only in the same successful commit as its revision/no-op response, so a rolled-back evaluation leaves no completed replay. After expiry, key reuse is a new command, but the source-input uniqueness rule still prevents a duplicate revision.
 
@@ -324,7 +336,7 @@ Every revision stores:
 - every PLAN 031 day version;
 - canonical source input and content hashes.
 
-`w3-analysis-1.0.0` is the first active analysis package. Dispatch is exact by version; there is no fallback to current rules. Semantic changes that can change a result require a new minor or major version under H10. Patch changes cannot affect output.
+`w3-analysis-1.1.0` is the first implementation-candidate analysis package. `w3-analysis-1.0.0` is withdrawn pre-release and unavailable: it was never accepted on main, deployed, or used for shared/production persisted revisions. Dispatch is exact by version; there is no alias or fallback to current rules. Semantic changes that can change a result require a new minor or major version under H10. Patch changes cannot affect output.
 
 Historical read returns the stored finalized document after hash verification. Historical recomputation loads the exact original analysis package and compatible readers for every claimed source version. If any package/reader is unavailable, return `UNSUPPORTED_HISTORICAL_VERSION` and preserve the revision unchanged. A current Registry or Target Plan never reinterprets old evidence.
 
@@ -382,7 +394,7 @@ persistence AnalysisPersistenceV1,
 contributors {current[],previous[]}
 ```
 
-Its exact enums are `metric_kind=daily_average|period_total|occurrence_days|share_percent|diversity_count|calorie_share`; `aggregation=average_numeric_days|sum_period|distinct_positive_dates|ratio_percent|distinct_source_count`; and `direction=minimum|maximum|range|minimize|monitor_only`. Target is null only for `minimize|monitor_only`; otherwise it contains exactly `type:minimum|maximum|range`, finite `value` for minimum/maximum or finite `lower,upper` with `lower<=upper` for range, and sorted unique UUID `source_plan_ids`.
+Its exact enums are `metric_kind=daily_average|period_total|occurrence_days|share_percent|diversity_count|calorie_share`; `aggregation=average_numeric_days|sum_period|distinct_positive_dates|ratio_percent|distinct_source_count`; and `direction=minimum|maximum|range|minimize|monitor_only`. A non-null target contains exactly `type:minimum|maximum|range`, finite strictly positive `value` for minimum/maximum or finite strictly positive `lower,upper` with `lower<=upper` for range, and sorted unique UUID `source_plan_ids`. Direction and target type must match. Target is always null for `minimize|monitor_only`; for target-bearing directions it is null only for the closed missing/legacy/unsafe/incompatible states in section 5.3. This uses the already-nullable field and existing enums; no interface field or enum changes.
 
 `PeriodMetricEvidenceV1` contains exactly `value:finite decimal|null`, `value_state:known|explicit_zero|unknown`, `amount_qualifier:exact|at_least|unavailable`, `complete_day_count:integer 0..7`, `numeric_day_count:integer 0..complete_day_count`, `known_entry_count:integer>=0`, `total_entry_count:integer>=0`, `coverage_percent:decimal 0..100|null`, `confidence:strong|limited|unavailable`, `status:below_target|at_target|within_target|above_target|observed|target_incompatible|unavailable`, and sorted `evidence_refs:OpaqueEvidenceRefV1[]`. An evidence ref contains exactly `source_ref:UUID`, `diary_date:date`, `source_version:non-empty string`, and no Food/Profile text.
 
@@ -425,6 +437,19 @@ All routes require owner authentication and derive Principal from the bearer ide
 `NutritionPatternAnalysisResponseV1` contains exactly `source_analysis_id:UUID`, `source_analysis_revision:integer>=1`, `lifecycle_status:current|stale|superseded`, `stale_reasons:sorted unique event enum[]`, `as_of_diary_date:date`, `period_start:date`, `period_end:date`, `previous_period_start:date`, `previous_period_end:date`, `complete_day_count:integer 0..7`, `previous_complete_day_count:integer 0..7`, `metric_summaries:AnalysisMetricFactV1[]`, `source_versions:AnalysisSourceVersionBundleV1`, `priority_input:WeeklyPriorityAnalysisInputV1`, `generated_at:UTC datetime`, `finalized_at:UTC datetime`, and `etag:string`. It excludes raw Profile inputs, Food names, notes, ingredients, idempotency keys, and provider data.
 
 `AnalysisSourceVersionBundleV1` contains exactly the internal versions enumerated in section 9 and their content hashes. `NutritionPatternAnalysisHistoryPageV1` contains exactly `items:NutritionPatternAnalysisHistoryItemV1[]`, `next_cursor:string|null`; each item contains identity/revision, lifecycle status, as-of date, both period bounds, analysis rules version, complete-day counts, generated/finalized timestamps and ETag, but no metric/evidence values. The current and exact-revision endpoints return `NutritionPatternAnalysisResponseV1`; evaluation returns the same schema plus HTTP result semantics from the route table. Admin monitoring contains only `iso_week`, total/status/version/complete-day-band/coverage-band/stale-reason/latency-band counts, all non-negative integers.
+
+### 11.1 Admin monitoring semantics
+
+For `GET /admin/nutrition-analysis/monitoring?iso_week=YYYY-Www`, the cohort is the finalized PLAN 032 revisions whose `finalized_at` is in the requested UTC ISO week: `[Monday 00:00 UTC, next Monday 00:00 UTC)`. `total_count` is the revision count in that cohort. This operational boundary does not alter the Asia/Riyadh Diary calendar.
+
+All maps are closed and include every key with a non-negative integer, including zero:
+
+- `complete_day_band_counts`: `0-3`, `4-5`, `6-7`, retaining the existing current-period complete-day semantics.
+- `coverage_band_counts`: one count per unique `(analysis_revision,metric_key)`, using current-period coverage only. `unknown` is null; `0_to_lt_50` is `0 <= p < 50`; `50_to_lt_75` is `50 <= p < 75`; `75_to_100` is `75 <= p <= 100`. Every current metric fact contributes exactly once; no previous-period coverage or revision-wide aggregate is substituted.
+- `stale_reason_counts`: distinct revisions per reason, based on append-only lifecycle events visible at query time. A revision counts at most once for a reason and may count once for several reasons. Keys are `day_reopened`, `day_version_changed`, `target_source_changed`, `source_snapshot_corrected`, `source_version_unsupported`. `superseded_by_revision` is not a stale reason.
+- `latency_band_counts`: every finalized revision contributes once using `finalized_at - generated_at`. Missing or negative is `unknown`; `0 <= ms < 250` is `lt_250_ms`; `250 <= ms < 500` is `250_to_lt_500_ms`; `500 <= ms < 1000` is `500_to_lt_1000_ms`; `ms >= 1000` is `gte_1000_ms`. Replay/no-change requests create no revision and therefore no new latency sample.
+
+Latency buckets are diagnostic observability only, not an SLA, performance oracle, or PLAN 033 launch threshold. Monitoring never exposes Principal identity or raw evidence.
 
 For evaluation, `If-Match` is exactly `"analysis-none"` when `expected_current_revision=null`, otherwise it is the current ETag `"analysis-{source_analysis_id}-r{expected_current_revision}"`. Header/body disagreement is `400 INVALID_ANALYSIS_PRECONDITION`; a well-formed but stale value is `409 ANALYSIS_VERSION_CONFLICT`. A completed exact idempotent replay is returned before current-state precondition evaluation, so an ambiguous retry remains stable after another revision exists.
 
@@ -536,7 +561,14 @@ Independent mutations must be rejected for:
 7. one-period persistence;
 8. nondeterministic contributor tie order;
 9. accepted unsupported version;
-10. in-place finalized revision mutation.
+10. in-place finalized revision mutation;
+11. scalar minimum substituted for the carb/fat range;
+12. invented non-degenerate carb/fat tolerance;
+13. choosing one source target when target documents are incompatible;
+14. serializing an incompatible target as non-null;
+15. counting duplicate same-reason stale events twice;
+16. shifting the exact 50/75 coverage boundaries;
+17. shifting an exact latency boundary.
 
 Future implementation acceptance requires production logic replay of every golden vector, independent property/mutation tests, PostgreSQL concurrency schedules, migration upgrade/empty downgrade/populated fail-closed downgrade, exact OpenAPI, Principal isolation, query/runtime budgets, Arabic/axe/keyboard/mobile/RTL behavior, original-version replay, and deterministic generation.
 
@@ -548,12 +580,12 @@ PLAN 032 consumes the exact PLAN 031 status vocabulary, single captured calendar
 
 ### PLAN 032 → PLAN 033: PASS
 
-The projection provides every frozen PLAN 033 input field with stricter exact typing: opaque Principal, 7+7 dates, immutable source identity/revision, non-null analysis version, source versions, Target Plan references, day facts, current/previous metric evidence, coverage, persistence, contributors and sorted safety flags. PLAN 033 requires no raw Diary read or analysis recomputation.
+The projection provides every frozen PLAN 033 input field with stricter exact typing: opaque Principal, 7+7 dates, immutable source identity/revision, non-null analysis version, source versions, Target Plan references, day facts, current/previous metric evidence, coverage, persistence, contributors and sorted safety flags. `WeeklyPriorityAnalysisInputV1.interface_version` remains `1`; no field or closed enum changes. Its already-nullable target and existing `target_incompatible`, `incompatible_target`, `missing_target`, and `target_changed` vocabulary represent the amendment exactly. PLAN 033 reads `analysis_rules_version` explicitly and fails closed on unsupported `w3-analysis-1.1.0`; carb/fat are not PLAN 033 priority keys, and PLAN 033 reconstructs no range. PLAN 033 requires no raw Diary read or analysis recomputation and is not reopened.
 
 Version ownership remains separate: PLAN 032 `analysis_rules_version`; PLAN 033 priority/copy versions.
 
 ## 18. Decision completeness and implementation boundary
 
-There are no unresolved formulas, denominators, thresholds, lifecycle choices, identity rules, version fallbacks, migration rules, API routes, concurrency orders, privacy boundaries, or downstream fields in this v1 design.
+Design 1.1 supersedes the reopened 1.0 freeze and closes the target-representation and monitoring omissions found during formal implementation review. There are no unresolved formulas, denominators, thresholds, lifecycle choices, identity rules, version fallbacks, migration rules, API routes, monitoring aggregations, concurrency orders, privacy boundaries, or downstream fields.
 
 Implementation remains unauthorized. A later read-only gate must derive exact implementation paths from this frozen design. That later scope is expected to include Backend rule/version ownership, models/schemas/services/routes, one additive migration, PostgreSQL/concurrency/migration/OpenAPI tests, committed generated frontend contracts if exposed, analysis UI/domain/tests, and architecture/CI paths only when repository discovery proves they are necessary.

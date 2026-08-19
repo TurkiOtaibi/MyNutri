@@ -1,101 +1,115 @@
-# PLAN 032 — Versioned Nutrition Pattern Analysis approval report
+# PLAN 032 — Versioned Nutrition Pattern Analysis design 1.1 approval report
 
-**Decision status: Frozen for implementation**
+**Decision status: Design 1.1 refrozen for implementation remediation**
 
 **Implementation authorized: NO**
 
-**Design version:** `1.0`
+**Design version:** `1.1`
 
-**Analysis contract version:** `1`
+**Analysis contract/interface version:** `1`
 
-**Rules version:** `w3-analysis-1.0.0`
+**WeeklyPriorityAnalysisInputV1 interface_version:** `1`
 
-**Repository baseline:** `b44549291ccd950f12742467bbbe3a69ff455626`
+**First implementation-candidate rules version:** `w3-analysis-1.1.0`
 
-**Assessment date:** `2026-08-17`
+**Withdrawn pre-release rules version:** `w3-analysis-1.0.0`
 
-## Artifact scope
+**Reopened implementation-review HEAD:** `e98ed022be045e649a58d0c9eb946f52f5a778af`
 
-The decision applies exactly to:
+**Assessment date:** `2026-08-19`
+
+## Artifact scope and authority
+
+This decision modifies exactly:
 
 1. `27_W3_VERSIONED_PATTERN_ANALYSIS_DESIGN.md`
 2. `27A_W3_PATTERN_ANALYSIS_GOLDEN_VECTORS.json`
 3. `tools/verify_w3_pattern_analysis_vectors.py`
 4. `27B_W3_PATTERN_ANALYSIS_APPROVAL_REPORT.md`
 
-No application implementation, migration, generated contract, CI, deployment, or database action is authorized by this report.
+No PLAN 033 artifact is modified. No application remediation, migration, generated contract, visual baseline, CI, publication, merge, deployment, or database action is authorized by this report.
 
-## Decision matrix
+## Why design 1.0 was reopened
 
-| Decision | Frozen result |
+Formal review of the pre-release implementation found two design omissions relevant to this amendment:
+
+| Review finding | Severity | Design omission | 1.1 disposition |
+| --- | --- | --- | --- |
+| H2 — carb/fat target semantic incompatibility | High | Direction was range, but the authoritative scalar-to-range representation and cross-period compatibility rule were not exact | Target Plan carb/fat scalars now map only to degenerate ranges `[v,v]`; incompatible or missing target authority is closed and fail-safe |
+| M1 — Admin monitoring projection incomplete | Medium | Cohort, counting unit, deduplication and exact coverage/stale/latency boundaries were not frozen | UTC ISO-week cohort and all closed monitoring maps/boundaries are now exact |
+
+Because H2 can change analysis output, the rules version changes. `w3-analysis-1.0.0` is **WITHDRAWN PRE-RELEASE**: it was never merged to main as an accepted PLAN 032 implementation, deployed, or used for production/shared revisions. It is unavailable for dispatch and is never aliased or silently mapped to 1.1. `w3-analysis-1.1.0` is the first implementation candidate after refreeze.
+
+## Amended decision matrix
+
+| Decision | Refrozen result |
 | --- | --- |
-| Calendar | One captured `Asia/Riyadh` Diary date; rolling current 7 days plus contiguous previous 7 days |
-| Eligibility | PLAN 031 `complete` only; empty-complete is exact zero; partial/unregistered are excluded |
-| Coverage | Metric-specific entry coverage; four complete days minimum; 50% limited; 75% strong |
-| Numeric semantics | Unknown is never zero; decimal half-even publication at six places; averages use declared denominators |
-| Metrics | Closed v1 Registry/group/NOVA inventory; no unified score |
-| Comparison | Compatible targets/versions; 10 percentage-point coverage gap; exact material thresholds |
-| Persistence | Same directional state in two independently strong periods under compatible source semantics |
-| Contributors | Opaque immutable snapshot refs; maximum five; deterministic value/date/UUID ordering |
-| Identity | Owner/date/interface series; immutable numbered revisions; canonical source and content hashes |
-| Replay | Stored verified revision or exact original-version dispatch; unsupported versions fail closed |
-| API | Owner-only current/history/revision/evaluate; Admin aggregate monitoring only; exact concurrency errors |
-| Persistence | Five additive owner-bound tables; immutable history; populated downgrade fails closed |
-| Downstream | Closed `WeeklyPriorityAnalysisInputV1`; PLAN 033 does not read raw Diary state or recalculate facts |
-| Versions | PLAN 032 owns `analysis_rules_version`; PLAN 033 separately owns priority and copy versions |
+| Public contract | Analysis interface and `WeeklyPriorityAnalysisInputV1.interface_version` remain `1`; field names and enums unchanged |
+| Rules | Exact dispatch only to `w3-analysis-1.1.0`; withdrawn 1.0 has no fallback |
+| Unknown/zero | Wholly unknown stays null/unknown; observed zero stays explicit zero; mixed evidence aggregates known facts and reports reduced coverage |
+| Carb/fat source | Exact effective `TargetResponse.carb_g`/`fat_g`; finite positive scalar `v` becomes range `[v,v]` with no tolerance |
+| Compatibility | One non-null target only when one semantically identical target represents every target-bearing numeric day across both periods |
+| Incompatible target | Null target; safe raw values retained; numeric periods are `target_incompatible`; comparison/persistence suppressed; `incompatible_target` flag |
+| Missing target | Null target; known raw facts may be observed display-only; target-relative behavior suppressed; `missing_target` remains distinct |
+| Schema | Direction and target type must agree; minimize/monitor-only forbid targets; contradictory projections fail validation |
+| Monitoring cohort | Finalized revisions with `finalized_at` in requested UTC ISO week `[Monday,next Monday)` |
+| Coverage bands | Current metric coverage, one count per revision/metric, exact null/50/75/100 boundaries and four closed keys |
+| Stale reasons | Distinct revision per reason at query time; five closed reasons; duplicate events do not inflate counts |
+| Latency | New-revision `finalized_at-generated_at`; exact five bands; replay/no-change creates no sample |
+| Complete days | Existing `0-3`, `4-5`, `6-7` semantics unchanged |
+| PLAN 033 | Not reopened; explicit source rules version remains fail-closed and carb/fat are not priority keys |
 
-## Discipline assessment matrix
+## Fresh discipline assessment matrix
 
-Provenance: these are Codex discipline-specific assessments performed under explicit Project Owner authorization. They are **not** eight independently submitted named human reviews. No reviewer names, signatures, or independent human evidence are asserted.
+Provenance: these are Codex discipline-specific assessments performed under explicit Project Owner authorization. They are **not** eight independently submitted named human reviews. No named-human signatures or independent submissions are asserted.
 
 | Authority | Decision | Blocking findings | Non-blocking notes | Evidence |
 | --- | --- | --- | --- | --- |
-| Product Owner | APPROVED | None | Launch remains separately authorized | Closed metric/product vocabulary; deterministic unavailable, history, comparison and contributor behavior; no unified score |
-| Nutrition / Safety | APPROVED | None | Clinical advice remains out of scope | Registry/Target authority retained; unknown never becomes zero; unsafe/missing/unsupported sources fail closed; no diagnosis, treatment, supplement or medication claims |
-| Data / Analysis | APPROVED | None | Implementation must use decimal arithmetic | One Riyadh snapshot; exact 7+7 windows; fixed denominators, thresholds, rounding, comparison and two-period persistence; vector boundary coverage |
-| Architecture / API | APPROVED | None | Implementation paths require a later gate | Immutable series/revisions, exact source bundle and replay, closed API/errors, required concurrency precondition, deterministic serialization, exact PLAN 033 interface |
-| Security / Privacy | APPROVED | None | Retention execution needs approved deletion workflow | Principal ownership and indistinguishable cross-owner 404; opaque minimized evidence; HMAC idempotency digest; aggregate Admin/telemetry only |
-| UX / Arabic / Accessibility | APPROVED | None | Visual design remains implementation evidence | Exact neutral Arabic copy; non-color text/icon state; table alternative, live busy/alert behavior, focus rules, RTL, reduced motion and mobile widths |
-| Notifications / Operations | APPROVED | None | PLAN 032 sends no reminders | Privacy-safe shadow/latency/status evidence; deterministic rollback triggers; PLAN 033's 28-day/1,000 gate and notification ownership remain unchanged |
-| QA | APPROVED | None | PostgreSQL schedules and migration rehearsal are future implementation gates | 52 deterministic vectors, 10 independent mutations, immutable history/no-op/replay, ordering, versions and downstream validation |
+| Product Owner | APPROVED | None | Implementation remediation still requires separate authority | Exact source target, no invented tolerance, closed incompatible/missing states, and useful monitoring semantics resolve the reviewed product ambiguity |
+| Nutrition / Safety | APPROVED | None | Degenerate range is allocation representation, not a clinical safe range | Non-finite/non-positive sources fail closed; unknown is not zero; incompatible/missing targets cannot drive downstream selection; no clinical claim added |
+| Data / Analysis | APPROVED | None | Monitoring latency is diagnostic, not an SLA | Exact range distance, cross-period semantic equality, UTC cohort, deduplicated stale counts, and 49.999/50/74.999/75/100 plus latency boundaries are executable |
+| Architecture / API | APPROVED | None | Application paths must be re-derived before remediation | Interface v1 and enums remain stable; projection contradictions fail validation; rules 1.0 is not aliased; monitoring is defined from authoritative revision/events |
+| Security / Privacy | APPROVED | None | Existing access control remains implementation evidence | Monitoring exposes aggregate bands only, with no Principal/raw evidence; raw safe metric values remain owner-bound; error/fail-closed behavior is unchanged |
+| UX / Arabic / Accessibility | APPROVED | None | No copy or shape change is needed | Existing unavailable/observed/incompatible vocabulary remains; null target is truthful; no new UI field, enum, focus, RTL, or accessibility contract is introduced |
+| Notifications / Operations | APPROVED | None | PLAN 033 launch/reminder ownership remains separate | UTC operational cohort is distinct from Diary time; complete keys include zero; latency bands are diagnostics only; no reminder or rollout threshold changes |
+| QA | APPROVED | None | Production remediation must exercise orchestration and monitoring queries | 77 deterministic vectors and 17 independent mutations cover unknown/zero, exact ranges, incompatibility, schema contradictions, monitoring boundaries and replay exclusion |
 
-## Finding disposition
+## Findings and disposition
 
 | Severity | Finding | Disposition |
 | --- | --- | --- |
-| Medium | Draft projection added two top-level version fields not declared by frozen PLAN 033's closed interface | Resolved: retained internally/in Target references and removed from the `extra=forbid` downstream top level |
-| Medium | Draft evaluate contract allowed an optional concurrency header | Resolved: exact required `If-Match`, header/body consistency, replay order and stable errors frozen |
-| Medium | Draft UX section named concepts without a complete exact Arabic copy catalog | Resolved: exact v1 labels, loading/error/action/history copy and change policy frozen |
-| Medium | Draft comparison prose mixed raw target ratios with the adverse-distance calculation used by the oracle | Resolved: exact minimum/maximum/range adverse-distance formulas and material boundary frozen consistently |
-| Medium | Draft response schemas and PostgreSQL retry outcome left implementation discretion | Resolved: exact response/history/Admin fields, no automatic retry, rollback and stable `ANALYSIS_RETRY_REQUIRED` behavior frozen |
-| Medium | Frozen PLAN 033 has singular Registry/group/NOVA fields, while historical windows can span version changes | Resolved: v1 requires one compatible version across both periods, permits only explicitly listed snapshot-schema mixes, and fails other mixed bundles closed |
-| Low | Production arithmetic could diverge from the declared half-even rounding | Resolved in the design oracle with decimal half-even at six places; future production oracle remains mandatory |
+| High | H2 scalar/range and incompatible-target semantics were incomplete | Resolved in design, corpus and independent mutations |
+| Medium | M1 monitoring cohort and map semantics were incomplete | Resolved in design, corpus and independent mutations |
+| Note | Rules version must reflect output-semantic change | Resolved: 1.0 withdrawn pre-release; 1.1 first implementation candidate |
+| Note | Downstream PLAN 033 is frozen | Verified read-only compatible; no PLAN 033 artifact or contract change |
 
 Unresolved Blocker/Critical/High/Medium findings: **none**.
 
 ## Cross-plan compatibility
 
-- **PLAN 031 → PLAN 032: PASS.** The design consumes PLAN 031's authoritative calendar snapshot, day states, status versions, entry counts, eligibility and complete/reopen history without redefining them.
-- **PLAN 032 → PLAN 033: PASS.** The exact closed projection supplies every frozen field and no undeclared top-level field; source identity/revision, 7+7 day evidence, versions, Target references, metric coverage/current/previous/persistence/contributors and safety flags are deterministic.
+- **PLAN 031 → PLAN 032: PASS.** This amendment does not alter the captured Riyadh date, Diary status, completion, eligibility, or evidence-version contracts.
+- **PLAN 032 → PLAN 033: PASS.** `WeeklyPriorityAnalysisInputV1.interface_version` stays `1`; no field or enum changes. Its target was already nullable and its closed vocabulary already contains `target_incompatible`, `incompatible_target`, `missing_target`, and `target_changed`. PLAN 033 consumes an explicit `analysis_rules_version`, fails closed on unsupported `w3-analysis-1.1.0`, does not select carb/fat priority keys, and does not reconstruct range bounds.
 
 ## Validation evidence
 
 | Gate | Result |
 | --- | --- |
-| Golden vectors | 52 passed, 0 failed |
-| Independent negative mutations | 10/10 correctly rejected |
+| Golden vectors | 77 passed, 0 failed |
+| Independent negative mutations | 17/17 correctly rejected |
 | JSON syntax | PASS |
+| Verifier independence | PASS — expected JSON is compared against standard-library calculations and seven new semantic mutations alter evaluator behavior independently |
 | Decision completeness | PASS |
-| Cross-artifact review | PASS after the dispositions above |
+| Cross-artifact consistency | PASS |
+| PLAN 032 → PLAN 033 read-only compatibility | PASS |
 | `git diff --check` | PASS |
-| Changed scope | Exactly four authorized design artifacts |
+| Changed scope | Exactly four authorized PLAN 032 design artifacts |
 
-The negative mutations independently reject wrong Riyadh and Sunday windows, unknown-to-zero corruption, a wrong coverage denominator, current/previous reversal, a weakened material threshold, one-period persistence, unstable contributor tie ordering, unsupported-version acceptance, and in-place finalized-history mutation.
+New evidence proves wholly unknown/observed-zero/mixed aggregation, carb/fat scalar-to-degenerate-range projection, below/exact/above range distance, incompatible versus missing targets, schema contradictions, exact coverage and latency boundaries, distinct stale-reason counting, no replay latency, and unchanged V1 downstream structure. Independent mutations reject scalar-minimum substitution, invented tolerance, target selection from incompatible evidence, false non-null incompatible targets, duplicate stale counting, and shifted coverage/latency boundaries in addition to the original ten mutations.
 
 ## Gate result
 
-The design is deterministic, testable, internally consistent, safety/privacy bounded, and compatible with its frozen upstream/downstream contracts. All eight discipline assessments approve it and no unresolved Medium-or-higher finding remains.
+All eight fresh discipline assessments approve design 1.1. The amended decisions are deterministic, executable, internally consistent, privacy/safety bounded, and compatible with frozen PLAN 031 and PLAN 033. No unresolved Medium-or-higher finding remains.
 
-**PLAN 032 — FROZEN FOR IMPLEMENTATION / IMPLEMENTATION AUTHORIZATION REQUIRED**
+**PLAN 032 DESIGN 1.1 — REFROZEN FOR IMPLEMENTATION REMEDIATION**
 
-Implementation remains unauthorized. A separate read-only gate must derive the exact repository-backed implementation path list from this frozen design before the Project Owner may authorize implementation.
+Implementation remediation remains unauthorized. Its exact path scope may now be re-derived in a separate read-only gate.

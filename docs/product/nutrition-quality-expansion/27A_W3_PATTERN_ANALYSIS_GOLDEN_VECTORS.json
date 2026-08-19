@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "design_version": "1.0",
-  "analysis_rules_version": "w3-analysis-1.0.0",
+  "design_version": "1.1",
+  "analysis_rules_version": "w3-analysis-1.1.0",
   "calendar_timezone": "Asia/Riyadh",
   "required_coverage": [
     "riyadh_window",
@@ -26,7 +26,16 @@
     "no_op_recompute",
     "stale_superseded",
     "original_version_replay",
-    "plan033_projection"
+    "plan033_projection",
+    "period_unknown_zero",
+    "degenerate_range_target",
+    "target_compatibility",
+    "target_schema_consistency",
+    "monitoring_coverage_bands",
+    "monitoring_stale_distinct",
+    "monitoring_latency_bands",
+    "monitoring_utc_cohort",
+    "replay_no_latency"
   ],
   "vectors": [
     {
@@ -348,7 +357,7 @@
       "id": "X01-valid-plan033-projection",
       "kind": "projection",
       "covers": ["plan033_projection", "deterministic_order"],
-      "input": {"analysis_version": "w3-analysis-1.0.0", "timezone": "Asia/Riyadh", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": ["group:legumes_servings_per_period", "nutrient:fiber_g"], "safety_flags": []},
+      "input": {"analysis_version": "w3-analysis-1.1.0", "timezone": "Asia/Riyadh", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": ["group:legumes_servings_per_period", "nutrient:fiber_g"], "safety_flags": []},
       "expected": {"valid": true, "errors": []}
     },
     {
@@ -362,36 +371,211 @@
       "id": "X03-seven-days-required",
       "kind": "projection",
       "covers": ["plan033_projection"],
-      "input": {"analysis_version": "w3-analysis-1.0.0", "timezone": "Asia/Riyadh", "days": ["2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11"], "metric_keys": [], "safety_flags": []},
+      "input": {"analysis_version": "w3-analysis-1.1.0", "timezone": "Asia/Riyadh", "days": ["2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11"], "metric_keys": [], "safety_flags": []},
       "expected": {"valid": false, "errors": ["invalid_current_days"]}
     },
     {
       "id": "X04-metric-order-and-uniqueness",
       "kind": "projection",
       "covers": ["deterministic_order", "plan033_projection"],
-      "input": {"analysis_version": "w3-analysis-1.0.0", "timezone": "Asia/Riyadh", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": ["nutrient:fiber_g", "nutrient:fiber_g"], "safety_flags": []},
+      "input": {"analysis_version": "w3-analysis-1.1.0", "timezone": "Asia/Riyadh", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": ["nutrient:fiber_g", "nutrient:fiber_g"], "safety_flags": []},
       "expected": {"valid": false, "errors": ["invalid_metric_order"]}
     },
     {
       "id": "X05-safety-order",
       "kind": "projection",
       "covers": ["deterministic_order", "fail_closed_safety"],
-      "input": {"analysis_version": "w3-analysis-1.0.0", "timezone": "Asia/Riyadh", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": [], "safety_flags": ["unsupported_registry", "missing_target"]},
+      "input": {"analysis_version": "w3-analysis-1.1.0", "timezone": "Asia/Riyadh", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": [], "safety_flags": ["unsupported_registry", "missing_target"]},
       "expected": {"valid": false, "errors": ["invalid_safety_order"]}
     },
     {
       "id": "X06-contiguous-days-required",
       "kind": "projection",
       "covers": ["riyadh_window", "plan033_projection"],
-      "input": {"analysis_version": "w3-analysis-1.0.0", "timezone": "Asia/Riyadh", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-18"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": [], "safety_flags": []},
+      "input": {"analysis_version": "w3-analysis-1.1.0", "timezone": "Asia/Riyadh", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-18"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": [], "safety_flags": []},
       "expected": {"valid": false, "errors": ["non_contiguous_current"]}
     },
     {
       "id": "X07-timezone-is-literal",
       "kind": "projection",
       "covers": ["riyadh_window", "fail_closed_safety"],
-      "input": {"analysis_version": "w3-analysis-1.0.0", "timezone": "UTC", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": [], "safety_flags": []},
+      "input": {"analysis_version": "w3-analysis-1.1.0", "timezone": "UTC", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": [], "safety_flags": []},
       "expected": {"valid": false, "errors": ["invalid_timezone"]}
+    },
+    {
+      "id": "A01-wholly-unknown-period",
+      "kind": "period_aggregate",
+      "covers": ["period_unknown_zero", "unknown_not_zero"],
+      "input": {"observations": [null, null]},
+      "expected": {"value": null, "value_state": "unknown", "known_count": 0, "amount_qualifier": "unavailable"}
+    },
+    {
+      "id": "A02-observed-explicit-zero",
+      "kind": "period_aggregate",
+      "covers": ["period_unknown_zero", "numeric_zero"],
+      "input": {"observations": [0, 0]},
+      "expected": {"value": 0.0, "value_state": "explicit_zero", "known_count": 2, "amount_qualifier": "exact"}
+    },
+    {
+      "id": "A03-mixed-known-unknown",
+      "kind": "period_aggregate",
+      "covers": ["period_unknown_zero", "unknown_not_zero"],
+      "input": {"observations": [12.5, null, 2.5]},
+      "expected": {"value": 15.0, "value_state": "numeric", "known_count": 2, "amount_qualifier": "at_least"}
+    },
+    {
+      "id": "A04-observed-zero-with-unknown-lower-bound",
+      "kind": "period_aggregate",
+      "covers": ["period_unknown_zero", "numeric_zero", "unknown_not_zero"],
+      "input": {"observations": [0, null]},
+      "expected": {"value": 0.0, "value_state": "explicit_zero", "known_count": 1, "amount_qualifier": "at_least"}
+    },
+    {
+      "id": "T01-carb-scalar-degenerate-range",
+      "kind": "target_projection",
+      "covers": ["degenerate_range_target", "target_compatibility"],
+      "input": {"metric_key": "macro:carb_g_per_day", "scalar": 250, "unit": "g/day", "plan_id": "00000000-0000-0000-0000-000000000001"},
+      "expected": {"target": {"type": "range", "unit": "g/day", "lower": 250.0, "upper": 250.0, "source_plan_ids": ["00000000-0000-0000-0000-000000000001"]}, "valid": true, "reason": "authoritative_scalar"}
+    },
+    {
+      "id": "T02-fat-scalar-degenerate-range",
+      "kind": "target_projection",
+      "covers": ["degenerate_range_target", "target_compatibility"],
+      "input": {"metric_key": "macro:fat_g_per_day", "scalar": 70, "unit": "g/day", "plan_id": "00000000-0000-0000-0000-000000000001"},
+      "expected": {"target": {"type": "range", "unit": "g/day", "lower": 70.0, "upper": 70.0, "source_plan_ids": ["00000000-0000-0000-0000-000000000001"]}, "valid": true, "reason": "authoritative_scalar"}
+    },
+    {
+      "id": "T03-zero-target-invalid",
+      "kind": "target_projection",
+      "covers": ["degenerate_range_target", "fail_closed_safety"],
+      "input": {"metric_key": "macro:carb_g_per_day", "scalar": 0, "unit": "g/day", "plan_id": "00000000-0000-0000-0000-000000000001"},
+      "expected": {"target": null, "valid": false, "reason": "invalid_target"}
+    },
+    {
+      "id": "RS01-degenerate-range-below",
+      "kind": "range_status",
+      "covers": ["degenerate_range_target", "material_boundary"],
+      "input": {"value": 80, "lower": 100, "upper": 100},
+      "expected": {"status": "below_target", "adverse_distance": 0.2}
+    },
+    {
+      "id": "RS02-degenerate-range-exact",
+      "kind": "range_status",
+      "covers": ["degenerate_range_target", "material_boundary"],
+      "input": {"value": 100, "lower": 100, "upper": 100},
+      "expected": {"status": "at_target", "adverse_distance": 0.0}
+    },
+    {
+      "id": "RS03-degenerate-range-above",
+      "kind": "range_status",
+      "covers": ["degenerate_range_target", "material_boundary"],
+      "input": {"value": 120, "lower": 100, "upper": 100},
+      "expected": {"status": "above_target", "adverse_distance": 0.2}
+    },
+    {
+      "id": "TC01-different-plans-identical-target",
+      "kind": "target_compatibility",
+      "covers": ["target_compatibility"],
+      "input": {"current_numeric": true, "previous_numeric": true, "targets": [{"plan_id": "00000000-0000-0000-0000-000000000001", "type": "range", "unit": "g/day", "lower": 250, "upper": 250}, {"plan_id": "00000000-0000-0000-0000-000000000002", "type": "range", "unit": "g/day", "lower": 250, "upper": 250}]},
+      "expected": {"target": {"type": "range", "unit": "g/day", "lower": 250, "upper": 250, "source_plan_ids": ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"]}, "compatible": true, "safety_flags": []}
+    },
+    {
+      "id": "TC02-incompatible-targets-null",
+      "kind": "target_compatibility",
+      "covers": ["target_compatibility", "target_change", "fail_closed_safety"],
+      "input": {"current_numeric": true, "previous_numeric": true, "targets": [{"plan_id": "00000000-0000-0000-0000-000000000001", "type": "range", "unit": "g/day", "lower": 250, "upper": 250}, {"plan_id": "00000000-0000-0000-0000-000000000002", "type": "range", "unit": "g/day", "lower": 260, "upper": 260}]},
+      "expected": {"target": null, "current_status": "target_incompatible", "previous_status": "target_incompatible", "comparison": {"status": "not_comparable", "reason": "target_incompatible"}, "persistence": {"qualifies": false, "reason": "target_changed"}, "safety_flags": ["incompatible_target"]}
+    },
+    {
+      "id": "TC03-incompatible-period-without-numeric",
+      "kind": "target_compatibility",
+      "covers": ["target_compatibility", "target_change"],
+      "input": {"current_numeric": true, "previous_numeric": false, "targets": [{"plan_id": "00000000-0000-0000-0000-000000000001", "type": "range", "unit": "g/day", "lower": 250, "upper": 250}, {"plan_id": "00000000-0000-0000-0000-000000000002", "type": "range", "unit": "g/day", "lower": 260, "upper": 260}]},
+      "expected": {"target": null, "current_status": "target_incompatible", "previous_status": "unavailable", "comparison": {"status": "not_comparable", "reason": "target_incompatible"}, "persistence": {"qualifies": false, "reason": "target_changed"}, "safety_flags": ["incompatible_target"]}
+    },
+    {
+      "id": "TC04-missing-target-distinct",
+      "kind": "target_compatibility",
+      "covers": ["target_compatibility", "fail_closed_safety"],
+      "input": {"current_numeric": true, "previous_numeric": false, "targets": []},
+      "expected": {"target": null, "current_status": "observed", "previous_status": "unavailable", "comparison": {"status": "not_comparable", "reason": "unavailable_value"}, "persistence": {"qualifies": false, "reason": "current_not_qualifying"}, "safety_flags": ["missing_target"]}
+    },
+    {
+      "id": "SC01-range-minimum-contradiction",
+      "kind": "metric_schema",
+      "covers": ["target_schema_consistency"],
+      "input": {"direction": "range", "target": {"type": "minimum", "unit": "g/day", "value": 250}},
+      "expected": {"valid": false, "errors": ["target_type_mismatch"]}
+    },
+    {
+      "id": "SC02-range-target-consistent",
+      "kind": "metric_schema",
+      "covers": ["target_schema_consistency"],
+      "input": {"direction": "range", "target": {"type": "range", "unit": "g/day", "lower": 250, "upper": 250}},
+      "expected": {"valid": true, "errors": []}
+    },
+    {
+      "id": "SC03-minimize-forbids-target",
+      "kind": "metric_schema",
+      "covers": ["target_schema_consistency"],
+      "input": {"direction": "minimize", "target": {"type": "maximum", "unit": "days/7d", "value": 0}},
+      "expected": {"valid": false, "errors": ["target_forbidden"]}
+    },
+    {
+      "id": "SC04-null-incompatible-allowed",
+      "kind": "metric_schema",
+      "covers": ["target_schema_consistency", "target_compatibility"],
+      "input": {"direction": "range", "target": null, "null_reason": "incompatible"},
+      "expected": {"valid": true, "errors": []}
+    },
+    {
+      "id": "MON01-coverage-boundaries",
+      "kind": "monitoring_coverage",
+      "covers": ["monitoring_coverage_bands"],
+      "input": {"current_coverages": [null, 0, 49.999, 50, 74.999, 75, 100]},
+      "expected": {"unknown": 1, "0_to_lt_50": 2, "50_to_lt_75": 2, "75_to_100": 2}
+    },
+    {
+      "id": "MON02-one-current-metric-one-count",
+      "kind": "monitoring_coverage",
+      "covers": ["monitoring_coverage_bands"],
+      "input": {"current_coverages": [75]},
+      "expected": {"unknown": 0, "0_to_lt_50": 0, "50_to_lt_75": 0, "75_to_100": 1}
+    },
+    {
+      "id": "MON03-distinct-stale-revision-reason",
+      "kind": "monitoring_stale",
+      "covers": ["monitoring_stale_distinct"],
+      "input": {"events": [{"revision": "r1", "reason": "day_reopened"}, {"revision": "r1", "reason": "day_reopened"}, {"revision": "r1", "reason": "target_source_changed"}, {"revision": "r2", "reason": "day_reopened"}]},
+      "expected": {"day_reopened": 2, "day_version_changed": 0, "target_source_changed": 1, "source_snapshot_corrected": 0, "source_version_unsupported": 0}
+    },
+    {
+      "id": "MON04-latency-boundaries",
+      "kind": "monitoring_latency",
+      "covers": ["monitoring_latency_bands"],
+      "input": {"durations_ms": [null, -1, 0, 249.999, 250, 499.999, 500, 999.999, 1000]},
+      "expected": {"unknown": 2, "lt_250_ms": 2, "250_to_lt_500_ms": 2, "500_to_lt_1000_ms": 2, "gte_1000_ms": 1}
+    },
+    {
+      "id": "MON05-replay-no-latency-sample",
+      "kind": "monitoring_latency",
+      "covers": ["monitoring_latency_bands", "replay_no_latency", "no_op_recompute"],
+      "input": {"replay": true, "durations_ms": [42]},
+      "expected": {"unknown": 0, "lt_250_ms": 0, "250_to_lt_500_ms": 0, "500_to_lt_1000_ms": 0, "gte_1000_ms": 0}
+    },
+    {
+      "id": "MON06-utc-iso-week-half-open-cohort",
+      "kind": "monitoring_cohort",
+      "covers": ["monitoring_utc_cohort"],
+      "input": {"week_monday": "2026-08-17", "finalized_at": ["2026-08-16T23:59:59.999999Z", "2026-08-17T00:00:00Z", "2026-08-23T23:59:59.999999Z", "2026-08-24T00:00:00Z"]},
+      "expected": {"total_count": 2}
+    },
+    {
+      "id": "X08-plan033-v1-null-incompatible-target",
+      "kind": "projection",
+      "covers": ["plan033_projection", "target_compatibility", "fail_closed_safety"],
+      "input": {"interface_version": 1, "analysis_version": "w3-analysis-1.1.0", "timezone": "Asia/Riyadh", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": ["macro:carb_g_per_day"], "metric_facts": [{"metric_key": "macro:carb_g_per_day", "direction": "range", "target": null, "status": "target_incompatible"}], "safety_flags": ["incompatible_target"]},
+      "expected": {"valid": true, "errors": []}
     }
   ],
   "negative_mutations": [
@@ -404,6 +588,13 @@
     {"name": "one_period_persistence", "detected_by": ["P02-previous-not-gap", "P05-exact-maximum-not-overage"]},
     {"name": "reverse_tie_order", "detected_by": ["K02-tie-date-then-uuid"]},
     {"name": "accept_version_mismatch", "detected_by": ["X02-unsupported-version-fails"]},
-    {"name": "mutate_finalized_history", "detected_by": ["R03-changed-input-new-revision"]}
+    {"name": "mutate_finalized_history", "detected_by": ["R03-changed-input-new-revision"]},
+    {"name": "scalar_minimum_for_range", "detected_by": ["T01-carb-scalar-degenerate-range", "T02-fat-scalar-degenerate-range"]},
+    {"name": "invent_range_tolerance", "detected_by": ["T01-carb-scalar-degenerate-range"]},
+    {"name": "choose_incompatible_target", "detected_by": ["TC02-incompatible-targets-null"]},
+    {"name": "nonnull_incompatible_target", "detected_by": ["TC02-incompatible-targets-null"]},
+    {"name": "duplicate_stale_count", "detected_by": ["MON03-distinct-stale-revision-reason"]},
+    {"name": "coverage_boundary_shift", "detected_by": ["MON01-coverage-boundaries"]},
+    {"name": "latency_boundary_shift", "detected_by": ["MON04-latency-boundaries"]}
   ]
 }

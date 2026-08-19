@@ -7,20 +7,39 @@ import argparse
 import json
 import math
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_EVEN
 from pathlib import Path
 from typing import Any
 
 
 TIMEZONE = "Asia/Riyadh"
-ANALYSIS_VERSION = "w3-analysis-1.0.0"
+ANALYSIS_VERSION = "w3-analysis-1.1.0"
 MIN_COMPLETE_DAYS = 4
 LIMITED_COVERAGE = 50.0
 STRONG_COVERAGE = 75.0
 MAX_COMPARISON_COVERAGE_GAP = 10.0
 MATERIAL_TARGET_DELTA = 0.10
 CONTRIBUTOR_CAP = 5
+REQUIRED_MUTATIONS = {
+    "wrong_riyadh_window",
+    "sunday_aligned",
+    "unknown_as_zero",
+    "wrong_coverage_denominator",
+    "swap_periods",
+    "material_threshold_20",
+    "one_period_persistence",
+    "reverse_tie_order",
+    "accept_version_mismatch",
+    "mutate_finalized_history",
+    "scalar_minimum_for_range",
+    "invent_range_tolerance",
+    "choose_incompatible_target",
+    "nonnull_incompatible_target",
+    "duplicate_stale_count",
+    "coverage_boundary_shift",
+    "latency_boundary_shift",
+}
 
 
 def round6(value: float) -> float:
@@ -97,6 +116,156 @@ def coverage(payload: dict[str, Any], mutation: str | None) -> dict[str, Any]:
         "amount_qualifier": qualifier,
         "confidence": confidence,
     }
+
+
+def period_aggregate(payload: dict[str, Any], mutation: str | None) -> dict[str, Any]:
+    observations = payload["observations"]
+    known = [float(value) for value in observations if value is not None]
+    if mutation == "unknown_as_zero":
+        known = [0.0 if value is None else float(value) for value in observations]
+    if not known:
+        return {"value": None, "value_state": "unknown", "known_count": 0, "amount_qualifier": "unavailable"}
+    value = round6(sum(known))
+    state = "explicit_zero" if value == 0 and any(value == 0 for value in known) else "numeric"
+    qualifier = "exact" if len(known) == len(observations) else "at_least"
+    return {"value": value, "value_state": state, "known_count": len(known), "amount_qualifier": qualifier}
+
+
+def target_projection(payload: dict[str, Any], mutation: str | None) -> dict[str, Any]:
+    value = payload.get("scalar")
+    if value is None or not math.isfinite(float(value)) or float(value) <= 0:
+        return {"target": None, "valid": False, "reason": "invalid_target"}
+    numeric = float(value)
+    if mutation == "scalar_minimum_for_range":
+        target = {"type": "minimum", "unit": payload["unit"], "value": numeric, "source_plan_ids": [payload["plan_id"]]}
+    elif mutation == "invent_range_tolerance":
+        target = {"type": "range", "unit": payload["unit"], "lower": round6(numeric * 0.9), "upper": round6(numeric * 1.1), "source_plan_ids": [payload["plan_id"]]}
+    else:
+        target = {"type": "range", "unit": payload["unit"], "lower": numeric, "upper": numeric, "source_plan_ids": [payload["plan_id"]]}
+    return {"target": target, "valid": True, "reason": "authoritative_scalar"}
+
+
+def range_status(payload: dict[str, Any], mutation: str | None) -> dict[str, Any]:
+    value = float(payload["value"])
+    lower = float(payload["lower"])
+    upper = float(payload["upper"])
+    if value < lower:
+        status = "below_target"
+        distance = (lower - value) / lower
+    elif value > upper:
+        status = "above_target"
+        distance = (value - upper) / upper
+    elif lower == upper and value == lower:
+        status = "at_target"
+        distance = 0.0
+    else:
+        status = "within_target"
+        distance = 0.0
+    return {"status": status, "adverse_distance": round6(distance)}
+
+
+def target_compatibility(payload: dict[str, Any], mutation: str | None) -> dict[str, Any]:
+    targets = payload.get("targets", [])
+    numeric = payload.get("current_numeric", False) or payload.get("previous_numeric", False)
+    if not targets:
+        return {
+            "target": None,
+            "current_status": "observed" if payload.get("current_numeric", False) else "unavailable",
+            "previous_status": "observed" if payload.get("previous_numeric", False) else "unavailable",
+            "comparison": {"status": "not_comparable", "reason": "unavailable_value"},
+            "persistence": {"qualifies": False, "reason": "current_not_qualifying"},
+            "safety_flags": ["missing_target"] if numeric else [],
+        }
+    semantic = lambda item: tuple(item.get(key) for key in ("type", "unit", "value", "lower", "upper"))
+    compatible = len({semantic(item) for item in targets}) == 1
+    if mutation == "choose_incompatible_target":
+        compatible = True
+    if not compatible:
+        target = None
+        if mutation == "nonnull_incompatible_target":
+            target = {key: value for key, value in targets[0].items() if key != "plan_id"}
+        return {
+            "target": target,
+            "current_status": "target_incompatible" if payload.get("current_numeric", False) else "unavailable",
+            "previous_status": "target_incompatible" if payload.get("previous_numeric", False) else "unavailable",
+            "comparison": {"status": "not_comparable", "reason": "target_incompatible"},
+            "persistence": {"qualifies": False, "reason": "target_changed"},
+            "safety_flags": ["incompatible_target"],
+        }
+    target = {key: value for key, value in targets[0].items() if key != "plan_id"}
+    target["source_plan_ids"] = sorted({item["plan_id"] for item in targets})
+    return {"target": target, "compatible": True, "safety_flags": []}
+
+
+def metric_schema(payload: dict[str, Any], mutation: str | None) -> dict[str, Any]:
+    direction = payload["direction"]
+    target = payload.get("target")
+    null_reason = payload.get("null_reason")
+    errors: list[str] = []
+    expected_type = {"minimum": "minimum", "maximum": "maximum", "range": "range"}.get(direction)
+    if direction in {"minimize", "monitor_only"} and target is not None:
+        errors.append("target_forbidden")
+    elif expected_type and target is not None and target.get("type") != expected_type:
+        errors.append("target_type_mismatch")
+    elif expected_type and target is None and null_reason not in {"missing", "legacy", "unsafe", "incompatible"}:
+        errors.append("target_required")
+    return {"valid": not errors, "errors": errors}
+
+
+def monitoring_coverage(payload: dict[str, Any], mutation: str | None) -> dict[str, int]:
+    result = {"unknown": 0, "0_to_lt_50": 0, "50_to_lt_75": 0, "75_to_100": 0}
+    for value in payload["current_coverages"]:
+        if value is None:
+            result["unknown"] += 1
+        elif value < (49.999 if mutation == "coverage_boundary_shift" else 50):
+            result["0_to_lt_50"] += 1
+        elif value < (74.999 if mutation == "coverage_boundary_shift" else 75):
+            result["50_to_lt_75"] += 1
+        else:
+            result["75_to_100"] += 1
+    return result
+
+
+def monitoring_stale(payload: dict[str, Any], mutation: str | None) -> dict[str, int]:
+    keys = ["day_reopened", "day_version_changed", "target_source_changed", "source_snapshot_corrected", "source_version_unsupported"]
+    result = {key: 0 for key in keys}
+    seen: set[tuple[str, str]] = set()
+    for event in payload["events"]:
+        pair = (event["revision"], event["reason"])
+        if mutation != "duplicate_stale_count" and pair in seen:
+            continue
+        seen.add(pair)
+        result[event["reason"]] += 1
+    return result
+
+
+def monitoring_latency(payload: dict[str, Any], mutation: str | None) -> dict[str, int]:
+    result = {"unknown": 0, "lt_250_ms": 0, "250_to_lt_500_ms": 0, "500_to_lt_1000_ms": 0, "gte_1000_ms": 0}
+    values = [] if payload.get("replay", False) else payload.get("durations_ms", [])
+    for value in values:
+        if value is None or value < 0:
+            result["unknown"] += 1
+        elif value < (249.999 if mutation == "latency_boundary_shift" else 250):
+            result["lt_250_ms"] += 1
+        elif value < (499.999 if mutation == "latency_boundary_shift" else 500):
+            result["250_to_lt_500_ms"] += 1
+        elif value < (999.999 if mutation == "latency_boundary_shift" else 1000):
+            result["500_to_lt_1000_ms"] += 1
+        else:
+            result["gte_1000_ms"] += 1
+    return result
+
+
+def monitoring_cohort(payload: dict[str, Any], mutation: str | None) -> dict[str, int]:
+    monday = date.fromisoformat(payload["week_monday"])
+    start = datetime.combine(monday, datetime.min.time(), tzinfo=timezone.utc)
+    end = start + timedelta(days=7)
+    count = 0
+    for value in payload["finalized_at"]:
+        instant = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if start <= instant < end:
+            count += 1
+    return {"total_count": count}
 
 
 def adverse_distance(value: float, target: float, direction: str) -> float:
@@ -219,6 +388,8 @@ def revision(payload: dict[str, Any], mutation: str | None) -> dict[str, Any]:
 
 def projection(payload: dict[str, Any], mutation: str | None) -> dict[str, Any]:
     errors: list[str] = []
+    if payload.get("interface_version", 1) != 1:
+        errors.append("unsupported_interface_version")
     version_supported = payload.get("analysis_version") == ANALYSIS_VERSION
     if mutation == "accept_version_mismatch":
         version_supported = True
@@ -247,6 +418,11 @@ def projection(payload: dict[str, Any], mutation: str | None) -> dict[str, Any]:
     flags = payload.get("safety_flags", [])
     if flags != sorted(flags) or len(flags) != len(set(flags)):
         errors.append("invalid_safety_order")
+    for fact in payload.get("metric_facts", []):
+        if fact.get("status") == "target_incompatible" and fact.get("target") is not None:
+            errors.append("contradictory_incompatible_target")
+        if fact.get("status") == "target_incompatible" and "incompatible_target" not in flags:
+            errors.append("missing_incompatible_target_flag")
     return {"valid": not errors, "errors": sorted(errors)}
 
 
@@ -257,6 +433,24 @@ def evaluate(vector: dict[str, Any], mutation: str | None = None) -> dict[str, A
         return windows(payload["as_of_diary_date"], mutation)
     if kind == "coverage":
         return coverage(payload, mutation)
+    if kind == "period_aggregate":
+        return period_aggregate(payload, mutation)
+    if kind == "target_projection":
+        return target_projection(payload, mutation)
+    if kind == "range_status":
+        return range_status(payload, mutation)
+    if kind == "target_compatibility":
+        return target_compatibility(payload, mutation)
+    if kind == "metric_schema":
+        return metric_schema(payload, mutation)
+    if kind == "monitoring_coverage":
+        return monitoring_coverage(payload, mutation)
+    if kind == "monitoring_stale":
+        return monitoring_stale(payload, mutation)
+    if kind == "monitoring_latency":
+        return monitoring_latency(payload, mutation)
+    if kind == "monitoring_cohort":
+        return monitoring_cohort(payload, mutation)
     if kind == "comparison":
         return comparison(payload, mutation)
     if kind == "descriptive_comparison":
@@ -285,7 +479,10 @@ def check_artifacts(vector_path: Path) -> list[str]:
     approval_text = approval.read_text(encoding="utf-8")
     required_design = [
         "NO UNIFIED NUTRITION SCORE",
-        "w3-analysis-1.0.0",
+        "w3-analysis-1.1.0",
+        "withdrawn pre-release",
+        "0_to_lt_50",
+        "gte_1000_ms",
         "WeeklyPriorityAnalysisInputV1",
         "Asia/Riyadh",
         "previous_period_start",
@@ -312,7 +509,7 @@ def check_artifacts(vector_path: Path) -> list[str]:
         "UX / Arabic / Accessibility | APPROVED",
         "Notifications / Operations | APPROVED",
         "QA | APPROVED",
-        "Decision status: Frozen for implementation",
+        "Decision status: Design 1.1 refrozen for implementation remediation",
         "Implementation authorized: NO",
     ]
     for token in required_approval:
@@ -334,6 +531,10 @@ def main() -> int:
     errors: list[str] = []
     if document.get("schema_version") != 1:
         errors.append("schema_version must equal 1")
+    if document.get("design_version") != "1.1":
+        errors.append("design_version must equal 1.1")
+    if document.get("analysis_rules_version") != ANALYSIS_VERSION:
+        errors.append(f"analysis_rules_version must equal {ANALYSIS_VERSION}")
     vectors = document.get("vectors")
     if not isinstance(vectors, list) or not vectors:
         errors.append("vectors must be a non-empty list")
@@ -361,6 +562,10 @@ def main() -> int:
         else:
             passed += 1
     mutations = document.get("negative_mutations", [])
+    mutation_names = {item.get("name") for item in mutations}
+    missing_mutations = sorted(REQUIRED_MUTATIONS - mutation_names)
+    if missing_mutations:
+        errors.append(f"missing required negative mutations: {missing_mutations}")
     mutation_passed = 0
     for mutation in mutations:
         name = mutation.get("name")
@@ -382,8 +587,8 @@ def main() -> int:
             mutation_passed += 1
         else:
             errors.append(f"mutation {name}: not detected")
-    if len(mutations) < 10:
-        errors.append("at least 10 independent negative mutations are required")
+    if len(mutations) < 17:
+        errors.append("at least 17 independent negative mutations are required")
     if not args.skip_artifacts:
         errors.extend(check_artifacts(args.vectors))
     if errors:
