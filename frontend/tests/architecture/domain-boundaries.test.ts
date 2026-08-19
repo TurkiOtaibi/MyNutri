@@ -63,6 +63,12 @@ const manifests = {
     "FormSection", "FoodGroupFields", "FoodFormActions", "TextField",
     "TextAreaField", "NumberField", "SelectField",
   ],
+  "features/progress/progress-model.ts": [
+    "ANALYSIS_COPY", "metricLabels", "AnalysisDisplayState", "displayState",
+    "visibleMetrics", "metricLabel", "metricStatusText", "formatMetricValue",
+    "AnalysisAttempt", "stableAnalysisAttempt",
+  ],
+  "features/progress/progress-view.tsx": ["ProgressView"],
 } as const;
 
 function expectTransportBoundary(source: string) {
@@ -76,6 +82,9 @@ function expectTransportBoundary(source: string) {
   expect(source).toContain('apiFetch<DiaryEntryResponse>("/diary/entries"');
   expect(source).toContain('`/diary/days/${diaryDate}/status`');
   expect(source).toContain('`/diary/days/${diaryDate}/${action}`');
+  expect(source).toContain('"/progress/nutrition-analysis/current"');
+  expect(source).toContain('"/progress/nutrition-analysis/evaluate"');
+  expect(source).toContain('"If-Match": etag ?? \'"analysis-none"\'');
   expect(source).toContain('headers: { "If-Match": `"day-${dayVersion}"` }');
   expect(source).toContain('throw new ApiError(message, response.status, detail, code)');
 }
@@ -180,7 +189,7 @@ describe("domain boundaries", () => {
   });
 
   it("enforces private feature direction and generated transport ownership", () => {
-    for (const domain of ["profile", "diary", "foods"]) {
+    for (const domain of ["profile", "diary", "foods", "progress"]) {
       for (const path of walk(`features/${domain}`).filter((item) => /\.(?:ts|tsx)$/.test(item))) {
         expect(read(path), path).not.toMatch(new RegExp(`@/features/(?!${domain}/)`));
       }
@@ -188,6 +197,8 @@ describe("domain boundaries", () => {
     expect(read("lib/types.ts")).toContain('from "./generated/openapi"');
     expect(read("lib/api.ts")).toContain('from "./generated/openapi"');
     expect(read("components/AdminUserDetailsPage.tsx")).not.toMatch(/Record<string, unknown>|as unknown as/);
+    expect(read("features/progress/progress-view.tsx")).not.toMatch(/\b(?:useQuery|useMutation|useState|useEffect)\b/);
+    expect(read("components/ProgressPage.tsx")).toMatch(/\buseQuery\b/);
   });
 
   it("moves representative exclusively owned selectors without global duplicates", () => {

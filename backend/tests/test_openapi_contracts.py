@@ -10,13 +10,17 @@ from app.api.routes.diary import _command_expected_version, add_entry, edit_entr
 from app.api.routes.foods import add_food, edit_food
 from app.main import app
 from app.nutrition_rules.manifest import registry_response
-from app.schemas import DiaryDayStatusCommand, NutritionRegistryResponse
+from app.schemas import (
+    DiaryDayStatusCommand,
+    NutritionRegistryResponse,
+    WeeklyPriorityAnalysisInputV1,
+)
 
 
 def _request_schema(path: str, method: str) -> dict[str, object]:
-    return app.openapi()["paths"][path][method]["requestBody"]["content"][
-        "application/json"
-    ]["schema"]
+    return app.openapi()["paths"][path][method]["requestBody"]["content"]["application/json"][
+        "schema"
+    ]
 
 
 def test_food_and_diary_openapi_bodies_expose_real_contracts() -> None:
@@ -37,12 +41,8 @@ def test_food_and_diary_openapi_bodies_expose_real_contracts() -> None:
         "carb_g",
         "fat_g",
     }
-    assert {"name", "calories", "nutrition_source"} <= set(
-        food_create["properties"]
-    )
-    assert {"name", "calories", "nutrition_source"} <= set(
-        food_update["properties"]
-    )
+    assert {"name", "calories", "nutrition_source"} <= set(food_create["properties"])
+    assert {"name", "calories", "nutrition_source"} <= set(food_update["properties"])
     assert set(diary_create["required"]) == {"entry_date", "food_id", "quantity"}
     assert diary_create["properties"]["meal_type"]["default"] == "unspecified"
     assert "required" not in diary_update
@@ -67,9 +67,7 @@ def test_registry_openapi_is_typed_without_changing_runtime_payload() -> None:
     runtime_payload = registry_response()
     validated = NutritionRegistryResponse.model_validate(runtime_payload)
     assert validated.rules_manifest_hash == runtime_payload["rules_manifest_hash"]
-    assert [item.model_dump() for item in validated.nutrients] == runtime_payload[
-        "nutrients"
-    ]
+    assert [item.model_dump() for item in validated.nutrients] == runtime_payload["nutrients"]
     assert validated.nova.model_dump(mode="json") == runtime_payload["nova"]
 
 
@@ -83,11 +81,7 @@ def test_day_logging_status_openapi_is_structured_and_admin_is_read_only() -> No
         operation = paths[f"/diary/days/{{diary_date}}/{action}"]["put"]
         body = operation["requestBody"]["content"]["application/json"]["schema"]
         assert body == {"$ref": "#/components/schemas/DiaryDayStatusCommand"}
-        headers = {
-            item["name"]: item
-            for item in operation["parameters"]
-            if item["in"] == "header"
-        }
+        headers = {item["name"]: item for item in operation["parameters"] if item["in"] == "header"}
         assert headers["If-Match"]["required"] is False
     response = components["DiaryDayStatusResponse"]
     assert set(response["required"]) == {
@@ -107,8 +101,7 @@ def test_day_logging_status_openapi_is_structured_and_admin_is_read_only() -> No
     admin_path = paths["/admin/users/{principal_id}/diary-days"]
     assert set(admin_path) == {"get"}
     assert not any(
-        path.startswith("/admin/") and path.endswith(("/complete", "/reopen"))
-        for path in paths
+        path.startswith("/admin/") and path.endswith(("/complete", "/reopen")) for path in paths
     )
     for path, method in (
         ("/diary/entries", "post"),
@@ -131,3 +124,48 @@ def test_day_command_if_match_must_agree_with_body_version() -> None:
         _command_expected_version(payload, '"day-8"')
     assert mismatch.value.status_code == 422
     assert mismatch.value.detail["code"] == "VALIDATION_ERROR"
+
+
+def test_pattern_analysis_openapi_is_closed_versioned_and_owner_only() -> None:
+    schema = app.openapi()
+    paths = schema["paths"]
+    for path, methods in {
+        "/progress/nutrition-analysis/current": {"get"},
+        "/progress/nutrition-analysis/history": {"get"},
+        "/progress/nutrition-analysis/{analysis_id}/revisions/{revision}": {"get"},
+        "/progress/nutrition-analysis/evaluate": {"post"},
+        "/admin/nutrition-analysis/monitoring": {"get"},
+    }.items():
+        assert set(paths[path]) == methods
+    evaluate = paths["/progress/nutrition-analysis/evaluate"]["post"]
+    headers = {item["name"]: item for item in evaluate["parameters"] if item["in"] == "header"}
+    assert headers["If-Match"]["required"] is True
+    assert headers["Idempotency-Key"]["required"] is True
+    priority = schema["components"]["schemas"]["WeeklyPriorityAnalysisInputV1"]
+    assert priority["additionalProperties"] is False
+    assert set(priority["required"]) >= {
+        "principal_ref",
+        "source_analysis_id",
+        "source_analysis_revision",
+        "days",
+        "previous_period",
+        "metric_facts",
+        "safety_flags",
+    }
+    assert WeeklyPriorityAnalysisInputV1.model_config["extra"] == "forbid"
+    target = schema["components"]["schemas"]["AnalysisMetricTargetV1"]
+    for field in ("value", "lower", "upper"):
+        numeric = next(
+            item for item in target["properties"][field]["anyOf"] if item.get("type") == "number"
+        )
+        assert numeric["exclusiveMinimum"] == 0
+    monitoring = schema["components"]["schemas"]["NutritionAnalysisMonitoringResponseV1"]
+    assert monitoring["properties"]["coverage_band_counts"] == {
+        "$ref": "#/components/schemas/AnalysisCoverageBandCountsV1"
+    }
+    assert monitoring["properties"]["stale_reason_counts"] == {
+        "$ref": "#/components/schemas/AnalysisStaleReasonCountsV1"
+    }
+    assert monitoring["properties"]["latency_band_counts"] == {
+        "$ref": "#/components/schemas/AnalysisLatencyBandCountsV1"
+    }

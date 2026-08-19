@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from contextvars import ContextVar, Token
 from enum import Enum
 import math
@@ -45,9 +45,7 @@ from app.services.food_validation_errors import (
     TRANS_FAT_GT_FAT_MESSAGE,
 )
 
-_diary_validation_date: ContextVar[date | None] = ContextVar(
-    "diary_validation_date", default=None
-)
+_diary_validation_date: ContextVar[date | None] = ContextVar("diary_validation_date", default=None)
 
 
 def set_diary_validation_date(value: date) -> Token[date | None]:
@@ -111,8 +109,8 @@ class NutritionRegistryResponse(BaseModel):
     nova_rules_version: str
     registry_schema_version: Literal[2]
     snapshot_schema_version: Literal[3]
-    analysis_rules_version: None
-    analysis_rules_status: Literal["reserved_for_wave_3"]
+    analysis_rules_version: Literal["w3-analysis-1.1.0"]
+    analysis_rules_status: Literal["active"]
     rules_manifest_hash: str
     calculation_policy: dict[str, Any]
     nutrients: list[RegistryNutrientDefinition]
@@ -130,6 +128,7 @@ class NutritionRegistryResponse(BaseModel):
     ingredient_source_definitions: list[RegistryIngredientSourceDefinition]
     reliability_levels: list[RegistryLabelDefinition]
     nova: RegistryNovaDefinition
+    analysis_metrics: list[dict[str, str]]
 
 
 class AdditionalNutrientTarget(BaseModel):
@@ -240,9 +239,7 @@ class ProfileUpsert(BaseModel):
     )
     selected_cut_intensity: Literal[0.15, 0.2, 0.25] = 0.2
 
-    @field_validator(
-        "height_cm", "weight_kg", "protein_per_kg", "fat_pct", mode="before"
-    )
+    @field_validator("height_cm", "weight_kg", "protein_per_kg", "fat_pct", mode="before")
     @classmethod
     def make_non_finite_validation_input_json_safe(cls, value: Any) -> Any:
         if isinstance(value, float) and not math.isfinite(value):
@@ -264,9 +261,7 @@ class ProfilePreview(ProfileUpsert):
     pass
 
 
-def validate_profile_domain(
-    profile: ProfileUpsert, effective_date: date
-) -> ProfileUpsert:
+def validate_profile_domain(profile: ProfileUpsert, effective_date: date) -> ProfileUpsert:
     if profile.birth_date > effective_date:
         raise ProfileDomainValidationError(
             "birth_date",
@@ -1067,6 +1062,441 @@ class DiaryEntryResponse(BaseModel):
     nutrition_snapshot: NutritionSnapshot
     totals: NutritionTotals
     created_at: datetime
+
+
+class _AnalysisClosedModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+
+AnalysisSafetyFlag = Literal[
+    "incompatible_target",
+    "incompatible_source_versions",
+    "invalid_day_evidence",
+    "missing_target",
+    "non_finite_source_fact",
+    "profile_specialist_review_required",
+    "stale_evidence",
+    "unsupported_analysis_rules",
+    "unsupported_food_group_rules",
+    "unsupported_nova_rules",
+    "unsupported_registry",
+    "unsupported_snapshot_schema",
+    "very_low_energy_blocked",
+]
+
+AnalysisStaleReason = Literal[
+    "day_reopened",
+    "day_version_changed",
+    "target_source_changed",
+    "source_snapshot_corrected",
+    "source_version_unsupported",
+]
+
+
+class TargetPlanAnalysisRefV1(_AnalysisClosedModel):
+    id: UUID
+    effective_from: date
+    effective_to: date | None
+    calculation_document_schema_version: int = Field(ge=1)
+    calculation_engine_version: str = Field(min_length=1)
+    nutrition_registry_version: str = Field(min_length=1)
+    safety_outcome: Literal["normal", "specialist_review_required", "very_low_energy_blocked"]
+    target_document_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class OpaqueEvidenceRefV1(_AnalysisClosedModel):
+    source_ref: UUID
+    diary_date: date
+    source_version: str = Field(min_length=1)
+
+
+class AnalysisContributorV1(OpaqueEvidenceRefV1):
+    contribution_value: float = Field(ge=0)
+    unit: str = Field(min_length=1)
+    relation: Literal["supports_observed_value"] = "supports_observed_value"
+
+
+class AnalysisDayMetricValueV1(_AnalysisClosedModel):
+    metric_key: str = Field(min_length=1)
+    value: float | None
+    value_state: Literal["known", "explicit_zero", "unknown"]
+    known_entry_count: int = Field(ge=0)
+    total_entry_count: int = Field(ge=0)
+    amount_qualifier: Literal["exact", "at_least", "unavailable"]
+    unit: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_value_state(self):
+        if self.known_entry_count > self.total_entry_count:
+            raise ValueError("known entry count exceeds total")
+        if self.value_state == "unknown" and self.value is not None:
+            raise ValueError("unknown value must be null")
+        if self.value_state == "explicit_zero" and self.value != 0:
+            raise ValueError("explicit zero must equal zero")
+        if self.value_state == "known" and self.value is None:
+            raise ValueError("known value is required")
+        return self
+
+
+class AnalysisDayFactV1(_AnalysisClosedModel):
+    date: date
+    logging_status: Literal["unregistered", "partial", "complete"]
+    logging_status_version: int = Field(ge=0)
+    entry_count: int = Field(ge=0)
+    analysis_eligible: bool
+    completed_at: datetime | None
+    snapshot_schema_versions: list[int]
+    metric_values: list[AnalysisDayMetricValueV1]
+
+    @model_validator(mode="after")
+    def validate_day(self):
+        if self.analysis_eligible != (self.logging_status == "complete"):
+            raise ValueError("analysis eligibility contradicts logging status")
+        if self.logging_status != "complete" and self.metric_values:
+            raise ValueError("ineligible day cannot expose metric values")
+        if self.snapshot_schema_versions != sorted(set(self.snapshot_schema_versions)):
+            raise ValueError("snapshot schema versions must be sorted and unique")
+        keys = [item.metric_key for item in self.metric_values]
+        if keys != sorted(set(keys)):
+            raise ValueError("metric values must be sorted and unique")
+        return self
+
+
+class AnalysisMetricTargetV1(_AnalysisClosedModel):
+    type: Literal["minimum", "maximum", "range"]
+    value: float | None = Field(default=None, gt=0)
+    lower: float | None = Field(default=None, gt=0)
+    upper: float | None = Field(default=None, gt=0)
+    source_plan_ids: list[UUID]
+
+    @model_validator(mode="after")
+    def validate_target(self):
+        if self.source_plan_ids != sorted(set(self.source_plan_ids), key=str):
+            raise ValueError("target plan IDs must be sorted and unique")
+        if self.type == "range":
+            if (
+                self.value is not None
+                or self.lower is None
+                or self.upper is None
+                or self.lower > self.upper
+            ):
+                raise ValueError("range requires ordered lower and upper")
+        elif self.value is None or self.lower is not None or self.upper is not None:
+            raise ValueError("minimum/maximum requires value only")
+        return self
+
+
+class PeriodMetricEvidenceV1(_AnalysisClosedModel):
+    value: float | None
+    value_state: Literal["known", "explicit_zero", "unknown"]
+    amount_qualifier: Literal["exact", "at_least", "unavailable"]
+    complete_day_count: int = Field(ge=0, le=7)
+    numeric_day_count: int = Field(ge=0, le=7)
+    known_entry_count: int = Field(ge=0)
+    total_entry_count: int = Field(ge=0)
+    coverage_percent: float | None = Field(default=None, ge=0, le=100)
+    confidence: Literal["strong", "limited", "unavailable"]
+    status: Literal[
+        "below_target",
+        "at_target",
+        "within_target",
+        "above_target",
+        "observed",
+        "target_incompatible",
+        "unavailable",
+    ]
+    evidence_refs: list[OpaqueEvidenceRefV1]
+
+    @model_validator(mode="after")
+    def validate_evidence(self):
+        if self.numeric_day_count > self.complete_day_count:
+            raise ValueError("numeric days exceed complete days")
+        if self.known_entry_count > self.total_entry_count:
+            raise ValueError("known entries exceed total")
+        if self.value_state == "unknown" and self.value is not None:
+            raise ValueError("unknown value must be null")
+        if self.value_state == "explicit_zero" and self.value != 0:
+            raise ValueError("explicit zero must equal zero")
+        if self.value_state == "known" and self.value is None:
+            raise ValueError("known value is required")
+        if self.value is None and self.amount_qualifier != "unavailable":
+            raise ValueError("missing value must be unavailable")
+        keys = [(item.diary_date, str(item.source_ref)) for item in self.evidence_refs]
+        if keys != sorted(set(keys)):
+            raise ValueError("evidence references must be sorted and unique")
+        return self
+
+
+class AnalysisComparisonV1(_AnalysisClosedModel):
+    status: Literal[
+        "improved",
+        "worsened",
+        "no_material_change",
+        "descriptive_increase",
+        "descriptive_decrease",
+        "descriptive_change",
+        "not_comparable",
+    ]
+    reason: Literal[
+        "comparable",
+        "insufficient_complete_days",
+        "insufficient_coverage",
+        "limited_coverage",
+        "coverage_mismatch",
+        "target_incompatible",
+        "version_incompatible",
+        "invalid_target",
+        "stale_evidence",
+        "unavailable_value",
+    ]
+    difference: float | None
+    normalized_adverse_delta: float | None
+
+
+class AnalysisPersistenceV1(_AnalysisClosedModel):
+    kind: Literal["same_direction_two_period"] = "same_direction_two_period"
+    qualifies: bool
+    reason: Literal[
+        "qualified",
+        "current_not_qualifying",
+        "previous_not_qualifying",
+        "insufficient_complete_days",
+        "insufficient_coverage",
+        "target_changed",
+        "version_incompatible",
+        "stale_evidence",
+        "missing_previous",
+    ]
+
+
+class AnalysisContributorsV1(_AnalysisClosedModel):
+    current: list[AnalysisContributorV1] = Field(max_length=5)
+    previous: list[AnalysisContributorV1] = Field(max_length=5)
+
+
+class AnalysisMetricFactV1(_AnalysisClosedModel):
+    metric_key: str = Field(min_length=1)
+    metric_kind: Literal[
+        "daily_average",
+        "period_total",
+        "occurrence_days",
+        "share_percent",
+        "diversity_count",
+        "calorie_share",
+    ]
+    unit: str = Field(min_length=1)
+    aggregation: Literal[
+        "average_numeric_days",
+        "sum_period",
+        "distinct_positive_dates",
+        "ratio_percent",
+        "distinct_source_count",
+    ]
+    direction: Literal["minimum", "maximum", "range", "minimize", "monitor_only"]
+    target: AnalysisMetricTargetV1 | None
+    current: PeriodMetricEvidenceV1
+    previous: PeriodMetricEvidenceV1
+    comparison: AnalysisComparisonV1
+    persistence: AnalysisPersistenceV1
+    contributors: AnalysisContributorsV1
+
+    @model_validator(mode="after")
+    def validate_direction_and_target(self):
+        expected = {
+            "minimum": "minimum",
+            "maximum": "maximum",
+            "range": "range",
+        }.get(self.direction)
+        if self.direction in {"minimize", "monitor_only"} and self.target is not None:
+            raise ValueError("minimize and monitor-only metrics cannot have a target")
+        if self.target is not None and self.target.type != expected:
+            raise ValueError("metric direction contradicts target type")
+        if (
+            expected is not None
+            and self.target is None
+            and not all(
+                period.status in {"observed", "unavailable", "target_incompatible"}
+                for period in (self.current, self.previous)
+            )
+        ):
+            raise ValueError("target-relative status requires a target")
+        incompatible = any(
+            period.status == "target_incompatible" for period in (self.current, self.previous)
+        )
+        if incompatible:
+            if self.target is not None:
+                raise ValueError("incompatible target state requires null target")
+            if (
+                self.comparison.status != "not_comparable"
+                or self.comparison.reason != "target_incompatible"
+                or self.persistence.qualifies
+                or self.persistence.reason != "target_changed"
+            ):
+                raise ValueError("incompatible target lifecycle is contradictory")
+        return self
+
+
+class WeeklyPriorityAnalysisInputV1(_AnalysisClosedModel):
+    interface_version: Literal[1] = 1
+    principal_ref: UUID
+    source_analysis_id: UUID
+    source_analysis_revision: int = Field(ge=1)
+    generated_at: datetime
+    as_of_diary_date: date
+    calendar_timezone: Literal["Asia/Riyadh"]
+    period_start: date
+    period_end: date
+    previous_period_start: date
+    previous_period_end: date
+    analysis_rules_version: str = Field(min_length=1)
+    nutrition_registry_version: str = Field(min_length=1)
+    food_group_rules_version: str = Field(min_length=1)
+    nova_rules_version: str = Field(min_length=1)
+    snapshot_schema_versions: list[int]
+    target_plan_refs: list[TargetPlanAnalysisRefV1]
+    days: list[AnalysisDayFactV1] = Field(min_length=7, max_length=7)
+    previous_period: list[AnalysisDayFactV1] = Field(min_length=7, max_length=7)
+    metric_facts: list[AnalysisMetricFactV1]
+    safety_flags: list[AnalysisSafetyFlag]
+
+    @model_validator(mode="after")
+    def validate_projection(self):
+        if self.snapshot_schema_versions != sorted(set(self.snapshot_schema_versions)):
+            raise ValueError("snapshot schema versions must be sorted and unique")
+        if self.safety_flags != sorted(set(self.safety_flags)):
+            raise ValueError("safety flags must be sorted and unique")
+        if [item.date for item in self.days] != sorted(item.date for item in self.days):
+            raise ValueError("current days must be sorted")
+        if [item.date for item in self.previous_period] != sorted(
+            item.date for item in self.previous_period
+        ):
+            raise ValueError("previous days must be sorted")
+        if [item.metric_key for item in self.metric_facts] != sorted(
+            {item.metric_key for item in self.metric_facts}
+        ):
+            raise ValueError("metric facts must be sorted and unique")
+        if (
+            any(
+                metric.current.status == "target_incompatible"
+                or metric.previous.status == "target_incompatible"
+                for metric in self.metric_facts
+            )
+            and "incompatible_target" not in self.safety_flags
+        ):
+            raise ValueError("incompatible target fact requires safety flag")
+        if self.period_end - self.period_start != timedelta(days=6):
+            raise ValueError("current period must contain seven days")
+        if self.previous_period_end - self.previous_period_start != timedelta(days=6):
+            raise ValueError("previous period must contain seven days")
+        if self.previous_period_end + timedelta(days=1) != self.period_start:
+            raise ValueError("periods must be contiguous")
+        return self
+
+
+class AnalysisSourceVersionBundleV1(_AnalysisClosedModel):
+    analysis_rules_version: str
+    nutrition_registry_version: str
+    calculation_engine_version: str
+    food_group_rules_version: str
+    source_reliability_rules_version: str
+    nova_rules_version: str
+    snapshot_schema_versions: list[int]
+    status_evidence_version: int = Field(ge=1)
+    rules_manifest_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_input_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class NutritionPatternAnalysisResponseV1(_AnalysisClosedModel):
+    source_analysis_id: UUID
+    source_analysis_revision: int = Field(ge=1)
+    lifecycle_status: Literal["current", "stale", "superseded"]
+    stale_reasons: list[AnalysisStaleReason]
+    as_of_diary_date: date
+    period_start: date
+    period_end: date
+    previous_period_start: date
+    previous_period_end: date
+    complete_day_count: int = Field(ge=0, le=7)
+    previous_complete_day_count: int = Field(ge=0, le=7)
+    metric_summaries: list[AnalysisMetricFactV1]
+    source_versions: AnalysisSourceVersionBundleV1
+    priority_input: WeeklyPriorityAnalysisInputV1
+    generated_at: datetime
+    finalized_at: datetime
+    etag: str
+
+
+class AnalysisEvaluateCommandV1(_AnalysisClosedModel):
+    expected_current_revision: int | None = Field(default=None, ge=1)
+
+
+class NutritionPatternAnalysisHistoryItemV1(_AnalysisClosedModel):
+    source_analysis_id: UUID
+    source_analysis_revision: int = Field(ge=1)
+    lifecycle_status: Literal["current", "stale", "superseded"]
+    as_of_diary_date: date
+    period_start: date
+    period_end: date
+    previous_period_start: date
+    previous_period_end: date
+    analysis_rules_version: str
+    complete_day_count: int = Field(ge=0, le=7)
+    previous_complete_day_count: int = Field(ge=0, le=7)
+    generated_at: datetime
+    finalized_at: datetime
+    etag: str
+
+
+class NutritionPatternAnalysisHistoryPageV1(_AnalysisClosedModel):
+    items: list[NutritionPatternAnalysisHistoryItemV1]
+    next_cursor: str | None
+
+
+class AnalysisCompleteDayBandCountsV1(_AnalysisClosedModel):
+    zero_to_three: int = Field(alias="0-3", ge=0)
+    four_to_five: int = Field(alias="4-5", ge=0)
+    six_to_seven: int = Field(alias="6-7", ge=0)
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+class AnalysisCoverageBandCountsV1(_AnalysisClosedModel):
+    unknown: int = Field(ge=0)
+    zero_to_lt_50: int = Field(alias="0_to_lt_50", ge=0)
+    fifty_to_lt_75: int = Field(alias="50_to_lt_75", ge=0)
+    seventy_five_to_100: int = Field(alias="75_to_100", ge=0)
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+class AnalysisStaleReasonCountsV1(_AnalysisClosedModel):
+    day_reopened: int = Field(ge=0)
+    day_version_changed: int = Field(ge=0)
+    target_source_changed: int = Field(ge=0)
+    source_snapshot_corrected: int = Field(ge=0)
+    source_version_unsupported: int = Field(ge=0)
+
+
+class AnalysisLatencyBandCountsV1(_AnalysisClosedModel):
+    unknown: int = Field(ge=0)
+    lt_250_ms: int = Field(ge=0)
+    two_fifty_to_lt_500_ms: int = Field(alias="250_to_lt_500_ms", ge=0)
+    five_hundred_to_lt_1000_ms: int = Field(alias="500_to_lt_1000_ms", ge=0)
+    gte_1000_ms: int = Field(ge=0)
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+class NutritionAnalysisMonitoringResponseV1(_AnalysisClosedModel):
+    iso_week: str
+    total_count: int = Field(ge=0)
+    status_counts: dict[str, int]
+    version_counts: dict[str, int]
+    complete_day_band_counts: AnalysisCompleteDayBandCountsV1
+    coverage_band_counts: AnalysisCoverageBandCountsV1
+    stale_reason_counts: AnalysisStaleReasonCountsV1
+    latency_band_counts: AnalysisLatencyBandCountsV1
     model_config = ConfigDict(from_attributes=True)
 
 

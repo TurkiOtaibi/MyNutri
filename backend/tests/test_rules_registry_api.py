@@ -52,8 +52,13 @@ def test_registry_exposes_exact_version_bundle_and_authoritative_metadata(
     assert body["rules_manifest_hash"] == rules_manifest_hash()
     assert len(body["nutrients"]) == 16
     assert len(body["target_types"]) == 7
-    assert body["analysis_rules_version"] is None
-    assert body["analysis_rules_status"] == "reserved_for_wave_3"
+    assert body["analysis_rules_version"] == "w3-analysis-1.1.0"
+    assert body["analysis_rules_status"] == "active"
+    assert {item["key"] for item in body["analysis_metrics"]} >= {
+        "energy:calories_kcal_per_day",
+        "group:fruit_vegetable_g_per_day",
+        "nova:nova4_calorie_share_percent",
+    }
     assert body["calculation_policy"]["goal_policy"]["maximum_deficit_kcal"] == 750
     assert body["calculation_policy"]["calendar_timezone"] == "Asia/Riyadh"
     assert body["source_types"][-2] == {

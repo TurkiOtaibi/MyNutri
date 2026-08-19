@@ -148,6 +148,360 @@ export interface AdminUserSummary {
   status: PrincipalStatus;
 }
 
+/** AnalysisComparisonV1 */
+export interface AnalysisComparisonV1 {
+  /** Difference */
+  difference: number | null;
+  /** Normalized Adverse Delta */
+  normalized_adverse_delta: number | null;
+  /** Reason */
+  reason:
+    | "comparable"
+    | "insufficient_complete_days"
+    | "insufficient_coverage"
+    | "limited_coverage"
+    | "coverage_mismatch"
+    | "target_incompatible"
+    | "version_incompatible"
+    | "invalid_target"
+    | "stale_evidence"
+    | "unavailable_value";
+  /** Status */
+  status:
+    | "improved"
+    | "worsened"
+    | "no_material_change"
+    | "descriptive_increase"
+    | "descriptive_decrease"
+    | "descriptive_change"
+    | "not_comparable";
+}
+
+/** AnalysisCompleteDayBandCountsV1 */
+export interface AnalysisCompleteDayBandCountsV1 {
+  /**
+   * 0-3
+   * @min 0
+   */
+  "0-3": number;
+  /**
+   * 4-5
+   * @min 0
+   */
+  "4-5": number;
+  /**
+   * 6-7
+   * @min 0
+   */
+  "6-7": number;
+}
+
+/** AnalysisContributorV1 */
+export interface AnalysisContributorV1 {
+  /**
+   * Contribution Value
+   * @min 0
+   */
+  contribution_value: number;
+  /**
+   * Diary Date
+   * @format date
+   */
+  diary_date: string;
+  /**
+   * Relation
+   * @default "supports_observed_value"
+   */
+  relation?: "supports_observed_value";
+  /**
+   * Source Ref
+   * @format uuid
+   */
+  source_ref: string;
+  /**
+   * Source Version
+   * @minLength 1
+   */
+  source_version: string;
+  /**
+   * Unit
+   * @minLength 1
+   */
+  unit: string;
+}
+
+/** AnalysisContributorsV1 */
+export interface AnalysisContributorsV1 {
+  /**
+   * Current
+   * @maxItems 5
+   */
+  current: AnalysisContributorV1[];
+  /**
+   * Previous
+   * @maxItems 5
+   */
+  previous: AnalysisContributorV1[];
+}
+
+/** AnalysisCoverageBandCountsV1 */
+export interface AnalysisCoverageBandCountsV1 {
+  /**
+   * 0 To Lt 50
+   * @min 0
+   */
+  "0_to_lt_50": number;
+  /**
+   * 50 To Lt 75
+   * @min 0
+   */
+  "50_to_lt_75": number;
+  /**
+   * 75 To 100
+   * @min 0
+   */
+  "75_to_100": number;
+  /**
+   * Unknown
+   * @min 0
+   */
+  unknown: number;
+}
+
+/** AnalysisDayFactV1 */
+export interface AnalysisDayFactV1 {
+  /** Analysis Eligible */
+  analysis_eligible: boolean;
+  /** Completed At */
+  completed_at: string | null;
+  /**
+   * Date
+   * @format date
+   */
+  date: string;
+  /**
+   * Entry Count
+   * @min 0
+   */
+  entry_count: number;
+  /** Logging Status */
+  logging_status: "unregistered" | "partial" | "complete";
+  /**
+   * Logging Status Version
+   * @min 0
+   */
+  logging_status_version: number;
+  /** Metric Values */
+  metric_values: AnalysisDayMetricValueV1[];
+  /** Snapshot Schema Versions */
+  snapshot_schema_versions: number[];
+}
+
+/** AnalysisDayMetricValueV1 */
+export interface AnalysisDayMetricValueV1 {
+  /** Amount Qualifier */
+  amount_qualifier: "exact" | "at_least" | "unavailable";
+  /**
+   * Known Entry Count
+   * @min 0
+   */
+  known_entry_count: number;
+  /**
+   * Metric Key
+   * @minLength 1
+   */
+  metric_key: string;
+  /**
+   * Total Entry Count
+   * @min 0
+   */
+  total_entry_count: number;
+  /**
+   * Unit
+   * @minLength 1
+   */
+  unit: string;
+  /** Value */
+  value: number | null;
+  /** Value State */
+  value_state: "known" | "explicit_zero" | "unknown";
+}
+
+/** AnalysisEvaluateCommandV1 */
+export interface AnalysisEvaluateCommandV1 {
+  /** Expected Current Revision */
+  expected_current_revision?: number | null;
+}
+
+/** AnalysisLatencyBandCountsV1 */
+export interface AnalysisLatencyBandCountsV1 {
+  /**
+   * 250 To Lt 500 Ms
+   * @min 0
+   */
+  "250_to_lt_500_ms": number;
+  /**
+   * 500 To Lt 1000 Ms
+   * @min 0
+   */
+  "500_to_lt_1000_ms": number;
+  /**
+   * Gte 1000 Ms
+   * @min 0
+   */
+  gte_1000_ms: number;
+  /**
+   * Lt 250 Ms
+   * @min 0
+   */
+  lt_250_ms: number;
+  /**
+   * Unknown
+   * @min 0
+   */
+  unknown: number;
+}
+
+/** AnalysisMetricFactV1 */
+export interface AnalysisMetricFactV1 {
+  /** Aggregation */
+  aggregation:
+    | "average_numeric_days"
+    | "sum_period"
+    | "distinct_positive_dates"
+    | "ratio_percent"
+    | "distinct_source_count";
+  comparison: AnalysisComparisonV1;
+  contributors: AnalysisContributorsV1;
+  current: PeriodMetricEvidenceV1;
+  /** Direction */
+  direction: "minimum" | "maximum" | "range" | "minimize" | "monitor_only";
+  /**
+   * Metric Key
+   * @minLength 1
+   */
+  metric_key: string;
+  /** Metric Kind */
+  metric_kind:
+    | "daily_average"
+    | "period_total"
+    | "occurrence_days"
+    | "share_percent"
+    | "diversity_count"
+    | "calorie_share";
+  persistence: AnalysisPersistenceV1;
+  previous: PeriodMetricEvidenceV1;
+  target: AnalysisMetricTargetV1 | null;
+  /**
+   * Unit
+   * @minLength 1
+   */
+  unit: string;
+}
+
+/** AnalysisMetricTargetV1 */
+export interface AnalysisMetricTargetV1 {
+  /** Lower */
+  lower?: number | null;
+  /** Source Plan Ids */
+  source_plan_ids: string[];
+  /** Type */
+  type: "minimum" | "maximum" | "range";
+  /** Upper */
+  upper?: number | null;
+  /** Value */
+  value?: number | null;
+}
+
+/** AnalysisPersistenceV1 */
+export interface AnalysisPersistenceV1 {
+  /**
+   * Kind
+   * @default "same_direction_two_period"
+   */
+  kind?: "same_direction_two_period";
+  /** Qualifies */
+  qualifies: boolean;
+  /** Reason */
+  reason:
+    | "qualified"
+    | "current_not_qualifying"
+    | "previous_not_qualifying"
+    | "insufficient_complete_days"
+    | "insufficient_coverage"
+    | "target_changed"
+    | "version_incompatible"
+    | "stale_evidence"
+    | "missing_previous";
+}
+
+/** AnalysisSourceVersionBundleV1 */
+export interface AnalysisSourceVersionBundleV1 {
+  /** Analysis Rules Version */
+  analysis_rules_version: string;
+  /** Calculation Engine Version */
+  calculation_engine_version: string;
+  /**
+   * Content Hash
+   * @pattern ^[0-9a-f]{64}$
+   */
+  content_hash: string;
+  /** Food Group Rules Version */
+  food_group_rules_version: string;
+  /** Nova Rules Version */
+  nova_rules_version: string;
+  /** Nutrition Registry Version */
+  nutrition_registry_version: string;
+  /**
+   * Rules Manifest Hash
+   * @pattern ^[0-9a-f]{64}$
+   */
+  rules_manifest_hash: string;
+  /** Snapshot Schema Versions */
+  snapshot_schema_versions: number[];
+  /**
+   * Source Input Hash
+   * @pattern ^[0-9a-f]{64}$
+   */
+  source_input_hash: string;
+  /** Source Reliability Rules Version */
+  source_reliability_rules_version: string;
+  /**
+   * Status Evidence Version
+   * @min 1
+   */
+  status_evidence_version: number;
+}
+
+/** AnalysisStaleReasonCountsV1 */
+export interface AnalysisStaleReasonCountsV1 {
+  /**
+   * Day Reopened
+   * @min 0
+   */
+  day_reopened: number;
+  /**
+   * Day Version Changed
+   * @min 0
+   */
+  day_version_changed: number;
+  /**
+   * Source Snapshot Corrected
+   * @min 0
+   */
+  source_snapshot_corrected: number;
+  /**
+   * Source Version Unsupported
+   * @min 0
+   */
+  source_version_unsupported: number;
+  /**
+   * Target Source Changed
+   * @min 0
+   */
+  target_source_changed: number;
+}
+
 /** BakedGoodType */
 export type BakedGoodType =
   | "arabic_bread"
@@ -686,15 +1040,188 @@ export interface NovaResponse {
 /** NovaReviewStatus */
 export type NovaReviewStatus = "unreviewed" | "reviewed";
 
+/** NutritionAnalysisMonitoringResponseV1 */
+export interface NutritionAnalysisMonitoringResponseV1 {
+  complete_day_band_counts: AnalysisCompleteDayBandCountsV1;
+  coverage_band_counts: AnalysisCoverageBandCountsV1;
+  /** Iso Week */
+  iso_week: string;
+  latency_band_counts: AnalysisLatencyBandCountsV1;
+  stale_reason_counts: AnalysisStaleReasonCountsV1;
+  /** Status Counts */
+  status_counts: Record<string, number>;
+  /**
+   * Total Count
+   * @min 0
+   */
+  total_count: number;
+  /** Version Counts */
+  version_counts: Record<string, number>;
+}
+
 /** NutritionBasis */
 export type NutritionBasis = "per_100g" | "per_100ml";
 
+/** NutritionPatternAnalysisHistoryItemV1 */
+export interface NutritionPatternAnalysisHistoryItemV1 {
+  /** Analysis Rules Version */
+  analysis_rules_version: string;
+  /**
+   * As Of Diary Date
+   * @format date
+   */
+  as_of_diary_date: string;
+  /**
+   * Complete Day Count
+   * @min 0
+   * @max 7
+   */
+  complete_day_count: number;
+  /** Etag */
+  etag: string;
+  /**
+   * Finalized At
+   * @format date-time
+   */
+  finalized_at: string;
+  /**
+   * Generated At
+   * @format date-time
+   */
+  generated_at: string;
+  /** Lifecycle Status */
+  lifecycle_status: "current" | "stale" | "superseded";
+  /**
+   * Period End
+   * @format date
+   */
+  period_end: string;
+  /**
+   * Period Start
+   * @format date
+   */
+  period_start: string;
+  /**
+   * Previous Complete Day Count
+   * @min 0
+   * @max 7
+   */
+  previous_complete_day_count: number;
+  /**
+   * Previous Period End
+   * @format date
+   */
+  previous_period_end: string;
+  /**
+   * Previous Period Start
+   * @format date
+   */
+  previous_period_start: string;
+  /**
+   * Source Analysis Id
+   * @format uuid
+   */
+  source_analysis_id: string;
+  /**
+   * Source Analysis Revision
+   * @min 1
+   */
+  source_analysis_revision: number;
+}
+
+/** NutritionPatternAnalysisHistoryPageV1 */
+export interface NutritionPatternAnalysisHistoryPageV1 {
+  /** Items */
+  items: NutritionPatternAnalysisHistoryItemV1[];
+  /** Next Cursor */
+  next_cursor: string | null;
+}
+
+/** NutritionPatternAnalysisResponseV1 */
+export interface NutritionPatternAnalysisResponseV1 {
+  /**
+   * As Of Diary Date
+   * @format date
+   */
+  as_of_diary_date: string;
+  /**
+   * Complete Day Count
+   * @min 0
+   * @max 7
+   */
+  complete_day_count: number;
+  /** Etag */
+  etag: string;
+  /**
+   * Finalized At
+   * @format date-time
+   */
+  finalized_at: string;
+  /**
+   * Generated At
+   * @format date-time
+   */
+  generated_at: string;
+  /** Lifecycle Status */
+  lifecycle_status: "current" | "stale" | "superseded";
+  /** Metric Summaries */
+  metric_summaries: AnalysisMetricFactV1[];
+  /**
+   * Period End
+   * @format date
+   */
+  period_end: string;
+  /**
+   * Period Start
+   * @format date
+   */
+  period_start: string;
+  /**
+   * Previous Complete Day Count
+   * @min 0
+   * @max 7
+   */
+  previous_complete_day_count: number;
+  /**
+   * Previous Period End
+   * @format date
+   */
+  previous_period_end: string;
+  /**
+   * Previous Period Start
+   * @format date
+   */
+  previous_period_start: string;
+  priority_input: WeeklyPriorityAnalysisInputV1;
+  /**
+   * Source Analysis Id
+   * @format uuid
+   */
+  source_analysis_id: string;
+  /**
+   * Source Analysis Revision
+   * @min 1
+   */
+  source_analysis_revision: number;
+  source_versions: AnalysisSourceVersionBundleV1;
+  /** Stale Reasons */
+  stale_reasons: (
+    | "day_reopened"
+    | "day_version_changed"
+    | "target_source_changed"
+    | "source_snapshot_corrected"
+    | "source_version_unsupported"
+  )[];
+}
+
 /** NutritionRegistryResponse */
 export interface NutritionRegistryResponse {
+  /** Analysis Metrics */
+  analysis_metrics: Record<string, string>[];
   /** Analysis Rules Status */
-  analysis_rules_status: "reserved_for_wave_3";
+  analysis_rules_status: "active";
   /** Analysis Rules Version */
-  analysis_rules_version: null;
+  analysis_rules_version: "w3-analysis-1.1.0";
   /** Baked Good Type Definitions */
   baked_good_type_definitions: RegistryLabelDefinition[];
   /** Calculation Engine Version */
@@ -938,6 +1465,72 @@ export interface NutritionTotals {
   vitamin_k_mcg?: number | null;
   /** Zinc Mg */
   zinc_mg?: number | null;
+}
+
+/** OpaqueEvidenceRefV1 */
+export interface OpaqueEvidenceRefV1 {
+  /**
+   * Diary Date
+   * @format date
+   */
+  diary_date: string;
+  /**
+   * Source Ref
+   * @format uuid
+   */
+  source_ref: string;
+  /**
+   * Source Version
+   * @minLength 1
+   */
+  source_version: string;
+}
+
+/** PeriodMetricEvidenceV1 */
+export interface PeriodMetricEvidenceV1 {
+  /** Amount Qualifier */
+  amount_qualifier: "exact" | "at_least" | "unavailable";
+  /**
+   * Complete Day Count
+   * @min 0
+   * @max 7
+   */
+  complete_day_count: number;
+  /** Confidence */
+  confidence: "strong" | "limited" | "unavailable";
+  /** Coverage Percent */
+  coverage_percent?: number | null;
+  /** Evidence Refs */
+  evidence_refs: OpaqueEvidenceRefV1[];
+  /**
+   * Known Entry Count
+   * @min 0
+   */
+  known_entry_count: number;
+  /**
+   * Numeric Day Count
+   * @min 0
+   * @max 7
+   */
+  numeric_day_count: number;
+  /** Status */
+  status:
+    | "below_target"
+    | "at_target"
+    | "within_target"
+    | "above_target"
+    | "observed"
+    | "target_incompatible"
+    | "unavailable";
+  /**
+   * Total Entry Count
+   * @min 0
+   */
+  total_entry_count: number;
+  /** Value */
+  value: number | null;
+  /** Value State */
+  value_state: "known" | "explicit_zero" | "unknown";
 }
 
 /** PrincipalRole */
@@ -1260,6 +1853,47 @@ export interface TargetPlanActivationResponse {
   replaced_plan?: TargetPlanSummary | null;
 }
 
+/** TargetPlanAnalysisRefV1 */
+export interface TargetPlanAnalysisRefV1 {
+  /**
+   * Calculation Document Schema Version
+   * @min 1
+   */
+  calculation_document_schema_version: number;
+  /**
+   * Calculation Engine Version
+   * @minLength 1
+   */
+  calculation_engine_version: string;
+  /**
+   * Effective From
+   * @format date
+   */
+  effective_from: string;
+  /** Effective To */
+  effective_to: string | null;
+  /**
+   * Id
+   * @format uuid
+   */
+  id: string;
+  /**
+   * Nutrition Registry Version
+   * @minLength 1
+   */
+  nutrition_registry_version: string;
+  /** Safety Outcome */
+  safety_outcome:
+    | "normal"
+    | "specialist_review_required"
+    | "very_low_energy_blocked";
+  /**
+   * Target Document Hash
+   * @pattern ^[0-9a-f]{64}$
+   */
+  target_document_hash: string;
+}
+
 /** TargetPlanHistoryResponse */
 export interface TargetPlanHistoryResponse {
   /** Items */
@@ -1458,6 +2092,116 @@ export interface WeekSummary {
   weekly_totals: NutritionTotals;
 }
 
+/** WeeklyPriorityAnalysisInputV1 */
+export interface WeeklyPriorityAnalysisInputV1 {
+  /**
+   * Analysis Rules Version
+   * @minLength 1
+   */
+  analysis_rules_version: string;
+  /**
+   * As Of Diary Date
+   * @format date
+   */
+  as_of_diary_date: string;
+  /** Calendar Timezone */
+  calendar_timezone: "Asia/Riyadh";
+  /**
+   * Days
+   * @maxItems 7
+   * @minItems 7
+   */
+  days: AnalysisDayFactV1[];
+  /**
+   * Food Group Rules Version
+   * @minLength 1
+   */
+  food_group_rules_version: string;
+  /**
+   * Generated At
+   * @format date-time
+   */
+  generated_at: string;
+  /**
+   * Interface Version
+   * @default 1
+   */
+  interface_version?: 1;
+  /** Metric Facts */
+  metric_facts: AnalysisMetricFactV1[];
+  /**
+   * Nova Rules Version
+   * @minLength 1
+   */
+  nova_rules_version: string;
+  /**
+   * Nutrition Registry Version
+   * @minLength 1
+   */
+  nutrition_registry_version: string;
+  /**
+   * Period End
+   * @format date
+   */
+  period_end: string;
+  /**
+   * Period Start
+   * @format date
+   */
+  period_start: string;
+  /**
+   * Previous Period
+   * @maxItems 7
+   * @minItems 7
+   */
+  previous_period: AnalysisDayFactV1[];
+  /**
+   * Previous Period End
+   * @format date
+   */
+  previous_period_end: string;
+  /**
+   * Previous Period Start
+   * @format date
+   */
+  previous_period_start: string;
+  /**
+   * Principal Ref
+   * @format uuid
+   */
+  principal_ref: string;
+  /** Safety Flags */
+  safety_flags: (
+    | "incompatible_target"
+    | "incompatible_source_versions"
+    | "invalid_day_evidence"
+    | "missing_target"
+    | "non_finite_source_fact"
+    | "profile_specialist_review_required"
+    | "stale_evidence"
+    | "unsupported_analysis_rules"
+    | "unsupported_food_group_rules"
+    | "unsupported_nova_rules"
+    | "unsupported_registry"
+    | "unsupported_snapshot_schema"
+    | "very_low_energy_blocked"
+  )[];
+  /** Snapshot Schema Versions */
+  snapshot_schema_versions: number[];
+  /**
+   * Source Analysis Id
+   * @format uuid
+   */
+  source_analysis_id: string;
+  /**
+   * Source Analysis Revision
+   * @min 1
+   */
+  source_analysis_revision: number;
+  /** Target Plan Refs */
+  target_plan_refs: TargetPlanAnalysisRefV1[];
+}
+
 export namespace Account {
   /**
    * No description
@@ -1567,6 +2311,28 @@ export namespace Admin {
     export type RequestBody = never;
     export type RequestHeaders = {};
     export type ResponseBody = AdminUserListResponse;
+  }
+
+  /**
+   * No description
+   * @tags admin
+   * @name MonitoringAdminNutritionAnalysisMonitoringGet
+   * @summary Monitoring
+   * @request GET:/admin/nutrition-analysis/monitoring
+   * @secure
+   */
+  export namespace MonitoringAdminNutritionAnalysisMonitoringGet {
+    export type RequestParams = {};
+    export type RequestQuery = {
+      /**
+       * Iso Week
+       * @pattern ^\d{4}-W\d{2}$
+       */
+      iso_week: string;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = NutritionAnalysisMonitoringResponseV1;
   }
 
   /**
@@ -2447,6 +3213,95 @@ export namespace Profile {
     export type RequestBody = ProfileUpsert;
     export type RequestHeaders = {};
     export type ResponseBody = ProfileResponse;
+  }
+}
+
+export namespace Progress {
+  /**
+   * No description
+   * @tags nutrition-analysis
+   * @name CurrentProgressNutritionAnalysisCurrentGet
+   * @summary Current
+   * @request GET:/progress/nutrition-analysis/current
+   * @secure
+   */
+  export namespace CurrentProgressNutritionAnalysisCurrentGet {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = NutritionPatternAnalysisResponseV1;
+  }
+
+  /**
+   * No description
+   * @tags nutrition-analysis
+   * @name EvaluateProgressNutritionAnalysisEvaluatePost
+   * @summary Evaluate
+   * @request POST:/progress/nutrition-analysis/evaluate
+   * @secure
+   */
+  export namespace EvaluateProgressNutritionAnalysisEvaluatePost {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = AnalysisEvaluateCommandV1;
+    export type RequestHeaders = {
+      /** Idempotency-Key */
+      "Idempotency-Key": string;
+      /** If-Match */
+      "If-Match": string;
+    };
+    export type ResponseBody = NutritionPatternAnalysisResponseV1;
+  }
+
+  /**
+   * No description
+   * @tags nutrition-analysis
+   * @name HistoryProgressNutritionAnalysisHistoryGet
+   * @summary History
+   * @request GET:/progress/nutrition-analysis/history
+   * @secure
+   */
+  export namespace HistoryProgressNutritionAnalysisHistoryGet {
+    export type RequestParams = {};
+    export type RequestQuery = {
+      /** Cursor */
+      cursor?: string | null;
+      /**
+       * Limit
+       * @min 1
+       * @max 100
+       * @default 20
+       */
+      limit?: number;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = NutritionPatternAnalysisHistoryPageV1;
+  }
+
+  /**
+   * No description
+   * @tags nutrition-analysis
+   * @name RevisionProgressNutritionAnalysisAnalysisIdRevisionsRevisionGet
+   * @summary Revision
+   * @request GET:/progress/nutrition-analysis/{analysis_id}/revisions/{revision}
+   * @secure
+   */
+  export namespace RevisionProgressNutritionAnalysisAnalysisIdRevisionsRevisionGet {
+    export type RequestParams = {
+      /**
+       * Analysis Id
+       * @format uuid
+       */
+      analysisId: string;
+      /** Revision */
+      revision: number;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = NutritionPatternAnalysisResponseV1;
   }
 }
 

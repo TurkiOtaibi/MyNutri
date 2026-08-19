@@ -85,6 +85,13 @@ function adminPage(items: ReturnType<typeof adminFood>[]) {
   };
 }
 
+function visualPatternAnalysis() {
+  const id = "00000000-0000-4000-8000-000000000032";
+  const evidence = { value: 18, value_state: "known", amount_qualifier: "exact", complete_day_count: 5, numeric_day_count: 5, known_entry_count: 8, total_entry_count: 8, coverage_percent: 100, confidence: "strong", status: "below_target", evidence_refs: [] };
+  const metric = { metric_key: "nutrient:fiber_g", metric_kind: "daily_average", unit: "g/day", aggregation: "average_numeric_days", direction: "minimum", target: { type: "minimum", value: 25, lower: null, upper: null, source_plan_ids: [] }, current: evidence, previous: { ...evidence, value: 16 }, comparison: { status: "no_material_change", reason: "comparable", difference: 2, normalized_adverse_delta: -0.08 }, persistence: { kind: "same_direction_two_period", qualifies: true, reason: "qualified" }, contributors: { current: [], previous: [] } };
+  return { source_analysis_id: id, source_analysis_revision: 1, lifecycle_status: "current", stale_reasons: [], as_of_diary_date: "2026-08-17", period_start: "2026-08-11", period_end: "2026-08-17", previous_period_start: "2026-08-04", previous_period_end: "2026-08-10", complete_day_count: 5, previous_complete_day_count: 5, metric_summaries: [metric], source_versions: { analysis_rules_version: "w3-analysis-1.1.0", nutrition_registry_version: "2.0.0", calculation_engine_version: "2.0.0", food_group_rules_version: "1.0.0", source_reliability_rules_version: "1.0.0", nova_rules_version: "1.0.0", snapshot_schema_versions: [3], status_evidence_version: 1, rules_manifest_hash: "a".repeat(64), source_input_hash: "b".repeat(64), content_hash: "c".repeat(64) }, priority_input: { interface_version: 1, principal_ref: "00000000-0000-4000-8000-000000000001", source_analysis_id: id, source_analysis_revision: 1, generated_at: FIXED_VISUAL_TIME, as_of_diary_date: "2026-08-17", calendar_timezone: "Asia/Riyadh", period_start: "2026-08-11", period_end: "2026-08-17", previous_period_start: "2026-08-04", previous_period_end: "2026-08-10", analysis_rules_version: "w3-analysis-1.1.0", nutrition_registry_version: "2.0.0", food_group_rules_version: "1.0.0", nova_rules_version: "1.0.0", snapshot_schema_versions: [3], target_plan_refs: [], days: [], previous_period: [], metric_facts: [metric], safety_flags: [] }, generated_at: FIXED_VISUAL_TIME, finalized_at: FIXED_VISUAL_TIME, etag: `"analysis-${id}-r1"` };
+}
+
 test.describe("critical visual regression", () => {
   test.beforeEach(async ({ page }) => {
     await page.clock.install({ time: FIXED_VISUAL_TIME });
@@ -187,5 +194,20 @@ test.describe("critical visual regression", () => {
     await stableRendering(page);
 
     await expect(lifecycle).toHaveScreenshot("admin-food-lifecycle-mobile.png");
+  });
+
+  test("Nutrition pattern analysis on mobile", async ({ page }) => {
+    await page.route(
+      (url) => isExactApiPath(url, "/progress/nutrition-analysis/current"),
+      (route) => route.fulfill({ status: 200, contentType: "application/json", json: visualPatternAnalysis() })
+    );
+    await page.route(
+      (url) => isExactApiPath(url, "/progress/nutrition-analysis/history"),
+      (route) => route.fulfill({ status: 200, contentType: "application/json", json: { items: [], next_cursor: null } })
+    );
+    await page.goto("/progress?visual=pattern-analysis");
+    await expect(page.getByText("الألياف")).toBeVisible();
+    await stableRendering(page);
+    await expect(page.locator("main")).toHaveScreenshot("nutrition-pattern-analysis-mobile.png");
   });
 });

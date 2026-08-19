@@ -24,6 +24,7 @@ from app.nutrition_rules.registry import (
     TRAITS,
 )
 from app.nutrition_rules.versions import VERSIONS
+from app.nutrition_rules.analysis import METRIC_REGISTRY
 
 
 def rules_manifest() -> dict[str, Any]:
@@ -58,6 +59,10 @@ def rules_manifest() -> dict[str, Any]:
         ],
         "reliability_levels": list(RELIABILITY_LEVELS),
         "nova": NOVA,
+        "analysis_metrics": [
+            {"key": key, "unit": value[0], "direction": value[1]}
+            for key, value in sorted(METRIC_REGISTRY.items())
+        ],
     }
 
 
@@ -92,4 +97,5 @@ def registry_response() -> dict[str, Any]:
         "ingredient_source_definitions": manifest["ingredient_source_definitions"],
         "reliability_levels": manifest["reliability_levels"],
         "nova": manifest["nova"],
+        "analysis_metrics": manifest["analysis_metrics"],
     }

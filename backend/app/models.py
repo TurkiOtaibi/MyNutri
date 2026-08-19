@@ -967,3 +967,285 @@ class DiaryEntry(SQLModel, table=True):
         default_factory=utcnow,
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )
+
+
+class NutritionAnalysis(SQLModel, table=True):
+    __tablename__ = "nutrition_analysis"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["id", "current_revision_id", "principal_id"],
+            [
+                "nutrition_analysis_revision.analysis_id",
+                "nutrition_analysis_revision.id",
+                "nutrition_analysis_revision.principal_id",
+            ],
+            name="fk_nutrition_analysis_current_revision_owner",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
+        UniqueConstraint("id", "principal_id", name="uq_nutrition_analysis_id_principal"),
+        UniqueConstraint(
+            "principal_id",
+            "as_of_diary_date",
+            "interface_version",
+            name="uq_nutrition_analysis_principal_date_interface",
+        ),
+        CheckConstraint("calendar_timezone = 'Asia/Riyadh'", name="ck_nutrition_analysis_timezone"),
+        CheckConstraint("interface_version = 1", name="ck_nutrition_analysis_interface"),
+        CheckConstraint(
+            "(current_revision_id IS NULL AND current_revision_number IS NULL) OR "
+            "(current_revision_id IS NOT NULL AND current_revision_number >= 1)",
+            name="ck_nutrition_analysis_current_pointer",
+        ),
+        Index(
+            "ix_nutrition_analysis_principal_date_desc",
+            "principal_id",
+            desc("as_of_diary_date"),
+            desc("id"),
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    as_of_diary_date: date = Field(nullable=False)
+    calendar_timezone: str = Field(sa_column=Column(String(64), nullable=False))
+    interface_version: int = Field(default=1, sa_column=Column(SmallInteger(), nullable=False))
+    current_revision_id: uuid.UUID | None = Field(default=None, nullable=True)
+    current_revision_number: int | None = Field(default=None, sa_column=Column(Integer(), nullable=True))
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    updated_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+
+
+class NutritionAnalysisRevision(SQLModel, table=True):
+    __tablename__ = "nutrition_analysis_revision"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["analysis_id", "principal_id"],
+            ["nutrition_analysis.id", "nutrition_analysis.principal_id"],
+            name="fk_nutrition_analysis_revision_owner",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("id", "principal_id", name="uq_nutrition_analysis_revision_id_principal"),
+        UniqueConstraint(
+            "analysis_id",
+            "id",
+            "principal_id",
+            name="uq_nutrition_analysis_revision_series_id_owner",
+        ),
+        UniqueConstraint("analysis_id", "revision", name="uq_nutrition_analysis_revision_number"),
+        UniqueConstraint(
+            "analysis_id",
+            "source_input_hash",
+            "analysis_rules_version",
+            name="uq_nutrition_analysis_revision_source",
+        ),
+        CheckConstraint("revision >= 1", name="ck_nutrition_analysis_revision_positive"),
+        CheckConstraint(
+            "period_end - period_start = 6 AND previous_period_end - previous_period_start = 6 "
+            "AND previous_period_end + 1 = period_start",
+            name="ck_nutrition_analysis_revision_windows",
+        ).ddl_if(dialect="postgresql"),
+        CheckConstraint(
+            "complete_day_count BETWEEN 0 AND 7 AND previous_complete_day_count BETWEEN 0 AND 7",
+            name="ck_nutrition_analysis_revision_day_counts",
+        ),
+        CheckConstraint(
+            "length(source_input_hash) = 64 AND length(content_hash) = 64",
+            name="ck_nutrition_analysis_revision_hashes",
+        ),
+        CheckConstraint(
+            "result_status IN ('available','insufficient','unavailable')",
+            name="ck_nutrition_analysis_revision_result",
+        ),
+        Index(
+            "ix_nutrition_analysis_revision_history",
+            "principal_id",
+            desc("period_end"),
+            desc("analysis_id"),
+            desc("revision"),
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    analysis_id: uuid.UUID = Field(nullable=False)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    revision: int = Field(sa_column=Column(Integer(), nullable=False))
+    period_start: date = Field(nullable=False)
+    period_end: date = Field(nullable=False)
+    previous_period_start: date = Field(nullable=False)
+    previous_period_end: date = Field(nullable=False)
+    analysis_rules_version: str = Field(sa_column=Column(String(64), nullable=False))
+    source_versions: dict[str, Any] = Field(
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    )
+    source_input_hash: str = Field(sa_column=Column(String(64), nullable=False))
+    content_hash: str = Field(sa_column=Column(String(64), nullable=False))
+    complete_day_count: int = Field(sa_column=Column(SmallInteger(), nullable=False))
+    previous_complete_day_count: int = Field(sa_column=Column(SmallInteger(), nullable=False))
+    result_status: str = Field(sa_column=Column(String(32), nullable=False))
+    result_reason: str | None = Field(default=None, sa_column=Column(String(64), nullable=True))
+    analysis_document: dict[str, Any] = Field(
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    )
+    supersedes_revision_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("nutrition_analysis_revision.id", ondelete="RESTRICT"), nullable=True
+        ),
+    )
+    generated_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    finalized_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+
+
+class NutritionAnalysisEvidenceRef(SQLModel, table=True):
+    __tablename__ = "nutrition_analysis_evidence_ref"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["revision_id", "principal_id"],
+            ["nutrition_analysis_revision.id", "nutrition_analysis_revision.principal_id"],
+            name="fk_nutrition_analysis_evidence_owner",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "revision_id",
+            "period",
+            "diary_date",
+            "source_ref",
+            "metric_key",
+            name="uq_nutrition_analysis_evidence_identity",
+        ),
+        CheckConstraint("period IN ('current','previous')", name="ck_nutrition_analysis_evidence_period"),
+        CheckConstraint("day_version >= 0", name="ck_nutrition_analysis_evidence_day_version"),
+        CheckConstraint("snapshot_schema_version IN (2,3)", name="ck_nutrition_analysis_evidence_snapshot_version"),
+        CheckConstraint("value_state IN ('known','explicit_zero','unknown')", name="ck_nutrition_analysis_evidence_value_state"),
+        CheckConstraint(
+            "(value_state='unknown' AND value IS NULL) OR "
+            "(value_state='explicit_zero' AND value=0) OR "
+            "(value_state='known' AND value IS NOT NULL)",
+            name="ck_nutrition_analysis_evidence_value",
+        ),
+        Index(
+            "ix_nutrition_analysis_evidence_principal_date_desc",
+            "principal_id",
+            desc("diary_date"),
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    revision_id: uuid.UUID = Field(nullable=False)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    period: str = Field(sa_column=Column(String(16), nullable=False))
+    diary_date: date = Field(nullable=False)
+    day_version: int = Field(sa_column=Column(BigInteger(), nullable=False))
+    source_ref: uuid.UUID = Field(nullable=False)
+    snapshot_schema_version: int = Field(sa_column=Column(SmallInteger(), nullable=False))
+    metric_key: str = Field(sa_column=Column(String(96), nullable=False))
+    source_version: str = Field(sa_column=Column(String(64), nullable=False))
+    value: float | None = Field(default=None, sa_column=Column(Numeric(24, 6), nullable=True))
+    value_state: str = Field(sa_column=Column(String(24), nullable=False))
+    unit: str = Field(sa_column=Column(String(32), nullable=False))
+
+
+class NutritionAnalysisRevisionEvent(SQLModel, table=True):
+    __tablename__ = "nutrition_analysis_revision_event"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["revision_id", "principal_id"],
+            ["nutrition_analysis_revision.id", "nutrition_analysis_revision.principal_id"],
+            name="fk_nutrition_analysis_event_owner",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "event_type IN ('day_reopened','day_version_changed','target_source_changed',"
+            "'source_snapshot_corrected','source_version_unsupported','superseded_by_revision')",
+            name="ck_nutrition_analysis_event_type",
+        ),
+        UniqueConstraint(
+            "revision_id",
+            "event_type",
+            "reason",
+            "source_day_version",
+            "successor_revision_id",
+            name="uq_nutrition_analysis_event_identity",
+        ),
+        Index("ix_nutrition_analysis_event_revision_time", "revision_id", "occurred_at"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    revision_id: uuid.UUID = Field(nullable=False)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    event_type: str = Field(sa_column=Column(String(64), nullable=False))
+    successor_revision_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("nutrition_analysis_revision.id", ondelete="RESTRICT"), nullable=True
+        ),
+    )
+    reason: str = Field(sa_column=Column(String(96), nullable=False))
+    source_day_version: int | None = Field(default=None, sa_column=Column(BigInteger(), nullable=True))
+    occurred_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    request_id: str | None = Field(default=None, sa_column=Column(String(64), nullable=True))
+
+
+class NutritionAnalysisCommandIdempotency(SQLModel, table=True):
+    __tablename__ = "nutrition_analysis_command_idempotency"
+    __table_args__ = (
+        UniqueConstraint(
+            "principal_id", "operation", "key_digest", name="uq_nutrition_analysis_command_scope"
+        ),
+        CheckConstraint("length(key_digest) = 64 AND length(command_hash) = 64", name="ck_nutrition_analysis_command_hashes"),
+        CheckConstraint("response_status IN (200,201)", name="ck_nutrition_analysis_command_status"),
+        Index("ix_nutrition_analysis_command_expiry", "expires_at"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    operation: str = Field(sa_column=Column(String(64), nullable=False))
+    key_digest: str = Field(sa_column=Column(String(64), nullable=False))
+    command_hash: str = Field(sa_column=Column(String(64), nullable=False))
+    captured_date: date = Field(nullable=False)
+    analysis_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("nutrition_analysis.id", ondelete="RESTRICT"), nullable=True
+        ),
+    )
+    revision_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("nutrition_analysis_revision.id", ondelete="RESTRICT"),
+            nullable=True,
+        ),
+    )
+    response_status: int = Field(sa_column=Column(SmallInteger(), nullable=False))
+    response_headers: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False),
+    )
+    response_document: dict[str, Any] = Field(
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    )
+    completed_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))

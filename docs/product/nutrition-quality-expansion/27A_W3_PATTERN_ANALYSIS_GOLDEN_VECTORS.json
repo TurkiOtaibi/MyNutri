@@ -1,0 +1,600 @@
+{
+  "schema_version": 1,
+  "design_version": "1.1",
+  "analysis_rules_version": "w3-analysis-1.1.0",
+  "calendar_timezone": "Asia/Riyadh",
+  "required_coverage": [
+    "riyadh_window",
+    "month_year_rollover",
+    "sunday_not_authority",
+    "four_day_boundary",
+    "complete_partial_unregistered",
+    "explicit_empty_complete",
+    "unknown_not_zero",
+    "numeric_zero",
+    "metric_coverage",
+    "current_previous",
+    "material_boundary",
+    "coverage_mismatch",
+    "target_change",
+    "persistence",
+    "contributor_ties",
+    "deterministic_order",
+    "unsupported_version",
+    "immutable_identity",
+    "revision_creation",
+    "no_op_recompute",
+    "stale_superseded",
+    "original_version_replay",
+    "plan033_projection",
+    "period_unknown_zero",
+    "degenerate_range_target",
+    "target_compatibility",
+    "target_schema_consistency",
+    "monitoring_coverage_bands",
+    "monitoring_stale_distinct",
+    "monitoring_latency_bands",
+    "monitoring_utc_cohort",
+    "replay_no_latency"
+  ],
+  "vectors": [
+    {
+      "id": "W01-year-rollover",
+      "kind": "window",
+      "covers": ["riyadh_window", "month_year_rollover"],
+      "input": {"as_of_diary_date": "2026-01-01"},
+      "expected": {"period_start": "2025-12-26", "period_end": "2026-01-01", "previous_period_start": "2025-12-19", "previous_period_end": "2025-12-25"}
+    },
+    {
+      "id": "W02-leap-boundary",
+      "kind": "window",
+      "covers": ["riyadh_window", "month_year_rollover"],
+      "input": {"as_of_diary_date": "2028-03-01"},
+      "expected": {"period_start": "2028-02-24", "period_end": "2028-03-01", "previous_period_start": "2028-02-17", "previous_period_end": "2028-02-23"}
+    },
+    {
+      "id": "W03-month-rollover",
+      "kind": "window",
+      "covers": ["riyadh_window", "month_year_rollover"],
+      "input": {"as_of_diary_date": "2026-08-01"},
+      "expected": {"period_start": "2026-07-26", "period_end": "2026-08-01", "previous_period_start": "2026-07-19", "previous_period_end": "2026-07-25"}
+    },
+    {
+      "id": "W04-monday-is-rolling",
+      "kind": "window",
+      "covers": ["riyadh_window", "sunday_not_authority"],
+      "input": {"as_of_diary_date": "2026-08-17"},
+      "expected": {"period_start": "2026-08-11", "period_end": "2026-08-17", "previous_period_start": "2026-08-04", "previous_period_end": "2026-08-10"}
+    },
+    {
+      "id": "C01-four-complete-strong",
+      "kind": "coverage",
+      "covers": ["four_day_boundary", "complete_partial_unregistered", "metric_coverage"],
+      "input": {"days": [{"status": "complete", "values": [10]}, {"status": "complete", "values": [20]}, {"status": "complete", "values": [30]}, {"status": "complete", "values": [40]}, {"status": "partial", "values": [900]}, {"status": "unregistered", "values": [900]}]},
+      "expected": {"complete_day_count": 4, "total_entry_count": 4, "known_entry_count": 4, "numeric_day_count": 4, "coverage_percent": 100.0, "value": 25.0, "amount_qualifier": "exact", "confidence": "strong"}
+    },
+    {
+      "id": "C02-three-complete-unavailable",
+      "kind": "coverage",
+      "covers": ["four_day_boundary"],
+      "input": {"days": [{"status": "complete", "values": [10]}, {"status": "complete", "values": [20]}, {"status": "complete", "values": [30]}]},
+      "expected": {"complete_day_count": 3, "total_entry_count": 3, "known_entry_count": 3, "numeric_day_count": 3, "coverage_percent": 100.0, "value": 20.0, "amount_qualifier": "exact", "confidence": "unavailable"}
+    },
+    {
+      "id": "C03-explicit-empty-is-zero",
+      "kind": "coverage",
+      "covers": ["explicit_empty_complete", "numeric_zero", "four_day_boundary"],
+      "input": {"days": [{"status": "complete", "values": []}, {"status": "complete", "values": []}, {"status": "complete", "values": []}, {"status": "complete", "values": []}]},
+      "expected": {"complete_day_count": 4, "total_entry_count": 0, "known_entry_count": 0, "numeric_day_count": 4, "coverage_percent": 100.0, "value": 0.0, "amount_qualifier": "exact", "confidence": "strong"}
+    },
+    {
+      "id": "C04-unknown-day-excluded-from-average",
+      "kind": "coverage",
+      "covers": ["unknown_not_zero", "explicit_empty_complete", "numeric_zero", "metric_coverage"],
+      "input": {"days": [{"status": "complete", "values": [10]}, {"status": "complete", "values": [null]}, {"status": "complete", "values": []}, {"status": "complete", "values": [0]}]},
+      "expected": {"complete_day_count": 4, "total_entry_count": 3, "known_entry_count": 2, "numeric_day_count": 3, "coverage_percent": 66.666667, "value": 3.333333, "amount_qualifier": "at_least", "confidence": "limited"}
+    },
+    {
+      "id": "C05-half-known-limited",
+      "kind": "coverage",
+      "covers": ["unknown_not_zero", "metric_coverage"],
+      "input": {"days": [{"status": "complete", "values": [10, null]}, {"status": "complete", "values": [10, null]}, {"status": "complete", "values": [10, null]}, {"status": "complete", "values": [10, null]}]},
+      "expected": {"complete_day_count": 4, "total_entry_count": 8, "known_entry_count": 4, "numeric_day_count": 4, "coverage_percent": 50.0, "value": 10.0, "amount_qualifier": "at_least", "confidence": "limited"}
+    },
+    {
+      "id": "C06-known-zero-strong",
+      "kind": "coverage",
+      "covers": ["numeric_zero", "metric_coverage"],
+      "input": {"days": [{"status": "complete", "values": [0]}, {"status": "complete", "values": [0]}, {"status": "complete", "values": [0]}, {"status": "complete", "values": [0]}]},
+      "expected": {"complete_day_count": 4, "total_entry_count": 4, "known_entry_count": 4, "numeric_day_count": 4, "coverage_percent": 100.0, "value": 0.0, "amount_qualifier": "exact", "confidence": "strong"}
+    },
+    {
+      "id": "C07-exact-75-strong",
+      "kind": "coverage",
+      "covers": ["metric_coverage"],
+      "input": {"days": [{"status": "complete", "values": [10, 20, 30, null]}, {"status": "complete", "values": [10, 20, 30, null]}, {"status": "complete", "values": [10, 20, 30, null]}, {"status": "complete", "values": [10, 20, 30, null]}]},
+      "expected": {"complete_day_count": 4, "total_entry_count": 16, "known_entry_count": 12, "numeric_day_count": 4, "coverage_percent": 75.0, "value": 60.0, "amount_qualifier": "at_least", "confidence": "strong"}
+    },
+    {
+      "id": "C08-below-75-limited",
+      "kind": "coverage",
+      "covers": ["metric_coverage"],
+      "input": {"days": [{"status": "complete", "values": [1, 2, 3]}, {"status": "complete", "values": [1, 2, 3]}, {"status": "complete", "values": [1, 2, null]}, {"status": "complete", "values": [null, null]}]},
+      "expected": {"complete_day_count": 4, "total_entry_count": 11, "known_entry_count": 8, "numeric_day_count": 3, "coverage_percent": 72.727273, "value": 5.0, "amount_qualifier": "at_least", "confidence": "limited"}
+    },
+    {
+      "id": "C09-no-complete-no-evidence",
+      "kind": "coverage",
+      "covers": ["complete_partial_unregistered", "unknown_not_zero"],
+      "input": {"days": [{"status": "partial", "values": [20]}, {"status": "unregistered", "values": []}]},
+      "expected": {"complete_day_count": 0, "total_entry_count": 0, "known_entry_count": 0, "numeric_day_count": 0, "coverage_percent": null, "value": null, "amount_qualifier": "unavailable", "confidence": "unavailable"}
+    },
+    {
+      "id": "C10-all-unknown-not-zero",
+      "kind": "coverage",
+      "covers": ["unknown_not_zero", "metric_coverage"],
+      "input": {"days": [{"status": "complete", "values": [null]}, {"status": "complete", "values": [null]}, {"status": "complete", "values": [null]}, {"status": "complete", "values": [null]}]},
+      "expected": {"complete_day_count": 4, "total_entry_count": 4, "known_entry_count": 0, "numeric_day_count": 0, "coverage_percent": 0.0, "value": null, "amount_qualifier": "unavailable", "confidence": "unavailable"}
+    },
+    {
+      "id": "CMP01-minimum-material-improvement",
+      "kind": "comparison",
+      "covers": ["current_previous", "material_boundary"],
+      "input": {"direction": "minimum", "target": 100, "current": {"value": 85, "coverage": 90, "complete_days": 5}, "previous": {"value": 70, "coverage": 90, "complete_days": 5}},
+      "expected": {"status": "improved", "reason": "comparable", "normalized_adverse_delta": -0.15}
+    },
+    {
+      "id": "CMP02-below-material-boundary",
+      "kind": "comparison",
+      "covers": ["current_previous", "material_boundary"],
+      "input": {"direction": "minimum", "target": 100, "current": {"value": 79, "coverage": 90, "complete_days": 5}, "previous": {"value": 70, "coverage": 90, "complete_days": 5}},
+      "expected": {"status": "no_material_change", "reason": "comparable", "normalized_adverse_delta": -0.09}
+    },
+    {
+      "id": "CMP03-exact-material-boundary",
+      "kind": "comparison",
+      "covers": ["material_boundary"],
+      "input": {"direction": "minimum", "target": 100, "current": {"value": 80, "coverage": 90, "complete_days": 5}, "previous": {"value": 70, "coverage": 90, "complete_days": 5}},
+      "expected": {"status": "improved", "reason": "comparable", "normalized_adverse_delta": -0.1}
+    },
+    {
+      "id": "CMP04-maximum-material-worsening",
+      "kind": "comparison",
+      "covers": ["current_previous", "material_boundary"],
+      "input": {"direction": "maximum", "target": 100, "current": {"value": 110, "coverage": 90, "complete_days": 5}, "previous": {"value": 95, "coverage": 90, "complete_days": 5}},
+      "expected": {"status": "worsened", "reason": "comparable", "normalized_adverse_delta": 0.1}
+    },
+    {
+      "id": "CMP05-coverage-mismatch",
+      "kind": "comparison",
+      "covers": ["coverage_mismatch"],
+      "input": {"direction": "minimum", "target": 100, "current": {"value": 80, "coverage": 100, "complete_days": 5}, "previous": {"value": 60, "coverage": 80, "complete_days": 5}},
+      "expected": {"status": "not_comparable", "reason": "coverage_mismatch"}
+    },
+    {
+      "id": "CMP06-limited-is-descriptive",
+      "kind": "comparison",
+      "covers": ["metric_coverage"],
+      "input": {"direction": "minimum", "target": 100, "current": {"value": 80, "coverage": 60, "complete_days": 5}, "previous": {"value": 60, "coverage": 60, "complete_days": 5}},
+      "expected": {"status": "descriptive_only", "reason": "limited_coverage"}
+    },
+    {
+      "id": "CMP07-target-change-blocks",
+      "kind": "comparison",
+      "covers": ["target_change"],
+      "input": {"direction": "minimum", "target": 100, "target_compatible": false, "current": {"value": 80, "coverage": 90, "complete_days": 5}, "previous": {"value": 60, "coverage": 90, "complete_days": 5}},
+      "expected": {"status": "not_comparable", "reason": "target_incompatible"}
+    },
+    {
+      "id": "CMP08-version-change-blocks",
+      "kind": "comparison",
+      "covers": ["unsupported_version"],
+      "input": {"direction": "minimum", "target": 100, "version_compatible": false, "current": {"value": 80, "coverage": 90, "complete_days": 5}, "previous": {"value": 60, "coverage": 90, "complete_days": 5}},
+      "expected": {"status": "not_comparable", "reason": "version_incompatible"}
+    },
+    {
+      "id": "CMP09-zero-target-invalid",
+      "kind": "comparison",
+      "covers": ["fail_closed_safety"],
+      "input": {"direction": "minimum", "target": 0, "current": {"value": 0, "coverage": 90, "complete_days": 5}, "previous": {"value": 0, "coverage": 90, "complete_days": 5}},
+      "expected": {"status": "invalid", "reason": "invalid_target"}
+    },
+    {
+      "id": "CMP10-insufficient-days",
+      "kind": "comparison",
+      "covers": ["four_day_boundary"],
+      "input": {"direction": "minimum", "target": 100, "current": {"value": 80, "coverage": 90, "complete_days": 3}, "previous": {"value": 60, "coverage": 90, "complete_days": 5}},
+      "expected": {"status": "not_comparable", "reason": "insufficient_complete_days"}
+    },
+    {
+      "id": "D01-occurrence-exact-material",
+      "kind": "descriptive_comparison",
+      "covers": ["material_boundary"],
+      "input": {"current": 6, "previous": 5, "material_threshold": 1},
+      "expected": {"status": "descriptive_increase", "difference": 1.0}
+    },
+    {
+      "id": "D02-occurrence-not-material",
+      "kind": "descriptive_comparison",
+      "covers": ["material_boundary"],
+      "input": {"current": 5.4, "previous": 5, "material_threshold": 1},
+      "expected": {"status": "no_material_change", "difference": 0.4}
+    },
+    {
+      "id": "D03-nova-five-point-boundary",
+      "kind": "descriptive_comparison",
+      "covers": ["material_boundary"],
+      "input": {"current": 10, "previous": 15, "material_threshold": 5},
+      "expected": {"status": "descriptive_decrease", "difference": -5.0}
+    },
+    {
+      "id": "P01-two-period-positive-gap",
+      "kind": "persistence",
+      "covers": ["persistence", "current_previous"],
+      "input": {"direction": "minimum", "target": 100, "current": {"value": 70, "coverage": 90, "complete_days": 5}, "previous": {"value": 75, "coverage": 90, "complete_days": 5}},
+      "expected": {"qualifies": true, "reason": "qualified"}
+    },
+    {
+      "id": "P02-previous-not-gap",
+      "kind": "persistence",
+      "covers": ["persistence"],
+      "input": {"direction": "minimum", "target": 100, "current": {"value": 70, "coverage": 90, "complete_days": 5}, "previous": {"value": 81, "coverage": 90, "complete_days": 5}},
+      "expected": {"qualifies": false, "reason": "previous_not_qualifying"}
+    },
+    {
+      "id": "P03-exact-80-gap-boundary",
+      "kind": "persistence",
+      "covers": ["persistence", "material_boundary"],
+      "input": {"direction": "minimum", "target": 100, "current": {"value": 80, "coverage": 75, "complete_days": 4}, "previous": {"value": 80, "coverage": 75, "complete_days": 4}},
+      "expected": {"qualifies": true, "reason": "qualified"}
+    },
+    {
+      "id": "P04-two-period-maximum-overage",
+      "kind": "persistence",
+      "covers": ["persistence"],
+      "input": {"direction": "maximum", "target": 100, "current": {"value": 110, "coverage": 90, "complete_days": 5}, "previous": {"value": 101, "coverage": 90, "complete_days": 5}},
+      "expected": {"qualifies": true, "reason": "qualified"}
+    },
+    {
+      "id": "P05-exact-maximum-not-overage",
+      "kind": "persistence",
+      "covers": ["persistence", "material_boundary"],
+      "input": {"direction": "maximum", "target": 100, "current": {"value": 110, "coverage": 90, "complete_days": 5}, "previous": {"value": 100, "coverage": 90, "complete_days": 5}},
+      "expected": {"qualifies": false, "reason": "previous_not_qualifying"}
+    },
+    {
+      "id": "P06-missing-previous",
+      "kind": "persistence",
+      "covers": ["persistence"],
+      "input": {"direction": "minimum", "target": 100, "current": {"value": 70, "coverage": 90, "complete_days": 5}, "previous": null},
+      "expected": {"qualifies": false, "reason": "missing_previous"}
+    },
+    {
+      "id": "P07-version-mismatch",
+      "kind": "persistence",
+      "covers": ["persistence", "unsupported_version"],
+      "input": {"direction": "minimum", "target": 100, "version_compatible": false, "current": {"value": 70, "coverage": 90, "complete_days": 5}, "previous": {"value": 70, "coverage": 90, "complete_days": 5}},
+      "expected": {"qualifies": false, "reason": "version_incompatible"}
+    },
+    {
+      "id": "P08-frequency-two-period",
+      "kind": "persistence",
+      "covers": ["persistence"],
+      "input": {"direction": "frequency", "target": 1, "predicate_min": 2, "current": {"value": 2, "coverage": 90, "complete_days": 5}, "previous": {"value": 2, "coverage": 90, "complete_days": 5}},
+      "expected": {"qualifies": true, "reason": "qualified"}
+    },
+    {
+      "id": "P09-target-change",
+      "kind": "persistence",
+      "covers": ["persistence", "target_change"],
+      "input": {"direction": "minimum", "target": 100, "target_compatible": false, "current": {"value": 70, "coverage": 90, "complete_days": 5}, "previous": {"value": 70, "coverage": 90, "complete_days": 5}},
+      "expected": {"qualifies": false, "reason": "target_changed"}
+    },
+    {
+      "id": "K01-contribution-value-order",
+      "kind": "contributors",
+      "covers": ["deterministic_order"],
+      "input": {"items": [{"ref": "00000000-0000-0000-0000-000000000001", "date": "2026-08-10", "value": 10}, {"ref": "00000000-0000-0000-0000-000000000002", "date": "2026-08-11", "value": 20}, {"ref": "00000000-0000-0000-0000-000000000003", "date": "2026-08-09", "value": 15}]},
+      "expected": {"refs": ["00000000-0000-0000-0000-000000000002", "00000000-0000-0000-0000-000000000003", "00000000-0000-0000-0000-000000000001"], "count": 3}
+    },
+    {
+      "id": "K02-tie-date-then-uuid",
+      "kind": "contributors",
+      "covers": ["contributor_ties", "deterministic_order"],
+      "input": {"items": [{"ref": "00000000-0000-0000-0000-000000000002", "date": "2026-08-10", "value": 10}, {"ref": "00000000-0000-0000-0000-000000000001", "date": "2026-08-10", "value": 10}, {"ref": "00000000-0000-0000-0000-000000000003", "date": "2026-08-09", "value": 10}, {"ref": "00000000-0000-0000-0000-000000000004", "date": "2026-08-08", "value": 99, "known": false}]},
+      "expected": {"refs": ["00000000-0000-0000-0000-000000000003", "00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"], "count": 3}
+    },
+    {
+      "id": "K03-cap-five",
+      "kind": "contributors",
+      "covers": ["deterministic_order"],
+      "input": {"items": [{"ref": "r1", "date": "2026-08-01", "value": 7}, {"ref": "r2", "date": "2026-08-02", "value": 6}, {"ref": "r3", "date": "2026-08-03", "value": 5}, {"ref": "r4", "date": "2026-08-04", "value": 4}, {"ref": "r5", "date": "2026-08-05", "value": 3}, {"ref": "r6", "date": "2026-08-06", "value": 2}, {"ref": "r7", "date": "2026-08-07", "value": 1}]},
+      "expected": {"refs": ["r1", "r2", "r3", "r4", "r5"], "count": 5}
+    },
+    {
+      "id": "R01-first-revision",
+      "kind": "revision",
+      "covers": ["immutable_identity", "revision_creation"],
+      "input": {"action": "first"},
+      "expected": {"result": "created", "revision": 1, "historical_mutated": false}
+    },
+    {
+      "id": "R02-identical-hash-no-op",
+      "kind": "revision",
+      "covers": ["no_op_recompute", "immutable_identity"],
+      "input": {"action": "same_hash", "current_revision": 3},
+      "expected": {"result": "no_change", "revision": 3, "historical_mutated": false}
+    },
+    {
+      "id": "R03-changed-input-new-revision",
+      "kind": "revision",
+      "covers": ["revision_creation", "immutable_identity"],
+      "input": {"action": "changed_hash", "current_revision": 3},
+      "expected": {"result": "created", "revision": 4, "historical_mutated": false}
+    },
+    {
+      "id": "R04-new-date-new-series",
+      "kind": "revision",
+      "covers": ["riyadh_window", "immutable_identity"],
+      "input": {"action": "new_date"},
+      "expected": {"result": "created_new_series", "revision": 1, "historical_mutated": false}
+    },
+    {
+      "id": "R05-unsupported-original-version",
+      "kind": "revision",
+      "covers": ["original_version_replay", "unsupported_version"],
+      "input": {"action": "unsupported_replay"},
+      "expected": {"result": "error", "code": "UNSUPPORTED_HISTORICAL_VERSION", "historical_mutated": false}
+    },
+    {
+      "id": "R06-stale-event-does-not-edit-document",
+      "kind": "revision",
+      "covers": ["stale_superseded", "immutable_identity"],
+      "input": {"action": "stale", "current_revision": 2},
+      "expected": {"result": "stale_event_appended", "revision": 2, "historical_mutated": false}
+    },
+    {
+      "id": "X01-valid-plan033-projection",
+      "kind": "projection",
+      "covers": ["plan033_projection", "deterministic_order"],
+      "input": {"analysis_version": "w3-analysis-1.1.0", "timezone": "Asia/Riyadh", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": ["group:legumes_servings_per_period", "nutrient:fiber_g"], "safety_flags": []},
+      "expected": {"valid": true, "errors": []}
+    },
+    {
+      "id": "X02-unsupported-version-fails",
+      "kind": "projection",
+      "covers": ["unsupported_version", "fail_closed_safety", "plan033_projection"],
+      "input": {"analysis_version": "w3-analysis-9.0.0", "timezone": "Asia/Riyadh", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": [], "safety_flags": ["unsupported_analysis_rules"]},
+      "expected": {"valid": false, "errors": ["unsupported_analysis_rules"]}
+    },
+    {
+      "id": "X03-seven-days-required",
+      "kind": "projection",
+      "covers": ["plan033_projection"],
+      "input": {"analysis_version": "w3-analysis-1.1.0", "timezone": "Asia/Riyadh", "days": ["2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11"], "metric_keys": [], "safety_flags": []},
+      "expected": {"valid": false, "errors": ["invalid_current_days"]}
+    },
+    {
+      "id": "X04-metric-order-and-uniqueness",
+      "kind": "projection",
+      "covers": ["deterministic_order", "plan033_projection"],
+      "input": {"analysis_version": "w3-analysis-1.1.0", "timezone": "Asia/Riyadh", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": ["nutrient:fiber_g", "nutrient:fiber_g"], "safety_flags": []},
+      "expected": {"valid": false, "errors": ["invalid_metric_order"]}
+    },
+    {
+      "id": "X05-safety-order",
+      "kind": "projection",
+      "covers": ["deterministic_order", "fail_closed_safety"],
+      "input": {"analysis_version": "w3-analysis-1.1.0", "timezone": "Asia/Riyadh", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": [], "safety_flags": ["unsupported_registry", "missing_target"]},
+      "expected": {"valid": false, "errors": ["invalid_safety_order"]}
+    },
+    {
+      "id": "X06-contiguous-days-required",
+      "kind": "projection",
+      "covers": ["riyadh_window", "plan033_projection"],
+      "input": {"analysis_version": "w3-analysis-1.1.0", "timezone": "Asia/Riyadh", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-18"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": [], "safety_flags": []},
+      "expected": {"valid": false, "errors": ["non_contiguous_current"]}
+    },
+    {
+      "id": "X07-timezone-is-literal",
+      "kind": "projection",
+      "covers": ["riyadh_window", "fail_closed_safety"],
+      "input": {"analysis_version": "w3-analysis-1.1.0", "timezone": "UTC", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": [], "safety_flags": []},
+      "expected": {"valid": false, "errors": ["invalid_timezone"]}
+    },
+    {
+      "id": "A01-wholly-unknown-period",
+      "kind": "period_aggregate",
+      "covers": ["period_unknown_zero", "unknown_not_zero"],
+      "input": {"observations": [null, null]},
+      "expected": {"value": null, "value_state": "unknown", "known_count": 0, "amount_qualifier": "unavailable"}
+    },
+    {
+      "id": "A02-observed-explicit-zero",
+      "kind": "period_aggregate",
+      "covers": ["period_unknown_zero", "numeric_zero"],
+      "input": {"observations": [0, 0]},
+      "expected": {"value": 0.0, "value_state": "explicit_zero", "known_count": 2, "amount_qualifier": "exact"}
+    },
+    {
+      "id": "A03-mixed-known-unknown",
+      "kind": "period_aggregate",
+      "covers": ["period_unknown_zero", "unknown_not_zero"],
+      "input": {"observations": [12.5, null, 2.5]},
+      "expected": {"value": 15.0, "value_state": "numeric", "known_count": 2, "amount_qualifier": "at_least"}
+    },
+    {
+      "id": "A04-observed-zero-with-unknown-lower-bound",
+      "kind": "period_aggregate",
+      "covers": ["period_unknown_zero", "numeric_zero", "unknown_not_zero"],
+      "input": {"observations": [0, null]},
+      "expected": {"value": 0.0, "value_state": "explicit_zero", "known_count": 1, "amount_qualifier": "at_least"}
+    },
+    {
+      "id": "T01-carb-scalar-degenerate-range",
+      "kind": "target_projection",
+      "covers": ["degenerate_range_target", "target_compatibility"],
+      "input": {"metric_key": "macro:carb_g_per_day", "scalar": 250, "unit": "g/day", "plan_id": "00000000-0000-0000-0000-000000000001"},
+      "expected": {"target": {"type": "range", "unit": "g/day", "lower": 250.0, "upper": 250.0, "source_plan_ids": ["00000000-0000-0000-0000-000000000001"]}, "valid": true, "reason": "authoritative_scalar"}
+    },
+    {
+      "id": "T02-fat-scalar-degenerate-range",
+      "kind": "target_projection",
+      "covers": ["degenerate_range_target", "target_compatibility"],
+      "input": {"metric_key": "macro:fat_g_per_day", "scalar": 70, "unit": "g/day", "plan_id": "00000000-0000-0000-0000-000000000001"},
+      "expected": {"target": {"type": "range", "unit": "g/day", "lower": 70.0, "upper": 70.0, "source_plan_ids": ["00000000-0000-0000-0000-000000000001"]}, "valid": true, "reason": "authoritative_scalar"}
+    },
+    {
+      "id": "T03-zero-target-invalid",
+      "kind": "target_projection",
+      "covers": ["degenerate_range_target", "fail_closed_safety"],
+      "input": {"metric_key": "macro:carb_g_per_day", "scalar": 0, "unit": "g/day", "plan_id": "00000000-0000-0000-0000-000000000001"},
+      "expected": {"target": null, "valid": false, "reason": "invalid_target"}
+    },
+    {
+      "id": "RS01-degenerate-range-below",
+      "kind": "range_status",
+      "covers": ["degenerate_range_target", "material_boundary"],
+      "input": {"value": 80, "lower": 100, "upper": 100},
+      "expected": {"status": "below_target", "adverse_distance": 0.2}
+    },
+    {
+      "id": "RS02-degenerate-range-exact",
+      "kind": "range_status",
+      "covers": ["degenerate_range_target", "material_boundary"],
+      "input": {"value": 100, "lower": 100, "upper": 100},
+      "expected": {"status": "at_target", "adverse_distance": 0.0}
+    },
+    {
+      "id": "RS03-degenerate-range-above",
+      "kind": "range_status",
+      "covers": ["degenerate_range_target", "material_boundary"],
+      "input": {"value": 120, "lower": 100, "upper": 100},
+      "expected": {"status": "above_target", "adverse_distance": 0.2}
+    },
+    {
+      "id": "TC01-different-plans-identical-target",
+      "kind": "target_compatibility",
+      "covers": ["target_compatibility"],
+      "input": {"current_numeric": true, "previous_numeric": true, "targets": [{"plan_id": "00000000-0000-0000-0000-000000000001", "type": "range", "unit": "g/day", "lower": 250, "upper": 250}, {"plan_id": "00000000-0000-0000-0000-000000000002", "type": "range", "unit": "g/day", "lower": 250, "upper": 250}]},
+      "expected": {"target": {"type": "range", "unit": "g/day", "lower": 250, "upper": 250, "source_plan_ids": ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"]}, "compatible": true, "safety_flags": []}
+    },
+    {
+      "id": "TC02-incompatible-targets-null",
+      "kind": "target_compatibility",
+      "covers": ["target_compatibility", "target_change", "fail_closed_safety"],
+      "input": {"current_numeric": true, "previous_numeric": true, "targets": [{"plan_id": "00000000-0000-0000-0000-000000000001", "type": "range", "unit": "g/day", "lower": 250, "upper": 250}, {"plan_id": "00000000-0000-0000-0000-000000000002", "type": "range", "unit": "g/day", "lower": 260, "upper": 260}]},
+      "expected": {"target": null, "current_status": "target_incompatible", "previous_status": "target_incompatible", "comparison": {"status": "not_comparable", "reason": "target_incompatible"}, "persistence": {"qualifies": false, "reason": "target_changed"}, "safety_flags": ["incompatible_target"]}
+    },
+    {
+      "id": "TC03-incompatible-period-without-numeric",
+      "kind": "target_compatibility",
+      "covers": ["target_compatibility", "target_change"],
+      "input": {"current_numeric": true, "previous_numeric": false, "targets": [{"plan_id": "00000000-0000-0000-0000-000000000001", "type": "range", "unit": "g/day", "lower": 250, "upper": 250}, {"plan_id": "00000000-0000-0000-0000-000000000002", "type": "range", "unit": "g/day", "lower": 260, "upper": 260}]},
+      "expected": {"target": null, "current_status": "target_incompatible", "previous_status": "unavailable", "comparison": {"status": "not_comparable", "reason": "target_incompatible"}, "persistence": {"qualifies": false, "reason": "target_changed"}, "safety_flags": ["incompatible_target"]}
+    },
+    {
+      "id": "TC04-missing-target-distinct",
+      "kind": "target_compatibility",
+      "covers": ["target_compatibility", "fail_closed_safety"],
+      "input": {"current_numeric": true, "previous_numeric": false, "targets": []},
+      "expected": {"target": null, "current_status": "observed", "previous_status": "unavailable", "comparison": {"status": "not_comparable", "reason": "unavailable_value"}, "persistence": {"qualifies": false, "reason": "current_not_qualifying"}, "safety_flags": ["missing_target"]}
+    },
+    {
+      "id": "SC01-range-minimum-contradiction",
+      "kind": "metric_schema",
+      "covers": ["target_schema_consistency"],
+      "input": {"direction": "range", "target": {"type": "minimum", "unit": "g/day", "value": 250}},
+      "expected": {"valid": false, "errors": ["target_type_mismatch"]}
+    },
+    {
+      "id": "SC02-range-target-consistent",
+      "kind": "metric_schema",
+      "covers": ["target_schema_consistency"],
+      "input": {"direction": "range", "target": {"type": "range", "unit": "g/day", "lower": 250, "upper": 250}},
+      "expected": {"valid": true, "errors": []}
+    },
+    {
+      "id": "SC03-minimize-forbids-target",
+      "kind": "metric_schema",
+      "covers": ["target_schema_consistency"],
+      "input": {"direction": "minimize", "target": {"type": "maximum", "unit": "days/7d", "value": 0}},
+      "expected": {"valid": false, "errors": ["target_forbidden"]}
+    },
+    {
+      "id": "SC04-null-incompatible-allowed",
+      "kind": "metric_schema",
+      "covers": ["target_schema_consistency", "target_compatibility"],
+      "input": {"direction": "range", "target": null, "null_reason": "incompatible"},
+      "expected": {"valid": true, "errors": []}
+    },
+    {
+      "id": "MON01-coverage-boundaries",
+      "kind": "monitoring_coverage",
+      "covers": ["monitoring_coverage_bands"],
+      "input": {"current_coverages": [null, 0, 49.999, 50, 74.999, 75, 100]},
+      "expected": {"unknown": 1, "0_to_lt_50": 2, "50_to_lt_75": 2, "75_to_100": 2}
+    },
+    {
+      "id": "MON02-one-current-metric-one-count",
+      "kind": "monitoring_coverage",
+      "covers": ["monitoring_coverage_bands"],
+      "input": {"current_coverages": [75]},
+      "expected": {"unknown": 0, "0_to_lt_50": 0, "50_to_lt_75": 0, "75_to_100": 1}
+    },
+    {
+      "id": "MON03-distinct-stale-revision-reason",
+      "kind": "monitoring_stale",
+      "covers": ["monitoring_stale_distinct"],
+      "input": {"events": [{"revision": "r1", "reason": "day_reopened"}, {"revision": "r1", "reason": "day_reopened"}, {"revision": "r1", "reason": "target_source_changed"}, {"revision": "r2", "reason": "day_reopened"}]},
+      "expected": {"day_reopened": 2, "day_version_changed": 0, "target_source_changed": 1, "source_snapshot_corrected": 0, "source_version_unsupported": 0}
+    },
+    {
+      "id": "MON04-latency-boundaries",
+      "kind": "monitoring_latency",
+      "covers": ["monitoring_latency_bands"],
+      "input": {"durations_ms": [null, -1, 0, 249.999, 250, 499.999, 500, 999.999, 1000]},
+      "expected": {"unknown": 2, "lt_250_ms": 2, "250_to_lt_500_ms": 2, "500_to_lt_1000_ms": 2, "gte_1000_ms": 1}
+    },
+    {
+      "id": "MON05-replay-no-latency-sample",
+      "kind": "monitoring_latency",
+      "covers": ["monitoring_latency_bands", "replay_no_latency", "no_op_recompute"],
+      "input": {"replay": true, "durations_ms": [42]},
+      "expected": {"unknown": 0, "lt_250_ms": 0, "250_to_lt_500_ms": 0, "500_to_lt_1000_ms": 0, "gte_1000_ms": 0}
+    },
+    {
+      "id": "MON06-utc-iso-week-half-open-cohort",
+      "kind": "monitoring_cohort",
+      "covers": ["monitoring_utc_cohort"],
+      "input": {"week_monday": "2026-08-17", "finalized_at": ["2026-08-16T23:59:59.999999Z", "2026-08-17T00:00:00Z", "2026-08-23T23:59:59.999999Z", "2026-08-24T00:00:00Z"]},
+      "expected": {"total_count": 2}
+    },
+    {
+      "id": "X08-plan033-v1-null-incompatible-target",
+      "kind": "projection",
+      "covers": ["plan033_projection", "target_compatibility", "fail_closed_safety"],
+      "input": {"interface_version": 1, "analysis_version": "w3-analysis-1.1.0", "timezone": "Asia/Riyadh", "days": ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"], "previous_days": ["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"], "metric_keys": ["macro:carb_g_per_day"], "metric_facts": [{"metric_key": "macro:carb_g_per_day", "direction": "range", "target": null, "status": "target_incompatible"}], "safety_flags": ["incompatible_target"]},
+      "expected": {"valid": true, "errors": []}
+    }
+  ],
+  "negative_mutations": [
+    {"name": "wrong_riyadh_window", "detected_by": ["W01-year-rollover", "W02-leap-boundary"]},
+    {"name": "sunday_aligned", "detected_by": ["W04-monday-is-rolling"]},
+    {"name": "unknown_as_zero", "detected_by": ["C04-unknown-day-excluded-from-average", "C10-all-unknown-not-zero"]},
+    {"name": "wrong_coverage_denominator", "detected_by": ["C07-exact-75-strong", "C08-below-75-limited"]},
+    {"name": "swap_periods", "detected_by": ["CMP01-minimum-material-improvement", "D03-nova-five-point-boundary"]},
+    {"name": "material_threshold_20", "detected_by": ["CMP03-exact-material-boundary", "CMP04-maximum-material-worsening"]},
+    {"name": "one_period_persistence", "detected_by": ["P02-previous-not-gap", "P05-exact-maximum-not-overage"]},
+    {"name": "reverse_tie_order", "detected_by": ["K02-tie-date-then-uuid"]},
+    {"name": "accept_version_mismatch", "detected_by": ["X02-unsupported-version-fails"]},
+    {"name": "mutate_finalized_history", "detected_by": ["R03-changed-input-new-revision"]},
+    {"name": "scalar_minimum_for_range", "detected_by": ["T01-carb-scalar-degenerate-range", "T02-fat-scalar-degenerate-range"]},
+    {"name": "invent_range_tolerance", "detected_by": ["T01-carb-scalar-degenerate-range"]},
+    {"name": "choose_incompatible_target", "detected_by": ["TC02-incompatible-targets-null"]},
+    {"name": "nonnull_incompatible_target", "detected_by": ["TC02-incompatible-targets-null"]},
+    {"name": "duplicate_stale_count", "detected_by": ["MON03-distinct-stale-revision-reason"]},
+    {"name": "coverage_boundary_shift", "detected_by": ["MON01-coverage-boundaries"]},
+    {"name": "latency_boundary_shift", "detected_by": ["MON04-latency-boundaries"]}
+  ]
+}

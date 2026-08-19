@@ -21,6 +21,13 @@ function headers(accessToken: string) {
   return { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
 }
 
+function tokenSubject(accessToken: string): string {
+  const payload = accessToken.split(".")[1];
+  if (!payload) throw new Error("fixture token has no JWT payload");
+  const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+  return (JSON.parse(Buffer.from(normalized, "base64").toString("utf8")) as { sub: string }).sub;
+}
+
 function profile(weight: number) {
   return {
     sex: "male",
@@ -33,6 +40,13 @@ function profile(weight: number) {
     fat_pct: 0.25,
     selected_cut_intensity: 0.2
   };
+}
+
+function sessionPatternAnalysis(marker: string, principalRef: string) {
+  const analysisId = "00000000-0000-4000-8000-000000000032";
+  const evidence = { value: 1, value_state: "known", amount_qualifier: "exact", complete_day_count: 4, numeric_day_count: 4, known_entry_count: 4, total_entry_count: 4, coverage_percent: 100, confidence: "strong", status: "observed", evidence_refs: [] };
+  const metric = { metric_key: marker, metric_kind: "diversity_count", unit: "sources/7d", aggregation: "distinct_source_count", direction: "monitor_only", target: null, current: evidence, previous: evidence, comparison: { status: "no_material_change", reason: "comparable", difference: 0, normalized_adverse_delta: null }, persistence: { kind: "same_direction_two_period", qualifies: false, reason: "current_not_qualifying" }, contributors: { current: [], previous: [] } };
+  return { source_analysis_id: analysisId, source_analysis_revision: 1, lifecycle_status: "current", stale_reasons: [], as_of_diary_date: "2026-08-17", period_start: "2026-08-11", period_end: "2026-08-17", previous_period_start: "2026-08-04", previous_period_end: "2026-08-10", complete_day_count: 4, previous_complete_day_count: 4, metric_summaries: [metric], source_versions: { analysis_rules_version: "w3-analysis-1.1.0", nutrition_registry_version: "2.0.0", calculation_engine_version: "2.0.0", food_group_rules_version: "1.0.0", source_reliability_rules_version: "1.0.0", nova_rules_version: "1.0.0", snapshot_schema_versions: [3], status_evidence_version: 1, rules_manifest_hash: "a".repeat(64), source_input_hash: "b".repeat(64), content_hash: "c".repeat(64) }, priority_input: { interface_version: 1, principal_ref: principalRef, source_analysis_id: analysisId, source_analysis_revision: 1, generated_at: "2026-08-17T09:00:00Z", as_of_diary_date: "2026-08-17", calendar_timezone: "Asia/Riyadh", period_start: "2026-08-11", period_end: "2026-08-17", previous_period_start: "2026-08-04", previous_period_end: "2026-08-10", analysis_rules_version: "w3-analysis-1.1.0", nutrition_registry_version: "2.0.0", food_group_rules_version: "1.0.0", nova_rules_version: "1.0.0", snapshot_schema_versions: [3], target_plan_refs: [], days: [], previous_period: [], metric_facts: [metric], safety_flags: [] }, generated_at: "2026-08-17T09:00:00Z", finalized_at: "2026-08-17T09:00:00Z", etag: `"analysis-${analysisId}-r1"` };
 }
 
 async function authoritativeDiaryDate(accessToken: string): Promise<string> {
@@ -446,6 +460,47 @@ test("same browser context isolates cached profile and diary data across A to B 
   await signIn(page, emailA, PASSWORD, "/profile");
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("71");
   await context.close();
+});
+
+test("same browser context isolates nutrition analysis across account rotation", async ({ browser }) => {
+  const suffix = Date.now();
+  const emailA = `analysis-session-a-${suffix}@example.test`;
+  const emailB = `analysis-session-b-${suffix}@example.test`;
+  const tokenA = await token(emailA);
+  const tokenB = await token(emailB);
+  const subjectA = tokenSubject(tokenA);
+  const subjectB = tokenSubject(tokenB);
+  const markerA = `analysis-marker-a-${suffix}`;
+  const markerB = `analysis-marker-b-${suffix}`;
+  const context = await browser.newContext({ storageState: undefined });
+  const page = await context.newPage();
+  await page.route(`${API_URL}/progress/nutrition-analysis/history*`, (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ items: [], next_cursor: null })
+  }));
+  await page.route(`${API_URL}/progress/nutrition-analysis/current`, (route) => {
+    const authorization = route.request().headers().authorization ?? "";
+    const requestSubject = tokenSubject(authorization.replace(/^Bearer /, ""));
+    const isB = requestSubject === subjectB;
+    const isA = requestSubject === subjectA;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(sessionPatternAnalysis(isB ? markerB : isA ? markerA : "unexpected-subject", isB ? "00000000-0000-4000-8000-000000000002" : "00000000-0000-4000-8000-000000000001"))
+    });
+  });
+  try {
+    await signIn(page, emailA, PASSWORD, "/progress");
+    await expect(page.getByText(markerA, { exact: true })).toBeVisible();
+    await page.locator(".nav-signout").click();
+    await page.waitForURL(/\/auth\/login/);
+    await submitLogin(page, emailB, PASSWORD, "/progress");
+    await expect(page.getByText(markerB, { exact: true })).toBeVisible();
+    await expect(page.getByText(markerA, { exact: true })).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
 });
 
 test("@plan016 external A to B subject change clears A's dirty Profile registration synchronously", async ({ browser, request }) => {

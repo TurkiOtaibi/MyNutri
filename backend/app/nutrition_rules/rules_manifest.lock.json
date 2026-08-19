@@ -7,8 +7,8 @@
     "nova_rules_version": "1.0.0",
     "registry_schema_version": 2,
     "snapshot_schema_version": 3,
-    "analysis_rules_version": null,
-    "analysis_rules_status": "reserved_for_wave_3"
+    "analysis_rules_version": "w3-analysis-1.1.0",
+    "analysis_rules_status": "active"
   },
-  "sha256": "e8d5e983d35368d676103f91d81ef4a6d702a671953c07c480b5ed302305f7f6"
+  "sha256": "28d73a38e20441fa7176113c4b05a44554fbd8126f062888ffd3a53db6c20196"
 }

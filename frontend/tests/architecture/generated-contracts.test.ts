@@ -34,8 +34,11 @@ describe("generated OpenAPI contracts", () => {
       "DiaryEntryResponse",
       "FoodResponse",
       "AdminUserDetail",
+      "WeeklyPriorityAnalysisInputV1",
+      "NutritionPatternAnalysisResponseV1",
       "export namespace Diary",
       "export namespace Foods",
+      "export namespace Progress",
     ]) {
       expect(source).toContain(contract);
     }
