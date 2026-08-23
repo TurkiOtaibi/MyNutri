@@ -25,6 +25,7 @@ from app.nutrition_rules.registry import (
 )
 from app.nutrition_rules.versions import VERSIONS
 from app.nutrition_rules.analysis import METRIC_REGISTRY
+from app.nutrition_rules.weekly_priority import priority_registry
 
 
 def rules_manifest() -> dict[str, Any]:
@@ -63,6 +64,7 @@ def rules_manifest() -> dict[str, Any]:
             {"key": key, "unit": value[0], "direction": value[1]}
             for key, value in sorted(METRIC_REGISTRY.items())
         ],
+        "weekly_priority_rules": priority_registry(),
     }
 
 
@@ -98,4 +100,5 @@ def registry_response() -> dict[str, Any]:
         "reliability_levels": manifest["reliability_levels"],
         "nova": manifest["nova"],
         "analysis_metrics": manifest["analysis_metrics"],
+        "weekly_priority_rules": manifest["weekly_priority_rules"],
     }

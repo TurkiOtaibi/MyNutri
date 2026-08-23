@@ -169,3 +169,35 @@ def test_pattern_analysis_openapi_is_closed_versioned_and_owner_only() -> None:
     assert monitoring["properties"]["latency_band_counts"] == {
         "$ref": "#/components/schemas/AnalysisLatencyBandCountsV1"
     }
+
+
+def test_weekly_priority_and_goal_openapi_is_closed_owner_only_and_bounded() -> None:
+    schema = app.openapi()
+    paths = schema["paths"]
+    expected = {
+        "/progress/weekly-priorities/current": {"get"},
+        "/progress/behavior-goals/current": {"get"},
+        "/progress/behavior-goals/history": {"get"},
+        "/progress/behavior-goals/{goal_id}/commands": {"post"},
+    }
+    for path, methods in expected.items():
+        assert set(paths[path]) == methods
+        for method in methods:
+            assert paths[path][method]["security"] == [{"BearerAuth": []}]
+    assert not any(path.startswith("/admin/weekly") for path in paths)
+    command_route = paths["/progress/behavior-goals/{goal_id}/commands"]["post"]
+    headers = {item["name"]: item for item in command_route["parameters"] if item["in"] == "header"}
+    assert headers["Idempotency-Key"]["required"] is True
+    history_limit = next(
+        item for item in paths["/progress/behavior-goals/history"]["get"]["parameters"]
+        if item["name"] == "limit"
+    )
+    assert history_limit["schema"]["maximum"] == 100
+    for name in (
+        "WeeklyPriorityResultV1",
+        "PriorityV1",
+        "BehaviorGoalResponseV1",
+        "BehaviorGoalCommandV1",
+        "BehaviorGoalCommandResponseV1",
+    ):
+        assert schema["components"]["schemas"][name]["additionalProperties"] is False

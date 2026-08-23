@@ -92,6 +92,17 @@ function visualPatternAnalysis() {
   return { source_analysis_id: id, source_analysis_revision: 1, lifecycle_status: "current", stale_reasons: [], as_of_diary_date: "2026-08-17", period_start: "2026-08-11", period_end: "2026-08-17", previous_period_start: "2026-08-04", previous_period_end: "2026-08-10", complete_day_count: 5, previous_complete_day_count: 5, metric_summaries: [metric], source_versions: { analysis_rules_version: "w3-analysis-1.1.0", nutrition_registry_version: "2.0.0", calculation_engine_version: "2.0.0", food_group_rules_version: "1.0.0", source_reliability_rules_version: "1.0.0", nova_rules_version: "1.0.0", snapshot_schema_versions: [3], status_evidence_version: 1, rules_manifest_hash: "a".repeat(64), source_input_hash: "b".repeat(64), content_hash: "c".repeat(64) }, priority_input: { interface_version: 1, principal_ref: "00000000-0000-4000-8000-000000000001", source_analysis_id: id, source_analysis_revision: 1, generated_at: FIXED_VISUAL_TIME, as_of_diary_date: "2026-08-17", calendar_timezone: "Asia/Riyadh", period_start: "2026-08-11", period_end: "2026-08-17", previous_period_start: "2026-08-04", previous_period_end: "2026-08-10", analysis_rules_version: "w3-analysis-1.1.0", nutrition_registry_version: "2.0.0", food_group_rules_version: "1.0.0", nova_rules_version: "1.0.0", snapshot_schema_versions: [3], target_plan_refs: [], days: [], previous_period: [], metric_facts: [metric], safety_flags: [] }, generated_at: FIXED_VISUAL_TIME, finalized_at: FIXED_VISUAL_TIME, etag: `"analysis-${id}-r1"` };
 }
 
+function visualWeeklyPriority() {
+  const recommendationId = "00000000-0000-4000-8000-000000000334";
+  return { schema_version: 1, recommendation_id: recommendationId, source_analysis_id: "00000000-0000-4000-8000-000000000032", source_analysis_revision: 2, period_start: "2026-08-11", period_end: "2026-08-17", generated_at: FIXED_VISUAL_TIME, expires_at: "2026-08-19T12:00:00Z", status: "selected", rules_version: "w3-priority-1.0.0", copy_version: "w3-priority-ar-1.0.0", analysis_rules_version: "w3-analysis-1.1.0", nutrition_registry_version: "2.0.0", food_group_rules_version: "1.0.0", nova_rules_version: "1.0.0", snapshot_schema_versions: [3], target_plan_refs: [], main: { rule_key: "sodium_overage", rank: "main", category: "limit", title_ar: "تقليل الصوديوم", reason_ar: "تجاوز متوسط الصوديوم الحد المرجعي في يومين مكتملين أو أكثر.", confidence: "strong", coverage_percent: 100, complete_day_count: 5, action_key: "replace_high_sodium_choice", action_ar: "استبدل خيارًا مرتفع الصوديوم بخيار أقل صوديومًا هذا الأسبوع.", action_mode: "replace", rules_version: "w3-priority-1.0.0", copy_version: "w3-priority-ar-1.0.0", facts_used: [], evidence_refs: [], conflict_decisions: [] }, secondary: null, excluded_alternatives: [], none_reason: null, etag: `"weekly-priority-${recommendationId}"` };
+}
+
+function visualGoal() {
+  const priority = visualWeeklyPriority();
+  const goalId = "00000000-0000-4000-8000-000000000033";
+  return { recommendation: priority, goal: { schema_version: 1, goal_id: goalId, root_goal_id: goalId, previous_goal_id: null, sequence_number: 1, state: "active", version: 2, rule_key: "sodium_overage", action_key: "replace_high_sodium_choice", weekly_target_count: 3, scheduled_day_mask: [], owner_note: null, window_start: "2026-08-18", window_end: "2026-08-24", source_recommendation_id: priority.recommendation_id, source_rules_version: "w3-priority-1.0.0", source_copy_version: "w3-priority-ar-1.0.0", progress: { window_start: "2026-08-18", window_end: "2026-08-24", progress_count: 1, target_count: 3, progress_percent: 33, complete_day_count: 2, partial_day_count: 1, unregistered_day_count: 4, status: "in_progress", as_of_diary_date: "2026-08-20", source_day_versions: { "2026-08-18": 2 }, calculation_rules_version: "w3-priority-1.0.0", last_recomputed_at: FIXED_VISUAL_TIME }, allowed_actions: ["edit", "change", "pause", "end"], reminder_preference: "disabled", offered_at: FIXED_VISUAL_TIME, accepted_at: FIXED_VISUAL_TIME, deferred_at: null, deferred_until: null, changed_at: null, paused_at: null, resumed_at: null, completed_at: null, reviewed_at: null, rejected_at: null, ended_at: null, archived_at: null, calendar: { current_diary_date: "2026-08-20", calendar_timezone: "Asia/Riyadh", next_rollover_at: FIXED_NEXT_ROLLOVER }, created_at: FIXED_VISUAL_TIME, updated_at: FIXED_VISUAL_TIME, etag: '"goal-2"' } };
+}
+
 test.describe("critical visual regression", () => {
   test.beforeEach(async ({ page }) => {
     await page.clock.install({ time: FIXED_VISUAL_TIME });
@@ -206,8 +217,24 @@ test.describe("critical visual regression", () => {
       (route) => route.fulfill({ status: 200, contentType: "application/json", json: { items: [], next_cursor: null } })
     );
     await page.goto("/progress?visual=pattern-analysis");
+    await page.addStyleTag({
+      content: '[aria-labelledby="weekly-priority-heading"] { display: none !important; }'
+    });
     await expect(page.getByText("الألياف")).toBeVisible();
     await stableRendering(page);
     await expect(page.locator("main")).toHaveScreenshot("nutrition-pattern-analysis-mobile.png");
+  });
+
+  test("Weekly priority and behavior goal on mobile", async ({ page }) => {
+    await page.route((url) => isExactApiPath(url, "/progress/weekly-priorities/current"),
+      (route) => route.fulfill({ status: 200, contentType: "application/json", json: visualWeeklyPriority() }));
+    await page.route((url) => isExactApiPath(url, "/progress/behavior-goals/current"),
+      (route) => route.fulfill({ status: 200, contentType: "application/json", json: visualGoal() }));
+    await page.route((url) => isExactApiPath(url, "/progress/behavior-goals/history"),
+      (route) => route.fulfill({ status: 200, contentType: "application/json", json: { items: [], next_cursor: null } }));
+    await page.goto("/progress?visual=weekly-priority-goal");
+    await expect(page.getByRole("heading", { name: "تقليل الصوديوم" })).toBeVisible();
+    await stableRendering(page);
+    await expect(page.locator("main")).toHaveScreenshot("weekly-priority-goal-mobile.png");
   });
 });

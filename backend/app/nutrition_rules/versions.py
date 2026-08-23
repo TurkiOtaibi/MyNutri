@@ -12,6 +12,8 @@ class RuleVersions:
     snapshot_schema_version: int = 3
     analysis_rules_version: str = "w3-analysis-1.1.0"
     analysis_rules_status: str = "active"
+    weekly_priority_rules_version: str = "w3-priority-1.0.0"
+    weekly_priority_copy_version: str = "w3-priority-ar-1.0.0"
 
     def as_dict(self) -> dict[str, str | int | None]:
         return asdict(self)

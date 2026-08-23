@@ -66,7 +66,8 @@ const manifests = {
   "features/progress/progress-model.ts": [
     "ANALYSIS_COPY", "metricLabels", "AnalysisDisplayState", "displayState",
     "visibleMetrics", "metricLabel", "metricStatusText", "formatMetricValue",
-    "AnalysisAttempt", "stableAnalysisAttempt",
+    "AnalysisAttempt", "stableAnalysisAttempt", "PRIORITY_COPY", "goalStateCopy",
+    "goalActionCopy", "GoalCommandAttempt", "stableGoalCommandAttempt", "priorityMessage",
   ],
   "features/progress/progress-view.tsx": ["ProgressView"],
 } as const;
@@ -84,6 +85,9 @@ function expectTransportBoundary(source: string) {
   expect(source).toContain('`/diary/days/${diaryDate}/${action}`');
   expect(source).toContain('"/progress/nutrition-analysis/current"');
   expect(source).toContain('"/progress/nutrition-analysis/evaluate"');
+  expect(source).toContain('"/progress/weekly-priorities/current"');
+  expect(source).toContain('"/progress/behavior-goals/current"');
+  expect(source).toContain('`/progress/behavior-goals/${goalId}/commands`');
   expect(source).toContain('"If-Match": etag ?? \'"analysis-none"\'');
   expect(source).toContain('headers: { "If-Match": `"day-${dayVersion}"` }');
   expect(source).toContain('throw new ApiError(message, response.status, detail, code)');

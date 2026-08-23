@@ -54,6 +54,12 @@ def test_registry_exposes_exact_version_bundle_and_authoritative_metadata(
     assert len(body["target_types"]) == 7
     assert body["analysis_rules_version"] == "w3-analysis-1.1.0"
     assert body["analysis_rules_status"] == "active"
+    assert body["weekly_priority_rules_version"] == "w3-priority-1.0.0"
+    assert body["weekly_priority_copy_version"] == "w3-priority-ar-1.0.0"
+    assert len(body["weekly_priority_rules"]) == 23
+    priority_metrics = {item["metric_key"] for item in body["weekly_priority_rules"]}
+    assert "macro:carb_g_per_day" not in priority_metrics
+    assert "macro:fat_g_per_day" not in priority_metrics
     assert {item["key"] for item in body["analysis_metrics"]} >= {
         "energy:calories_kcal_per_day",
         "group:fruit_vegetable_g_per_day",

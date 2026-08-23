@@ -514,6 +514,278 @@ export type BakedGoodType =
   | "biscuits_cookies"
   | "other";
 
+/** BehaviorGoalCommandResponseV1 */
+export interface BehaviorGoalCommandResponseV1 {
+  goal: BehaviorGoalResponseV1;
+  previous_goal?: BehaviorGoalResponseV1 | null;
+  recommendation: WeeklyPriorityResultV1 | null;
+  /** Result */
+  result:
+    | "accepted"
+    | "edited"
+    | "deferred"
+    | "rejected"
+    | "changed"
+    | "change_available"
+    | "paused"
+    | "resumed"
+    | "ended"
+    | "repeated"
+    | "reduced_and_repeated";
+}
+
+/** BehaviorGoalCommandV1 */
+export interface BehaviorGoalCommandV1 {
+  /** Change Reason */
+  change_reason?: "owner_requested" | "evidence_superseded" | null;
+  /** Event */
+  event:
+    | "accept"
+    | "edit"
+    | "defer"
+    | "reject"
+    | "change"
+    | "pause"
+    | "resume"
+    | "end"
+    | "repeat";
+  /**
+   * Expected Version
+   * @min 1
+   */
+  expected_version: number;
+  /** Note */
+  note?: string | null;
+  /** Reason */
+  reason?:
+    | "not_relevant"
+    | "too_difficult"
+    | "prefer_other"
+    | "pause_tracking"
+    | "other"
+    | null;
+  /** Reminder Preference */
+  reminder_preference?: "enabled" | "disabled" | null;
+  /** Repeat Mode */
+  repeat_mode?: "same" | "reduce" | null;
+  /** Scheduled Day Mask */
+  scheduled_day_mask?: number[] | null;
+  /** Weekly Target Count */
+  weekly_target_count?: number | null;
+}
+
+/** BehaviorGoalCurrentResponseV1 */
+export interface BehaviorGoalCurrentResponseV1 {
+  goal: BehaviorGoalResponseV1 | null;
+  recommendation: WeeklyPriorityResultV1 | null;
+}
+
+/** BehaviorGoalHistoryPageV1 */
+export interface BehaviorGoalHistoryPageV1 {
+  /** Items */
+  items: BehaviorGoalResponseV1[];
+  /** Next Cursor */
+  next_cursor: string | null;
+}
+
+/** BehaviorGoalProgressV1 */
+export interface BehaviorGoalProgressV1 {
+  /**
+   * As Of Diary Date
+   * @format date
+   */
+  as_of_diary_date: string;
+  /** Calculation Rules Version */
+  calculation_rules_version: string;
+  /**
+   * Complete Day Count
+   * @min 0
+   * @max 7
+   */
+  complete_day_count: number;
+  /**
+   * Last Recomputed At
+   * @format date-time
+   */
+  last_recomputed_at: string;
+  /**
+   * Partial Day Count
+   * @min 0
+   * @max 7
+   */
+  partial_day_count: number;
+  /**
+   * Progress Count
+   * @min 0
+   * @max 7
+   */
+  progress_count: number;
+  /** Progress Percent */
+  progress_percent?: number | null;
+  /** Source Day Versions */
+  source_day_versions: Record<string, number>;
+  /** Status */
+  status:
+    | "unknown"
+    | "in_progress"
+    | "achieved"
+    | "not_yet_reached"
+    | "insufficient_evidence";
+  /**
+   * Target Count
+   * @min 1
+   * @max 7
+   */
+  target_count: number;
+  /**
+   * Unregistered Day Count
+   * @min 0
+   * @max 7
+   */
+  unregistered_day_count: number;
+  /**
+   * Window End
+   * @format date
+   */
+  window_end: string;
+  /**
+   * Window Start
+   * @format date
+   */
+  window_start: string;
+}
+
+/** BehaviorGoalResponseV1 */
+export interface BehaviorGoalResponseV1 {
+  /** Accepted At */
+  accepted_at: string | null;
+  /** Action Key */
+  action_key: string;
+  /** Allowed Actions */
+  allowed_actions: (
+    | "accept"
+    | "edit"
+    | "defer"
+    | "reject"
+    | "change"
+    | "pause"
+    | "resume"
+    | "end"
+    | "repeat"
+    | "reduce"
+  )[];
+  /** Archived At */
+  archived_at: string | null;
+  calendar: CalendarAuthorityResponse;
+  /** Changed At */
+  changed_at: string | null;
+  /** Completed At */
+  completed_at: string | null;
+  /**
+   * Created At
+   * @format date-time
+   */
+  created_at: string;
+  /** Deferred At */
+  deferred_at: string | null;
+  /** Deferred Until */
+  deferred_until: string | null;
+  /** Ended At */
+  ended_at: string | null;
+  /** Etag */
+  etag: string;
+  /**
+   * Goal Id
+   * @format uuid
+   */
+  goal_id: string;
+  /**
+   * Offered At
+   * @format date-time
+   */
+  offered_at: string;
+  /** Owner Note */
+  owner_note?: string | null;
+  /** Paused At */
+  paused_at: string | null;
+  /** Previous Goal Id */
+  previous_goal_id: string | null;
+  progress: BehaviorGoalProgressV1;
+  /** Rejected At */
+  rejected_at: string | null;
+  /** Reminder Preference */
+  reminder_preference: "enabled" | "disabled";
+  /** Resumed At */
+  resumed_at: string | null;
+  /** Reviewed At */
+  reviewed_at: string | null;
+  /**
+   * Root Goal Id
+   * @format uuid
+   */
+  root_goal_id: string;
+  /** Rule Key */
+  rule_key: string;
+  /** Scheduled Day Mask */
+  scheduled_day_mask: number[];
+  /**
+   * Schema Version
+   * @default 1
+   */
+  schema_version?: 1;
+  /**
+   * Sequence Number
+   * @min 1
+   */
+  sequence_number: number;
+  /** Source Copy Version */
+  source_copy_version: string;
+  /**
+   * Source Recommendation Id
+   * @format uuid
+   */
+  source_recommendation_id: string;
+  /** Source Rules Version */
+  source_rules_version: string;
+  /** State */
+  state:
+    | "offered"
+    | "deferred"
+    | "active"
+    | "paused"
+    | "completed"
+    | "incomplete"
+    | "rejected"
+    | "ended"
+    | "archived";
+  /**
+   * Updated At
+   * @format date-time
+   */
+  updated_at: string;
+  /**
+   * Version
+   * @min 1
+   */
+  version: number;
+  /**
+   * Weekly Target Count
+   * @min 1
+   * @max 7
+   */
+  weekly_target_count: number;
+  /**
+   * Window End
+   * @format date
+   */
+  window_end: string;
+  /**
+   * Window Start
+   * @format date
+   */
+  window_start: string;
+}
+
 /** CalculationWarningResponse */
 export interface CalculationWarningResponse {
   /** Code */
@@ -1269,6 +1541,12 @@ export interface NutritionRegistryResponse {
   target_types: string[];
   /** Traits */
   traits: RegistryLabelDefinition[];
+  /** Weekly Priority Copy Version */
+  weekly_priority_copy_version: "w3-priority-ar-1.0.0";
+  /** Weekly Priority Rules */
+  weekly_priority_rules: Record<string, any>[];
+  /** Weekly Priority Rules Version */
+  weekly_priority_rules_version: "w3-priority-1.0.0";
 }
 
 /** NutritionSnapshot */
@@ -1538,6 +1816,68 @@ export type PrincipalRole = "user" | "admin";
 
 /** PrincipalStatus */
 export type PrincipalStatus = "active" | "disabled";
+
+/** PriorityV1 */
+export interface PriorityV1 {
+  /**
+   * Action Ar
+   * @minLength 1
+   */
+  action_ar: string;
+  /**
+   * Action Key
+   * @minLength 1
+   */
+  action_key: string;
+  /** Action Mode */
+  action_mode: "add" | "replace" | "review";
+  /** Category */
+  category: "limit" | "positive" | "micronutrient";
+  /**
+   * Complete Day Count
+   * @min 4
+   * @max 7
+   */
+  complete_day_count: number;
+  /**
+   * Confidence
+   * @default "strong"
+   */
+  confidence?: "strong";
+  /** Conflict Decisions */
+  conflict_decisions: string[];
+  /** Copy Version */
+  copy_version: "w3-priority-ar-1.0.0";
+  /**
+   * Coverage Percent
+   * @min 75
+   * @max 100
+   */
+  coverage_percent: number;
+  /** Evidence Refs */
+  evidence_refs: OpaqueEvidenceRefV1[];
+  /** Facts Used */
+  facts_used: WeeklyPriorityFactV1[];
+  /** Rank */
+  rank: "main" | "secondary";
+  /**
+   * Reason Ar
+   * @minLength 1
+   */
+  reason_ar: string;
+  /**
+   * Rule Key
+   * @minLength 1
+   */
+  rule_key: string;
+  /** Rules Version */
+  rules_version: "w3-priority-1.0.0";
+  /**
+   * Title Ar
+   * @minLength 1
+   */
+  title_ar: string;
+}
 
 /** ProfilePreview */
 export interface ProfilePreview {
@@ -2198,6 +2538,125 @@ export interface WeeklyPriorityAnalysisInputV1 {
    * @min 1
    */
   source_analysis_revision: number;
+  /** Target Plan Refs */
+  target_plan_refs: TargetPlanAnalysisRefV1[];
+}
+
+/** WeeklyPriorityExcludedV1 */
+export interface WeeklyPriorityExcludedV1 {
+  /** Reason Code */
+  reason_code:
+    | "lower_rank"
+    | "duplicate_evidence"
+    | "action_conflict"
+    | "addition_replaced"
+    | "insufficient_coverage"
+    | "insufficient_persistence"
+    | "safety_exclusion";
+  /** Rule Key */
+  rule_key: string;
+}
+
+/** WeeklyPriorityFactV1 */
+export interface WeeklyPriorityFactV1 {
+  /**
+   * Comparison
+   * @minLength 1
+   */
+  comparison: string;
+  /**
+   * Metric Key
+   * @minLength 1
+   */
+  metric_key: string;
+  /** Period */
+  period: "current" | "previous";
+  target: AnalysisMetricTargetV1 | null;
+  /**
+   * Unit
+   * @minLength 1
+   */
+  unit: string;
+  /** Value */
+  value: number | null;
+}
+
+/** WeeklyPriorityResultV1 */
+export interface WeeklyPriorityResultV1 {
+  /** Analysis Rules Version */
+  analysis_rules_version: string;
+  /** Copy Version */
+  copy_version: "w3-priority-ar-1.0.0";
+  /** Etag */
+  etag: string;
+  /** Excluded Alternatives */
+  excluded_alternatives: WeeklyPriorityExcludedV1[];
+  /**
+   * Expires At
+   * @format date-time
+   */
+  expires_at: string;
+  /** Food Group Rules Version */
+  food_group_rules_version: string;
+  /**
+   * Generated At
+   * @format date-time
+   */
+  generated_at: string;
+  main: PriorityV1 | null;
+  /** None Reason */
+  none_reason:
+    | "invalid_analysis_input"
+    | "insufficient_complete_days"
+    | "insufficient_coverage"
+    | "no_eligible_priority"
+    | "stale_analysis"
+    | "superseded_analysis"
+    | "safety_exclusion"
+    | "unsupported_version"
+    | "rejected_goal_suppression"
+    | null;
+  /** Nova Rules Version */
+  nova_rules_version: string;
+  /** Nutrition Registry Version */
+  nutrition_registry_version: string;
+  /**
+   * Period End
+   * @format date
+   */
+  period_end: string;
+  /**
+   * Period Start
+   * @format date
+   */
+  period_start: string;
+  /**
+   * Recommendation Id
+   * @format uuid
+   */
+  recommendation_id: string;
+  /** Rules Version */
+  rules_version: "w3-priority-1.0.0";
+  /**
+   * Schema Version
+   * @default 1
+   */
+  schema_version?: 1;
+  secondary: PriorityV1 | null;
+  /** Snapshot Schema Versions */
+  snapshot_schema_versions: number[];
+  /**
+   * Source Analysis Id
+   * @format uuid
+   */
+  source_analysis_id: string;
+  /**
+   * Source Analysis Revision
+   * @min 1
+   */
+  source_analysis_revision: number;
+  /** Status */
+  status: "selected" | "none" | "stale" | "superseded" | "safety_suppressed";
   /** Target Plan Refs */
   target_plan_refs: TargetPlanAnalysisRefV1[];
 }
@@ -3256,6 +3715,64 @@ export namespace Progress {
 
   /**
    * No description
+   * @tags behavior-goals
+   * @name GetGoalHistoryProgressBehaviorGoalsHistoryGet
+   * @summary Get Goal History
+   * @request GET:/progress/behavior-goals/history
+   * @secure
+   */
+  export namespace GetGoalHistoryProgressBehaviorGoalsHistoryGet {
+    export type RequestParams = {};
+    export type RequestQuery = {
+      /** Cursor */
+      cursor?: string | null;
+      /**
+       * Limit
+       * @min 1
+       * @max 100
+       * @default 20
+       */
+      limit?: number;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = BehaviorGoalHistoryPageV1;
+  }
+
+  /**
+   * No description
+   * @tags behavior-goals
+   * @name GetGoalProgressBehaviorGoalsCurrentGet
+   * @summary Get Goal
+   * @request GET:/progress/behavior-goals/current
+   * @secure
+   */
+  export namespace GetGoalProgressBehaviorGoalsCurrentGet {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = BehaviorGoalCurrentResponseV1;
+  }
+
+  /**
+   * No description
+   * @tags weekly-priorities
+   * @name GetPriorityProgressWeeklyPrioritiesCurrentGet
+   * @summary Get Priority
+   * @request GET:/progress/weekly-priorities/current
+   * @secure
+   */
+  export namespace GetPriorityProgressWeeklyPrioritiesCurrentGet {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = WeeklyPriorityResultV1;
+  }
+
+  /**
+   * No description
    * @tags nutrition-analysis
    * @name HistoryProgressNutritionAnalysisHistoryGet
    * @summary History
@@ -3278,6 +3795,31 @@ export namespace Progress {
     export type RequestBody = never;
     export type RequestHeaders = {};
     export type ResponseBody = NutritionPatternAnalysisHistoryPageV1;
+  }
+
+  /**
+   * No description
+   * @tags behavior-goals
+   * @name PostGoalCommandProgressBehaviorGoalsGoalIdCommandsPost
+   * @summary Post Goal Command
+   * @request POST:/progress/behavior-goals/{goal_id}/commands
+   * @secure
+   */
+  export namespace PostGoalCommandProgressBehaviorGoalsGoalIdCommandsPost {
+    export type RequestParams = {
+      /**
+       * Goal Id
+       * @format uuid
+       */
+      goalId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = BehaviorGoalCommandV1;
+    export type RequestHeaders = {
+      /** Idempotency-Key */
+      "Idempotency-Key": string;
+    };
+    export type ResponseBody = BehaviorGoalCommandResponseV1;
   }
 
   /**

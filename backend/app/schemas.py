@@ -111,6 +111,8 @@ class NutritionRegistryResponse(BaseModel):
     snapshot_schema_version: Literal[3]
     analysis_rules_version: Literal["w3-analysis-1.1.0"]
     analysis_rules_status: Literal["active"]
+    weekly_priority_rules_version: Literal["w3-priority-1.0.0"]
+    weekly_priority_copy_version: Literal["w3-priority-ar-1.0.0"]
     rules_manifest_hash: str
     calculation_policy: dict[str, Any]
     nutrients: list[RegistryNutrientDefinition]
@@ -129,6 +131,7 @@ class NutritionRegistryResponse(BaseModel):
     reliability_levels: list[RegistryLabelDefinition]
     nova: RegistryNovaDefinition
     analysis_metrics: list[dict[str, str]]
+    weekly_priority_rules: list[dict[str, Any]]
 
 
 class AdditionalNutrientTarget(BaseModel):
@@ -1391,6 +1394,260 @@ class WeeklyPriorityAnalysisInputV1(_AnalysisClosedModel):
         if self.previous_period_end + timedelta(days=1) != self.period_start:
             raise ValueError("periods must be contiguous")
         return self
+
+
+WeeklyPriorityStatus = Literal["selected", "none", "stale", "superseded", "safety_suppressed"]
+WeeklyPriorityNoneReason = Literal[
+    "invalid_analysis_input",
+    "insufficient_complete_days",
+    "insufficient_coverage",
+    "no_eligible_priority",
+    "stale_analysis",
+    "superseded_analysis",
+    "safety_exclusion",
+    "unsupported_version",
+    "rejected_goal_suppression",
+]
+
+
+class WeeklyPriorityFactV1(_AnalysisClosedModel):
+    metric_key: str = Field(min_length=1)
+    value: float | None
+    unit: str = Field(min_length=1)
+    target: AnalysisMetricTargetV1 | None
+    comparison: str = Field(min_length=1)
+    period: Literal["current", "previous"]
+
+
+class PriorityV1(_AnalysisClosedModel):
+    rule_key: str = Field(min_length=1)
+    rank: Literal["main", "secondary"]
+    category: Literal["limit", "positive", "micronutrient"]
+    title_ar: str = Field(min_length=1)
+    reason_ar: str = Field(min_length=1)
+    confidence: Literal["strong"] = "strong"
+    coverage_percent: float = Field(ge=75, le=100)
+    complete_day_count: int = Field(ge=4, le=7)
+    action_key: str = Field(min_length=1)
+    action_ar: str = Field(min_length=1)
+    action_mode: Literal["add", "replace", "review"]
+    rules_version: Literal["w3-priority-1.0.0"]
+    copy_version: Literal["w3-priority-ar-1.0.0"]
+    facts_used: list[WeeklyPriorityFactV1]
+    evidence_refs: list[OpaqueEvidenceRefV1]
+    conflict_decisions: list[str]
+
+
+class WeeklyPriorityExcludedV1(_AnalysisClosedModel):
+    rule_key: str
+    reason_code: Literal[
+        "lower_rank",
+        "duplicate_evidence",
+        "action_conflict",
+        "addition_replaced",
+        "insufficient_coverage",
+        "insufficient_persistence",
+        "safety_exclusion",
+    ]
+
+
+class WeeklyPriorityResultV1(_AnalysisClosedModel):
+    schema_version: Literal[1] = 1
+    recommendation_id: UUID
+    source_analysis_id: UUID
+    source_analysis_revision: int = Field(ge=1)
+    period_start: date
+    period_end: date
+    generated_at: datetime
+    expires_at: datetime
+    status: WeeklyPriorityStatus
+    rules_version: Literal["w3-priority-1.0.0"]
+    copy_version: Literal["w3-priority-ar-1.0.0"]
+    analysis_rules_version: str
+    nutrition_registry_version: str
+    food_group_rules_version: str
+    nova_rules_version: str
+    snapshot_schema_versions: list[int]
+    target_plan_refs: list[TargetPlanAnalysisRefV1]
+    main: PriorityV1 | None
+    secondary: PriorityV1 | None
+    excluded_alternatives: list[WeeklyPriorityExcludedV1]
+    none_reason: WeeklyPriorityNoneReason | None
+    etag: str
+
+    @model_validator(mode="after")
+    def validate_result(self):
+        if self.snapshot_schema_versions != sorted(set(self.snapshot_schema_versions)):
+            raise ValueError("snapshot schema versions must be sorted and unique")
+        if self.status == "selected" and self.main is None:
+            raise ValueError("selected recommendation requires a main priority")
+        if self.status != "selected" and (self.main is not None or self.secondary is not None):
+            raise ValueError("non-selected recommendation cannot expose priorities")
+        if self.secondary is not None and self.main is None:
+            raise ValueError("secondary priority requires a main priority")
+        return self
+
+
+BehaviorGoalState = Literal[
+    "offered",
+    "deferred",
+    "active",
+    "paused",
+    "completed",
+    "incomplete",
+    "rejected",
+    "ended",
+    "archived",
+]
+
+
+class BehaviorGoalProgressV1(_AnalysisClosedModel):
+    window_start: date
+    window_end: date
+    progress_count: int = Field(ge=0, le=7)
+    target_count: int = Field(ge=1, le=7)
+    progress_percent: int | None = Field(default=None, ge=0, le=100)
+    complete_day_count: int = Field(ge=0, le=7)
+    partial_day_count: int = Field(ge=0, le=7)
+    unregistered_day_count: int = Field(ge=0, le=7)
+    status: Literal[
+        "unknown", "in_progress", "achieved", "not_yet_reached", "insufficient_evidence"
+    ]
+    as_of_diary_date: date
+    source_day_versions: dict[str, int]
+    calculation_rules_version: str
+    last_recomputed_at: datetime
+
+
+class BehaviorGoalResponseV1(_AnalysisClosedModel):
+    schema_version: Literal[1] = 1
+    goal_id: UUID
+    root_goal_id: UUID
+    previous_goal_id: UUID | None
+    sequence_number: int = Field(ge=1)
+    state: BehaviorGoalState
+    version: int = Field(ge=1)
+    rule_key: str
+    action_key: str
+    weekly_target_count: int = Field(ge=1, le=7)
+    scheduled_day_mask: list[int]
+    owner_note: str | None = Field(default=None, max_length=280)
+    window_start: date
+    window_end: date
+    source_recommendation_id: UUID
+    source_rules_version: str
+    source_copy_version: str
+    progress: BehaviorGoalProgressV1
+    allowed_actions: list[
+        Literal[
+            "accept",
+            "edit",
+            "defer",
+            "reject",
+            "change",
+            "pause",
+            "resume",
+            "end",
+            "repeat",
+            "reduce",
+        ]
+    ]
+    reminder_preference: Literal["enabled", "disabled"]
+    offered_at: datetime
+    accepted_at: datetime | None
+    deferred_at: datetime | None
+    deferred_until: date | None
+    changed_at: datetime | None
+    paused_at: datetime | None
+    resumed_at: datetime | None
+    completed_at: datetime | None
+    reviewed_at: datetime | None
+    rejected_at: datetime | None
+    ended_at: datetime | None
+    archived_at: datetime | None
+    calendar: CalendarAuthorityResponse
+    created_at: datetime
+    updated_at: datetime
+    etag: str
+
+    @model_validator(mode="after")
+    def validate_day_mask(self):
+        if self.scheduled_day_mask != sorted(set(self.scheduled_day_mask)) or any(
+            day < 0 or day > 6 for day in self.scheduled_day_mask
+        ):
+            raise ValueError("scheduled day mask must contain unique weekdays 0..6")
+        return self
+
+
+class BehaviorGoalCurrentResponseV1(_AnalysisClosedModel):
+    recommendation: WeeklyPriorityResultV1 | None
+    goal: BehaviorGoalResponseV1 | None
+
+
+class BehaviorGoalHistoryPageV1(_AnalysisClosedModel):
+    items: list[BehaviorGoalResponseV1]
+    next_cursor: str | None
+
+
+class BehaviorGoalCommandV1(_AnalysisClosedModel):
+    event: Literal[
+        "accept", "edit", "defer", "reject", "change", "pause", "resume", "end", "repeat"
+    ]
+    expected_version: int = Field(ge=1)
+    weekly_target_count: int | None = Field(default=None, ge=1, le=7)
+    scheduled_day_mask: list[int] | None = None
+    repeat_mode: Literal["same", "reduce"] | None = None
+    reminder_preference: Literal["enabled", "disabled"] | None = None
+    note: str | None = Field(default=None, max_length=280)
+    reason: Literal[
+        "not_relevant", "too_difficult", "prefer_other", "pause_tracking", "other"
+    ] | None = None
+    change_reason: Literal["owner_requested", "evidence_superseded"] | None = None
+
+    @model_validator(mode="after")
+    def validate_repeat(self):
+        if self.scheduled_day_mask is not None and (
+            self.scheduled_day_mask != sorted(set(self.scheduled_day_mask))
+            or any(day < 0 or day > 6 for day in self.scheduled_day_mask)
+        ):
+            raise ValueError("scheduled day mask must contain unique weekdays 0..6")
+        if self.event == "repeat":
+            if self.repeat_mode is None:
+                raise ValueError("repeat_mode is required")
+            if self.repeat_mode == "same" and self.weekly_target_count is not None:
+                raise ValueError("same repeat cannot override target")
+            if self.repeat_mode == "reduce" and self.weekly_target_count is None:
+                raise ValueError("reduced repeat requires target")
+        elif self.repeat_mode is not None:
+            raise ValueError("repeat_mode is allowed only for repeat")
+        if self.reason is not None and self.event not in {"reject", "end", "pause"}:
+            raise ValueError("reason is allowed only for reject, end, or pause")
+        if self.change_reason is not None and self.event != "change":
+            raise ValueError("change_reason is allowed only for change")
+        if self.note is not None and self.reason != "other":
+            raise ValueError("a private note requires reason=other")
+        if self.event not in {"edit", "accept"} and self.scheduled_day_mask is not None:
+            raise ValueError("scheduled day mask is allowed only for accept or edit")
+        return self
+
+
+class BehaviorGoalCommandResponseV1(_AnalysisClosedModel):
+    result: Literal[
+        "accepted",
+        "edited",
+        "deferred",
+        "rejected",
+        "changed",
+        "change_available",
+        "paused",
+        "resumed",
+        "ended",
+        "repeated",
+        "reduced_and_repeated",
+    ]
+    previous_goal: BehaviorGoalResponseV1 | None = None
+    goal: BehaviorGoalResponseV1
+    recommendation: WeeklyPriorityResultV1 | None
 
 
 class AnalysisSourceVersionBundleV1(_AnalysisClosedModel):

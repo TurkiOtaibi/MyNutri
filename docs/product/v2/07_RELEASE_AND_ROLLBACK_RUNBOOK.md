@@ -255,3 +255,39 @@ Rolling back the JWKS policy removes the application-owned snapshot,
 singleflight, cooldown, and input limits and restores the prior PyJWT client
 behavior. Retain fail-closed authentication during rollback; do not accept
 expired cached keys.
+
+## PLAN 033 weekly priorities and behavior goals
+
+PLAN 033 is shipped with four independent, fail-safe Backend switches. Keep
+`WEEKLY_PRIORITIES_SHADOW_V1`, `WEEKLY_PRIORITIES_DISPLAY_ENABLED`,
+`BEHAVIOR_GOAL_OFFERS_ENABLED`, and
+`BEHAVIOR_GOAL_REMINDER_DELIVERY_ENABLED` disabled until the Project Owner
+authorizes the corresponding rollout stage. Set a production-only
+`WEEKLY_PRIORITY_IDEMPOTENCY_HMAC_SECRET` containing at least 32 random
+characters; never expose or casually rotate it because stored command lookup
+digests depend on it.
+
+Run bounded jobs directly from the Backend working directory:
+
+```text
+python -m app.ops.weekly_priority_jobs shadow --limit 100
+python -m app.ops.weekly_priority_jobs report
+python -m app.ops.weekly_priority_jobs due --limit 100
+```
+
+Shadow mode requires the shadow switch on while display, offers, and reminder
+delivery remain off. It persists governed recommendations but never creates a
+goal or reminder. Launch review requires at least 28 consecutive shadow days
+and at least 1,000 eligible evaluations, plus the frozen manual-review and
+safety evidence. Provider scheduling, Render workers, activation, and traffic
+percentages require separate authorization.
+
+Apply additive revision `22733dbf5249` only after normal backup/recovery and
+deployment approval. It descends from `c3a7e6d5f210`, creates six PLAN 033
+entities, and performs no historical backfill. An older Backend can run against
+the additive schema. Application rollback therefore disables display, offers,
+and delivery and deploys compatible code while retaining immutable history.
+Once any PLAN 033 row exists, the migration's populated downgrade refuses
+destructive removal; schema downgrade is not the production rollback method.
+Reminder eligibility is computed locally, but external provider delivery and
+provider scheduling remain outside this release and need separate authority.

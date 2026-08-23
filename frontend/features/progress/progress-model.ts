@@ -1,4 +1,10 @@
-import type { PatternAnalysisMetric, PatternAnalysisResponse } from "@/lib/types";
+import type {
+  BehaviorGoal,
+  BehaviorGoalCommand,
+  PatternAnalysisMetric,
+  PatternAnalysisResponse,
+  WeeklyPriorityResult
+} from "@/lib/types";
 
 export const ANALYSIS_COPY = {
   heading: "تحليل نمط التغذية",
@@ -11,6 +17,82 @@ export const ANALYSIS_COPY = {
   evaluate: "تحديث التحليل",
   history: "سجل تحليلات نمط التغذية"
 } as const;
+
+export const PRIORITY_COPY = {
+  heading: "أولوية هذا الأسبوع",
+  loading: "جارٍ تحميل أولوية الأسبوع",
+  unavailable: "لا تتوفر أولوية أسبوعية موثوقة الآن.",
+  stale: "تغيّرت بيانات اليوميات. حدّث التحليل قبل عرض أولوية.",
+  safety: "لا يمكن اقتراح أولوية آمنة من هذه البيانات. راجع إعدادات أهدافك أو مختصًا مؤهلًا عند الحاجة.",
+  evidence: "بُني هذا الاقتراح على الأيام المكتملة والتغطية المتاحة، وليس على الأيام غير المكتملة.",
+  offer: "هل ترغب في تحويل الأولوية إلى هدف أسبوعي؟",
+  failure: "تعذر تحميل أولوية الأسبوع. حاول مرة أخرى.",
+  commandFailure: "تعذر حفظ الهدف. لم تُفقد بياناتك؛ حاول مجددًا.",
+  repeatSuccess: "بدأ أسبوع جديد للهدف مع الاحتفاظ بنتيجة الأسبوع السابق."
+} as const;
+
+export const goalStateCopy: Record<BehaviorGoal["state"], string> = {
+  offered: "هل ترغب في تحويل الأولوية إلى هدف أسبوعي؟",
+  deferred: "تم تأجيل الخطوة ويمكنك العودة إليها لاحقًا.",
+  active: "هدفك الأسبوعي نشط",
+  paused: "الهدف متوقف مؤقتًا",
+  incomplete: "راجع هدف الأسبوع وفق الأيام المكتملة.",
+  rejected: "تم حفظ اختيارك دون حكم على النتيجة.",
+  completed: "اكتملت الخطوة وفق الأيام المسجلة.",
+  ended: "تم إنهاء الهدف دون حكم على النتيجة.",
+  archived: "هدف محفوظ في السجل."
+};
+
+export const goalActionCopy: Record<string, string> = {
+  accept: "بدء الهدف",
+  edit: "تعديل الخطوة",
+  defer: "ذكّرني لاحقًا داخل التطبيق",
+  reject: "ليس مناسبًا الآن",
+  change: "تغيير الهدف",
+  pause: "إيقاف مؤقت",
+  resume: "استئناف الهدف",
+  end: "إنهاء الهدف",
+  repeat: "تكرار الهدف لأسبوع جديد",
+  reduce: "تخفيف الخطوة للأسبوع الجديد"
+};
+
+export type GoalCommandAttempt = {
+  goalId: string;
+  key: string;
+  command: BehaviorGoalCommand;
+};
+
+export function stableGoalCommandAttempt(
+  existing: GoalCommandAttempt | null,
+  goal: BehaviorGoal,
+  action: BehaviorGoal["allowed_actions"][number],
+  weeklyTargetCount?: number
+): GoalCommandAttempt {
+  const event: BehaviorGoalCommand["event"] = action === "reduce" ? "repeat" : action;
+  if (existing?.goalId === goal.goal_id && existing.command.event === event) return existing;
+  return {
+    goalId: goal.goal_id,
+    key: crypto.randomUUID(),
+    command: {
+      event,
+      expected_version: goal.version,
+      ...(event === "repeat" ? { repeat_mode: action === "reduce" ? "reduce" as const : "same" as const } : {}),
+      ...(weeklyTargetCount === undefined ? {} : { weekly_target_count: weeklyTargetCount })
+    }
+  };
+}
+
+export function priorityMessage(priority: WeeklyPriorityResult | null): string {
+  if (!priority) return PRIORITY_COPY.unavailable;
+  if (priority.status === "stale" || priority.status === "superseded") return PRIORITY_COPY.stale;
+  if (priority.status === "safety_suppressed") return PRIORITY_COPY.safety;
+  if (priority.status === "none") {
+    return priority.none_reason === "insufficient_complete_days" || priority.none_reason === "insufficient_coverage"
+      ? "أكمل تسجيل أربعة أيام على الأقل مع بيانات كافية لاقتراح أولوية أسبوعية."
+      : "لا توجد أولوية واضحة هذا الأسبوع بناءً على البيانات المكتملة.";
+  }
+  return "";
+}
 
 export const metricLabels: Record<string, string> = {
   "energy:calories_kcal_per_day": "متوسط الطاقة اليومي",
