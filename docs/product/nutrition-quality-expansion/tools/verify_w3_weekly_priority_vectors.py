@@ -55,6 +55,38 @@ STABLE_REPEAT_IDENTITY_FIELDS = (
     "expected_version",
     "weekly_target_count",
 )
+RULES_VERSION = "w3-priority-1.1.0"
+COPY_VERSION = "w3-priority-ar-1.1.0"
+INFORMATIONAL_COPY_AR = (
+    "هذه الأولوية إرشادية حاليًا؛ لا يمكن تتبع تنفيذ هذه الخطوة تلقائيًا من بيانات اليوميات."
+)
+TRACKABLE_ACTIONS = {
+    "replace_trans_fat_choice",
+    "replace_processed_meat_choice",
+    "add_fruit_or_vegetable",
+    "replace_with_fruit_or_vegetable",
+    "add_legumes",
+    "replace_with_legumes",
+    "replace_with_seafood",
+    "add_dairy_or_fortified_alternative",
+    "replace_with_dairy_or_fortified_alternative",
+}
+ALL_ACTIONS = {
+    action
+    for _, _, actions in RULE_META.values()
+    for action in actions.values()
+}
+INFORMATIONAL_ACTIONS = ALL_ACTIONS - TRACKABLE_ACTIONS
+ACTION_METRICS = {
+    "replace_processed_meat_choice": "protein:source_diversity_count",
+    "add_fruit_or_vegetable": "group:fruit_vegetable_g_per_day",
+    "replace_with_fruit_or_vegetable": "group:fruit_vegetable_g_per_day",
+    "add_legumes": "group:legumes_servings_per_period",
+    "replace_with_legumes": "group:legumes_servings_per_period",
+    "replace_with_seafood": "group:seafood_servings_per_period",
+    "add_dairy_or_fortified_alternative": "group:dairy_fortified_servings_per_day",
+    "replace_with_dairy_or_fortified_alternative": "group:dairy_fortified_servings_per_day",
+}
 
 
 def complete_days(vector: dict[str, Any]) -> int:
@@ -479,6 +511,7 @@ def apply_repeat_event(
         or priority.get("main_rule_key") != source["rule_key"]
         or priority.get("rules_version") != source["rules_version"]
         or priority.get("action_key") != source["action_key"]
+        or priority.get("action_key") not in TRACKABLE_ACTIONS
     ):
         return repeat_response(state, "goal_repeat_priority_conflict")
     mode = event.get("repeat_mode")
@@ -535,19 +568,83 @@ def apply_repeat_event(
     return response
 
 
+def _metric(day: dict[str, Any], key: str) -> dict[str, Any] | None:
+    values = day.get("metric_values")
+    if not isinstance(values, list):
+        raise ValueError("producer-shaped day requires metric_values")
+    matches = [item for item in values if item.get("metric_key") == key]
+    if len(matches) > 1:
+        raise ValueError("producer day metric keys must be unique")
+    return matches[0] if matches else None
+
+
+def _qualifies(action_key: str, day: dict[str, Any]) -> bool:
+    if "qualifies" in day or "force_qualifies" in day:
+        raise ValueError("precomputed qualifies is forbidden")
+    if action_key not in TRACKABLE_ACTIONS:
+        raise ValueError("informational-only action has no progress predicate")
+    if action_key == "replace_trans_fat_choice":
+        fact = _metric(day, "nutrient:trans_fat_g")
+        return bool(
+            fact
+            and day.get("entry_count", 0) > 0
+            and fact.get("value_state") == "explicit_zero"
+            and fact.get("value") == 0
+            and fact.get("amount_qualifier") == "exact"
+            and fact.get("total_entry_count", 0) > 0
+            and fact.get("known_entry_count") == fact.get("total_entry_count")
+        )
+    fact = _metric(day, ACTION_METRICS[action_key])
+    return bool(
+        fact
+        and fact.get("value_state") == "known"
+        and isinstance(fact.get("value"), (int, float))
+        and not isinstance(fact.get("value"), bool)
+        and math.isfinite(fact["value"])
+        and fact["value"] > 0
+        and fact.get("known_entry_count", 0) > 0
+    )
+
+
 def evaluate_progress(vector: dict[str, Any]) -> dict[str, Any]:
+    if "force_qualifies" in vector or "bypass_scheduled_day_mask" in vector:
+        raise ValueError("authoritative progress cannot be bypassed")
     target = vector.get("target_count")
     if not isinstance(target, int) or not 1 <= target <= 7:
         raise ValueError("progress target_count must be an integer from 1 to 7")
     complete = 0
     progress = 0
+    window_start = date.fromisoformat(vector["window_start"])
+    window_end = date.fromisoformat(vector["window_end"])
+    mask = vector.get("scheduled_day_mask")
+    if mask is not None and (
+        not isinstance(mask, list)
+        or any(not isinstance(item, int) or isinstance(item, bool) or not 0 <= item <= 6 for item in mask)
+        or len(mask) != len(set(mask))
+    ):
+        raise ValueError("scheduled_day_mask must be unique ISO weekdays")
+    if vector.get("source_status") not in {"selected", "stale", "superseded"}:
+        raise ValueError("unknown source_status")
+    seen_dates: set[date] = set()
     for day in vector.get("days", []):
         status = day.get("logging_status")
         if status not in DAY_STATUSES:
             raise ValueError(f"unknown logging_status: {status!r}")
-        if status == "complete":
+        parsed = date.fromisoformat(day["date"])
+        if parsed in seen_dates:
+            raise ValueError("producer day dates must be unique")
+        seen_dates.add(parsed)
+        if day.get("analysis_eligible") is not (status == "complete"):
+            raise ValueError("analysis_eligible must match complete status")
+        eligible = (
+            vector["source_status"] == "selected"
+            and status == "complete"
+            and window_start <= parsed <= window_end
+            and (mask is None or parsed.weekday() in mask)
+        )
+        if eligible:
             complete += 1
-            if day.get("qualifies") is True:
+            if _qualifies(vector["action_key"], day):
                 progress += 1
     if progress >= target:
         status = "achieved"
@@ -566,7 +663,7 @@ def evaluate_progress(vector: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def validate(document: dict[str, Any]) -> tuple[int, list[str]]:
+def validate(document: dict[str, Any]) -> tuple[int, int, list[str]]:
     failures: list[str] = []
     if document.get("schema_version") != 1:
         failures.append("schema_version must be 1")
@@ -574,6 +671,13 @@ def validate(document: dict[str, Any]) -> tuple[int, list[str]]:
         failures.append("seed must be an integer")
     names: set[str] = set()
     passed = 0
+    negative_passed = 0
+    if document.get("design_version") != "1.1":
+        failures.append("design_version must be 1.1")
+    if document.get("rules_version") != RULES_VERSION:
+        failures.append("rules_version must be w3-priority-1.1.0")
+    if document.get("copy_version") != COPY_VERSION:
+        failures.append("copy_version must be w3-priority-ar-1.1.0")
     identity_fields = document.get("repeat_request_identity_fields")
     if (
         not isinstance(identity_fields, list)
@@ -678,7 +782,7 @@ def validate(document: dict[str, Any]) -> tuple[int, list[str]]:
             if vector["expected_error"] not in str(error):
                 failures.append(f"{name}: wrong mutation error: {error}")
             else:
-                passed += 1
+                negative_passed += 1
         else:
             failures.append(f"{name}: mutation was accepted")
     repeats_by_name = {vector["name"]: vector for vector in repeat_vectors}
@@ -698,7 +802,7 @@ def validate(document: dict[str, Any]) -> tuple[int, list[str]]:
             if vector["expected_error"] not in str(error):
                 failures.append(f"{name}: wrong repeat mutation error: {error}")
             else:
-                passed += 1
+                negative_passed += 1
         else:
             failures.append(f"{name}: repeat mutation was accepted")
     for vector in document.get("repeat_identity_mutation_vectors", []):
@@ -723,12 +827,115 @@ def validate(document: dict[str, Any]) -> tuple[int, list[str]]:
             and actual["result"] == vector["expected_mutated_result"]
             and actual != base["events"][vector["event_index"]]["expected"]
         ):
-            passed += 1
+            negative_passed += 1
         else:
             failures.append(f"{name}: mutable server identity fields did not break replay")
+    catalog = document.get("action_trackability_vectors", [])
+    expected_catalog = {
+        (rule_key, mode, action): (
+            "trackable" if action in TRACKABLE_ACTIONS else "informational_only",
+            None if action in TRACKABLE_ACTIONS else "action_not_observable",
+        )
+        for rule_key, (_, _, actions) in RULE_META.items()
+        for mode, action in actions.items()
+    }
+    actual_catalog: dict[tuple[str, str, str], tuple[str, str | None]] = {}
+    for vector in catalog:
+        name = vector.get("name", "<unnamed>")
+        if name in names:
+            failures.append(f"duplicate vector name: {name}")
+            continue
+        names.add(name)
+        key = (vector.get("rule_key"), vector.get("action_mode"), vector.get("action_key"))
+        actual_catalog[key] = (
+            vector.get("goal_trackability"),
+            vector.get("goal_unavailable_reason"),
+        )
+        if vector.get("rules_version") != RULES_VERSION or vector.get("copy_version") != COPY_VERSION:
+            failures.append(f"{name}: governed versions are not Design 1.1")
+        elif key not in expected_catalog or actual_catalog[key] != expected_catalog[key]:
+            failures.append(f"{name}: incorrect closed trackability classification")
+        else:
+            passed += 1
+    if actual_catalog != expected_catalog:
+        failures.append("action catalog must cover exactly 23 rules and 28 actions")
+    if len(TRACKABLE_ACTIONS) != 9 or len(INFORMATIONAL_ACTIONS) != 19:
+        failures.append("closed trackability split must be exactly 9/19")
+    for vector in document.get("informational_only_vectors", []):
+        name = vector.get("name", "<unnamed>")
+        if name in names:
+            failures.append(f"duplicate vector name: {name}")
+            continue
+        names.add(name)
+        expected = {
+            "recommendation_selected": True,
+            "goal_trackability": "informational_only",
+            "goal_unavailable_reason": "action_not_observable",
+            "goal": None,
+            "offer_created": False,
+            "progress": None,
+            "reminder_count": 0,
+            "repeat_available": False,
+            "reduce_available": False,
+            "copy_ar": INFORMATIONAL_COPY_AR,
+        }
+        actual = {key: vector.get(key) for key in expected}
+        if vector.get("action_key") not in INFORMATIONAL_ACTIONS or actual != expected:
+            failures.append(f"{name}: informational-only suppression contract mismatch")
+        else:
+            passed += 1
+    for vector in document.get("version_vectors", []):
+        name = vector.get("name", "<unnamed>")
+        if name in names:
+            failures.append(f"duplicate vector name: {name}")
+            continue
+        names.add(name)
+        status = {
+            ("rules", RULES_VERSION): "supported",
+            ("rules", "w3-priority-1.0.0"): "withdrawn_pre_release",
+            ("copy", COPY_VERSION): "supported",
+            ("copy", "w3-priority-ar-1.0.0"): "withdrawn_pre_release",
+        }.get((vector.get("kind"), vector.get("value")), "unsupported")
+        if status != vector.get("expected"):
+            failures.append(f"{name}: version disposition mismatch")
+        else:
+            passed += 1
+    progress_by_name = {vector["name"]: vector for vector in document.get("progress_vectors", [])}
+    for vector in document.get("trackability_mutation_vectors", []):
+        name = vector.get("name", "<unnamed>")
+        if name in names:
+            failures.append(f"duplicate vector name: {name}")
+            continue
+        names.add(name)
+        rejected = False
+        kind = vector.get("kind")
+        if kind == "classification":
+            action = vector.get("action_key")
+            authoritative = "trackable" if action in TRACKABLE_ACTIONS else "informational_only"
+            rejected = vector.get("value") != authoritative
+        elif kind == "informational_offer":
+            rejected = vector.get("action_key") in INFORMATIONAL_ACTIONS and vector.get("value") is True
+        elif kind == "informational_repeat":
+            rejected = vector.get("action_key") in INFORMATIONAL_ACTIONS and vector.get("value") is True
+        elif kind == "copy":
+            rejected = vector.get("value") != INFORMATIONAL_COPY_AR
+        elif kind == "version_alias":
+            rejected = vector.get("value") == "w3-priority-1.0.0"
+        elif kind == "progress":
+            base = deepcopy(progress_by_name[vector["action_key"]])
+            field = "bypass_scheduled_day_mask" if name == "mask_bypass" else "force_qualifies"
+            base[field] = vector.get("value")
+            try:
+                evaluate_progress(base)
+            except ValueError:
+                rejected = True
+        if rejected:
+            negative_passed += 1
+        else:
+            failures.append(f"{name}: required negative mutation was accepted")
     if not names:
         failures.append("vectors must be non-empty")
-    return passed, failures
+    return passed, negative_passed, failures
 
 
 def main() -> int:
@@ -737,13 +944,15 @@ def main() -> int:
         return 2
     try:
         document = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-        passed, failures = validate(document)
+        passed, negative_passed, failures = validate(document)
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
         print(f"plan033: invalid vector document: {error}", file=sys.stderr)
         return 2
     for failure in failures:
         print(f"FAIL: {failure}")
-    print(f"plan033: {passed} passed, {len(failures)} failed")
+    print(f"plan033 positive vectors: {passed} passed")
+    print(f"plan033 negative mutations: {negative_passed} rejected")
+    print(f"plan033 total: {passed + negative_passed} passed, {len(failures)} failed")
     return 1 if failures else 0
 
 
