@@ -1,52 +1,196 @@
 {
   "schema_version": 1,
   "seed": 3302026,
-  "rules_version": "w3-priority-1.0.0",
-  "copy_version": "w3-priority-ar-1.0.0",
-  "repeat_request_identity_fields": ["principal_ref", "operation", "source_goal_id", "event", "repeat_mode", "expected_version", "weekly_target_count"],
+  "rules_version": "w3-priority-1.1.0",
+  "copy_version": "w3-priority-ar-1.1.0",
+  "repeat_request_identity_fields": [
+    "principal_ref",
+    "operation",
+    "source_goal_id",
+    "event",
+    "repeat_mode",
+    "expected_version",
+    "weekly_target_count"
+  ],
   "selection_vectors": [
     {
       "name": "invalid-input-fails-closed",
       "input_state": "invalid_analysis_input",
       "calories_relation": "within_target",
       "candidates": [],
-      "expected": {"main": null, "secondary": null, "reason": "invalid_analysis_input"}
+      "expected": {
+        "main": null,
+        "secondary": null,
+        "reason": "invalid_analysis_input"
+      }
     },
     {
       "name": "complete-empty-days-are-valid-zero-evidence",
       "input_state": "eligible",
       "calories_relation": "within_target",
       "days": [
-        {"date": "2026-08-10", "logging_status": "complete", "analysis_eligible": true, "entry_count": 0, "known_metric_entry_count": 0, "metrics": {}},
-        {"date": "2026-08-11", "logging_status": "complete", "analysis_eligible": true, "entry_count": 0, "known_metric_entry_count": 0, "metrics": {}},
-        {"date": "2026-08-12", "logging_status": "complete", "analysis_eligible": true, "entry_count": 0, "known_metric_entry_count": 0, "metrics": {}},
-        {"date": "2026-08-13", "logging_status": "complete", "analysis_eligible": true, "entry_count": 0, "known_metric_entry_count": 0, "metrics": {}},
-        {"date": "2026-08-14", "logging_status": "partial", "analysis_eligible": false, "entry_count": 1, "metrics": {"fiber_g": 300}},
-        {"date": "2026-08-15", "logging_status": "unregistered", "analysis_eligible": false, "entry_count": 0, "metrics": {"fiber_g": 300}},
-        {"date": "2026-08-16", "logging_status": "unregistered", "analysis_eligible": false, "entry_count": 0, "metrics": {}}
+        {
+          "date": "2026-08-10",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 0,
+          "known_metric_entry_count": 0,
+          "metrics": {}
+        },
+        {
+          "date": "2026-08-11",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 0,
+          "known_metric_entry_count": 0,
+          "metrics": {}
+        },
+        {
+          "date": "2026-08-12",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 0,
+          "known_metric_entry_count": 0,
+          "metrics": {}
+        },
+        {
+          "date": "2026-08-13",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 0,
+          "known_metric_entry_count": 0,
+          "metrics": {}
+        },
+        {
+          "date": "2026-08-14",
+          "logging_status": "partial",
+          "analysis_eligible": false,
+          "entry_count": 1,
+          "metrics": {
+            "fiber_g": 300
+          }
+        },
+        {
+          "date": "2026-08-15",
+          "logging_status": "unregistered",
+          "analysis_eligible": false,
+          "entry_count": 0,
+          "metrics": {
+            "fiber_g": 300
+          }
+        },
+        {
+          "date": "2026-08-16",
+          "logging_status": "unregistered",
+          "analysis_eligible": false,
+          "entry_count": 0,
+          "metrics": {}
+        }
       ],
       "candidates": [
-        {"key": "fiber_gap", "tier": 2, "derive_from_days": true, "metric_key": "fiber_g", "target": 30, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
+        {
+          "key": "fiber_gap",
+          "tier": 2,
+          "derive_from_days": true,
+          "metric_key": "fiber_g",
+          "target": 30,
+          "actionable": true,
+          "conflict_group": "fiber",
+          "taxonomy_order": 170
+        }
       ],
-      "expected": {"main": "fiber_gap", "secondary": null, "reason": "selected"}
+      "expected": {
+        "main": "fiber_gap",
+        "secondary": null,
+        "reason": "selected"
+      }
     },
     {
       "name": "nonempty-unknown-metric-is-not-zero-and-incomplete-values-are-excluded",
       "input_state": "eligible",
       "calories_relation": "within_target",
       "days": [
-        {"date": "2026-08-10", "logging_status": "complete", "analysis_eligible": true, "entry_count": 1, "known_metric_entry_count": 1, "metrics": {"fiber_g": 30}},
-        {"date": "2026-08-11", "logging_status": "complete", "analysis_eligible": true, "entry_count": 1, "known_metric_entry_count": 1, "metrics": {"fiber_g": 30}},
-        {"date": "2026-08-12", "logging_status": "complete", "analysis_eligible": true, "entry_count": 1, "known_metric_entry_count": 1, "metrics": {"fiber_g": 30}},
-        {"date": "2026-08-13", "logging_status": "complete", "analysis_eligible": true, "entry_count": 1, "known_metric_entry_count": 0, "metrics": {}},
-        {"date": "2026-08-14", "logging_status": "partial", "analysis_eligible": false, "entry_count": 1, "metrics": {"fiber_g": 0}},
-        {"date": "2026-08-15", "logging_status": "unregistered", "analysis_eligible": false, "entry_count": 0, "metrics": {"fiber_g": 0}},
-        {"date": "2026-08-16", "logging_status": "unregistered", "analysis_eligible": false, "entry_count": 0, "metrics": {}}
+        {
+          "date": "2026-08-10",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "known_metric_entry_count": 1,
+          "metrics": {
+            "fiber_g": 30
+          }
+        },
+        {
+          "date": "2026-08-11",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "known_metric_entry_count": 1,
+          "metrics": {
+            "fiber_g": 30
+          }
+        },
+        {
+          "date": "2026-08-12",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "known_metric_entry_count": 1,
+          "metrics": {
+            "fiber_g": 30
+          }
+        },
+        {
+          "date": "2026-08-13",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "known_metric_entry_count": 0,
+          "metrics": {}
+        },
+        {
+          "date": "2026-08-14",
+          "logging_status": "partial",
+          "analysis_eligible": false,
+          "entry_count": 1,
+          "metrics": {
+            "fiber_g": 0
+          }
+        },
+        {
+          "date": "2026-08-15",
+          "logging_status": "unregistered",
+          "analysis_eligible": false,
+          "entry_count": 0,
+          "metrics": {
+            "fiber_g": 0
+          }
+        },
+        {
+          "date": "2026-08-16",
+          "logging_status": "unregistered",
+          "analysis_eligible": false,
+          "entry_count": 0,
+          "metrics": {}
+        }
       ],
       "candidates": [
-        {"key": "fiber_gap", "tier": 2, "derive_from_days": true, "metric_key": "fiber_g", "target": 30, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
+        {
+          "key": "fiber_gap",
+          "tier": 2,
+          "derive_from_days": true,
+          "metric_key": "fiber_g",
+          "target": 30,
+          "actionable": true,
+          "conflict_group": "fiber",
+          "taxonomy_order": 170
+        }
       ],
-      "expected": {"main": null, "secondary": null, "reason": "no_eligible_priority"}
+      "expected": {
+        "main": null,
+        "secondary": null,
+        "reason": "no_eligible_priority"
+      }
     },
     {
       "name": "limit-precedes-larger-positive-gap",
@@ -54,10 +198,31 @@
       "complete_days": 6,
       "calories_relation": "within_target",
       "candidates": [
-        {"key": "fiber_gap", "tier": 2, "severity": 0.70, "coverage": 95, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170},
-        {"key": "sodium_overage", "tier": 1, "severity": 0.15, "repeat_events": 3, "coverage": 90, "actionable": true, "conflict_group": "sodium", "taxonomy_order": 10}
+        {
+          "key": "fiber_gap",
+          "tier": 2,
+          "severity": 0.7,
+          "coverage": 95,
+          "actionable": true,
+          "conflict_group": "fiber",
+          "taxonomy_order": 170
+        },
+        {
+          "key": "sodium_overage",
+          "tier": 1,
+          "severity": 0.15,
+          "repeat_events": 3,
+          "coverage": 90,
+          "actionable": true,
+          "conflict_group": "sodium",
+          "taxonomy_order": 10
+        }
       ],
-      "expected": {"main": "sodium_overage", "secondary": "fiber_gap", "reason": "selected"}
+      "expected": {
+        "main": "sodium_overage",
+        "secondary": "fiber_gap",
+        "reason": "selected"
+      }
     },
     {
       "name": "single-limit-overage-is-not-repeated",
@@ -65,9 +230,22 @@
       "complete_days": 5,
       "calories_relation": "within_target",
       "candidates": [
-        {"key": "sodium_overage", "tier": 1, "severity": 0.50, "repeat_events": 1, "coverage": 100, "actionable": true, "conflict_group": "sodium", "taxonomy_order": 10}
+        {
+          "key": "sodium_overage",
+          "tier": 1,
+          "severity": 0.5,
+          "repeat_events": 1,
+          "coverage": 100,
+          "actionable": true,
+          "conflict_group": "sodium",
+          "taxonomy_order": 10
+        }
       ],
-      "expected": {"main": null, "secondary": null, "reason": "no_eligible_priority"}
+      "expected": {
+        "main": null,
+        "secondary": null,
+        "reason": "no_eligible_priority"
+      }
     },
     {
       "name": "micronutrient-requires-two-weeks",
@@ -75,9 +253,22 @@
       "complete_days": 7,
       "calories_relation": "within_target",
       "candidates": [
-        {"key": "iron_gap", "tier": 3, "severity": 0.60, "coverage": 90, "persistent_weeks": 1, "actionable": true, "conflict_group": "iron", "taxonomy_order": 230}
+        {
+          "key": "iron_gap",
+          "tier": 3,
+          "severity": 0.6,
+          "coverage": 90,
+          "persistent_weeks": 1,
+          "actionable": true,
+          "conflict_group": "iron",
+          "taxonomy_order": 230
+        }
       ],
-      "expected": {"main": null, "secondary": null, "reason": "no_eligible_priority"}
+      "expected": {
+        "main": null,
+        "secondary": null,
+        "reason": "no_eligible_priority"
+      }
     },
     {
       "name": "micronutrient-with-persistent-strong-evidence",
@@ -85,9 +276,22 @@
       "complete_days": 7,
       "calories_relation": "within_target",
       "candidates": [
-        {"key": "iron_gap", "tier": 3, "severity": 0.35, "coverage": 90, "persistent_weeks": 2, "actionable": true, "conflict_group": "iron", "taxonomy_order": 230}
+        {
+          "key": "iron_gap",
+          "tier": 3,
+          "severity": 0.35,
+          "coverage": 90,
+          "persistent_weeks": 2,
+          "actionable": true,
+          "conflict_group": "iron",
+          "taxonomy_order": 230
+        }
       ],
-      "expected": {"main": "iron_gap", "secondary": null, "reason": "selected"}
+      "expected": {
+        "main": "iron_gap",
+        "secondary": null,
+        "reason": "selected"
+      }
     },
     {
       "name": "exact-tie-uses-taxonomy-order",
@@ -95,10 +299,30 @@
       "complete_days": 6,
       "calories_relation": "within_target",
       "candidates": [
-        {"key": "fiber_gap", "tier": 2, "severity": 0.40, "coverage": 90, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170},
-        {"key": "legumes_gap", "tier": 2, "severity": 0.40, "coverage": 90, "actionable": true, "conflict_group": "legumes", "taxonomy_order": 120}
+        {
+          "key": "fiber_gap",
+          "tier": 2,
+          "severity": 0.4,
+          "coverage": 90,
+          "actionable": true,
+          "conflict_group": "fiber",
+          "taxonomy_order": 170
+        },
+        {
+          "key": "legumes_gap",
+          "tier": 2,
+          "severity": 0.4,
+          "coverage": 90,
+          "actionable": true,
+          "conflict_group": "legumes",
+          "taxonomy_order": 120
+        }
       ],
-      "expected": {"main": "legumes_gap", "secondary": "fiber_gap", "reason": "selected"}
+      "expected": {
+        "main": "legumes_gap",
+        "secondary": "fiber_gap",
+        "reason": "selected"
+      }
     },
     {
       "name": "duplicate-evidence-blocks-secondary",
@@ -106,10 +330,32 @@
       "complete_days": 6,
       "calories_relation": "within_target",
       "candidates": [
-        {"key": "added_sugar_overage", "tier": 1, "severity": 0.40, "repeat_events": 3, "coverage": 95, "actionable": true, "conflict_group": "sweet-drinks", "taxonomy_order": 20},
-        {"key": "sugary_drink_frequency", "tier": 1, "severity": 0.35, "repeat_events": 3, "coverage": 95, "actionable": true, "conflict_group": "sweet-drinks", "taxonomy_order": 60}
+        {
+          "key": "added_sugar_overage",
+          "tier": 1,
+          "severity": 0.4,
+          "repeat_events": 3,
+          "coverage": 95,
+          "actionable": true,
+          "conflict_group": "sweet-drinks",
+          "taxonomy_order": 20
+        },
+        {
+          "key": "sugary_drink_frequency",
+          "tier": 1,
+          "severity": 0.35,
+          "repeat_events": 3,
+          "coverage": 95,
+          "actionable": true,
+          "conflict_group": "sweet-drinks",
+          "taxonomy_order": 60
+        }
       ],
-      "expected": {"main": "added_sugar_overage", "secondary": null, "reason": "selected"}
+      "expected": {
+        "main": "added_sugar_overage",
+        "secondary": null,
+        "reason": "selected"
+      }
     },
     {
       "name": "above-calorie-target-prefers-replacement",
@@ -117,10 +363,32 @@
       "complete_days": 6,
       "calories_relation": "above_target",
       "candidates": [
-        {"key": "fiber_gap", "tier": 2, "severity": 0.50, "coverage": 95, "actionable": true, "action_mode": "add", "conflict_group": "fiber", "taxonomy_order": 170},
-        {"key": "fiber_gap", "tier": 2, "severity": 0.50, "coverage": 95, "actionable": true, "action_mode": "replace", "conflict_group": "fiber", "taxonomy_order": 170}
+        {
+          "key": "fiber_gap",
+          "tier": 2,
+          "severity": 0.5,
+          "coverage": 95,
+          "actionable": true,
+          "action_mode": "add",
+          "conflict_group": "fiber",
+          "taxonomy_order": 170
+        },
+        {
+          "key": "fiber_gap",
+          "tier": 2,
+          "severity": 0.5,
+          "coverage": 95,
+          "actionable": true,
+          "action_mode": "replace",
+          "conflict_group": "fiber",
+          "taxonomy_order": 170
+        }
       ],
-      "expected": {"main": "fiber_gap", "secondary": null, "reason": "selected"}
+      "expected": {
+        "main": "fiber_gap",
+        "secondary": null,
+        "reason": "selected"
+      }
     },
     {
       "name": "insufficient-complete-days-produces-none",
@@ -128,9 +396,21 @@
       "complete_days": 3,
       "calories_relation": "within_target",
       "candidates": [
-        {"key": "fiber_gap", "tier": 2, "severity": 0.80, "coverage": 100, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
+        {
+          "key": "fiber_gap",
+          "tier": 2,
+          "severity": 0.8,
+          "coverage": 100,
+          "actionable": true,
+          "conflict_group": "fiber",
+          "taxonomy_order": 170
+        }
       ],
-      "expected": {"main": null, "secondary": null, "reason": "insufficient_complete_days"}
+      "expected": {
+        "main": null,
+        "secondary": null,
+        "reason": "insufficient_complete_days"
+      }
     },
     {
       "name": "rejected-goal-without-new-evidence-is-suppressed",
@@ -142,18 +422,30 @@
         "current_principal_ref": "principal-a",
         "rejected_rule_key": "fiber_gap",
         "current_rule_key": "fiber_gap",
-        "rejected_rules_version": "w3-priority-1.0.0",
-        "current_rules_version": "w3-priority-1.0.0",
+        "rejected_rules_version": "w3-priority-1.1.0",
+        "current_rules_version": "w3-priority-1.1.0",
         "rejected_analysis_revision": 7,
         "current_analysis_revision": 8,
         "new_complete_dates_after_rejection": 0,
-        "rejected_severity": 0.40,
+        "rejected_severity": 0.4,
         "rejected_action_key": "replace_with_fiber_source"
       },
       "candidates": [
-        {"key": "fiber_gap", "tier": 2, "severity": 0.50, "coverage": 100, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
+        {
+          "key": "fiber_gap",
+          "tier": 2,
+          "severity": 0.5,
+          "coverage": 100,
+          "actionable": true,
+          "conflict_group": "fiber",
+          "taxonomy_order": 170
+        }
       ],
-      "expected": {"main": null, "secondary": null, "reason": "rejected_goal_suppression"}
+      "expected": {
+        "main": null,
+        "secondary": null,
+        "reason": "rejected_goal_suppression"
+      }
     },
     {
       "name": "rejected-goal-new-evidence-restores-eligibility",
@@ -165,18 +457,30 @@
         "current_principal_ref": "principal-a",
         "rejected_rule_key": "fiber_gap",
         "current_rule_key": "fiber_gap",
-        "rejected_rules_version": "w3-priority-1.0.0",
-        "current_rules_version": "w3-priority-1.0.0",
+        "rejected_rules_version": "w3-priority-1.1.0",
+        "current_rules_version": "w3-priority-1.1.0",
         "rejected_analysis_revision": 7,
         "current_analysis_revision": 8,
         "new_complete_dates_after_rejection": 1,
-        "rejected_severity": 0.40,
+        "rejected_severity": 0.4,
         "rejected_action_key": "replace_with_fiber_source"
       },
       "candidates": [
-        {"key": "fiber_gap", "tier": 2, "severity": 0.50, "coverage": 100, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
+        {
+          "key": "fiber_gap",
+          "tier": 2,
+          "severity": 0.5,
+          "coverage": 100,
+          "actionable": true,
+          "conflict_group": "fiber",
+          "taxonomy_order": 170
+        }
       ],
-      "expected": {"main": "fiber_gap", "secondary": null, "reason": "selected"}
+      "expected": {
+        "main": "fiber_gap",
+        "secondary": null,
+        "reason": "selected"
+      }
     },
     {
       "name": "rejected-rule-action-change-without-new-complete-day-remains-suppressed",
@@ -188,18 +492,31 @@
         "current_principal_ref": "principal-a",
         "rejected_rule_key": "fiber_gap",
         "current_rule_key": "fiber_gap",
-        "rejected_rules_version": "w3-priority-1.0.0",
-        "current_rules_version": "w3-priority-1.0.0",
+        "rejected_rules_version": "w3-priority-1.1.0",
+        "current_rules_version": "w3-priority-1.1.0",
         "rejected_analysis_revision": 7,
         "current_analysis_revision": 8,
         "new_complete_dates_after_rejection": 0,
-        "rejected_severity": 0.40,
+        "rejected_severity": 0.4,
         "rejected_action_key": "replace_with_fiber_source"
       },
       "candidates": [
-        {"key": "fiber_gap", "tier": 2, "severity": 0.40, "coverage": 100, "actionable": true, "action_mode": "add", "conflict_group": "fiber", "taxonomy_order": 170}
+        {
+          "key": "fiber_gap",
+          "tier": 2,
+          "severity": 0.4,
+          "coverage": 100,
+          "actionable": true,
+          "action_mode": "add",
+          "conflict_group": "fiber",
+          "taxonomy_order": 170
+        }
       ],
-      "expected": {"main": null, "secondary": null, "reason": "rejected_goal_suppression"}
+      "expected": {
+        "main": null,
+        "secondary": null,
+        "reason": "rejected_goal_suppression"
+      }
     },
     {
       "name": "rejected-rule-action-change-with-new-complete-day-restores-eligibility",
@@ -211,18 +528,31 @@
         "current_principal_ref": "principal-a",
         "rejected_rule_key": "fiber_gap",
         "current_rule_key": "fiber_gap",
-        "rejected_rules_version": "w3-priority-1.0.0",
-        "current_rules_version": "w3-priority-1.0.0",
+        "rejected_rules_version": "w3-priority-1.1.0",
+        "current_rules_version": "w3-priority-1.1.0",
         "rejected_analysis_revision": 7,
         "current_analysis_revision": 8,
         "new_complete_dates_after_rejection": 1,
-        "rejected_severity": 0.40,
+        "rejected_severity": 0.4,
         "rejected_action_key": "replace_with_fiber_source"
       },
       "candidates": [
-        {"key": "fiber_gap", "tier": 2, "severity": 0.40, "coverage": 100, "actionable": true, "action_mode": "add", "conflict_group": "fiber", "taxonomy_order": 170}
+        {
+          "key": "fiber_gap",
+          "tier": 2,
+          "severity": 0.4,
+          "coverage": 100,
+          "actionable": true,
+          "action_mode": "add",
+          "conflict_group": "fiber",
+          "taxonomy_order": 170
+        }
       ],
-      "expected": {"main": "fiber_gap", "secondary": null, "reason": "selected"}
+      "expected": {
+        "main": "fiber_gap",
+        "secondary": null,
+        "reason": "selected"
+      }
     },
     {
       "name": "stale-analysis-produces-none",
@@ -230,7 +560,11 @@
       "complete_days": 7,
       "calories_relation": "within_target",
       "candidates": [],
-      "expected": {"main": null, "secondary": null, "reason": "stale_analysis"}
+      "expected": {
+        "main": null,
+        "secondary": null,
+        "reason": "stale_analysis"
+      }
     },
     {
       "name": "superseded-analysis-produces-none",
@@ -238,7 +572,11 @@
       "complete_days": 7,
       "calories_relation": "within_target",
       "candidates": [],
-      "expected": {"main": null, "secondary": null, "reason": "superseded_analysis"}
+      "expected": {
+        "main": null,
+        "secondary": null,
+        "reason": "superseded_analysis"
+      }
     },
     {
       "name": "safety-exclusion-produces-none",
@@ -246,7 +584,11 @@
       "complete_days": 7,
       "calories_relation": "within_target",
       "candidates": [],
-      "expected": {"main": null, "secondary": null, "reason": "safety_exclusion"}
+      "expected": {
+        "main": null,
+        "secondary": null,
+        "reason": "safety_exclusion"
+      }
     },
     {
       "name": "low-metric-coverage-excludes-candidate",
@@ -254,9 +596,21 @@
       "complete_days": 7,
       "calories_relation": "within_target",
       "candidates": [
-        {"key": "fiber_gap", "tier": 2, "severity": 0.75, "coverage": 74.99, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
+        {
+          "key": "fiber_gap",
+          "tier": 2,
+          "severity": 0.75,
+          "coverage": 74.99,
+          "actionable": true,
+          "conflict_group": "fiber",
+          "taxonomy_order": 170
+        }
       ],
-      "expected": {"main": null, "secondary": null, "reason": "no_eligible_priority"}
+      "expected": {
+        "main": null,
+        "secondary": null,
+        "reason": "no_eligible_priority"
+      }
     },
     {
       "name": "secondary-cap-never-admits-third",
@@ -264,128 +618,546 @@
       "complete_days": 7,
       "calories_relation": "within_target",
       "candidates": [
-        {"key": "sodium_overage", "tier": 1, "severity": 0.30, "repeat_events": 3, "coverage": 100, "actionable": true, "conflict_group": "sodium", "taxonomy_order": 10},
-        {"key": "legumes_gap", "tier": 2, "severity": 0.50, "coverage": 100, "actionable": true, "conflict_group": "legumes", "taxonomy_order": 120},
-        {"key": "fiber_gap", "tier": 2, "severity": 0.45, "coverage": 100, "actionable": true, "conflict_group": "fiber", "taxonomy_order": 170}
+        {
+          "key": "sodium_overage",
+          "tier": 1,
+          "severity": 0.3,
+          "repeat_events": 3,
+          "coverage": 100,
+          "actionable": true,
+          "conflict_group": "sodium",
+          "taxonomy_order": 10
+        },
+        {
+          "key": "legumes_gap",
+          "tier": 2,
+          "severity": 0.5,
+          "coverage": 100,
+          "actionable": true,
+          "conflict_group": "legumes",
+          "taxonomy_order": 120
+        },
+        {
+          "key": "fiber_gap",
+          "tier": 2,
+          "severity": 0.45,
+          "coverage": 100,
+          "actionable": true,
+          "conflict_group": "fiber",
+          "taxonomy_order": 170
+        }
       ],
-      "expected": {"main": "sodium_overage", "secondary": "legumes_gap", "reason": "selected"}
+      "expected": {
+        "main": "sodium_overage",
+        "secondary": "legumes_gap",
+        "reason": "selected"
+      }
     }
   ],
   "goal_vectors": [
     {
       "name": "offer-accept-pause-resume-end",
-      "initial": {"state": "offered", "version": 1, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0},
+      "initial": {
+        "state": "offered",
+        "version": 1,
+        "progress": 0,
+        "midweek_reminders": 0,
+        "endweek_reviews": 0
+      },
       "events": [
-        {"type": "accept", "expected_version": 1, "expected": {"result": "accepted", "state": "active", "version": 2, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}},
-        {"type": "pause", "expected_version": 2, "expected": {"result": "paused", "state": "paused", "version": 3, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}},
-        {"type": "resume", "expected_version": 3, "expected": {"result": "resumed", "state": "active", "version": 4, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}},
-        {"type": "end", "expected_version": 4, "expected": {"result": "ended", "state": "ended", "version": 5, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}}
+        {
+          "type": "accept",
+          "expected_version": 1,
+          "expected": {
+            "result": "accepted",
+            "state": "active",
+            "version": 2,
+            "progress": 0,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        },
+        {
+          "type": "pause",
+          "expected_version": 2,
+          "expected": {
+            "result": "paused",
+            "state": "paused",
+            "version": 3,
+            "progress": 0,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        },
+        {
+          "type": "resume",
+          "expected_version": 3,
+          "expected": {
+            "result": "resumed",
+            "state": "active",
+            "version": 4,
+            "progress": 0,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        },
+        {
+          "type": "end",
+          "expected_version": 4,
+          "expected": {
+            "result": "ended",
+            "state": "ended",
+            "version": 5,
+            "progress": 0,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        }
       ]
     },
     {
       "name": "offer-edit-activates",
-      "initial": {"state": "offered", "version": 1, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0},
+      "initial": {
+        "state": "offered",
+        "version": 1,
+        "progress": 0,
+        "midweek_reminders": 0,
+        "endweek_reviews": 0
+      },
       "events": [
-        {"type": "edit", "expected_version": 1, "expected": {"result": "edited", "state": "active", "version": 2, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}}
+        {
+          "type": "edit",
+          "expected_version": 1,
+          "expected": {
+            "result": "edited",
+            "state": "active",
+            "version": 2,
+            "progress": 0,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        }
       ]
     },
     {
       "name": "defer-then-accept",
-      "initial": {"state": "offered", "version": 4, "progress": null, "midweek_reminders": 0, "endweek_reviews": 0},
+      "initial": {
+        "state": "offered",
+        "version": 4,
+        "progress": null,
+        "midweek_reminders": 0,
+        "endweek_reviews": 0
+      },
       "events": [
-        {"type": "defer", "expected_version": 4, "expected": {"result": "deferred", "state": "deferred", "version": 5, "progress": null, "midweek_reminders": 0, "endweek_reviews": 0}},
-        {"type": "accept", "expected_version": 5, "expected": {"result": "accepted", "state": "active", "version": 6, "progress": null, "midweek_reminders": 0, "endweek_reviews": 0}}
+        {
+          "type": "defer",
+          "expected_version": 4,
+          "expected": {
+            "result": "deferred",
+            "state": "deferred",
+            "version": 5,
+            "progress": null,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        },
+        {
+          "type": "accept",
+          "expected_version": 5,
+          "expected": {
+            "result": "accepted",
+            "state": "active",
+            "version": 6,
+            "progress": null,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        }
       ]
     },
     {
       "name": "deferred-offer-can-be-rejected",
-      "initial": {"state": "deferred", "version": 3, "progress": null, "midweek_reminders": 0, "endweek_reviews": 0},
+      "initial": {
+        "state": "deferred",
+        "version": 3,
+        "progress": null,
+        "midweek_reminders": 0,
+        "endweek_reviews": 0
+      },
       "events": [
-        {"type": "reject", "expected_version": 3, "expected": {"result": "rejected", "state": "rejected", "version": 4, "progress": null, "midweek_reminders": 0, "endweek_reviews": 0}}
+        {
+          "type": "reject",
+          "expected_version": 3,
+          "expected": {
+            "result": "rejected",
+            "state": "rejected",
+            "version": 4,
+            "progress": null,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        }
       ]
     },
     {
       "name": "existing-primary-blocks-second-accept",
-      "initial": {"state": "offered", "version": 1, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0, "other_primary_exists": true},
+      "initial": {
+        "state": "offered",
+        "version": 1,
+        "progress": 0,
+        "midweek_reminders": 0,
+        "endweek_reviews": 0,
+        "other_primary_exists": true
+      },
       "events": [
-        {"type": "accept", "expected_version": 1, "expected": {"result": "primary_goal_exists", "state": "offered", "version": 1, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}}
+        {
+          "type": "accept",
+          "expected_version": 1,
+          "expected": {
+            "result": "primary_goal_exists",
+            "state": "offered",
+            "version": 1,
+            "progress": 0,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        }
       ]
     },
     {
       "name": "reject-is-terminal",
-      "initial": {"state": "offered", "version": 1, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0},
+      "initial": {
+        "state": "offered",
+        "version": 1,
+        "progress": 0,
+        "midweek_reminders": 0,
+        "endweek_reviews": 0
+      },
       "events": [
-        {"type": "reject", "expected_version": 1, "expected": {"result": "rejected", "state": "rejected", "version": 2, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}},
-        {"type": "accept", "expected_version": 2, "expected": {"result": "invalid_transition", "state": "rejected", "version": 2, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}}
+        {
+          "type": "reject",
+          "expected_version": 1,
+          "expected": {
+            "result": "rejected",
+            "state": "rejected",
+            "version": 2,
+            "progress": 0,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        },
+        {
+          "type": "accept",
+          "expected_version": 2,
+          "expected": {
+            "result": "invalid_transition",
+            "state": "rejected",
+            "version": 2,
+            "progress": 0,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        }
       ]
     },
     {
       "name": "concurrent-command-stale-version",
-      "initial": {"state": "active", "version": 8, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0},
+      "initial": {
+        "state": "active",
+        "version": 8,
+        "progress": 0,
+        "midweek_reminders": 0,
+        "endweek_reviews": 0
+      },
       "events": [
-        {"type": "pause", "expected_version": 8, "expected": {"result": "paused", "state": "paused", "version": 9, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}},
-        {"type": "end", "expected_version": 8, "expected": {"result": "stale_version_conflict", "state": "paused", "version": 9, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}}
+        {
+          "type": "pause",
+          "expected_version": 8,
+          "expected": {
+            "result": "paused",
+            "state": "paused",
+            "version": 9,
+            "progress": 0,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        },
+        {
+          "type": "end",
+          "expected_version": 8,
+          "expected": {
+            "result": "stale_version_conflict",
+            "state": "paused",
+            "version": 9,
+            "progress": 0,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        }
       ]
     },
     {
       "name": "progress-is-derived-and-can-complete",
-      "initial": {"state": "active", "version": 2, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0},
+      "initial": {
+        "state": "active",
+        "version": 2,
+        "progress": 0,
+        "midweek_reminders": 0,
+        "endweek_reviews": 0
+      },
       "events": [
-        {"type": "progress", "expected_version": 2, "derived_progress": 50, "expected": {"result": "progress_updated", "state": "active", "version": 3, "progress": 50, "midweek_reminders": 0, "endweek_reviews": 0}},
-        {"type": "progress", "expected_version": 3, "derived_progress": 100, "expected": {"result": "progress_updated", "state": "active", "version": 4, "progress": 100, "midweek_reminders": 0, "endweek_reviews": 0}},
-        {"type": "complete", "expected_version": 4, "expected": {"result": "completed", "state": "completed", "version": 5, "progress": 100, "midweek_reminders": 0, "endweek_reviews": 0}}
+        {
+          "type": "progress",
+          "expected_version": 2,
+          "derived_progress": 50,
+          "expected": {
+            "result": "progress_updated",
+            "state": "active",
+            "version": 3,
+            "progress": 50,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        },
+        {
+          "type": "progress",
+          "expected_version": 3,
+          "derived_progress": 100,
+          "expected": {
+            "result": "progress_updated",
+            "state": "active",
+            "version": 4,
+            "progress": 100,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        },
+        {
+          "type": "complete",
+          "expected_version": 4,
+          "expected": {
+            "result": "completed",
+            "state": "completed",
+            "version": 5,
+            "progress": 100,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        }
       ]
     },
     {
       "name": "reopen-revokes-provisional-completion",
-      "initial": {"state": "completed", "version": 5, "progress": 100, "midweek_reminders": 0, "endweek_reviews": 0},
+      "initial": {
+        "state": "completed",
+        "version": 5,
+        "progress": 100,
+        "midweek_reminders": 0,
+        "endweek_reviews": 0
+      },
       "events": [
-        {"type": "evidence_reopened", "expected_version": 5, "expected": {"result": "evidence_reopened", "state": "active", "version": 6, "progress": 100, "midweek_reminders": 0, "endweek_reviews": 0}},
-        {"type": "progress", "expected_version": 6, "derived_progress": 50, "expected": {"result": "progress_updated", "state": "active", "version": 7, "progress": 50, "midweek_reminders": 0, "endweek_reviews": 0}}
+        {
+          "type": "evidence_reopened",
+          "expected_version": 5,
+          "expected": {
+            "result": "evidence_reopened",
+            "state": "active",
+            "version": 6,
+            "progress": 100,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        },
+        {
+          "type": "progress",
+          "expected_version": 6,
+          "derived_progress": 50,
+          "expected": {
+            "result": "progress_updated",
+            "state": "active",
+            "version": 7,
+            "progress": 50,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        }
       ]
     },
     {
       "name": "midweek-reminder-once-only-at-zero-progress",
-      "initial": {"state": "active", "version": 1, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0},
+      "initial": {
+        "state": "active",
+        "version": 1,
+        "progress": 0,
+        "midweek_reminders": 0,
+        "endweek_reviews": 0
+      },
       "events": [
-        {"type": "midweek_reminder", "expected_version": 1, "midweek_eligible": true, "expected": {"result": "sent", "state": "active", "version": 2, "progress": 0, "midweek_reminders": 1, "endweek_reviews": 0}},
-        {"type": "midweek_reminder", "expected_version": 2, "midweek_eligible": true, "expected": {"result": "suppressed", "state": "active", "version": 2, "progress": 0, "midweek_reminders": 1, "endweek_reviews": 0}}
+        {
+          "type": "midweek_reminder",
+          "expected_version": 1,
+          "midweek_eligible": true,
+          "expected": {
+            "result": "sent",
+            "state": "active",
+            "version": 2,
+            "progress": 0,
+            "midweek_reminders": 1,
+            "endweek_reviews": 0
+          }
+        },
+        {
+          "type": "midweek_reminder",
+          "expected_version": 2,
+          "midweek_eligible": true,
+          "expected": {
+            "result": "suppressed",
+            "state": "active",
+            "version": 2,
+            "progress": 0,
+            "midweek_reminders": 1,
+            "endweek_reviews": 0
+          }
+        }
       ]
     },
     {
       "name": "midweek-reminder-suppressed-after-progress",
-      "initial": {"state": "active", "version": 3, "progress": 25, "midweek_reminders": 0, "endweek_reviews": 0},
+      "initial": {
+        "state": "active",
+        "version": 3,
+        "progress": 25,
+        "midweek_reminders": 0,
+        "endweek_reviews": 0
+      },
       "events": [
-        {"type": "midweek_reminder", "expected_version": 3, "midweek_eligible": true, "expected": {"result": "suppressed", "state": "active", "version": 3, "progress": 25, "midweek_reminders": 0, "endweek_reviews": 0}}
+        {
+          "type": "midweek_reminder",
+          "expected_version": 3,
+          "midweek_eligible": true,
+          "expected": {
+            "result": "suppressed",
+            "state": "active",
+            "version": 3,
+            "progress": 25,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        }
       ]
     },
     {
       "name": "endweek-review-once-for-paused-goal",
-      "initial": {"state": "paused", "version": 6, "progress": null, "midweek_reminders": 0, "endweek_reviews": 0},
+      "initial": {
+        "state": "paused",
+        "version": 6,
+        "progress": null,
+        "midweek_reminders": 0,
+        "endweek_reviews": 0
+      },
       "events": [
-        {"type": "endweek_review", "expected_version": 6, "endweek_eligible": true, "expected": {"result": "sent", "state": "paused", "version": 7, "progress": null, "midweek_reminders": 0, "endweek_reviews": 1}},
-        {"type": "endweek_review", "expected_version": 7, "endweek_eligible": true, "expected": {"result": "suppressed", "state": "paused", "version": 7, "progress": null, "midweek_reminders": 0, "endweek_reviews": 1}}
+        {
+          "type": "endweek_review",
+          "expected_version": 6,
+          "endweek_eligible": true,
+          "expected": {
+            "result": "sent",
+            "state": "paused",
+            "version": 7,
+            "progress": null,
+            "midweek_reminders": 0,
+            "endweek_reviews": 1
+          }
+        },
+        {
+          "type": "endweek_review",
+          "expected_version": 7,
+          "endweek_eligible": true,
+          "expected": {
+            "result": "suppressed",
+            "state": "paused",
+            "version": 7,
+            "progress": null,
+            "midweek_reminders": 0,
+            "endweek_reviews": 1
+          }
+        }
       ]
     },
     {
       "name": "midweek-reminder-respects-opt-out",
-      "initial": {"state": "active", "version": 2, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0},
+      "initial": {
+        "state": "active",
+        "version": 2,
+        "progress": 0,
+        "midweek_reminders": 0,
+        "endweek_reviews": 0
+      },
       "events": [
-        {"type": "midweek_reminder", "expected_version": 2, "midweek_eligible": true, "opted_out": true, "expected": {"result": "suppressed", "state": "active", "version": 2, "progress": 0, "midweek_reminders": 0, "endweek_reviews": 0}}
+        {
+          "type": "midweek_reminder",
+          "expected_version": 2,
+          "midweek_eligible": true,
+          "opted_out": true,
+          "expected": {
+            "result": "suppressed",
+            "state": "active",
+            "version": 2,
+            "progress": 0,
+            "midweek_reminders": 0,
+            "endweek_reviews": 0
+          }
+        }
       ]
     },
     {
       "name": "ended-window-finalizes-as-immutable-incomplete",
-      "initial": {"state": "active", "version": 4, "progress": 1, "midweek_reminders": 1, "endweek_reviews": 1},
+      "initial": {
+        "state": "active",
+        "version": 4,
+        "progress": 1,
+        "midweek_reminders": 1,
+        "endweek_reviews": 1
+      },
       "events": [
-        {"type": "finalize_incomplete", "expected_version": 4, "window_ended": true, "target_reached": false, "expected": {"result": "finalized_incomplete", "state": "incomplete", "version": 5, "progress": 1, "midweek_reminders": 1, "endweek_reviews": 1}}
+        {
+          "type": "finalize_incomplete",
+          "expected_version": 4,
+          "window_ended": true,
+          "target_reached": false,
+          "expected": {
+            "result": "finalized_incomplete",
+            "state": "incomplete",
+            "version": 5,
+            "progress": 1,
+            "midweek_reminders": 1,
+            "endweek_reviews": 1
+          }
+        }
       ]
     },
     {
       "name": "incomplete-review-can-end-without-successor",
-      "initial": {"state": "incomplete", "version": 5, "progress": 1, "midweek_reminders": 1, "endweek_reviews": 1},
+      "initial": {
+        "state": "incomplete",
+        "version": 5,
+        "progress": 1,
+        "midweek_reminders": 1,
+        "endweek_reviews": 1
+      },
       "events": [
-        {"type": "end", "expected_version": 5, "expected": {"result": "ended", "state": "ended", "version": 6, "progress": 1, "midweek_reminders": 1, "endweek_reviews": 1}}
+        {
+          "type": "end",
+          "expected_version": 5,
+          "expected": {
+            "result": "ended",
+            "state": "ended",
+            "version": 6,
+            "progress": 1,
+            "midweek_reminders": 1,
+            "endweek_reviews": 1
+          }
+        }
       ]
     }
   ],
@@ -395,23 +1167,150 @@
       "initial": {
         "principal_ref": "principal-a",
         "captured_diary_date": "2026-08-17",
-        "source_goal": {"goal_id": "goal-week-1", "root_goal_id": "goal-root", "sequence_number": 1, "state": "incomplete", "version": 5, "window_start": "2026-08-10", "window_end": "2026-08-16", "progress_status": "insufficient_evidence", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "history_count": 7, "midweek_reminders": 1, "endweek_reviews": 1},
-        "current_priority": {"status": "selected", "main_rule_key": "fiber_gap", "secondary_rule_key": "legumes_gap", "rules_version": "w3-priority-1.0.0", "action_key": "replace_with_fiber_source", "recommendation_id": "recommendation-week-2"},
+        "source_goal": {
+          "goal_id": "goal-week-1",
+          "root_goal_id": "goal-root",
+          "sequence_number": 1,
+          "state": "incomplete",
+          "version": 5,
+          "window_start": "2026-08-10",
+          "window_end": "2026-08-16",
+          "progress_status": "insufficient_evidence",
+          "weekly_target_count": 3,
+          "rule_key": "legumes_gap",
+          "action_key": "replace_with_legumes",
+          "rules_version": "w3-priority-1.1.0",
+          "history_count": 7,
+          "midweek_reminders": 1,
+          "endweek_reviews": 1
+        },
+        "current_priority": {
+          "status": "selected",
+          "main_rule_key": "legumes_gap",
+          "secondary_rule_key": "legumes_gap",
+          "rules_version": "w3-priority-1.1.0",
+          "action_key": "replace_with_legumes",
+          "recommendation_id": "recommendation-week-2"
+        },
         "other_primary_exists": false,
         "created_goal_ids": []
       },
       "events": [
         {
-          "type": "repeat", "repeat_mode": "same", "expected_version": 5, "weekly_target_count": null, "idempotency_key": "repeat-same", "_server_generated_goal_id": "goal-week-2",
-          "expected": {"result": "repeated", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "insufficient_evidence", "source_history_count": 7, "source_midweek_reminders": 1, "source_endweek_reviews": 1, "new_goal": {"goal_id": "goal-week-2", "root_goal_id": "goal-root", "previous_goal_id": "goal-week-1", "sequence_number": 2, "state": "active", "version": 1, "window_start": "2026-08-17", "window_end": "2026-08-23", "progress": 0, "progress_status": "unknown", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "recommendation_id": "recommendation-week-2", "history_count": 1, "midweek_reminders": 0, "endweek_reviews": 0}, "created_goal_count": 1, "priority_main": "fiber_gap", "priority_secondary": "legumes_gap"}
+          "type": "repeat",
+          "repeat_mode": "same",
+          "expected_version": 5,
+          "weekly_target_count": null,
+          "idempotency_key": "repeat-same",
+          "_server_generated_goal_id": "goal-week-2",
+          "expected": {
+            "result": "repeated",
+            "source_goal_id": "goal-week-1",
+            "source_state": "incomplete",
+            "source_version": 5,
+            "source_window": [
+              "2026-08-10",
+              "2026-08-16"
+            ],
+            "source_progress_status": "insufficient_evidence",
+            "source_history_count": 7,
+            "source_midweek_reminders": 1,
+            "source_endweek_reviews": 1,
+            "new_goal": {
+              "goal_id": "goal-week-2",
+              "root_goal_id": "goal-root",
+              "previous_goal_id": "goal-week-1",
+              "sequence_number": 2,
+              "state": "active",
+              "version": 1,
+              "window_start": "2026-08-17",
+              "window_end": "2026-08-23",
+              "progress": 0,
+              "progress_status": "unknown",
+              "weekly_target_count": 3,
+              "rule_key": "legumes_gap",
+              "action_key": "replace_with_legumes",
+              "rules_version": "w3-priority-1.1.0",
+              "recommendation_id": "recommendation-week-2",
+              "history_count": 1,
+              "midweek_reminders": 0,
+              "endweek_reviews": 0
+            },
+            "created_goal_count": 1,
+            "priority_main": "legumes_gap",
+            "priority_secondary": "legumes_gap"
+          }
         },
         {
-          "type": "repeat", "repeat_mode": "same", "expected_version": 5, "weekly_target_count": null, "idempotency_key": "repeat-same", "_server_generated_goal_id": "ignored-on-replay",
-          "expected": {"result": "repeated", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "insufficient_evidence", "source_history_count": 7, "source_midweek_reminders": 1, "source_endweek_reviews": 1, "new_goal": {"goal_id": "goal-week-2", "root_goal_id": "goal-root", "previous_goal_id": "goal-week-1", "sequence_number": 2, "state": "active", "version": 1, "window_start": "2026-08-17", "window_end": "2026-08-23", "progress": 0, "progress_status": "unknown", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "recommendation_id": "recommendation-week-2", "history_count": 1, "midweek_reminders": 0, "endweek_reviews": 0}, "created_goal_count": 1, "priority_main": "fiber_gap", "priority_secondary": "legumes_gap"}
+          "type": "repeat",
+          "repeat_mode": "same",
+          "expected_version": 5,
+          "weekly_target_count": null,
+          "idempotency_key": "repeat-same",
+          "_server_generated_goal_id": "ignored-on-replay",
+          "expected": {
+            "result": "repeated",
+            "source_goal_id": "goal-week-1",
+            "source_state": "incomplete",
+            "source_version": 5,
+            "source_window": [
+              "2026-08-10",
+              "2026-08-16"
+            ],
+            "source_progress_status": "insufficient_evidence",
+            "source_history_count": 7,
+            "source_midweek_reminders": 1,
+            "source_endweek_reviews": 1,
+            "new_goal": {
+              "goal_id": "goal-week-2",
+              "root_goal_id": "goal-root",
+              "previous_goal_id": "goal-week-1",
+              "sequence_number": 2,
+              "state": "active",
+              "version": 1,
+              "window_start": "2026-08-17",
+              "window_end": "2026-08-23",
+              "progress": 0,
+              "progress_status": "unknown",
+              "weekly_target_count": 3,
+              "rule_key": "legumes_gap",
+              "action_key": "replace_with_legumes",
+              "rules_version": "w3-priority-1.1.0",
+              "recommendation_id": "recommendation-week-2",
+              "history_count": 1,
+              "midweek_reminders": 0,
+              "endweek_reviews": 0
+            },
+            "created_goal_count": 1,
+            "priority_main": "legumes_gap",
+            "priority_secondary": "legumes_gap"
+          }
         },
         {
-          "type": "repeat", "repeat_mode": "reduce", "expected_version": 5, "weekly_target_count": 2, "idempotency_key": "repeat-same", "_server_generated_goal_id": "ignored-on-conflict",
-          "expected": {"result": "idempotency_key_conflict", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "insufficient_evidence", "source_history_count": 7, "source_midweek_reminders": 1, "source_endweek_reviews": 1, "new_goal": null, "created_goal_count": 1, "priority_main": "fiber_gap", "priority_secondary": "legumes_gap"}
+          "type": "repeat",
+          "repeat_mode": "reduce",
+          "expected_version": 5,
+          "weekly_target_count": 2,
+          "idempotency_key": "repeat-same",
+          "_server_generated_goal_id": "ignored-on-conflict",
+          "expected": {
+            "result": "idempotency_key_conflict",
+            "source_goal_id": "goal-week-1",
+            "source_state": "incomplete",
+            "source_version": 5,
+            "source_window": [
+              "2026-08-10",
+              "2026-08-16"
+            ],
+            "source_progress_status": "insufficient_evidence",
+            "source_history_count": 7,
+            "source_midweek_reminders": 1,
+            "source_endweek_reviews": 1,
+            "new_goal": null,
+            "created_goal_count": 1,
+            "priority_main": "legumes_gap",
+            "priority_secondary": "legumes_gap"
+          }
         }
       ]
     },
@@ -420,19 +1319,135 @@
       "initial": {
         "principal_ref": "principal-a",
         "captured_diary_date": "2026-08-17",
-        "source_goal": {"goal_id": "goal-week-1", "root_goal_id": "goal-root", "sequence_number": 1, "state": "incomplete", "version": 5, "window_start": "2026-08-10", "window_end": "2026-08-16", "progress_status": "insufficient_evidence", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "history_count": 7, "midweek_reminders": 1, "endweek_reviews": 1},
-        "current_priority": {"status": "selected", "main_rule_key": "fiber_gap", "secondary_rule_key": "legumes_gap", "rules_version": "w3-priority-1.0.0", "action_key": "replace_with_fiber_source", "recommendation_id": "recommendation-week-2"},
+        "source_goal": {
+          "goal_id": "goal-week-1",
+          "root_goal_id": "goal-root",
+          "sequence_number": 1,
+          "state": "incomplete",
+          "version": 5,
+          "window_start": "2026-08-10",
+          "window_end": "2026-08-16",
+          "progress_status": "insufficient_evidence",
+          "weekly_target_count": 3,
+          "rule_key": "legumes_gap",
+          "action_key": "replace_with_legumes",
+          "rules_version": "w3-priority-1.1.0",
+          "history_count": 7,
+          "midweek_reminders": 1,
+          "endweek_reviews": 1
+        },
+        "current_priority": {
+          "status": "selected",
+          "main_rule_key": "legumes_gap",
+          "secondary_rule_key": "legumes_gap",
+          "rules_version": "w3-priority-1.1.0",
+          "action_key": "replace_with_legumes",
+          "recommendation_id": "recommendation-week-2"
+        },
         "other_primary_exists": false,
         "created_goal_ids": []
       },
       "events": [
         {
-          "type": "repeat", "repeat_mode": "same", "expected_version": 5, "weekly_target_count": null, "idempotency_key": "rollover-replay", "_server_generated_goal_id": "goal-week-2",
-          "expected": {"result": "repeated", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "insufficient_evidence", "source_history_count": 7, "source_midweek_reminders": 1, "source_endweek_reviews": 1, "new_goal": {"goal_id": "goal-week-2", "root_goal_id": "goal-root", "previous_goal_id": "goal-week-1", "sequence_number": 2, "state": "active", "version": 1, "window_start": "2026-08-17", "window_end": "2026-08-23", "progress": 0, "progress_status": "unknown", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "recommendation_id": "recommendation-week-2", "history_count": 1, "midweek_reminders": 0, "endweek_reviews": 0}, "created_goal_count": 1, "priority_main": "fiber_gap", "priority_secondary": "legumes_gap"}
+          "type": "repeat",
+          "repeat_mode": "same",
+          "expected_version": 5,
+          "weekly_target_count": null,
+          "idempotency_key": "rollover-replay",
+          "_server_generated_goal_id": "goal-week-2",
+          "expected": {
+            "result": "repeated",
+            "source_goal_id": "goal-week-1",
+            "source_state": "incomplete",
+            "source_version": 5,
+            "source_window": [
+              "2026-08-10",
+              "2026-08-16"
+            ],
+            "source_progress_status": "insufficient_evidence",
+            "source_history_count": 7,
+            "source_midweek_reminders": 1,
+            "source_endweek_reviews": 1,
+            "new_goal": {
+              "goal_id": "goal-week-2",
+              "root_goal_id": "goal-root",
+              "previous_goal_id": "goal-week-1",
+              "sequence_number": 2,
+              "state": "active",
+              "version": 1,
+              "window_start": "2026-08-17",
+              "window_end": "2026-08-23",
+              "progress": 0,
+              "progress_status": "unknown",
+              "weekly_target_count": 3,
+              "rule_key": "legumes_gap",
+              "action_key": "replace_with_legumes",
+              "rules_version": "w3-priority-1.1.0",
+              "recommendation_id": "recommendation-week-2",
+              "history_count": 1,
+              "midweek_reminders": 0,
+              "endweek_reviews": 0
+            },
+            "created_goal_count": 1,
+            "priority_main": "legumes_gap",
+            "priority_secondary": "legumes_gap"
+          }
         },
         {
-          "type": "repeat", "repeat_mode": "same", "expected_version": 5, "weekly_target_count": null, "idempotency_key": "rollover-replay", "_server_generated_goal_id": "must-not-be-used", "_server_state_before": {"captured_diary_date": "2026-08-18", "current_priority": {"status": "selected", "main_rule_key": "fiber_gap", "secondary_rule_key": null, "rules_version": "w3-priority-1.0.0", "action_key": "replace_with_fiber_source", "recommendation_id": "recommendation-week-3"}},
-          "expected": {"result": "repeated", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "insufficient_evidence", "source_history_count": 7, "source_midweek_reminders": 1, "source_endweek_reviews": 1, "new_goal": {"goal_id": "goal-week-2", "root_goal_id": "goal-root", "previous_goal_id": "goal-week-1", "sequence_number": 2, "state": "active", "version": 1, "window_start": "2026-08-17", "window_end": "2026-08-23", "progress": 0, "progress_status": "unknown", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "recommendation_id": "recommendation-week-2", "history_count": 1, "midweek_reminders": 0, "endweek_reviews": 0}, "created_goal_count": 1, "priority_main": "fiber_gap", "priority_secondary": "legumes_gap"}
+          "type": "repeat",
+          "repeat_mode": "same",
+          "expected_version": 5,
+          "weekly_target_count": null,
+          "idempotency_key": "rollover-replay",
+          "_server_generated_goal_id": "must-not-be-used",
+          "_server_state_before": {
+            "captured_diary_date": "2026-08-18",
+            "current_priority": {
+              "status": "selected",
+              "main_rule_key": "legumes_gap",
+              "secondary_rule_key": null,
+              "rules_version": "w3-priority-1.1.0",
+              "action_key": "replace_with_legumes",
+              "recommendation_id": "recommendation-week-3"
+            }
+          },
+          "expected": {
+            "result": "repeated",
+            "source_goal_id": "goal-week-1",
+            "source_state": "incomplete",
+            "source_version": 5,
+            "source_window": [
+              "2026-08-10",
+              "2026-08-16"
+            ],
+            "source_progress_status": "insufficient_evidence",
+            "source_history_count": 7,
+            "source_midweek_reminders": 1,
+            "source_endweek_reviews": 1,
+            "new_goal": {
+              "goal_id": "goal-week-2",
+              "root_goal_id": "goal-root",
+              "previous_goal_id": "goal-week-1",
+              "sequence_number": 2,
+              "state": "active",
+              "version": 1,
+              "window_start": "2026-08-17",
+              "window_end": "2026-08-23",
+              "progress": 0,
+              "progress_status": "unknown",
+              "weekly_target_count": 3,
+              "rule_key": "legumes_gap",
+              "action_key": "replace_with_legumes",
+              "rules_version": "w3-priority-1.1.0",
+              "recommendation_id": "recommendation-week-2",
+              "history_count": 1,
+              "midweek_reminders": 0,
+              "endweek_reviews": 0
+            },
+            "created_goal_count": 1,
+            "priority_main": "legumes_gap",
+            "priority_secondary": "legumes_gap"
+          }
         }
       ]
     },
@@ -441,19 +1456,105 @@
       "initial": {
         "principal_ref": "principal-a",
         "captured_diary_date": "2026-08-17",
-        "source_goal": {"goal_id": "goal-week-1", "root_goal_id": "goal-root", "sequence_number": 1, "state": "incomplete", "version": 5, "window_start": "2026-08-10", "window_end": "2026-08-16", "progress_status": "not_yet_reached", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "history_count": 4, "midweek_reminders": 0, "endweek_reviews": 1},
-        "current_priority": {"status": "selected", "main_rule_key": "fiber_gap", "secondary_rule_key": null, "rules_version": "w3-priority-1.0.0", "action_key": "replace_with_fiber_source", "recommendation_id": "recommendation-week-2"},
+        "source_goal": {
+          "goal_id": "goal-week-1",
+          "root_goal_id": "goal-root",
+          "sequence_number": 1,
+          "state": "incomplete",
+          "version": 5,
+          "window_start": "2026-08-10",
+          "window_end": "2026-08-16",
+          "progress_status": "not_yet_reached",
+          "weekly_target_count": 3,
+          "rule_key": "legumes_gap",
+          "action_key": "replace_with_legumes",
+          "rules_version": "w3-priority-1.1.0",
+          "history_count": 4,
+          "midweek_reminders": 0,
+          "endweek_reviews": 1
+        },
+        "current_priority": {
+          "status": "selected",
+          "main_rule_key": "legumes_gap",
+          "secondary_rule_key": null,
+          "rules_version": "w3-priority-1.1.0",
+          "action_key": "replace_with_legumes",
+          "recommendation_id": "recommendation-week-2"
+        },
         "other_primary_exists": false,
         "created_goal_ids": []
       },
       "events": [
         {
-          "type": "repeat", "repeat_mode": "same", "expected_version": 5, "weekly_target_count": null, "idempotency_key": "winner", "_server_generated_goal_id": "goal-week-2",
-          "expected": {"result": "repeated", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "not_yet_reached", "source_history_count": 4, "source_midweek_reminders": 0, "source_endweek_reviews": 1, "new_goal": {"goal_id": "goal-week-2", "root_goal_id": "goal-root", "previous_goal_id": "goal-week-1", "sequence_number": 2, "state": "active", "version": 1, "window_start": "2026-08-17", "window_end": "2026-08-23", "progress": 0, "progress_status": "unknown", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "recommendation_id": "recommendation-week-2", "history_count": 1, "midweek_reminders": 0, "endweek_reviews": 0}, "created_goal_count": 1, "priority_main": "fiber_gap", "priority_secondary": null}
+          "type": "repeat",
+          "repeat_mode": "same",
+          "expected_version": 5,
+          "weekly_target_count": null,
+          "idempotency_key": "winner",
+          "_server_generated_goal_id": "goal-week-2",
+          "expected": {
+            "result": "repeated",
+            "source_goal_id": "goal-week-1",
+            "source_state": "incomplete",
+            "source_version": 5,
+            "source_window": [
+              "2026-08-10",
+              "2026-08-16"
+            ],
+            "source_progress_status": "not_yet_reached",
+            "source_history_count": 4,
+            "source_midweek_reminders": 0,
+            "source_endweek_reviews": 1,
+            "new_goal": {
+              "goal_id": "goal-week-2",
+              "root_goal_id": "goal-root",
+              "previous_goal_id": "goal-week-1",
+              "sequence_number": 2,
+              "state": "active",
+              "version": 1,
+              "window_start": "2026-08-17",
+              "window_end": "2026-08-23",
+              "progress": 0,
+              "progress_status": "unknown",
+              "weekly_target_count": 3,
+              "rule_key": "legumes_gap",
+              "action_key": "replace_with_legumes",
+              "rules_version": "w3-priority-1.1.0",
+              "recommendation_id": "recommendation-week-2",
+              "history_count": 1,
+              "midweek_reminders": 0,
+              "endweek_reviews": 0
+            },
+            "created_goal_count": 1,
+            "priority_main": "legumes_gap",
+            "priority_secondary": null
+          }
         },
         {
-          "type": "repeat", "repeat_mode": "same", "expected_version": 5, "weekly_target_count": null, "idempotency_key": "loser", "_server_generated_goal_id": "goal-week-3",
-          "expected": {"result": "goal_version_conflict", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "not_yet_reached", "source_history_count": 4, "source_midweek_reminders": 0, "source_endweek_reviews": 1, "new_goal": null, "created_goal_count": 1, "priority_main": "fiber_gap", "priority_secondary": null}
+          "type": "repeat",
+          "repeat_mode": "same",
+          "expected_version": 5,
+          "weekly_target_count": null,
+          "idempotency_key": "loser",
+          "_server_generated_goal_id": "goal-week-3",
+          "expected": {
+            "result": "goal_version_conflict",
+            "source_goal_id": "goal-week-1",
+            "source_state": "incomplete",
+            "source_version": 5,
+            "source_window": [
+              "2026-08-10",
+              "2026-08-16"
+            ],
+            "source_progress_status": "not_yet_reached",
+            "source_history_count": 4,
+            "source_midweek_reminders": 0,
+            "source_endweek_reviews": 1,
+            "new_goal": null,
+            "created_goal_count": 1,
+            "priority_main": "legumes_gap",
+            "priority_secondary": null
+          }
         }
       ]
     },
@@ -462,13 +1563,61 @@
       "initial": {
         "principal_ref": "principal-a",
         "captured_diary_date": "2026-08-17",
-        "source_goal": {"goal_id": "goal-week-1", "root_goal_id": "goal-root", "sequence_number": 1, "state": "completed", "version": 5, "window_start": "2026-08-10", "window_end": "2026-08-16", "progress_status": "achieved", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "history_count": 5, "midweek_reminders": 0, "endweek_reviews": 0},
-        "current_priority": {"status": "selected", "main_rule_key": "fiber_gap", "secondary_rule_key": null, "rules_version": "w3-priority-1.0.0", "action_key": "replace_with_fiber_source", "recommendation_id": "recommendation-week-2"},
+        "source_goal": {
+          "goal_id": "goal-week-1",
+          "root_goal_id": "goal-root",
+          "sequence_number": 1,
+          "state": "completed",
+          "version": 5,
+          "window_start": "2026-08-10",
+          "window_end": "2026-08-16",
+          "progress_status": "achieved",
+          "weekly_target_count": 3,
+          "rule_key": "legumes_gap",
+          "action_key": "replace_with_legumes",
+          "rules_version": "w3-priority-1.1.0",
+          "history_count": 5,
+          "midweek_reminders": 0,
+          "endweek_reviews": 0
+        },
+        "current_priority": {
+          "status": "selected",
+          "main_rule_key": "legumes_gap",
+          "secondary_rule_key": null,
+          "rules_version": "w3-priority-1.1.0",
+          "action_key": "replace_with_legumes",
+          "recommendation_id": "recommendation-week-2"
+        },
         "other_primary_exists": false,
         "created_goal_ids": []
       },
       "events": [
-        {"type": "repeat", "repeat_mode": "same", "expected_version": 5, "weekly_target_count": null, "idempotency_key": "invalid-state", "_server_generated_goal_id": "goal-week-2", "expected": {"result": "goal_state_conflict", "source_goal_id": "goal-week-1", "source_state": "completed", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "achieved", "source_history_count": 5, "source_midweek_reminders": 0, "source_endweek_reviews": 0, "new_goal": null, "created_goal_count": 0, "priority_main": "fiber_gap", "priority_secondary": null}}
+        {
+          "type": "repeat",
+          "repeat_mode": "same",
+          "expected_version": 5,
+          "weekly_target_count": null,
+          "idempotency_key": "invalid-state",
+          "_server_generated_goal_id": "goal-week-2",
+          "expected": {
+            "result": "goal_state_conflict",
+            "source_goal_id": "goal-week-1",
+            "source_state": "completed",
+            "source_version": 5,
+            "source_window": [
+              "2026-08-10",
+              "2026-08-16"
+            ],
+            "source_progress_status": "achieved",
+            "source_history_count": 5,
+            "source_midweek_reminders": 0,
+            "source_endweek_reviews": 0,
+            "new_goal": null,
+            "created_goal_count": 0,
+            "priority_main": "legumes_gap",
+            "priority_secondary": null
+          }
+        }
       ]
     },
     {
@@ -476,13 +1625,61 @@
       "initial": {
         "principal_ref": "principal-a",
         "captured_diary_date": "2026-08-17",
-        "source_goal": {"goal_id": "goal-week-1", "root_goal_id": "goal-root", "sequence_number": 1, "state": "incomplete", "version": 5, "window_start": "2026-08-10", "window_end": "2026-08-16", "progress_status": "not_yet_reached", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "history_count": 5, "midweek_reminders": 0, "endweek_reviews": 1},
-        "current_priority": {"status": "selected", "main_rule_key": "sodium_overage", "secondary_rule_key": "fiber_gap", "rules_version": "w3-priority-1.0.0", "action_key": "replace_high_sodium_choice", "recommendation_id": "recommendation-week-2"},
+        "source_goal": {
+          "goal_id": "goal-week-1",
+          "root_goal_id": "goal-root",
+          "sequence_number": 1,
+          "state": "incomplete",
+          "version": 5,
+          "window_start": "2026-08-10",
+          "window_end": "2026-08-16",
+          "progress_status": "not_yet_reached",
+          "weekly_target_count": 3,
+          "rule_key": "legumes_gap",
+          "action_key": "replace_with_legumes",
+          "rules_version": "w3-priority-1.1.0",
+          "history_count": 5,
+          "midweek_reminders": 0,
+          "endweek_reviews": 1
+        },
+        "current_priority": {
+          "status": "selected",
+          "main_rule_key": "sodium_overage",
+          "secondary_rule_key": "legumes_gap",
+          "rules_version": "w3-priority-1.1.0",
+          "action_key": "replace_high_sodium_choice",
+          "recommendation_id": "recommendation-week-2"
+        },
         "other_primary_exists": false,
         "created_goal_ids": []
       },
       "events": [
-        {"type": "repeat", "repeat_mode": "same", "expected_version": 5, "weekly_target_count": null, "idempotency_key": "secondary", "_server_generated_goal_id": "goal-week-2", "expected": {"result": "goal_repeat_priority_conflict", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "not_yet_reached", "source_history_count": 5, "source_midweek_reminders": 0, "source_endweek_reviews": 1, "new_goal": null, "created_goal_count": 0, "priority_main": "sodium_overage", "priority_secondary": "fiber_gap"}}
+        {
+          "type": "repeat",
+          "repeat_mode": "same",
+          "expected_version": 5,
+          "weekly_target_count": null,
+          "idempotency_key": "secondary",
+          "_server_generated_goal_id": "goal-week-2",
+          "expected": {
+            "result": "goal_repeat_priority_conflict",
+            "source_goal_id": "goal-week-1",
+            "source_state": "incomplete",
+            "source_version": 5,
+            "source_window": [
+              "2026-08-10",
+              "2026-08-16"
+            ],
+            "source_progress_status": "not_yet_reached",
+            "source_history_count": 5,
+            "source_midweek_reminders": 0,
+            "source_endweek_reviews": 1,
+            "new_goal": null,
+            "created_goal_count": 0,
+            "priority_main": "sodium_overage",
+            "priority_secondary": "legumes_gap"
+          }
+        }
       ]
     },
     {
@@ -490,13 +1687,61 @@
       "initial": {
         "principal_ref": "principal-a",
         "captured_diary_date": "2026-08-17",
-        "source_goal": {"goal_id": "goal-week-1", "root_goal_id": "goal-root", "sequence_number": 1, "state": "incomplete", "version": 5, "window_start": "2026-08-10", "window_end": "2026-08-16", "progress_status": "not_yet_reached", "weekly_target_count": 3, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "history_count": 5, "midweek_reminders": 0, "endweek_reviews": 1},
-        "current_priority": {"status": "selected", "main_rule_key": "fiber_gap", "secondary_rule_key": null, "rules_version": "w3-priority-1.0.0", "action_key": "replace_with_fiber_source", "recommendation_id": "recommendation-week-2"},
+        "source_goal": {
+          "goal_id": "goal-week-1",
+          "root_goal_id": "goal-root",
+          "sequence_number": 1,
+          "state": "incomplete",
+          "version": 5,
+          "window_start": "2026-08-10",
+          "window_end": "2026-08-16",
+          "progress_status": "not_yet_reached",
+          "weekly_target_count": 3,
+          "rule_key": "legumes_gap",
+          "action_key": "replace_with_legumes",
+          "rules_version": "w3-priority-1.1.0",
+          "history_count": 5,
+          "midweek_reminders": 0,
+          "endweek_reviews": 1
+        },
+        "current_priority": {
+          "status": "selected",
+          "main_rule_key": "legumes_gap",
+          "secondary_rule_key": null,
+          "rules_version": "w3-priority-1.1.0",
+          "action_key": "replace_with_legumes",
+          "recommendation_id": "recommendation-week-2"
+        },
         "other_primary_exists": true,
         "created_goal_ids": []
       },
       "events": [
-        {"type": "repeat", "repeat_mode": "same", "expected_version": 5, "weekly_target_count": null, "idempotency_key": "primary-conflict", "_server_generated_goal_id": "goal-week-2", "expected": {"result": "primary_goal_exists", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 5, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "not_yet_reached", "source_history_count": 5, "source_midweek_reminders": 0, "source_endweek_reviews": 1, "new_goal": null, "created_goal_count": 0, "priority_main": "fiber_gap", "priority_secondary": null}}
+        {
+          "type": "repeat",
+          "repeat_mode": "same",
+          "expected_version": 5,
+          "weekly_target_count": null,
+          "idempotency_key": "primary-conflict",
+          "_server_generated_goal_id": "goal-week-2",
+          "expected": {
+            "result": "primary_goal_exists",
+            "source_goal_id": "goal-week-1",
+            "source_state": "incomplete",
+            "source_version": 5,
+            "source_window": [
+              "2026-08-10",
+              "2026-08-16"
+            ],
+            "source_progress_status": "not_yet_reached",
+            "source_history_count": 5,
+            "source_midweek_reminders": 0,
+            "source_endweek_reviews": 1,
+            "new_goal": null,
+            "created_goal_count": 0,
+            "priority_main": "legumes_gap",
+            "priority_secondary": null
+          }
+        }
       ]
     },
     {
@@ -504,38 +1749,938 @@
       "initial": {
         "principal_ref": "principal-a",
         "captured_diary_date": "2026-08-19",
-        "source_goal": {"goal_id": "goal-week-1", "root_goal_id": "goal-root", "sequence_number": 2, "state": "incomplete", "version": 9, "window_start": "2026-08-10", "window_end": "2026-08-16", "progress_status": "not_yet_reached", "weekly_target_count": 4, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "history_count": 9, "midweek_reminders": 1, "endweek_reviews": 1},
-        "current_priority": {"status": "selected", "main_rule_key": "fiber_gap", "secondary_rule_key": null, "rules_version": "w3-priority-1.0.0", "action_key": "replace_with_fiber_source", "recommendation_id": "recommendation-week-3"},
+        "source_goal": {
+          "goal_id": "goal-week-1",
+          "root_goal_id": "goal-root",
+          "sequence_number": 2,
+          "state": "incomplete",
+          "version": 9,
+          "window_start": "2026-08-10",
+          "window_end": "2026-08-16",
+          "progress_status": "not_yet_reached",
+          "weekly_target_count": 4,
+          "rule_key": "legumes_gap",
+          "action_key": "replace_with_legumes",
+          "rules_version": "w3-priority-1.1.0",
+          "history_count": 9,
+          "midweek_reminders": 1,
+          "endweek_reviews": 1
+        },
+        "current_priority": {
+          "status": "selected",
+          "main_rule_key": "legumes_gap",
+          "secondary_rule_key": null,
+          "rules_version": "w3-priority-1.1.0",
+          "action_key": "replace_with_legumes",
+          "recommendation_id": "recommendation-week-3"
+        },
         "other_primary_exists": false,
         "created_goal_ids": []
       },
       "events": [
-        {"type": "repeat", "repeat_mode": "reduce", "expected_version": 9, "weekly_target_count": 2, "idempotency_key": "reduce", "_server_generated_goal_id": "goal-week-3", "expected": {"result": "reduced_and_repeated", "source_goal_id": "goal-week-1", "source_state": "incomplete", "source_version": 9, "source_window": ["2026-08-10", "2026-08-16"], "source_progress_status": "not_yet_reached", "source_history_count": 9, "source_midweek_reminders": 1, "source_endweek_reviews": 1, "new_goal": {"goal_id": "goal-week-3", "root_goal_id": "goal-root", "previous_goal_id": "goal-week-1", "sequence_number": 3, "state": "active", "version": 1, "window_start": "2026-08-19", "window_end": "2026-08-25", "progress": 0, "progress_status": "unknown", "weekly_target_count": 2, "rule_key": "fiber_gap", "action_key": "replace_with_fiber_source", "rules_version": "w3-priority-1.0.0", "recommendation_id": "recommendation-week-3", "history_count": 1, "midweek_reminders": 0, "endweek_reviews": 0}, "created_goal_count": 1, "priority_main": "fiber_gap", "priority_secondary": null}}
+        {
+          "type": "repeat",
+          "repeat_mode": "reduce",
+          "expected_version": 9,
+          "weekly_target_count": 2,
+          "idempotency_key": "reduce",
+          "_server_generated_goal_id": "goal-week-3",
+          "expected": {
+            "result": "reduced_and_repeated",
+            "source_goal_id": "goal-week-1",
+            "source_state": "incomplete",
+            "source_version": 9,
+            "source_window": [
+              "2026-08-10",
+              "2026-08-16"
+            ],
+            "source_progress_status": "not_yet_reached",
+            "source_history_count": 9,
+            "source_midweek_reminders": 1,
+            "source_endweek_reviews": 1,
+            "new_goal": {
+              "goal_id": "goal-week-3",
+              "root_goal_id": "goal-root",
+              "previous_goal_id": "goal-week-1",
+              "sequence_number": 3,
+              "state": "active",
+              "version": 1,
+              "window_start": "2026-08-19",
+              "window_end": "2026-08-25",
+              "progress": 0,
+              "progress_status": "unknown",
+              "weekly_target_count": 2,
+              "rule_key": "legumes_gap",
+              "action_key": "replace_with_legumes",
+              "rules_version": "w3-priority-1.1.0",
+              "recommendation_id": "recommendation-week-3",
+              "history_count": 1,
+              "midweek_reminders": 0,
+              "endweek_reviews": 0
+            },
+            "created_goal_count": 1,
+            "priority_main": "legumes_gap",
+            "priority_secondary": null
+          }
+        }
       ]
     }
   ],
   "progress_vectors": [
     {
-      "name": "target-achievement-precedes-four-day-sufficiency",
+      "name": "trans_zero",
+      "action_key": "replace_trans_fat_choice",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
       "target_count": 1,
-      "window_ended": true,
+      "window_ended": false,
+      "source_status": "selected",
       "days": [
-        {"logging_status": "complete", "qualifies": true},
-        {"logging_status": "partial", "qualifies": true},
-        {"logging_status": "unregistered", "qualifies": true}
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 2,
+          "metric_values": [
+            {
+              "metric_key": "nutrient:trans_fat_g",
+              "value": 0,
+              "value_state": "explicit_zero",
+              "known_entry_count": 2,
+              "total_entry_count": 2,
+              "amount_qualifier": "exact",
+              "unit": "g/day"
+            }
+          ]
+        }
       ],
-      "expected": {"progress_count": 1, "target_count": 1, "complete_day_count": 1, "progress_percent": 100, "status": "achieved"}
+      "expected": {
+        "progress_count": 1,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 100,
+        "status": "achieved"
+      }
     },
     {
-      "name": "below-target-with-fewer-than-four-complete-days-is-insufficient",
-      "target_count": 2,
-      "window_ended": true,
+      "name": "trans_positive",
+      "action_key": "replace_trans_fat_choice",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
       "days": [
-        {"logging_status": "complete", "qualifies": true},
-        {"logging_status": "partial", "qualifies": true},
-        {"logging_status": "unregistered", "qualifies": true}
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 2,
+          "metric_values": [
+            {
+              "metric_key": "nutrient:trans_fat_g",
+              "value": 0.2,
+              "value_state": "known",
+              "known_entry_count": 2,
+              "total_entry_count": 2,
+              "amount_qualifier": "exact",
+              "unit": "g/day"
+            }
+          ]
+        }
       ],
-      "expected": {"progress_count": 1, "target_count": 2, "complete_day_count": 1, "progress_percent": 50, "status": "insufficient_evidence"}
+      "expected": {
+        "progress_count": 0,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 0,
+        "status": "in_progress"
+      }
+    },
+    {
+      "name": "trans_partial_coverage",
+      "action_key": "replace_trans_fat_choice",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 2,
+          "metric_values": [
+            {
+              "metric_key": "nutrient:trans_fat_g",
+              "value": 0,
+              "value_state": "explicit_zero",
+              "known_entry_count": 1,
+              "total_entry_count": 2,
+              "amount_qualifier": "at_least",
+              "unit": "g/day"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 0,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 0,
+        "status": "in_progress"
+      }
+    },
+    {
+      "name": "trans_unknown",
+      "action_key": "replace_trans_fat_choice",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 2,
+          "metric_values": [
+            {
+              "metric_key": "nutrient:trans_fat_g",
+              "value": null,
+              "value_state": "unknown",
+              "known_entry_count": 0,
+              "total_entry_count": 2,
+              "amount_qualifier": "unavailable",
+              "unit": "g/day"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 0,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 0,
+        "status": "in_progress"
+      }
+    },
+    {
+      "name": "trans_empty",
+      "action_key": "replace_trans_fat_choice",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 0,
+          "metric_values": [
+            {
+              "metric_key": "nutrient:trans_fat_g",
+              "value": 0,
+              "value_state": "explicit_zero",
+              "known_entry_count": 0,
+              "total_entry_count": 0,
+              "amount_qualifier": "exact",
+              "unit": "g/day"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 0,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 0,
+        "status": "in_progress"
+      }
+    },
+    {
+      "name": "trans_partial_day",
+      "action_key": "replace_trans_fat_choice",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "partial",
+          "analysis_eligible": false,
+          "entry_count": 1,
+          "metric_values": []
+        }
+      ],
+      "expected": {
+        "progress_count": 0,
+        "target_count": 1,
+        "complete_day_count": 0,
+        "progress_percent": 0,
+        "status": "unknown"
+      }
+    },
+    {
+      "name": "processed_alt",
+      "action_key": "replace_processed_meat_choice",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "protein:source_diversity_count",
+              "value": 1,
+              "value_state": "known",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "sources/7d"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 1,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 100,
+        "status": "achieved"
+      }
+    },
+    {
+      "name": "fruit_add",
+      "action_key": "add_fruit_or_vegetable",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "group:fruit_vegetable_g_per_day",
+              "value": 80,
+              "value_state": "known",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "g/day"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 1,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 100,
+        "status": "achieved"
+      }
+    },
+    {
+      "name": "fruit_replace",
+      "action_key": "replace_with_fruit_or_vegetable",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "group:fruit_vegetable_g_per_day",
+              "value": 80,
+              "value_state": "known",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "g/day"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 1,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 100,
+        "status": "achieved"
+      }
+    },
+    {
+      "name": "fruit_zero",
+      "action_key": "add_fruit_or_vegetable",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "group:fruit_vegetable_g_per_day",
+              "value": 0,
+              "value_state": "explicit_zero",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "g/day"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 0,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 0,
+        "status": "in_progress"
+      }
+    },
+    {
+      "name": "legumes_add",
+      "action_key": "add_legumes",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "group:legumes_servings_per_period",
+              "value": 1,
+              "value_state": "known",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "servings/7d"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 1,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 100,
+        "status": "achieved"
+      }
+    },
+    {
+      "name": "legumes_replace",
+      "action_key": "replace_with_legumes",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "group:legumes_servings_per_period",
+              "value": 1,
+              "value_state": "known",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "servings/7d"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 1,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 100,
+        "status": "achieved"
+      }
+    },
+    {
+      "name": "seafood",
+      "action_key": "replace_with_seafood",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "group:seafood_servings_per_period",
+              "value": 1,
+              "value_state": "known",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "servings/7d"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 1,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 100,
+        "status": "achieved"
+      }
+    },
+    {
+      "name": "dairy_add",
+      "action_key": "add_dairy_or_fortified_alternative",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "group:dairy_fortified_servings_per_day",
+              "value": 1,
+              "value_state": "known",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "servings/day"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 1,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 100,
+        "status": "achieved"
+      }
+    },
+    {
+      "name": "dairy_replace",
+      "action_key": "replace_with_dairy_or_fortified_alternative",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "group:dairy_fortified_servings_per_day",
+              "value": 1,
+              "value_state": "known",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "servings/day"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 1,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 100,
+        "status": "achieved"
+      }
+    },
+    {
+      "name": "unknown_legume",
+      "action_key": "replace_with_legumes",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "group:legumes_servings_per_period",
+              "value": null,
+              "value_state": "unknown",
+              "known_entry_count": 0,
+              "total_entry_count": 1,
+              "amount_qualifier": "unavailable",
+              "unit": "servings/7d"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 0,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 0,
+        "status": "in_progress"
+      }
+    },
+    {
+      "name": "unregistered",
+      "action_key": "replace_with_seafood",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "unregistered",
+          "analysis_eligible": false,
+          "entry_count": 0,
+          "metric_values": []
+        }
+      ],
+      "expected": {
+        "progress_count": 0,
+        "target_count": 1,
+        "complete_day_count": 0,
+        "progress_percent": 0,
+        "status": "unknown"
+      }
+    },
+    {
+      "name": "masked",
+      "action_key": "replace_with_legumes",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": [
+        0
+      ],
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-18",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "group:legumes_servings_per_period",
+              "value": 1,
+              "value_state": "known",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "servings/7d"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 0,
+        "target_count": 1,
+        "complete_day_count": 0,
+        "progress_percent": 0,
+        "status": "unknown"
+      }
+    },
+    {
+      "name": "boundary",
+      "action_key": "replace_with_seafood",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-23",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "group:seafood_servings_per_period",
+              "value": 1,
+              "value_state": "known",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "servings/7d"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 1,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 100,
+        "status": "achieved"
+      }
+    },
+    {
+      "name": "outside",
+      "action_key": "replace_with_seafood",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-24",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "group:seafood_servings_per_period",
+              "value": 1,
+              "value_state": "known",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "servings/7d"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 0,
+        "target_count": 1,
+        "complete_day_count": 0,
+        "progress_percent": 0,
+        "status": "unknown"
+      }
+    },
+    {
+      "name": "one_date",
+      "action_key": "replace_with_legumes",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "group:legumes_servings_per_period",
+              "value": 1,
+              "value_state": "known",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "servings/7d"
+            },
+            {
+              "metric_key": "group:fruit_vegetable_g_per_day",
+              "value": 80,
+              "value_state": "known",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "g/day"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 1,
+        "target_count": 1,
+        "complete_day_count": 1,
+        "progress_percent": 100,
+        "status": "achieved"
+      }
+    },
+    {
+      "name": "stale",
+      "action_key": "replace_with_legumes",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "stale",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "group:legumes_servings_per_period",
+              "value": 1,
+              "value_state": "known",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "servings/7d"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 0,
+        "target_count": 1,
+        "complete_day_count": 0,
+        "progress_percent": 0,
+        "status": "unknown"
+      }
+    },
+    {
+      "name": "superseded",
+      "action_key": "replace_with_legumes",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 1,
+      "window_ended": false,
+      "source_status": "superseded",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "group:legumes_servings_per_period",
+              "value": 1,
+              "value_state": "known",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "servings/7d"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 0,
+        "target_count": 1,
+        "complete_day_count": 0,
+        "progress_percent": 0,
+        "status": "unknown"
+      }
+    },
+    {
+      "name": "ended_insufficient",
+      "action_key": "replace_with_legumes",
+      "window_start": "2026-08-17",
+      "window_end": "2026-08-23",
+      "scheduled_day_mask": null,
+      "target_count": 3,
+      "window_ended": true,
+      "source_status": "selected",
+      "days": [
+        {
+          "date": "2026-08-17",
+          "logging_status": "complete",
+          "analysis_eligible": true,
+          "entry_count": 1,
+          "metric_values": [
+            {
+              "metric_key": "group:legumes_servings_per_period",
+              "value": 0,
+              "value_state": "explicit_zero",
+              "known_entry_count": 1,
+              "total_entry_count": 1,
+              "amount_qualifier": "exact",
+              "unit": "servings/7d"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "progress_count": 0,
+        "target_count": 3,
+        "complete_day_count": 1,
+        "progress_percent": 0,
+        "status": "insufficient_evidence"
+      }
     }
   ],
   "mutation_vectors": [
@@ -603,8 +2748,508 @@
       "name": "mutable-server-bindings-break-ambiguous-retry-replay",
       "base_vector": "same-key-replays-original-binding-after-rollover-and-refresh",
       "event_index": 1,
-      "fields_to_add": ["captured_diary_date", "current_recommendation_id"],
+      "fields_to_add": [
+        "captured_diary_date",
+        "current_recommendation_id"
+      ],
       "expected_mutated_result": "idempotency_key_conflict"
+    }
+  ],
+  "design_version": "1.1",
+  "action_trackability_vectors": [
+    {
+      "name": "trackability_replace_high_sodium_choice",
+      "rule_key": "sodium_overage",
+      "action_mode": "replace",
+      "action_key": "replace_high_sodium_choice",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_replace_added_sugar_choice",
+      "rule_key": "added_sugar_overage",
+      "action_mode": "replace",
+      "action_key": "replace_added_sugar_choice",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_replace_saturated_fat_choice",
+      "rule_key": "saturated_fat_overage",
+      "action_mode": "replace",
+      "action_key": "replace_saturated_fat_choice",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_replace_trans_fat_choice",
+      "rule_key": "trans_fat_overage",
+      "action_mode": "replace",
+      "action_key": "replace_trans_fat_choice",
+      "goal_trackability": "trackable",
+      "goal_unavailable_reason": null,
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_replace_processed_meat_choice",
+      "rule_key": "processed_meat_frequency",
+      "action_mode": "replace",
+      "action_key": "replace_processed_meat_choice",
+      "goal_trackability": "trackable",
+      "goal_unavailable_reason": null,
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_replace_sugary_drink_choice",
+      "rule_key": "sugary_drink_frequency",
+      "action_mode": "replace",
+      "action_key": "replace_sugary_drink_choice",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_add_fruit_or_vegetable",
+      "rule_key": "fruit_vegetable_gap",
+      "action_mode": "add",
+      "action_key": "add_fruit_or_vegetable",
+      "goal_trackability": "trackable",
+      "goal_unavailable_reason": null,
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_replace_with_fruit_or_vegetable",
+      "rule_key": "fruit_vegetable_gap",
+      "action_mode": "replace",
+      "action_key": "replace_with_fruit_or_vegetable",
+      "goal_trackability": "trackable",
+      "goal_unavailable_reason": null,
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_add_legumes",
+      "rule_key": "legumes_gap",
+      "action_mode": "add",
+      "action_key": "add_legumes",
+      "goal_trackability": "trackable",
+      "goal_unavailable_reason": null,
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_replace_with_legumes",
+      "rule_key": "legumes_gap",
+      "action_mode": "replace",
+      "action_key": "replace_with_legumes",
+      "goal_trackability": "trackable",
+      "goal_unavailable_reason": null,
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_replace_with_whole_grain",
+      "rule_key": "whole_grain_share_gap",
+      "action_mode": "replace",
+      "action_key": "replace_with_whole_grain",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_add_nuts_or_seeds",
+      "rule_key": "nuts_seeds_gap",
+      "action_mode": "add",
+      "action_key": "add_nuts_or_seeds",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_replace_with_nuts_or_seeds",
+      "rule_key": "nuts_seeds_gap",
+      "action_mode": "replace",
+      "action_key": "replace_with_nuts_or_seeds",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_replace_with_seafood",
+      "rule_key": "seafood_gap",
+      "action_mode": "replace",
+      "action_key": "replace_with_seafood",
+      "goal_trackability": "trackable",
+      "goal_unavailable_reason": null,
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_add_dairy_or_fortified_alternative",
+      "rule_key": "dairy_alternative_gap",
+      "action_mode": "add",
+      "action_key": "add_dairy_or_fortified_alternative",
+      "goal_trackability": "trackable",
+      "goal_unavailable_reason": null,
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_replace_with_dairy_or_fortified_alternative",
+      "rule_key": "dairy_alternative_gap",
+      "action_mode": "replace",
+      "action_key": "replace_with_dairy_or_fortified_alternative",
+      "goal_trackability": "trackable",
+      "goal_unavailable_reason": null,
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_add_fiber_source",
+      "rule_key": "fiber_gap",
+      "action_mode": "add",
+      "action_key": "add_fiber_source",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_replace_with_fiber_source",
+      "rule_key": "fiber_gap",
+      "action_mode": "replace",
+      "action_key": "replace_with_fiber_source",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_review_food_sources_potassium",
+      "rule_key": "potassium_gap",
+      "action_mode": "review",
+      "action_key": "review_food_sources_potassium",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_review_food_sources_calcium",
+      "rule_key": "calcium_gap",
+      "action_mode": "review",
+      "action_key": "review_food_sources_calcium",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_review_food_sources_iron",
+      "rule_key": "iron_gap",
+      "action_mode": "review",
+      "action_key": "review_food_sources_iron",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_review_food_sources_magnesium",
+      "rule_key": "magnesium_gap",
+      "action_mode": "review",
+      "action_key": "review_food_sources_magnesium",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_review_food_sources_zinc",
+      "rule_key": "zinc_gap",
+      "action_mode": "review",
+      "action_key": "review_food_sources_zinc",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_review_food_sources_selenium",
+      "rule_key": "selenium_gap",
+      "action_mode": "review",
+      "action_key": "review_food_sources_selenium",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_review_food_sources_vitamin_b12",
+      "rule_key": "vitamin_b12_gap",
+      "action_mode": "review",
+      "action_key": "review_food_sources_vitamin_b12",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_review_food_sources_folate_dfe",
+      "rule_key": "folate_dfe_gap",
+      "action_mode": "review",
+      "action_key": "review_food_sources_folate_dfe",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_review_food_sources_vitamin_a_rae",
+      "rule_key": "vitamin_a_rae_gap",
+      "action_mode": "review",
+      "action_key": "review_food_sources_vitamin_a_rae",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    },
+    {
+      "name": "trackability_review_food_sources_iodine",
+      "rule_key": "iodine_gap",
+      "action_mode": "review",
+      "action_key": "review_food_sources_iodine",
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "rules_version": "w3-priority-1.1.0",
+      "copy_version": "w3-priority-ar-1.1.0"
+    }
+  ],
+  "informational_only_vectors": [
+    {
+      "name": "informational_replace_high_sodium_choice",
+      "action_key": "replace_high_sodium_choice",
+      "recommendation_selected": true,
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "goal": null,
+      "offer_created": false,
+      "progress": null,
+      "reminder_count": 0,
+      "repeat_available": false,
+      "reduce_available": false,
+      "copy_ar": "هذه الأولوية إرشادية حاليًا؛ لا يمكن تتبع تنفيذ هذه الخطوة تلقائيًا من بيانات اليوميات."
+    },
+    {
+      "name": "informational_replace_added_sugar_choice",
+      "action_key": "replace_added_sugar_choice",
+      "recommendation_selected": true,
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "goal": null,
+      "offer_created": false,
+      "progress": null,
+      "reminder_count": 0,
+      "repeat_available": false,
+      "reduce_available": false,
+      "copy_ar": "هذه الأولوية إرشادية حاليًا؛ لا يمكن تتبع تنفيذ هذه الخطوة تلقائيًا من بيانات اليوميات."
+    },
+    {
+      "name": "informational_replace_saturated_fat_choice",
+      "action_key": "replace_saturated_fat_choice",
+      "recommendation_selected": true,
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "goal": null,
+      "offer_created": false,
+      "progress": null,
+      "reminder_count": 0,
+      "repeat_available": false,
+      "reduce_available": false,
+      "copy_ar": "هذه الأولوية إرشادية حاليًا؛ لا يمكن تتبع تنفيذ هذه الخطوة تلقائيًا من بيانات اليوميات."
+    },
+    {
+      "name": "informational_replace_sugary_drink_choice",
+      "action_key": "replace_sugary_drink_choice",
+      "recommendation_selected": true,
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "goal": null,
+      "offer_created": false,
+      "progress": null,
+      "reminder_count": 0,
+      "repeat_available": false,
+      "reduce_available": false,
+      "copy_ar": "هذه الأولوية إرشادية حاليًا؛ لا يمكن تتبع تنفيذ هذه الخطوة تلقائيًا من بيانات اليوميات."
+    },
+    {
+      "name": "informational_replace_with_whole_grain",
+      "action_key": "replace_with_whole_grain",
+      "recommendation_selected": true,
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "goal": null,
+      "offer_created": false,
+      "progress": null,
+      "reminder_count": 0,
+      "repeat_available": false,
+      "reduce_available": false,
+      "copy_ar": "هذه الأولوية إرشادية حاليًا؛ لا يمكن تتبع تنفيذ هذه الخطوة تلقائيًا من بيانات اليوميات."
+    },
+    {
+      "name": "informational_add_nuts_or_seeds",
+      "action_key": "add_nuts_or_seeds",
+      "recommendation_selected": true,
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "goal": null,
+      "offer_created": false,
+      "progress": null,
+      "reminder_count": 0,
+      "repeat_available": false,
+      "reduce_available": false,
+      "copy_ar": "هذه الأولوية إرشادية حاليًا؛ لا يمكن تتبع تنفيذ هذه الخطوة تلقائيًا من بيانات اليوميات."
+    },
+    {
+      "name": "informational_add_fiber_source",
+      "action_key": "add_fiber_source",
+      "recommendation_selected": true,
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "goal": null,
+      "offer_created": false,
+      "progress": null,
+      "reminder_count": 0,
+      "repeat_available": false,
+      "reduce_available": false,
+      "copy_ar": "هذه الأولوية إرشادية حاليًا؛ لا يمكن تتبع تنفيذ هذه الخطوة تلقائيًا من بيانات اليوميات."
+    },
+    {
+      "name": "informational_review_food_sources_potassium",
+      "action_key": "review_food_sources_potassium",
+      "recommendation_selected": true,
+      "goal_trackability": "informational_only",
+      "goal_unavailable_reason": "action_not_observable",
+      "goal": null,
+      "offer_created": false,
+      "progress": null,
+      "reminder_count": 0,
+      "repeat_available": false,
+      "reduce_available": false,
+      "copy_ar": "هذه الأولوية إرشادية حاليًا؛ لا يمكن تتبع تنفيذ هذه الخطوة تلقائيًا من بيانات اليوميات."
+    }
+  ],
+  "version_vectors": [
+    {
+      "name": "rules_1_1",
+      "kind": "rules",
+      "value": "w3-priority-1.1.0",
+      "expected": "supported"
+    },
+    {
+      "name": "rules_1_0",
+      "kind": "rules",
+      "value": "w3-priority-1.0.0",
+      "expected": "withdrawn_pre_release"
+    },
+    {
+      "name": "copy_1_1",
+      "kind": "copy",
+      "value": "w3-priority-ar-1.1.0",
+      "expected": "supported"
+    },
+    {
+      "name": "copy_1_0",
+      "kind": "copy",
+      "value": "w3-priority-ar-1.0.0",
+      "expected": "withdrawn_pre_release"
+    }
+  ],
+  "trackability_mutation_vectors": [
+    {
+      "name": "sodium_trackable",
+      "kind": "classification",
+      "action_key": "replace_high_sodium_choice",
+      "value": "trackable"
+    },
+    {
+      "name": "fiber_trackable",
+      "kind": "classification",
+      "action_key": "add_fiber_source",
+      "value": "trackable"
+    },
+    {
+      "name": "review_trackable",
+      "kind": "classification",
+      "action_key": "review_food_sources_potassium",
+      "value": "trackable"
+    },
+    {
+      "name": "legume_untrackable",
+      "kind": "classification",
+      "action_key": "add_legumes",
+      "value": "informational_only"
+    },
+    {
+      "name": "informational_offer",
+      "kind": "informational_offer",
+      "action_key": "replace_high_sodium_choice",
+      "value": true
+    },
+    {
+      "name": "unknown_qualifies",
+      "kind": "progress",
+      "action_key": "unknown_legume",
+      "value": true
+    },
+    {
+      "name": "partial_qualifies",
+      "kind": "progress",
+      "action_key": "trans_partial_day",
+      "value": true
+    },
+    {
+      "name": "empty_trans_qualifies",
+      "kind": "progress",
+      "action_key": "trans_empty",
+      "value": true
+    },
+    {
+      "name": "copy_changed",
+      "kind": "copy",
+      "action_key": null,
+      "value": "يمكن تتبع هذه الأولوية."
+    },
+    {
+      "name": "rules_alias",
+      "kind": "version_alias",
+      "action_key": null,
+      "value": "w3-priority-1.0.0"
+    },
+    {
+      "name": "informational_repeat",
+      "kind": "informational_repeat",
+      "action_key": "add_fiber_source",
+      "value": true
+    },
+    {
+      "name": "mask_bypass",
+      "kind": "progress",
+      "action_key": "masked",
+      "value": true
     }
   ]
 }

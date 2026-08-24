@@ -1,5 +1,87 @@
 # Wave 3 Weekly Priority and Behavior Goal Design Contract
 
+**PLAN 033 Design version:** 1.1 (H2 trackability-gated refreeze candidate)
+
+**Amendment reason:** H2 semantic-observability correction discovered during formal implementation review.
+
+**Version disposition:** `w3-priority-1.0.0` and `w3-priority-ar-1.0.0` are withdrawn pre-release. They were never accepted on `main`, migrated to a shared database, deployed, or activated. Design 1.1 supports only `weekly_priority_rules_version="w3-priority-1.1.0"` and `weekly_priority_copy_version="w3-priority-ar-1.1.0"`; there is no alias, fallback, or historical dispatch obligation for either withdrawn version. Public `schema_version=1` remains the first authoritative release candidate because no PLAN 033 public schema has shipped.
+
+## 0. Design 1.1 H2 amendment
+
+### 0.1 Priority validity and goal trackability
+
+All 23 priority rules and all 28 action keys remain valid and retain their selector tier, severity, coverage, persistence, taxonomy order, conflicts, cap, safety, target, stale, and supersession semantics. Trackability is evaluated only after a valid action is selected and never changes rank. A selected main or secondary may therefore be `informational_only`.
+
+`PriorityV1.goal_trackability` is the required closed enum `trackable|informational_only`. `PriorityV1.goal_unavailable_reason` is the closed enum `action_not_observable|null`. `trackable` requires a null reason; `informational_only` requires `action_not_observable`. No default or free-form reason exists.
+
+`informational_only` means only that current persisted `WeeklyPriorityAnalysisInputV1` evidence cannot truthfully verify the desired behavior. It does not mean low confidence, invalid or unsafe advice, unavailable evidence, failure, or zero progress. The exact governed Arabic explanation under `w3-priority-ar-1.1.0` is:
+
+> هذه الأولوية إرشادية حاليًا؛ لا يمكن تتبع تنفيذ هذه الخطوة تلقائيًا من بيانات اليوميات.
+
+No informational-only action creates an offered/deferred/hidden/disabled goal, progress document, reminder namespace, goal command/idempotency row, completion, repeat, or reduce flow. The priority and its existing action copy remain visible. The UI shows neither a disabled Start Goal button nor a progress bar or percentage.
+
+### 0.2 Closed 28-action catalog
+
+| Rule | Mode | Action key | Trackability | Reason |
+| --- | --- | --- | --- | --- |
+| sodium_overage | replace | replace_high_sodium_choice | informational_only | action_not_observable |
+| added_sugar_overage | replace | replace_added_sugar_choice | informational_only | action_not_observable |
+| saturated_fat_overage | replace | replace_saturated_fat_choice | informational_only | action_not_observable |
+| trans_fat_overage | replace | replace_trans_fat_choice | trackable | null |
+| processed_meat_frequency | replace | replace_processed_meat_choice | trackable | null |
+| sugary_drink_frequency | replace | replace_sugary_drink_choice | informational_only | action_not_observable |
+| fruit_vegetable_gap | add | add_fruit_or_vegetable | trackable | null |
+| fruit_vegetable_gap | replace | replace_with_fruit_or_vegetable | trackable | null |
+| legumes_gap | add | add_legumes | trackable | null |
+| legumes_gap | replace | replace_with_legumes | trackable | null |
+| whole_grain_share_gap | replace | replace_with_whole_grain | informational_only | action_not_observable |
+| nuts_seeds_gap | add | add_nuts_or_seeds | informational_only | action_not_observable |
+| nuts_seeds_gap | replace | replace_with_nuts_or_seeds | informational_only | action_not_observable |
+| seafood_gap | replace | replace_with_seafood | trackable | null |
+| dairy_alternative_gap | add | add_dairy_or_fortified_alternative | trackable | null |
+| dairy_alternative_gap | replace | replace_with_dairy_or_fortified_alternative | trackable | null |
+| fiber_gap | add | add_fiber_source | informational_only | action_not_observable |
+| fiber_gap | replace | replace_with_fiber_source | informational_only | action_not_observable |
+| potassium_gap | review | review_food_sources_potassium | informational_only | action_not_observable |
+| calcium_gap | review | review_food_sources_calcium | informational_only | action_not_observable |
+| iron_gap | review | review_food_sources_iron | informational_only | action_not_observable |
+| magnesium_gap | review | review_food_sources_magnesium | informational_only | action_not_observable |
+| zinc_gap | review | review_food_sources_zinc | informational_only | action_not_observable |
+| selenium_gap | review | review_food_sources_selenium | informational_only | action_not_observable |
+| vitamin_b12_gap | review | review_food_sources_vitamin_b12 | informational_only | action_not_observable |
+| folate_dfe_gap | review | review_food_sources_folate_dfe | informational_only | action_not_observable |
+| vitamin_a_rae_gap | review | review_food_sources_vitamin_a_rae | informational_only | action_not_observable |
+| iodine_gap | review | review_food_sources_iodine | informational_only | action_not_observable |
+
+The split is exactly 9 trackable and 19 informational-only.
+
+### 0.3 Closed producer-backed predicates
+
+Predicates use only persisted `WeeklyPriorityAnalysisInputV1.days`. A date participates only inside the goal window and optional scheduled mask, with `logging_status=complete` and `analysis_eligible=true`. Partial/unregistered dates and unknown facts never qualify. One date contributes at most once.
+
+| Action(s) | Exact date predicate |
+| --- | --- |
+| replace_trans_fat_choice | Non-empty date; `nutrient:trans_fat_g` (`g/day`) is `explicit_zero`, value 0, `exact`, total entries >0, and known entries equal total entries. |
+| replace_processed_meat_choice | Date-local `protein:source_diversity_count` is known and >0. Its closed sources are legumes, nuts/seeds, seafood, eggs, poultry, red meat, and dairy/fortified alternatives; processed meat is excluded. |
+| add_fruit_or_vegetable; replace_with_fruit_or_vegetable | Date-local `group:fruit_vegetable_g_per_day` is known and >0. |
+| add_legumes; replace_with_legumes | Date-local `group:legumes_servings_per_period` is known and >0. Although named per-period, each day projection is calculated solely from that date's immutable entries. |
+| replace_with_seafood | Date-local `group:seafood_servings_per_period` is known and >0 under the same per-day projection rule. |
+| add_dairy_or_fortified_alternative; replace_with_dairy_or_fortified_alternative | Date-local `group:dairy_fortified_servings_per_day` is known and >0; PLAN 032 owns subtype serving and calcium-fortification rules. |
+
+Add and replacement variants share the desired-category appearance predicate but retain distinct action identities and replacement-over-addition selection. No approximate predicate exists for the 19 informational actions: reduction/target status does not prove replacement; period share does not prove date-local appearance; unqualified nuts, `fiber_g>0`, and micronutrient ingestion do not prove the approved behavior or owner review. Tier-3 review actions remain informational without self-report/checkbox.
+
+### 0.4 API, lifecycle, history, and shadow consequences
+
+A goal offer requires a selected, fresh, supported, safe, trackable current main plus all existing eligibility rules. For an informational-only main with no earlier valid tracked goal, `GET /progress/behavior-goals/current` returns `goal=null`, the structured current priority, and `goal_unavailable_reason=action_not_observable`. Silent null and fake zero progress are forbidden.
+
+Offer, accept, edit, defer, goal rejection, progress, completion, pause/resume, reminders, repeat, and reduce are not applicable because no goal exists. Recommendation-level rejection/suppression remains unchanged. An accepted tracked goal is never rewritten by a later informational recommendation; it follows existing stale/supersession and change/end rules. Repeat/reduce additionally require a trackable matching current main, otherwise no successor is created.
+
+Every immutable recommendation stores rules/copy versions, action key/mode, trackability/reason, stored Arabic action and informational copy, and producer interface/rules/source/Registry versions. Historical rendering uses stored values; future producer evidence never retroactively changes them.
+
+Shadow reporting separately counts selected recommendations, selected trackable mains, and selected informational-only mains. An eligible evaluation remains a valid supported/safe selector evaluation regardless of trackability. The launch gate remains >=28 consecutive shadow days and >=1,000 eligible evaluations; subdivisions neither lower nor replace that denominator. Informational recommendations never count as goal offers.
+
+Additional producer evidence may increase future coverage only through a separate PLAN 032 lifecycle. No `WeeklyPriorityAnalysisInputV2` or `w3-analysis-1.2.0` is reserved or activated here.
+
 **Status:** Frozen for implementation — design gate complete; no implementation or launch performed
 **Decisions:** PD-017, PD-018, PD-027
 **Design version:** 1.0-frozen
@@ -38,7 +120,7 @@ Invariants:
 | Rules | `backend/app/nutrition_rules/versions.py` | non-null recommendation/analysis version only after implementation approval |
 | Notifications | none implemented | goal preference and delivery receipt only in a later authorized implementation |
 
-The existing `analysis_rules_version=null` and `analysis_rules_status=reserved_for_wave_3` are honest baseline facts. This contract freezes `weekly_priority_rules_version="w3-priority-1.0.0"`; it does not change the manifest or claim the engine exists.
+The historical baseline had `analysis_rules_version=null` and `analysis_rules_status=reserved_for_wave_3`. PLAN 032 Design 1.1 now supplies persisted `WeeklyPriorityAnalysisInputV1.interface_version=1` under `w3-analysis-1.1.0`; this contract does not alter PLAN 032.
 
 ### 2.2 `WeeklyPriorityAnalysisInputV1`
 
@@ -152,8 +234,8 @@ Excluded alternatives are stored as `{rule_key, reason_code}` sorted by rule key
 
 The frozen independent versions are:
 
-- `weekly_priority_rules_version="w3-priority-1.0.0"` for eligibility, severity, ordering, conflicts, and cap;
-- `weekly_priority_copy_version="w3-priority-ar-1.0.0"` for Arabic titles, reasons, actions, and safety copy;
+- `weekly_priority_rules_version="w3-priority-1.1.0"` for eligibility, severity, ordering, conflicts, and cap;
+- `weekly_priority_copy_version="w3-priority-ar-1.1.0"` for Arabic titles, reasons, actions, and safety copy;
 - input `analysis_rules_version` supplied by the Plan 032 analysis authority;
 - existing Registry, group, NOVA, calculation, Target Plan, and snapshot versions retained independently.
 
@@ -171,7 +253,7 @@ excluded_alternatives: sorted [{rule_key, reason_code}]
 none_reason: closed enum | null
 ```
 
-Each `PriorityV1` contains `rule_key`, `rank` (`main|secondary`), `category`, `title_ar`, `reason_ar`, `confidence="strong"`, `coverage_percent`, `complete_day_count`, `action_key`, `action_ar`, `action_mode`, `rules_version`, `copy_version`, sorted `facts_used`, sorted opaque `evidence_refs`, and sorted conflict decisions. `facts_used` uses typed `{metric_key,value,unit,target,comparison,period}` records; no free-form client facts are accepted.
+Each `PriorityV1` contains `rule_key`, `rank` (`main|secondary`), `category`, `title_ar`, `reason_ar`, `confidence="strong"`, `coverage_percent`, `complete_day_count`, `action_key`, `action_ar`, `action_mode`, required `goal_trackability`, required `goal_unavailable_reason`, `rules_version`, `copy_version`, sorted `facts_used`, sorted opaque `evidence_refs`, and sorted conflict decisions. `facts_used` uses typed `{metric_key,value,unit,target,comparison,period}` records; no free-form client facts are accepted.
 
 `none_reason` is exactly `invalid_analysis_input | insufficient_complete_days | insufficient_coverage | no_eligible_priority | stale_analysis | superseded_analysis | safety_exclusion | unsupported_version | rejected_goal_suppression`.
 
@@ -256,7 +338,7 @@ Invalid transitions return `409 GOAL_STATE_CONFLICT` and the current safe projec
 Proposed additive endpoints, all under owner authentication:
 
 - `GET /progress/weekly-priorities/current` returns `WeeklyPriorityResultV1`;
-- `GET /progress/behavior-goals/current` returns the current offered/deferred/active/paused/incomplete goal or `null` plus its source priority;
+- `GET /progress/behavior-goals/current` returns the current tracked goal or explicit `null` plus source/current priority and closed `goal_unavailable_reason`; an informational-only main returns `action_not_observable`;
 - `GET /progress/behavior-goals/history?cursor=&limit=20` returns bounded newest-first incomplete/completed/rejected/ended/archived projections;
 - `POST /progress/behavior-goals/{goal_id}/commands` accepts the closed event union and returns `BehaviorGoalResponseV1`;
 - no Admin mutation route; a bounded Admin monitoring projection may expose state/version/timestamps but not notes, evidence facts, rejection reason, or reminder content.
@@ -298,7 +380,7 @@ Cards use a heading plus text/icon state, never color alone. Dialogs trap focus;
 
 ### 5.5 Deterministic end-of-week repeat
 
-At end-of-window finalization, an `active` or `paused` goal that is not achieved transitions once to `incomplete`; this system transition freezes the prior window's final progress/evidence/history before any owner choice. Repeat is available only from that frozen `incomplete` state with progress `not_yet_reached` or `insufficient_evidence`. An achieved, offered, deferred, active, paused, rejected, completed, ended, or archived goal cannot repeat. A current fresh `selected` weekly-priority result must name the same `rule_key` as its main priority, with the same rules version and compatible action key. A matching secondary never authorizes repeat and repeat never changes the main/secondary cap or selector order. A stale, none, safety-suppressed, different-main, changed-rules, or incompatible-action result offers `change` or `end`, not repeat.
+At end-of-window finalization, an `active` or `paused` goal that is not achieved transitions once to `incomplete`; this system transition freezes the prior window's final progress/evidence/history before any owner choice. Repeat is available only from that frozen `incomplete` state with progress `not_yet_reached` or `insufficient_evidence`. An achieved, offered, deferred, active, paused, rejected, completed, ended, or archived goal cannot repeat. A current fresh `selected` weekly-priority result must name the same `rule_key` as its main priority, with the same rules version, compatible action key, and `goal_trackability=trackable`. A matching secondary never authorizes repeat and repeat never changes the main/secondary cap or selector order. A stale, none, safety-suppressed, different-main, changed-rules, or incompatible-action result offers `change` or `end`, not repeat.
 
 Repeat is one atomic Backend command, never an overwrite:
 
@@ -328,7 +410,7 @@ The prior end-week review and reminder receipts remain immutable. The new goal r
 
 The goal window starts on the captured Diary date of acceptance/edit/change and ends on the earlier of seven Diary dates or the source priority period's review end. It never back-credits days before the owner accepted the terms. One captured Backend calendar snapshot is propagated through each evaluation.
 
-Each action key maps in the same rules version to a closed Diary predicate over immutable snapshot groups/traits/nutrients. A qualifying occurrence is a distinct `complete` Diary date satisfying that predicate. Replacement wording does not claim the removed Food can be causally proven; progress counts the desired replacement category appearing on a completed date. One date contributes at most one count.
+Only the nine trackable action keys in section 0.3 map to a closed predicate over persisted PLAN 032 day facts. A qualifying occurrence is a distinct eligible complete Diary date satisfying that exact predicate. Replacement wording does not require causal proof that another item disappeared, but does require observable desired-category appearance. Informational-only actions never enter progress calculation.
 
 ```text
 eligible_dates = dates in goal window where logging_status == complete
@@ -363,7 +445,7 @@ External notifications default off and require an explicit owner preference. In-
 | contextual midweek | active; fourth Diary date of window or later; progress exactly 0; at least two complete dates; not stale/unsafe; not opted out; not sent | at most one: `لم يظهر تقدم في الهدف ضمن الأيام المكتملة. يمكنك تقليل الخطوة أو تغييرها أو إنهاء الهدف.` |
 | end-of-week review | active or paused; window ended; final or insufficient-evidence projection available; not already sent | exactly one in-app review card: `راجع هدف الأسبوع وفق الأيام المكتملة. يمكنك تقليله أو تغييره أو إنهاؤه.` |
 
-No reminder is sent for unknown progress, deferred/rejected/completed/ended/archived goals, during pause, or after a source safety exclusion. Quiet hours are 21:00–09:00 `Asia/Riyadh`; eligible external delivery is deferred to 09:00 without creating another reminder row. There are no retries that can exceed the cap: a unique `(goal_id, reminder_type, goal_revision)` delivery row and idempotent provider key enforce once-only delivery. Provider failure records a privacy-safe result and does not extend the period or punish the owner.
+No reminder is sent for an informational-only priority, unknown progress, deferred/rejected/completed/ended/archived goals, during pause, or after a source safety exclusion. Quiet hours are 21:00–09:00 `Asia/Riyadh`; eligible external delivery is deferred to 09:00 without creating another reminder row. There are no retries that can exceed the cap: a unique `(goal_id, reminder_type, goal_revision)` delivery row and idempotent provider key enforce once-only delivery. Provider failure records a privacy-safe result and does not extend the period or punish the owner.
 
 ### 6.4 Rejected-offer suppression
 
@@ -454,7 +536,7 @@ No error discloses whether another Principal owns an ID. Responses and OpenAPI u
 
 ### 8.1 Golden and mutation coverage
 
-The seeded corpus covers invalid/stale/safety inputs, complete-empty evidence, insufficient days/coverage, priority tier order, repeated-overage threshold, micronutrient persistence, exact ties, duplicate/conflicting evidence, replacement-over-addition, secondary cap, rejection suppression, lifecycle transitions, stale writers, derived progress, reopen reversal, reminder caps, and incomplete-goal repeat/reduce with distinct identity/window, exact replay across calendar/recommendation rollover, stale concurrency, invalid state, history preservation, and main-priority enforcement. Golden fields named `_server_generated_goal_id` and `_server_state_before` are deterministic oracle fixtures for server output/environment only; neither is an API request field.
+The seeded corpus covers all prior selector/lifecycle/repeat authorities plus all 28 explicit classifications, the exact 9/19 split, informational-only offer/progress/reminder/repeat suppression, withdrawn-version rejection, and producer-shaped day facts for every trackable predicate family. Progress qualification is derived by the verifier; a supplied `qualifies` boolean is malformed and rejected. Golden fields named `_server_generated_goal_id` and `_server_state_before` remain deterministic server-output fixtures and are not API request fields.
 
 The docs-only checker must reproduce every expected result and prove each selection has at most one main and one secondary. Future implementation tests must mutate each of these and observe failure: swap tier order; remove 75% coverage; treat partial as zero; permit one-event limit priority; remove micronutrient persistence; allow addition above calories; add a third priority; repeat a rejected goal; accept a second primary; increment progress in the client; preserve completion after reopen; reuse a source goal ID/window during repeat; overwrite prior repeat evidence; authorize repeat from a secondary; or send a second reminder.
 
@@ -480,7 +562,7 @@ The docs-only checker must reproduce every expected result and prove each select
 
 ### 8.3 Shadow and manual review gates
 
-Implementation starts with server evaluation and persistence behind `weekly_priorities_shadow_v1`; user payloads omit results and no goal/reminder is created. Shadow must run at least 28 consecutive days and include at least 1,000 eligible evaluations before launch review. If traffic cannot supply 1,000, the gate remains closed until Product and QA explicitly approve a statistically justified replacement sample; the implementation may not lower it silently.
+Implementation starts with server evaluation and persistence behind `weekly_priorities_shadow_v1`; user payloads omit results and no goal/reminder is created. Shadow must run at least 28 consecutive days and include at least 1,000 eligible evaluations before launch review. If traffic cannot supply 1,000, the gate remains closed; Design 1.1 defines no replacement denominator, waiver, or lower threshold.
 
 Required launch evidence:
 
@@ -498,7 +580,7 @@ Distribution by rule, none reason, coverage band, complete-day count, action mod
 
 ### 8.4 Privacy-safe observability, rollout, and rollback
 
-Allowed aggregate metrics are evaluation count/result class, rule key, main/secondary count, coverage band, latency bucket, stale/invalid reason, goal state event, progress-status band, reminder eligibility/suppression/result, version, and error code. Metrics exclude Principal/evidence IDs, exact nutrition values, Profile/Target inputs, dates finer than ISO week, notes/reasons, copy text, and notification destinations. Logs follow the 90-day policy; aggregate counters follow the approved product-metrics retention policy and cannot be joined back to a person.
+Allowed aggregate metrics are evaluation count/result class, rule key, main/secondary count, selected trackable-main count, selected informational-only-main count, coverage band, latency bucket, stale/invalid reason, goal state event, progress-status band, reminder eligibility/suppression/result, version, and error code. Metrics exclude Principal/evidence IDs, exact nutrition values, Profile/Target inputs, dates finer than ISO week, notes/reasons, copy text, and notification destinations. Logs follow the 90-day policy; aggregate counters follow the approved product-metrics retention policy and cannot be joined back to a person.
 
 After eight explicit approvals and a freeze decision, rollout still requires a separate implementation/launch authorization. Stages are internal staff, 5%, 25%, then 100%, each for at least seven days with the same zero-safety/cap/isolation gates. A server-side kill switch independently disables display, goal offers, and external delivery while preserving read-only history.
 
