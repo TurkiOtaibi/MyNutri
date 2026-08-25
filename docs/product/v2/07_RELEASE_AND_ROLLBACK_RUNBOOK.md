@@ -279,12 +279,24 @@ Shadow mode requires the shadow switch on while display, offers, and reminder
 delivery remain off. It persists governed recommendations but never creates a
 goal or reminder. Launch review requires at least 28 consecutive shadow days
 and at least 1,000 eligible evaluations, plus the frozen manual-review and
-safety evidence. Provider scheduling, Render workers, activation, and traffic
-percentages require separate authorization.
+safety evidence. The report keeps eligible evaluations, selected
+recommendations, selected trackable mains, selected informational-only mains,
+and actual goal offers as distinct counters; informational recommendations
+remain in the selector denominator and never count as offers. Provider
+scheduling, Render workers, activation, and traffic percentages require
+separate authorization.
+
+The first supported PLAN 033 implementation versions are
+`w3-priority-1.1.0` and `w3-priority-ar-1.1.0` with public schema version 1.
+The withdrawn pre-release 1.0.0 rules/copy versions have no alias or fallback.
+Exactly nine actions support Diary-derived tracking; the other nineteen remain
+visible informational priorities and create no goal, progress, reminder, or
+repeat/reduce lifecycle.
 
 Apply additive revision `22733dbf5249` only after normal backup/recovery and
 deployment approval. It descends from `c3a7e6d5f210`, creates six PLAN 033
-entities, and performs no historical backfill. An older Backend can run against
+entities plus the explicit shadow/evaluation provenance ledger, and performs
+no historical backfill. An older Backend can run against
 the additive schema. Application rollback therefore disables display, offers,
 and delivery and deploys compatible code while retaining immutable history.
 Once any PLAN 033 row exists, the migration's populated downgrade refuses

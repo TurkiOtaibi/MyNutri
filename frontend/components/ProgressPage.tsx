@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ProgressView } from "@/features/progress/progress-view";
@@ -9,6 +9,7 @@ import {
   stableAnalysisAttempt,
   stableGoalCommandAttempt,
   type AnalysisAttempt,
+  type GoalEditTerms,
   type GoalCommandAttempt
 } from "@/features/progress/progress-model";
 import {
@@ -36,6 +37,9 @@ export function ProgressPage() {
   const historyHeadingRef = useRef<HTMLHeadingElement>(null);
   const goalHeadingRef = useRef<HTMLHeadingElement>(null);
   const goalErrorRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const attemptRef = useRef<AnalysisAttempt | null>(null);
   const goalAttemptRef = useRef<GoalCommandAttempt | null>(null);
   const previousSubjectRef = useRef(subject);
@@ -45,6 +49,12 @@ export function ProgressPage() {
   const [pendingGoalAction, setPendingGoalAction] = useState<
     import("@/lib/types").BehaviorGoal["allowed_actions"][number] | null
   >(null);
+  const [goalTerms, setGoalTerms] = useState<GoalEditTerms>({
+    weeklyTargetCount: 3,
+    scheduledDayMask: [],
+    reminderPreference: "disabled",
+    note: ""
+  });
 
   const analysisQuery = useQuery({
     queryKey: ["pattern-analysis", subject],
@@ -94,6 +104,51 @@ export function ProgressPage() {
     }
   }, [analysisQuery.data, historyQuery.isError]);
 
+  useEffect(() => {
+    if (pendingGoalAction) requestAnimationFrame(() => cancelRef.current?.focus());
+  }, [pendingGoalAction]);
+
+  const requestGoalCommand = (action: import("@/lib/types").BehaviorGoal["allowed_actions"][number]) => {
+    const goal = goalQuery.data?.goal;
+    returnFocusRef.current = document.activeElement as HTMLElement | null;
+    setGoalTerms({
+      weeklyTargetCount: action === "reduce"
+        ? Math.max(1, (goal?.weekly_target_count ?? 2) - 1)
+        : goal?.weekly_target_count ?? 3,
+      scheduledDayMask: goal?.scheduled_day_mask ?? [],
+      reminderPreference: goal?.reminder_preference ?? "disabled",
+      note: goal?.owner_note ?? ""
+    });
+    setPendingGoalAction(action);
+  };
+  const cancelGoalCommand = () => {
+    setPendingGoalAction(null);
+    requestAnimationFrame(() => returnFocusRef.current?.focus());
+  };
+  const trapDialogFocus = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelGoalCommand();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = Array.from(
+      dialogRef.current?.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])"
+      ) ?? []
+    );
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   const evaluation = useMutation({
     mutationFn: async () => {
       const attempt = stableAnalysisAttempt(attemptRef.current, analysisQuery.data ?? null);
@@ -130,20 +185,22 @@ export function ProgressPage() {
   });
 
   const goalCommand = useMutation({
-    mutationFn: async ({ action, weeklyTargetCount }: { action: import("@/lib/types").BehaviorGoal["allowed_actions"][number]; weeklyTargetCount?: number }) => {
+    mutationFn: async ({ action, terms }: { action: import("@/lib/types").BehaviorGoal["allowed_actions"][number]; terms?: GoalEditTerms }) => {
       const goal = goalQuery.data?.goal;
       if (!goal) throw new Error("goal unavailable");
-      const attempt = stableGoalCommandAttempt(goalAttemptRef.current, goal, action, weeklyTargetCount);
+      const attempt = stableGoalCommandAttempt(goalAttemptRef.current, goal, action, terms);
       goalAttemptRef.current = attempt;
       return commandBehaviorGoal(attempt.goalId, attempt.command, attempt.key, accessToken, signal);
     },
     onSuccess: async (response) => {
       const replayed = response.idempotent_replayed;
+      const unavailableReason = response.recommendation?.main?.goal_unavailable_reason ?? null;
       goalAttemptRef.current = null;
       setGoalError("");
       queryClient.setQueryData(["behavior-goal", subject], {
-        goal: response.goal,
-        recommendation: response.recommendation
+        goal: unavailableReason === "action_not_observable" ? null : response.goal,
+        recommendation: response.recommendation,
+        goal_unavailable_reason: unavailableReason
       });
       await queryClient.invalidateQueries({ queryKey: ["behavior-goal-history", subject] });
       if (!replayed) {
@@ -180,6 +237,13 @@ export function ProgressPage() {
       priority={priorityQuery.data ?? goalQuery.data?.recommendation ?? null}
       priorityLoading={priorityQuery.isPending || goalQuery.isPending}
       priorityError={priorityQuery.isError || goalQuery.isError}
+      displayWeeklyPriority={
+        !(
+          priorityQuery.error instanceof ApiError
+          && priorityQuery.error.code === "FEATURE_DISABLED"
+        )
+      }
+      goalUnavailableReason={goalQuery.data?.goal_unavailable_reason ?? null}
       goal={goalQuery.data?.goal ?? null}
       goalHistory={goalHistoryQuery.data}
       goalHistoryLoading={goalHistoryQuery.isPending}
@@ -190,6 +254,9 @@ export function ProgressPage() {
       goalErrorRef={goalErrorRef}
       announcement={announcement}
       pendingGoalAction={pendingGoalAction}
+      goalTerms={goalTerms}
+      dialogRef={dialogRef}
+      cancelRef={cancelRef}
       onEvaluate={() => evaluation.mutate()}
       onRetryLoad={() => void analysisQuery.refetch()}
       onRetryHistory={() => {
@@ -200,16 +267,17 @@ export function ProgressPage() {
       onRetryPriority={() => {
         void Promise.all([priorityQuery.refetch(), goalQuery.refetch(), goalHistoryQuery.refetch()]);
       }}
-      onRequestGoalCommand={setPendingGoalAction}
-      onCancelGoalCommand={() => setPendingGoalAction(null)}
-      onConfirmGoalCommand={() => {
+      onRequestGoalCommand={requestGoalCommand}
+      onCancelGoalCommand={cancelGoalCommand}
+      onGoalTermsChange={setGoalTerms}
+      onDialogKeyDown={trapDialogFocus}
+      onConfirmGoalCommand={(terms) => {
         const action = pendingGoalAction;
         const goal = goalQuery.data?.goal;
         if (!action || !goal) return;
         goalCommand.mutate({
           action,
-          weeklyTargetCount:
-            action === "reduce" ? Math.max(1, goal.weekly_target_count - 1) : undefined
+          terms
         });
       }}
     />

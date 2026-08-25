@@ -9,7 +9,7 @@ from sqlmodel import Session, func, select
 from app.core.auth import PrincipalContext
 from app.core.config import get_settings
 from app.db.session import engine
-from app.models import NutritionAnalysis, WeeklyPriorityRecommendation
+from app.models import NutritionAnalysis, WeeklyPriorityEvaluation
 from app.services.weekly_priorities import ensure_offer, evaluate_recommendation, process_due_goals
 
 
@@ -48,7 +48,9 @@ def evaluation_batch(
         with Session(engine) as session:
             try:
                 recommendation = evaluate_recommendation(
-                    session, PrincipalContext(principal_id=principal_id)
+                    session,
+                    PrincipalContext(principal_id=principal_id),
+                    evaluation_mode="shadow" if shadow else "live",
                 )
                 created += 1
                 if not shadow and ensure_offer(
@@ -75,16 +77,41 @@ def launch_gate_report() -> dict[str, int | bool | str | None]:
     """Return only non-identifying aggregate evidence for launch review."""
     with Session(engine) as session:
         eligible = session.exec(
-            select(func.count()).select_from(WeeklyPriorityRecommendation).where(
-                WeeklyPriorityRecommendation.status == "selected"
+            select(func.count()).select_from(WeeklyPriorityEvaluation).where(
+                WeeklyPriorityEvaluation.evaluation_mode == "shadow",
+                WeeklyPriorityEvaluation.selector_eligible.is_(True),
+            )
+        ).one()
+        selected = session.exec(
+            select(func.count()).select_from(WeeklyPriorityEvaluation).where(
+                WeeklyPriorityEvaluation.evaluation_mode == "shadow",
+                WeeklyPriorityEvaluation.recommendation_selected.is_(True),
+            )
+        ).one()
+        trackable = session.exec(
+            select(func.count()).select_from(WeeklyPriorityEvaluation).where(
+                WeeklyPriorityEvaluation.evaluation_mode == "shadow",
+                WeeklyPriorityEvaluation.main_trackability == "trackable",
+            )
+        ).one()
+        informational = session.exec(
+            select(func.count()).select_from(WeeklyPriorityEvaluation).where(
+                WeeklyPriorityEvaluation.evaluation_mode == "shadow",
+                WeeklyPriorityEvaluation.main_trackability == "informational_only",
+            )
+        ).one()
+        offers = session.exec(
+            select(func.count()).select_from(WeeklyPriorityEvaluation).where(
+                WeeklyPriorityEvaluation.goal_offer_created.is_(True)
             )
         ).one()
         dates = sorted(
             {
-                created.date()
-                for created in session.exec(
-                    select(WeeklyPriorityRecommendation.created_at).where(
-                        WeeklyPriorityRecommendation.status == "selected"
+                observed
+                for observed in session.exec(
+                    select(WeeklyPriorityEvaluation.evaluation_diary_date).where(
+                        WeeklyPriorityEvaluation.evaluation_mode == "shadow",
+                        WeeklyPriorityEvaluation.selector_eligible.is_(True),
                     )
                 ).all()
             }
@@ -98,6 +125,10 @@ def launch_gate_report() -> dict[str, int | bool | str | None]:
     first, last = (dates[0] if dates else None), (dates[-1] if dates else None)
     return {
         "eligible_evaluations": int(eligible),
+        "selected_recommendations": int(selected),
+        "selected_trackable_mains": int(trackable),
+        "selected_informational_only_mains": int(informational),
+        "goal_offers": int(offers),
         "consecutive_shadow_days": longest,
         "first_iso_week": first.isocalendar().year
         and f"{first.isocalendar().year}-W{first.isocalendar().week:02d}"

@@ -36,6 +36,8 @@ def upgrade() -> None:
         sa.Column("period_start", sa.Date(), nullable=False),
         sa.Column("period_end", sa.Date(), nullable=False),
         sa.Column("as_of_diary_date", sa.Date(), nullable=False),
+        sa.Column("evaluation_diary_date", sa.Date(), nullable=False),
+        sa.Column("evaluation_mode", sa.String(16), nullable=False),
         sa.Column("status", sa.String(32), nullable=False),
         sa.Column("rules_version", sa.String(64), nullable=False),
         sa.Column("copy_version", sa.String(64), nullable=False),
@@ -50,19 +52,42 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.ForeignKeyConstraint(["principal_id"], ["principal.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["source_analysis_id"], ["nutrition_analysis.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["source_analysis_id", "principal_id"], ["nutrition_analysis.id", "nutrition_analysis.principal_id"], name="fk_weekly_priority_source_owner", ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["source_analysis_revision_id", "principal_id"], ["nutrition_analysis_revision.id", "nutrition_analysis_revision.principal_id"], name="fk_weekly_priority_analysis_owner", ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["superseded_by_id"], ["weekly_priority_recommendation.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["superseded_by_id", "principal_id"], ["weekly_priority_recommendation.id", "weekly_priority_recommendation.principal_id"], name="fk_weekly_priority_supersession_owner", ondelete="RESTRICT", deferrable=True, initially="DEFERRED"),
         sa.UniqueConstraint("id", "principal_id", name="uq_weekly_priority_id_owner"),
         sa.UniqueConstraint("principal_id", "source_analysis_revision_id", "rules_version", name="uq_weekly_priority_source_rules"),
         sa.CheckConstraint("schema_version = 1", name="ck_weekly_priority_schema"),
         sa.CheckConstraint("status IN ('selected','none','stale','superseded','safety_suppressed')", name="ck_weekly_priority_status"),
+        sa.CheckConstraint("evaluation_mode IN ('live','shadow')", name="ck_weekly_priority_mode"),
         sa.CheckConstraint("period_end - period_start = 6", name="ck_weekly_priority_period"),
         sa.CheckConstraint("length(input_digest) = 64 AND length(content_hash) = 64", name="ck_weekly_priority_hash"),
         sa.CheckConstraint("(superseded_by_id IS NULL AND superseded_at IS NULL) OR (superseded_by_id IS NOT NULL AND superseded_at IS NOT NULL)", name="ck_weekly_priority_supersession"),
     )
     op.create_index("uq_weekly_priority_one_selected", "weekly_priority_recommendation", ["principal_id"], unique=True, postgresql_where=sa.text("superseded_at IS NULL AND status='selected'"))
     op.create_index("ix_weekly_priority_current", "weekly_priority_recommendation", ["principal_id", sa.text("period_end DESC"), sa.text("created_at DESC"), sa.text("id DESC")])
+
+    op.create_table(
+        "weekly_priority_evaluation",
+        sa.Column("id", _uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("principal_id", _uuid(), nullable=False),
+        sa.Column("recommendation_id", _uuid(), nullable=False),
+        sa.Column("evaluation_mode", sa.String(16), nullable=False),
+        sa.Column("evaluation_diary_date", sa.Date(), nullable=False),
+        sa.Column("selector_eligible", sa.Boolean(), nullable=False),
+        sa.Column("recommendation_selected", sa.Boolean(), nullable=False),
+        sa.Column("main_trackability", sa.String(32)),
+        sa.Column("goal_offer_created", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.ForeignKeyConstraint(["principal_id"], ["principal.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["recommendation_id", "principal_id"], ["weekly_priority_recommendation.id", "weekly_priority_recommendation.principal_id"], name="fk_weekly_priority_evaluation_owner", ondelete="RESTRICT"),
+        sa.UniqueConstraint("principal_id", "evaluation_mode", "evaluation_diary_date", "recommendation_id", name="uq_weekly_priority_evaluation_identity"),
+        sa.CheckConstraint("evaluation_mode IN ('live','shadow')", name="ck_priority_eval_mode"),
+        sa.CheckConstraint("main_trackability IS NULL OR main_trackability IN ('trackable','informational_only')", name="ck_priority_eval_trackability"),
+        sa.CheckConstraint("recommendation_selected OR main_trackability IS NULL", name="ck_priority_eval_selection"),
+        sa.CheckConstraint("NOT goal_offer_created OR (evaluation_mode='live' AND main_trackability='trackable')", name="ck_priority_eval_offer"),
+    )
+    op.create_index("ix_priority_eval_launch", "weekly_priority_evaluation", ["evaluation_mode", "evaluation_diary_date"])
 
     op.create_table(
         "weekly_priority_evidence_ref",
@@ -131,7 +156,10 @@ def upgrade() -> None:
         sa.UniqueConstraint("principal_id", "previous_goal_id", name="uq_behavior_goal_successor"),
         sa.CheckConstraint("sequence_number >= 1 AND version >= 1", name="ck_behavior_goal_versions"),
         sa.CheckConstraint("weekly_target_count BETWEEN 1 AND 7", name="ck_behavior_goal_target"),
-        sa.CheckConstraint("window_end - window_start = 6", name="ck_behavior_goal_window"),
+        sa.CheckConstraint(
+            "window_end >= window_start AND window_end - window_start <= 6",
+            name="ck_behavior_goal_window",
+        ),
         sa.CheckConstraint("state IN ('offered','deferred','active','paused','completed','incomplete','rejected','ended','archived')", name="ck_behavior_goal_state"),
         sa.CheckConstraint("private_note IS NULL OR length(private_note) <= 280", name="ck_behavior_goal_note"),
         sa.CheckConstraint("jsonb_typeof(day_mask)='array' AND jsonb_array_length(day_mask) <= 7", name="ck_behavior_goal_day_mask"),
@@ -155,9 +183,12 @@ def upgrade() -> None:
         sa.Column("request_id", sa.String(64)),
         sa.ForeignKeyConstraint(["principal_id"], ["principal.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["goal_id", "principal_id"], ["behavior_goal.id", "behavior_goal.principal_id"], name="fk_behavior_goal_history_owner", ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["root_goal_id", "principal_id"], ["behavior_goal.id", "behavior_goal.principal_id"], name="fk_behavior_goal_history_root_owner", ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["previous_goal_id", "principal_id"], ["behavior_goal.id", "behavior_goal.principal_id"], name="fk_behavior_goal_history_previous_owner", ondelete="RESTRICT"),
         sa.UniqueConstraint("goal_id", "goal_version", name="uq_behavior_goal_history_version"),
+        sa.UniqueConstraint("goal_id", "goal_version", "principal_id", name="uq_behavior_goal_history_revision_owner"),
         sa.CheckConstraint("actor_type IN ('owner','system')", name="ck_behavior_goal_history_actor"),
-        sa.CheckConstraint("event_type IN ('offered','accept','edit','defer','reject','change','changed','pause','resume','end','completed','evidence_reopened','progress_updated','finalized_incomplete','repeated_from_previous_window')", name="ck_behavior_goal_history_event"),
+        sa.CheckConstraint("event_type IN ('offered','accept','edit','defer','reject','change','changed','pause','resume','end','completed','evidence_reopened','progress_updated','historical_evidence_changed','finalized_completed','finalized_incomplete','repeated_from_previous_window')", name="ck_behavior_goal_history_event"),
         sa.CheckConstraint("reason IS NULL OR reason IN ('not_relevant','too_difficult','prefer_other','pause_tracking','other','owner_requested','evidence_superseded')", name="ck_behavior_goal_history_reason"),
     )
     op.create_index("ix_behavior_goal_history_goal_time", "behavior_goal_history", ["goal_id", sa.text("occurred_at DESC")])
@@ -174,8 +205,8 @@ def upgrade() -> None:
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.ForeignKeyConstraint(["principal_id"], ["principal.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["source_goal_id", "principal_id"], ["behavior_goal.id", "behavior_goal.principal_id"], name="fk_behavior_goal_command_source_owner", ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["recommendation_id"], ["weekly_priority_recommendation.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["allocated_goal_id"], ["behavior_goal.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["recommendation_id", "principal_id"], ["weekly_priority_recommendation.id", "weekly_priority_recommendation.principal_id"], name="fk_behavior_goal_command_recommendation_owner", ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["allocated_goal_id", "principal_id"], ["behavior_goal.id", "behavior_goal.principal_id"], name="fk_behavior_goal_command_allocated_owner", ondelete="RESTRICT"),
         sa.UniqueConstraint("principal_id", "operation", "source_goal_id", "key_digest", name="uq_behavior_goal_command_scope"),
         sa.CheckConstraint("length(key_digest) = 64 AND length(command_hash) = 64", name="ck_behavior_goal_command_hashes"),
         sa.CheckConstraint("response_status BETWEEN 200 AND 599", name="ck_behavior_goal_command_status"),
@@ -194,6 +225,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.ForeignKeyConstraint(["principal_id"], ["principal.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["goal_id", "principal_id"], ["behavior_goal.id", "behavior_goal.principal_id"], name="fk_behavior_goal_reminder_owner", ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["goal_id", "goal_revision", "principal_id"], ["behavior_goal_history.goal_id", "behavior_goal_history.goal_version", "behavior_goal_history.principal_id"], name="fk_behavior_goal_reminder_revision_owner", ondelete="RESTRICT"),
         sa.UniqueConstraint("goal_id", "goal_revision", "reminder_type", name="uq_behavior_goal_reminder_cap"),
         sa.CheckConstraint("attempts IN (0,1)", name="ck_behavior_goal_reminder_attempts"),
         sa.CheckConstraint("reminder_type IN ('midweek','endweek_review')", name="ck_behavior_goal_reminder_type"),
@@ -210,6 +242,7 @@ def downgrade() -> None:
     tables = (
         "behavior_goal_reminder_delivery", "behavior_goal_command_idempotency",
         "behavior_goal_history", "behavior_goal", "weekly_priority_evidence_ref",
+        "weekly_priority_evaluation",
         "weekly_priority_recommendation",
     )
     counts = {table: int(connection.scalar(sa.text(f"SELECT count(*) FROM {table}")) or 0) for table in tables}
@@ -227,6 +260,8 @@ def downgrade() -> None:
     op.drop_table("behavior_goal")
     op.drop_index("ix_weekly_priority_evidence_principal_date", table_name="weekly_priority_evidence_ref")
     op.drop_table("weekly_priority_evidence_ref")
+    op.drop_index("ix_priority_eval_launch", table_name="weekly_priority_evaluation")
+    op.drop_table("weekly_priority_evaluation")
     op.drop_index("ix_weekly_priority_current", table_name="weekly_priority_recommendation")
     op.drop_index("uq_weekly_priority_one_selected", table_name="weekly_priority_recommendation")
     op.drop_table("weekly_priority_recommendation")

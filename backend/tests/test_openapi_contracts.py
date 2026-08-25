@@ -3,14 +3,17 @@ from __future__ import annotations
 from typing import get_type_hints
 
 import pytest
-from fastapi import HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi.testclient import TestClient
 from pydantic import TypeAdapter
 
 from app.api.routes.diary import _command_expected_version, add_entry, edit_entry
 from app.api.routes.foods import add_food, edit_food
+from app.api.routes.weekly_priorities import Plan033Route
 from app.main import app
 from app.nutrition_rules.manifest import registry_response
 from app.schemas import (
+    BehaviorGoalCommandV1,
     DiaryDayStatusCommand,
     NutritionRegistryResponse,
     WeeklyPriorityAnalysisInputV1,
@@ -197,7 +200,36 @@ def test_weekly_priority_and_goal_openapi_is_closed_owner_only_and_bounded() -> 
         "WeeklyPriorityResultV1",
         "PriorityV1",
         "BehaviorGoalResponseV1",
-        "BehaviorGoalCommandV1",
         "BehaviorGoalCommandResponseV1",
     ):
         assert schema["components"]["schemas"][name]["additionalProperties"] is False
+    command = schema["components"]["schemas"]["BehaviorGoalCommandV1"]
+    assert command["discriminator"]["propertyName"] == "event"
+    assert len(command["oneOf"]) == 9
+    for status in ("400", "404", "409", "422", "500", "503"):
+        assert command_route["responses"][status]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/Plan033ErrorResponseV1"
+        }
+    priority = schema["components"]["schemas"]["PriorityV1"]
+    assert set(priority["properties"]["goal_trackability"]["enum"]) == {
+        "trackable",
+        "informational_only",
+    }
+
+
+def test_plan033_request_validation_uses_the_stable_error_envelope() -> None:
+    isolated = FastAPI()
+    router = APIRouter(route_class=Plan033Route)
+
+    @router.post("/commands")
+    def command(payload: BehaviorGoalCommandV1):
+        return payload
+
+    isolated.include_router(router)
+    response = TestClient(isolated).post(
+        "/commands", json={"event": "pause", "expected_version": 1, "note": "irrelevant"}
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert response.json()["error"]["details"] == {}
+    assert response.json()["error"]["request_id"]

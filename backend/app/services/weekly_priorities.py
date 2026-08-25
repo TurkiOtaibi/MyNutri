@@ -8,6 +8,7 @@ import json
 import re
 from typing import Any
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
@@ -21,18 +22,24 @@ from app.models import (
     BehaviorGoalCommandIdempotency,
     BehaviorGoalHistory,
     BehaviorGoalReminderDelivery,
+    NutritionAnalysis,
     NutritionAnalysisRevision,
     Principal,
     WeeklyPriorityEvidenceRef,
+    WeeklyPriorityEvaluation,
     WeeklyPriorityRecommendation,
     utcnow,
 )
 from app.nutrition_rules.weekly_priority import (
     COPY_CATALOG,
+    INFORMATIONAL_COPY_AR,
     METRIC_RULES,
     RULE_META,
+    TRACKABLE_ACTIONS,
     WEEKLY_PRIORITY_COPY_VERSION,
     WEEKLY_PRIORITY_RULES_VERSION,
+    action_day_qualifies,
+    action_trackability,
     select as select_priority,
     validate_producer,
 )
@@ -52,6 +59,7 @@ from app.schemas import (
 from app.services.pattern_analysis import current_analysis
 
 _KEY_RE = re.compile(r"^[\x21-\x7e]{1,128}$")
+_RIYADH = ZoneInfo("Asia/Riyadh")
 _PRIMARY_STATES = {"active", "paused"}
 _ALLOWED_ACTIONS: dict[str, list[str]] = {
     "offered": ["accept", "edit", "defer", "reject"],
@@ -93,6 +101,28 @@ def _etag(goal_id: UUID, version: int) -> str:
 
 def _recommendation_etag(recommendation_id: UUID) -> str:
     return f'"weekly-priority-{recommendation_id}"'
+
+
+def _is_expired(expires_at: datetime, *, now: datetime | None = None) -> bool:
+    observed = expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=timezone.utc)
+    return observed <= (now or utcnow())
+
+
+def _finalization_boundary(period_end: date) -> datetime:
+    """Return the governed 36-hour boundary from Riyadh diary midnight."""
+    local_midnight = datetime.combine(
+        period_end + timedelta(days=1), datetime.min.time(), _RIYADH
+    )
+    return (local_midnight + timedelta(hours=36)).astimezone(timezone.utc)
+
+
+def _accepted_goal_window(
+    recommendation: WeeklyPriorityRecommendation | WeeklyPriorityResultV1,
+    start: date,
+) -> tuple[date, date]:
+    """Cap a seven-date execution window at the source period's next review end."""
+    review_end = recommendation.period_end + timedelta(days=7)
+    return start, min(start + timedelta(days=6), review_end)
 
 
 def _target_value(metric) -> float | None:
@@ -154,7 +184,10 @@ def _selection_input(
         mode = "review" if tier == 3 else "replace"
         if tier == 2 and calories_relation != "above_target" and "add" in actions:
             mode = "add"
-        qualifying = metric.current.status == ("above_target" if tier == 1 else "below_target")
+        if tier == 1 and metric.direction == "minimize":
+            qualifying = metric.current.status == "observed" and (metric.current.value or 0) > 0
+        else:
+            qualifying = metric.current.status == ("above_target" if tier == 1 else "below_target")
         coverage = metric.current.coverage_percent or 0.0
         candidate = {
             "key": rule_key,
@@ -255,6 +288,8 @@ def _priority(rule_key: str, rank: str, candidate: dict[str, Any], metric) -> Pr
     refs = sorted(
         metric.current.evidence_refs, key=lambda item: (item.diary_date, str(item.source_ref))
     )
+    action_key = actions[mode]
+    trackability, unavailable_reason = action_trackability(action_key)
     return PriorityV1(
         rule_key=rule_key,
         rank=rank,
@@ -263,9 +298,14 @@ def _priority(rule_key: str, rank: str, candidate: dict[str, Any], metric) -> Pr
         reason_ar=reason,
         coverage_percent=metric.current.coverage_percent,
         complete_day_count=metric.current.complete_day_count,
-        action_key=actions[mode],
+        action_key=action_key,
         action_ar=action,
         action_mode=mode,
+        goal_trackability=trackability,
+        goal_unavailable_reason=unavailable_reason,
+        goal_unavailable_copy_ar=(
+            INFORMATIONAL_COPY_AR if trackability == "informational_only" else None
+        ),
         rules_version=WEEKLY_PRIORITY_RULES_VERSION,
         copy_version=WEEKLY_PRIORITY_COPY_VERSION,
         facts_used=[
@@ -289,13 +329,49 @@ def _project_recommendation(row: WeeklyPriorityRecommendation) -> WeeklyPriority
         document.update(
             status="superseded", main=None, secondary=None, none_reason="superseded_analysis"
         )
+    elif _is_expired(row.expires_at) and document.get("status") == "selected":
+        document.update(status="stale", main=None, secondary=None, none_reason="stale_analysis")
     document["etag"] = _recommendation_etag(row.id)
     return WeeklyPriorityResultV1.model_validate(document)
 
 
+def _record_evaluation(
+    session: Session,
+    row: WeeklyPriorityRecommendation,
+    result: WeeklyPriorityResultV1,
+    evaluation_mode: str,
+    evaluation_diary_date: date,
+) -> None:
+    existing = session.exec(
+        select(WeeklyPriorityEvaluation).where(
+            WeeklyPriorityEvaluation.principal_id == row.principal_id,
+            WeeklyPriorityEvaluation.recommendation_id == row.id,
+            WeeklyPriorityEvaluation.evaluation_mode == evaluation_mode,
+            WeeklyPriorityEvaluation.evaluation_diary_date == evaluation_diary_date,
+        )
+    ).first()
+    if existing is not None:
+        return
+    session.add(
+        WeeklyPriorityEvaluation(
+            principal_id=row.principal_id,
+            recommendation_id=row.id,
+            evaluation_mode=evaluation_mode,
+            evaluation_diary_date=evaluation_diary_date,
+            selector_eligible=result.none_reason
+            not in {"invalid_analysis_input", "unsupported_version", "safety_exclusion"},
+            recommendation_selected=result.status == "selected",
+            main_trackability=result.main.goal_trackability if result.main else None,
+            goal_offer_created=False,
+        )
+    )
+
+
 def evaluate_recommendation(
-    session: Session, principal: PrincipalContext
+    session: Session, principal: PrincipalContext, *, evaluation_mode: str = "live"
 ) -> WeeklyPriorityResultV1:
+    if evaluation_mode not in {"live", "shadow"}:
+        raise ValueError("evaluation_mode must be live or shadow")
     session.exec(
         select(Principal).where(Principal.id == principal.principal_id).with_for_update()
     ).one()
@@ -310,8 +386,14 @@ def evaluate_recommendation(
             WeeklyPriorityRecommendation.rules_version == WEEKLY_PRIORITY_RULES_VERSION,
         )
     ).first()
+    evaluation_diary_date = diary_calendar_authority().current_diary_date
     if existing:
-        return _project_recommendation(existing)
+        projected = _project_recommendation(existing)
+        _record_evaluation(
+            session, existing, projected, evaluation_mode, evaluation_diary_date
+        )
+        session.commit()
+        return projected
     state = validate_producer(
         source,
         stale=(
@@ -378,10 +460,7 @@ def evaluate_recommendation(
         period_start=source.period_start,
         period_end=source.period_end,
         generated_at=now,
-        expires_at=datetime.combine(
-            source.period_end + timedelta(days=2), datetime.min.time(), timezone.utc
-        )
-        + timedelta(hours=12),
+        expires_at=_finalization_boundary(source.period_end),
         status=status,
         rules_version=WEEKLY_PRIORITY_RULES_VERSION,
         copy_version=WEEKLY_PRIORITY_COPY_VERSION,
@@ -423,6 +502,8 @@ def evaluate_recommendation(
         period_start=source.period_start,
         period_end=source.period_end,
         as_of_diary_date=source.as_of_diary_date,
+        evaluation_diary_date=evaluation_diary_date,
+        evaluation_mode=evaluation_mode,
         status=persisted_status,
         rules_version=WEEKLY_PRIORITY_RULES_VERSION,
         copy_version=WEEKLY_PRIORITY_COPY_VERSION,
@@ -441,6 +522,7 @@ def evaluate_recommendation(
     )
     session.add(row)
     session.flush()
+    _record_evaluation(session, row, result, evaluation_mode, evaluation_diary_date)
     if previous and previous.id != row.id:
         previous.superseded_by_id = row.id
         previous.superseded_at = now
@@ -475,7 +557,7 @@ def evaluate_recommendation(
 def current_recommendation(session: Session, principal: PrincipalContext) -> WeeklyPriorityResultV1:
     if not get_settings().weekly_priorities_display_enabled:
         raise WeeklyPriorityError(
-            "PRIORITY_EVIDENCE_UNAVAILABLE",
+            "FEATURE_DISABLED",
             503,
             "لا تتوفر بيانات كافية وموثوقة لعرض الأولوية الآن.",
         )
@@ -501,6 +583,11 @@ def current_recommendation(session: Session, principal: PrincipalContext) -> Wee
 
 
 def _empty_progress(goal: BehaviorGoal, as_of: date, now: datetime) -> BehaviorGoalProgressV1:
+    window_day_count = sum(
+        not goal.day_mask
+        or (goal.window_start + timedelta(days=offset)).weekday() in goal.day_mask
+        for offset in range((goal.window_end - goal.window_start).days + 1)
+    )
     return BehaviorGoalProgressV1(
         window_start=goal.window_start,
         window_end=goal.window_end,
@@ -509,7 +596,7 @@ def _empty_progress(goal: BehaviorGoal, as_of: date, now: datetime) -> BehaviorG
         progress_percent=0,
         complete_day_count=0,
         partial_day_count=0,
-        unregistered_day_count=7,
+        unregistered_day_count=window_day_count,
         status="unknown",
         as_of_diary_date=as_of,
         source_day_versions={},
@@ -518,8 +605,47 @@ def _empty_progress(goal: BehaviorGoal, as_of: date, now: datetime) -> BehaviorG
     )
 
 
-def _goal_response(goal: BehaviorGoal) -> BehaviorGoalResponseV1:
-    authority = diary_calendar_authority()
+def _goal_snapshot(goal: BehaviorGoal) -> dict[str, Any]:
+    """Immutable governed terms and derived state for historical reconstruction."""
+    return {
+        "goal_id": str(goal.id),
+        "recommendation_id": str(goal.recommendation_id),
+        "root_goal_id": str(goal.root_goal_id),
+        "previous_goal_id": str(goal.previous_goal_id) if goal.previous_goal_id else None,
+        "sequence_number": goal.sequence_number,
+        "state": goal.state,
+        "version": goal.version,
+        "rule_key": goal.rule_key,
+        "action_key": goal.action_key,
+        "weekly_target_count": goal.weekly_target_count,
+        "scheduled_day_mask": list(goal.day_mask),
+        "owner_note": goal.private_note,
+        "reminder_preference": goal.reminder_preference,
+        "window_start": goal.window_start.isoformat(),
+        "window_end": goal.window_end.isoformat(),
+        "rules_version": goal.rules_version,
+        "copy_version": goal.copy_version,
+        "progress_revision": goal.progress_revision,
+        "progress": dict(goal.progress_document),
+        "offered_at": goal.created_at.isoformat(),
+        "accepted_at": goal.accepted_at.isoformat() if goal.accepted_at else None,
+        "deferred_at": goal.deferred_at.isoformat() if goal.deferred_at else None,
+        "deferred_until": goal.deferred_until.isoformat() if goal.deferred_until else None,
+        "changed_at": goal.changed_at.isoformat() if goal.changed_at else None,
+        "paused_at": goal.paused_at.isoformat() if goal.paused_at else None,
+        "resumed_at": goal.resumed_at.isoformat() if goal.resumed_at else None,
+        "completed_at": goal.completed_at.isoformat() if goal.completed_at else None,
+        "reviewed_at": goal.reviewed_at.isoformat() if goal.reviewed_at else None,
+        "rejected_at": goal.rejected_at.isoformat() if goal.rejected_at else None,
+        "ended_at": goal.ended_at.isoformat() if goal.ended_at else None,
+        "archived_at": goal.archived_at.isoformat() if goal.archived_at else None,
+        "created_at": goal.created_at.isoformat(),
+        "updated_at": goal.updated_at.isoformat(),
+    }
+
+
+def _goal_response(goal: BehaviorGoal, authority=None) -> BehaviorGoalResponseV1:
+    authority = authority or diary_calendar_authority()
     return BehaviorGoalResponseV1(
         goal_id=goal.id,
         root_goal_id=goal.root_goal_id,
@@ -570,6 +696,8 @@ def ensure_offer(
         not get_settings().behavior_goal_offers_enabled
         or recommendation.status != "selected"
         or recommendation.main is None
+        or recommendation.main.goal_trackability != "trackable"
+        or _is_expired(recommendation.expires_at)
     ):
         return None
     existing = session.exec(
@@ -580,8 +708,23 @@ def ensure_offer(
         )
     ).first()
     if existing:
+        evaluation = session.exec(
+            select(WeeklyPriorityEvaluation).where(
+                WeeklyPriorityEvaluation.principal_id == principal.principal_id,
+                WeeklyPriorityEvaluation.recommendation_id == recommendation.recommendation_id,
+                WeeklyPriorityEvaluation.evaluation_mode == "live",
+                WeeklyPriorityEvaluation.evaluation_diary_date == diary_calendar_authority().current_diary_date,
+            )
+        ).first()
+        if evaluation is not None and not evaluation.goal_offer_created:
+            evaluation.goal_offer_created = True
+            session.add(evaluation)
+            session.commit()
         return existing
     authority, now, goal_id = diary_calendar_authority(), utcnow(), uuid4()
+    window_start, window_end = _accepted_goal_window(
+        recommendation, authority.current_diary_date
+    )
     goal = BehaviorGoal(
         id=goal_id,
         principal_id=principal.principal_id,
@@ -594,8 +737,8 @@ def ensure_offer(
         action_key=recommendation.main.action_key,
         weekly_target_count=3,
         day_mask=[],
-        window_start=authority.current_diary_date,
-        window_end=authority.current_diary_date + timedelta(days=6),
+        window_start=window_start,
+        window_end=window_end,
         rules_version=recommendation.rules_version,
         copy_version=recommendation.copy_version,
         progress_document={},
@@ -617,15 +760,30 @@ def ensure_offer(
             from_state=None,
             to_state="offered",
             actor_type="system",
-            terms_progress_snapshot=goal.progress_document,
+            terms_progress_snapshot=_goal_snapshot(goal),
         )
     )
+    evaluation = session.exec(
+        select(WeeklyPriorityEvaluation).where(
+            WeeklyPriorityEvaluation.principal_id == principal.principal_id,
+            WeeklyPriorityEvaluation.recommendation_id == recommendation.recommendation_id,
+            WeeklyPriorityEvaluation.evaluation_mode == "live",
+            WeeklyPriorityEvaluation.evaluation_diary_date == authority.current_diary_date,
+        )
+    ).first()
+    if evaluation is not None:
+        evaluation.goal_offer_created = True
+        session.add(evaluation)
     session.commit()
     session.refresh(goal)
     return goal
 
 
 def current_goal(session: Session, principal: PrincipalContext) -> BehaviorGoalCurrentResponseV1:
+    if not get_settings().weekly_priorities_display_enabled:
+        return BehaviorGoalCurrentResponseV1(
+            recommendation=None, goal=None, goal_unavailable_reason=None
+        )
     recommendation = None
     try:
         recommendation = current_recommendation(session, principal)
@@ -639,8 +797,15 @@ def current_goal(session: Session, principal: PrincipalContext) -> BehaviorGoalC
         )
         .order_by(BehaviorGoal.updated_at.desc(), BehaviorGoal.id.desc())
     ).first()
+    unavailable_reason = (
+        recommendation.main.goal_unavailable_reason
+        if recommendation and recommendation.main and goal is None
+        else None
+    )
     return BehaviorGoalCurrentResponseV1(
-        recommendation=recommendation, goal=_goal_response(goal) if goal else None
+        recommendation=recommendation,
+        goal=_goal_response(goal) if goal else None,
+        goal_unavailable_reason=unavailable_reason,
     )
 
 
@@ -778,9 +943,23 @@ def command_goal(
         )
         .with_for_update()
     ).one()
-    previous = _goal_response(goal)
-    created: BehaviorGoal | None = None
+    if command.event in {"accept", "edit", "defer", "resume"}:
+        projected_source = _project_recommendation(recommendation)
+        if projected_source.status != "selected" or projected_source.main is None:
+            raise WeeklyPriorityError(
+                "PRIORITY_SOURCE_STALE",
+                409,
+                "انتهت صلاحية مصدر الأولوية. حدّث التحليل ثم حاول مجددًا.",
+            )
+        if command.event == "accept" and (
+            projected_source.main.goal_trackability != "trackable"
+        ):
+            raise WeeklyPriorityError(
+                "GOAL_STATE_CONFLICT", 409, "لا تتاح متابعة تلقائية لهذه الأولوية حاليًا."
+            )
     now, authority = utcnow(), diary_calendar_authority()
+    previous = _goal_response(goal, authority)
+    created: BehaviorGoal | None = None
     allowed = _ALLOWED_ACTIONS.get(goal.state, [])
     event_name = (
         "reduce" if command.event == "repeat" and command.repeat_mode == "reduce" else command.event
@@ -811,6 +990,7 @@ def command_goal(
             or projected.main.rule_key != goal.rule_key
             or projected.main.action_key != goal.action_key
             or projected.rules_version != goal.rules_version
+            or projected.main.goal_trackability != "trackable"
         ):
             raise WeeklyPriorityError(
                 "GOAL_REPEAT_PRIORITY_CONFLICT",
@@ -886,7 +1066,7 @@ def command_goal(
                 to_state="active",
                 request_digest=command_hash,
                 actor_type="owner",
-                terms_progress_snapshot=created.progress_document,
+                terms_progress_snapshot=_goal_snapshot(created),
             )
         )
         result, response_goal = (
@@ -910,16 +1090,47 @@ def command_goal(
                 503,
                 "لا تتوفر بيانات كافية وموثوقة لعرض الأولوية الآن.",
             )
-        if goal.state == "incomplete":
+        if projected.main.goal_trackability != "trackable":
+            if goal.state != "incomplete":
+                goal.state = "ended"
+                goal.version += 1
+                goal.ended_at = now
+                goal.updated_at = now
+                session.add(goal)
+                session.add(
+                    BehaviorGoalHistory(
+                        goal_id=goal.id,
+                        principal_id=principal.principal_id,
+                        root_goal_id=goal.root_goal_id,
+                        previous_goal_id=goal.previous_goal_id,
+                        sequence_number=goal.sequence_number,
+                        goal_version=goal.version,
+                        event_type="end",
+                        from_state=from_state,
+                        to_state="ended",
+                        request_digest=command_hash,
+                        actor_type="owner",
+                        reason=command.change_reason or "owner_requested",
+                        terms_progress_snapshot=_goal_snapshot(goal),
+                    )
+                )
+            result, response_goal = "change_available", goal
+        elif goal.state == "incomplete":
             result, response_goal = "change_available", goal
         else:
             goal.recommendation_id = current.id
             goal.rule_key, goal.action_key = projected.main.rule_key, projected.main.action_key
-            goal.window_start, goal.window_end = (
+            goal.window_start, goal.window_end = _accepted_goal_window(
+                current,
                 authority.current_diary_date,
-                authority.current_diary_date + timedelta(days=6),
             )
             goal.weekly_target_count = command.weekly_target_count or goal.weekly_target_count
+            if command.scheduled_day_mask is not None:
+                goal.day_mask = command.scheduled_day_mask
+            if command.note is not None:
+                goal.private_note = command.note
+            if command.reminder_preference is not None:
+                goal.reminder_preference = command.reminder_preference
             goal.version += 1
             goal.progress_revision += 1
             goal.changed_at = now
@@ -942,7 +1153,7 @@ def command_goal(
                     request_digest=command_hash,
                     actor_type="owner",
                     reason=command.change_reason or "owner_requested",
-                    terms_progress_snapshot=goal.progress_document,
+                    terms_progress_snapshot=_goal_snapshot(goal),
                 )
             )
             result, response_goal = "changed", goal
@@ -982,6 +1193,19 @@ def command_goal(
             goal.private_note = command.note
         if command.reminder_preference is not None:
             goal.reminder_preference = command.reminder_preference
+        if command.event in {"accept", "edit"}:
+            goal.window_start, goal.window_end = _accepted_goal_window(
+                recommendation,
+                authority.current_diary_date,
+            )
+            goal.progress_revision += 1
+            goal.progress_document = _empty_progress(
+                goal, authority.current_diary_date, now
+            ).model_dump(mode="json")
+            if from_state in {"offered", "deferred"}:
+                goal.accepted_at = now
+            else:
+                goal.changed_at = now
         setattr(
             goal,
             {
@@ -1013,7 +1237,7 @@ def command_goal(
                 request_digest=command_hash,
                 actor_type="owner",
                 reason=command.change_reason if command.event == "change" else command.reason,
-                terms_progress_snapshot=goal.progress_document,
+                terms_progress_snapshot=_goal_snapshot(goal),
             )
         )
         result, response_goal = (
@@ -1031,7 +1255,7 @@ def command_goal(
     response = BehaviorGoalCommandResponseV1(
         result=result,
         previous_goal=previous if created else None,
-        goal=_goal_response(response_goal),
+        goal=_goal_response(response_goal, authority),
         recommendation=_project_recommendation(recommendation),
     )
     ledger = BehaviorGoalCommandIdempotency(
@@ -1058,70 +1282,60 @@ def command_goal(
     return response, 200, False
 
 
-_ACTION_METRIC: dict[str, str] = {
-    "replace_high_sodium_choice": "nutrient:sodium_mg",
-    "replace_added_sugar_choice": "nutrient:added_sugar_g",
-    "replace_saturated_fat_choice": "nutrient:saturated_fat_g",
-    "replace_trans_fat_choice": "nutrient:trans_fat_g",
-    "replace_processed_meat_choice": "group:processed_meat_occurrence_days",
-    "replace_sugary_drink_choice": "group:sugar_sweetened_beverage_occurrence_days",
-    "add_fruit_or_vegetable": "group:fruit_vegetable_g_per_day",
-    "replace_with_fruit_or_vegetable": "group:fruit_vegetable_g_per_day",
-    "add_legumes": "group:legumes_servings_per_period",
-    "replace_with_legumes": "group:legumes_servings_per_period",
-    "replace_with_whole_grain": "group:whole_grain_share_percent",
-    "add_nuts_or_seeds": "group:nuts_seeds_servings_per_period",
-    "replace_with_nuts_or_seeds": "group:nuts_seeds_servings_per_period",
-    "replace_with_seafood": "group:seafood_servings_per_period",
-    "add_dairy_or_fortified_alternative": "group:dairy_fortified_servings_per_day",
-    "replace_with_dairy_or_fortified_alternative": "group:dairy_fortified_servings_per_day",
-    "add_fiber_source": "nutrient:fiber_g",
-    "replace_with_fiber_source": "nutrient:fiber_g",
-}
-
-
-def recompute_goal_progress(session: Session, goal: BehaviorGoal) -> bool:
+def recompute_goal_progress(
+    session: Session,
+    goal: BehaviorGoal,
+    *,
+    source_override: WeeklyPriorityAnalysisInputV1 | None = None,
+) -> bool:
     """Recompute from the persisted PLAN 032 contract; never read Diary rows."""
-    try:
-        analysis = current_analysis(session, PrincipalContext(principal_id=goal.principal_id))
-    except Exception:
-        return False
-    source = analysis.priority_input
+    analysis = None
+    if source_override is None:
+        try:
+            analysis = current_analysis(session, PrincipalContext(principal_id=goal.principal_id))
+        except Exception:
+            return False
+    source = source_override or analysis.priority_input
     if (
         validate_producer(
             source,
-            stale=analysis.lifecycle_status == "stale",
-            superseded=analysis.lifecycle_status == "superseded",
+            stale=(
+                analysis.lifecycle_status == "stale"
+                if analysis
+                else source.generated_at < utcnow() - timedelta(hours=36)
+            ),
+            superseded=(analysis.lifecycle_status == "superseded" if analysis else False),
         )
         != "eligible"
     ):
         return False
-    metric_key = _ACTION_METRIC.get(goal.action_key)
-    if metric_key is None and goal.action_key.startswith("review_food_sources_"):
-        metric_key = "nutrient:" + goal.action_key.removeprefix("review_food_sources_")
-        metric_key += (
-            "_mg"
-            if metric_key.split(":", 1)[1] in {"potassium", "calcium", "iron", "magnesium", "zinc"}
-            else "_mcg"
-        )
+    if goal.action_key not in TRACKABLE_ACTIONS:
+        return False
     days = [item for item in source.days if goal.window_start <= item.date <= goal.window_end]
+    scheduled_dates = {
+        goal.window_start + timedelta(days=offset)
+        for offset in range((goal.window_end - goal.window_start).days + 1)
+        if not goal.day_mask
+        or (goal.window_start + timedelta(days=offset)).weekday() in goal.day_mask
+    }
     complete = partial = unregistered = progress = 0
     versions: dict[str, int] = {}
     for day in days:
+        if day.date not in scheduled_dates:
+            continue
         versions[day.date.isoformat()] = day.logging_status_version
-        if day.logging_status == "complete":
+        if day.logging_status == "complete" and day.analysis_eligible:
             complete += 1
-            value = next(
-                (fact.value for fact in day.metric_values if fact.metric_key == metric_key), None
-            )
-            if value is not None and value > 0:
+            if action_day_qualifies(goal.action_key, day.model_dump(mode="json")):
                 progress += 1
         elif day.logging_status == "partial":
             partial += 1
         else:
             unregistered += 1
-    unregistered += 7 - len(days)
-    ended = source.as_of_diary_date > goal.window_end
+    represented_dates = {day.date for day in days if day.date in scheduled_dates}
+    unregistered += len(scheduled_dates - represented_dates)
+    finalization_boundary = _finalization_boundary(goal.window_end)
+    ended = utcnow() >= finalization_boundary
     if progress >= goal.weekly_target_count:
         status = "achieved"
     elif ended and complete < 4:
@@ -1147,7 +1361,15 @@ def recompute_goal_progress(session: Session, goal: BehaviorGoal) -> bool:
         calculation_rules_version=goal.rules_version,
         last_recomputed_at=now,
     ).model_dump(mode="json")
-    if document == goal.progress_document:
+    previous_evidence = {
+        key: value
+        for key, value in goal.progress_document.items()
+        if key != "last_recomputed_at"
+    }
+    current_evidence = {
+        key: value for key, value in document.items() if key != "last_recomputed_at"
+    }
+    if current_evidence == previous_evidence:
         return False
     old_state = goal.state
     if status == "achieved" and goal.state == "active":
@@ -1155,12 +1377,20 @@ def recompute_goal_progress(session: Session, goal: BehaviorGoal) -> bool:
     elif (
         status != "achieved"
         and goal.state == "completed"
-        and source.as_of_diary_date <= goal.window_end + timedelta(days=1)
+        and now < finalization_boundary
     ):
         goal.state, goal.completed_at = "active", None
     goal.progress_document, goal.progress_revision = document, goal.progress_revision + 1
     goal.version, goal.updated_at = goal.version + 1, now
     session.add(goal)
+    if old_state == "completed" and goal.state == "active":
+        event_type = "evidence_reopened"
+    elif old_state == "completed" and now >= finalization_boundary:
+        event_type = "historical_evidence_changed"
+    elif old_state != "completed" and goal.state == "completed":
+        event_type = "completed"
+    else:
+        event_type = "progress_updated"
     session.add(
         BehaviorGoalHistory(
             goal_id=goal.id,
@@ -1169,15 +1399,11 @@ def recompute_goal_progress(session: Session, goal: BehaviorGoal) -> bool:
             previous_goal_id=goal.previous_goal_id,
             sequence_number=goal.sequence_number,
             goal_version=goal.version,
-            event_type="completed"
-            if goal.state == "completed"
-            else "evidence_reopened"
-            if old_state == "completed"
-            else "progress_updated",
+            event_type=event_type,
             from_state=old_state,
             to_state=goal.state,
             actor_type="system",
-            terms_progress_snapshot=document,
+            terms_progress_snapshot=_goal_snapshot(goal),
         )
     )
     return True
@@ -1191,28 +1417,121 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
         session.exec(
             select(BehaviorGoal)
             .where(
-                BehaviorGoal.state.in_(["active", "paused"]),
                 or_(
-                    BehaviorGoal.window_end < today,
                     and_(
-                        BehaviorGoal.state == "active",
-                        BehaviorGoal.window_start <= today - timedelta(days=3),
+                        BehaviorGoal.state.in_(["active", "paused"]),
+                        or_(
+                            BehaviorGoal.window_end < today,
+                            and_(
+                                BehaviorGoal.state == "active",
+                                BehaviorGoal.window_start <= today - timedelta(days=3),
+                            ),
+                        ),
                     ),
-                ),
+                    and_(
+                        BehaviorGoal.state == "completed",
+                        BehaviorGoal.reviewed_at.is_(None),
+                        BehaviorGoal.window_end < today,
+                    ),
+                )
             )
             .order_by(BehaviorGoal.window_end, BehaviorGoal.id)
             .limit(limit)
             .with_for_update(skip_locked=True)
         ).all()
     )
+    principal_ids = {goal.principal_id for goal in rows}
+    series_rows = list(
+        session.exec(
+            select(NutritionAnalysis)
+            .where(
+                NutritionAnalysis.principal_id.in_(principal_ids),
+                NutritionAnalysis.current_revision_id.is_not(None),
+            )
+            .order_by(
+                NutritionAnalysis.principal_id,
+                NutritionAnalysis.as_of_diary_date.desc(),
+                NutritionAnalysis.id.desc(),
+            )
+        ).all()
+    ) if principal_ids else []
+    current_series: dict[UUID, NutritionAnalysis] = {}
+    for series in series_rows:
+        current_series.setdefault(series.principal_id, series)
+    revision_ids = {
+        series.current_revision_id
+        for series in current_series.values()
+        if series.current_revision_id is not None
+    }
+    revisions = (
+        list(
+            session.exec(
+                select(NutritionAnalysisRevision).where(
+                    NutritionAnalysisRevision.id.in_(revision_ids)
+                )
+            ).all()
+        )
+        if revision_ids
+        else []
+    )
+    revision_by_id = {revision.id: revision for revision in revisions}
+    source_by_principal: dict[UUID, WeeklyPriorityAnalysisInputV1] = {}
+    for principal_id, series in current_series.items():
+        revision = revision_by_id.get(series.current_revision_id)
+        if revision is not None:
+            try:
+                source_by_principal[principal_id] = WeeklyPriorityAnalysisInputV1.model_validate(
+                    revision.analysis_document
+                )
+            except ValueError:
+                continue
+    existing_reminders = {
+        (row.goal_id, row.goal_revision, row.reminder_type)
+        for row in (
+            session.exec(
+                select(BehaviorGoalReminderDelivery).where(
+                    BehaviorGoalReminderDelivery.goal_id.in_({goal.id for goal in rows})
+                )
+            ).all()
+            if rows
+            else []
+        )
+    }
+    recommendation_rows = list(
+        session.exec(
+            select(WeeklyPriorityRecommendation).where(
+                WeeklyPriorityRecommendation.id.in_({goal.recommendation_id for goal in rows})
+            )
+        ).all()
+    ) if rows else []
+    recommendation_by_id = {row.id: row for row in recommendation_rows}
     finalized = reminders = recomputed = 0
     delivery_enabled = get_settings().behavior_goal_reminder_delivery_enabled
     for goal in rows:
-        recomputed += recompute_goal_progress(session, goal)
+        source = source_by_principal.get(goal.principal_id)
+        if source is not None:
+            recomputed += recompute_goal_progress(session, goal, source_override=source)
         progress = BehaviorGoalProgressV1.model_validate(goal.progress_document)
-        ended = goal.window_end < today
+        recommendation = recommendation_by_id.get(goal.recommendation_id)
+        source_actionable = bool(
+            source
+            and recommendation
+            and recommendation.superseded_by_id is None
+            and recommendation.rules_version == WEEKLY_PRIORITY_RULES_VERSION
+            and recommendation.copy_version == WEEKLY_PRIORITY_COPY_VERSION
+            and recommendation.source_analysis_id == source.source_analysis_id
+            and recommendation.source_analysis_revision == source.source_analysis_revision
+            and validate_producer(
+                source,
+                stale=source.generated_at < now - timedelta(hours=36),
+                superseded=False,
+            )
+            == "eligible"
+        )
+        finalization_boundary = _finalization_boundary(goal.window_end)
+        ended = now >= finalization_boundary
         previous_state = goal.state
-        if ended and progress.status != "achieved":
+        if ended and goal.state in {"active", "paused"} and progress.status != "achieved":
             goal.state, goal.version, goal.reviewed_at, goal.updated_at = (
                 "incomplete",
                 goal.version + 1,
@@ -1233,7 +1552,28 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
                     from_state=previous_state,
                     to_state="incomplete",
                     actor_type="system",
-                    terms_progress_snapshot=goal.progress_document,
+                    terms_progress_snapshot=_goal_snapshot(goal),
+                )
+            )
+        elif ended and goal.state == "completed" and goal.reviewed_at is None:
+            goal.version += 1
+            goal.reviewed_at = now
+            goal.updated_at = now
+            session.add(goal)
+            finalized += 1
+            session.add(
+                BehaviorGoalHistory(
+                    goal_id=goal.id,
+                    principal_id=goal.principal_id,
+                    root_goal_id=goal.root_goal_id,
+                    previous_goal_id=goal.previous_goal_id,
+                    sequence_number=goal.sequence_number,
+                    goal_version=goal.version,
+                    event_type="finalized_completed",
+                    from_state="completed",
+                    to_state="completed",
+                    actor_type="system",
+                    terms_progress_snapshot=_goal_snapshot(goal),
                 )
             )
         reminder_type = (
@@ -1247,19 +1587,14 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
         )
         if (
             not delivery_enabled
+            or not source_actionable
             or goal.reminder_preference != "enabled"
             or reminder_type is None
             or progress.status in {"unknown", "achieved"}
         ):
             continue
-        existing = session.exec(
-            select(BehaviorGoalReminderDelivery).where(
-                BehaviorGoalReminderDelivery.goal_id == goal.id,
-                BehaviorGoalReminderDelivery.goal_revision == goal.version,
-                BehaviorGoalReminderDelivery.reminder_type == reminder_type,
-            )
-        ).first()
-        if existing is None:
+        reminder_key = (goal.id, goal.version, reminder_type)
+        if reminder_key not in existing_reminders:
             session.add(
                 BehaviorGoalReminderDelivery(
                     goal_id=goal.id,
@@ -1273,6 +1608,7 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
                 )
             )
             reminders += 1
+            existing_reminders.add(reminder_key)
     session.commit()
     return {
         "processed": len(rows),

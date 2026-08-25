@@ -9,8 +9,8 @@
     "snapshot_schema_version": 3,
     "analysis_rules_version": "w3-analysis-1.1.0",
     "analysis_rules_status": "active",
-    "weekly_priority_rules_version": "w3-priority-1.0.0",
-    "weekly_priority_copy_version": "w3-priority-ar-1.0.0"
+    "weekly_priority_rules_version": "w3-priority-1.1.0",
+    "weekly_priority_copy_version": "w3-priority-ar-1.1.0"
   },
-  "sha256": "3b083018efe1f741ec1b2034829d2c47a8fba6e426586a7c67d747e61d83a1a9"
+  "sha256": "51d84f4ae48a9bf424e5b8b43fd9c71e3085500ff2a3052af7ccf0fc27f7daf9"
 }

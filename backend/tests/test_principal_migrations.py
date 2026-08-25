@@ -62,7 +62,7 @@ BASELINE_HASHES = {
     "9f2a1b6c3d05_plan025_admin_diary_order_index.py": "727052a802eeee1d6e4f493fc7d21e963cf6f6de7a7b78b102bf42c3d7c2c152",
     "b7e31a4c9d20_add_diary_day_status.py": "cef968f1e3786213eef07a337e5a178501305dfb07a47a772a370a2f8c50d939",
     "c3a7e6d5f210_add_nutrition_pattern_analysis.py": "eb23950260d4e338c4a2db537a65eff594aad76d3caaee17aa4e3c32896f7617",
-    "22733dbf5249_add_weekly_priorities_and_behavior_goals.py": "22a2ceb425b2f31a3d27346ad430016b69dea15e0f7ff7b498909e7c0121ca05",
+    "22733dbf5249_add_weekly_priorities_and_behavior_goals.py": "e30d8512200e4069ed7a6c9412128342564ba8bc83bc92dee7b85177400ba980",
     "df46234d2a7e_constrain_finite_food_nutrients.py": "70767434911230795129b4702f8d4bf2e9a4add9dcf1607c3fa648dfebdd0674",
 }
 DEPLOYMENT_PRINCIPAL = UUID("00000000-0000-0000-0000-000000000001")
@@ -145,6 +145,7 @@ def test_plan033_migration_is_additive_owner_bound_and_fails_closed() -> None:
     ).read_text(encoding="utf-8")
     for table in (
         "weekly_priority_recommendation",
+        "weekly_priority_evaluation",
         "weekly_priority_evidence_ref",
         "behavior_goal",
         "behavior_goal_history",
@@ -158,6 +159,18 @@ def test_plan033_migration_is_additive_owner_bound_and_fails_closed() -> None:
     assert "preserve immutable goal history" in migration
     assert "ON DELETE CASCADE" not in migration
     assert "INSERT INTO weekly_priority" not in migration
+    for constraint in (
+        "fk_weekly_priority_source_owner",
+        "fk_weekly_priority_supersession_owner",
+        "fk_behavior_goal_history_root_owner",
+        "fk_behavior_goal_history_previous_owner",
+        "fk_behavior_goal_command_recommendation_owner",
+        "fk_behavior_goal_command_allocated_owner",
+        "fk_behavior_goal_reminder_revision_owner",
+    ):
+        assert constraint in migration
+    assert 'sa.Column("evaluation_diary_date", sa.Date(), nullable=False)' in migration
+    assert 'sa.Column("evaluation_mode", sa.String(16), nullable=False)' in migration
 POSTGRESQL_AUTHORITATIVE_CHECK_DEFINITIONS = {
     "ck_diary_entry_versioned_shape": (
         "CHECK (snapshot_schema_version IS NULL OR "
@@ -2806,10 +2819,12 @@ def test_plan033_populated_downgrade_refuses_without_deleting_history() -> None:
             text(
                 "INSERT INTO weekly_priority_recommendation "
                 "(id,principal_id,source_analysis_revision_id,source_analysis_id,source_analysis_revision,"
-                "schema_version,period_start,period_end,as_of_diary_date,status,rules_version,copy_version,"
+                "schema_version,period_start,period_end,as_of_diary_date,evaluation_diary_date,"
+                "evaluation_mode,status,rules_version,copy_version,"
                 "analysis_rules_version,source_versions,result_document,input_digest,content_hash,generated_at,expires_at) "
                 "VALUES (:id,:principal,:revision,:analysis,1,1,'2026-08-11','2026-08-17','2026-08-17',"
-                "'none','w3-priority-1.0.0','w3-priority-ar-1.0.0','w3-analysis-1.1.0','{}','{}',"
+                "'2026-08-17','live',"
+                "'none','w3-priority-1.1.0','w3-priority-ar-1.1.0','w3-analysis-1.1.0','{}','{}',"
                 ":input_hash,:content_hash,now(),now()+interval '36 hours')"
             ),
             {

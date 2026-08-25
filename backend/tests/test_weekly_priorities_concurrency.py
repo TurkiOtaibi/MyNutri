@@ -72,6 +72,31 @@ def _seed_goal(url: str, state: str = "offered") -> UUID:
     engine = create_engine(url)
     analysis_id, revision_id, goal_id = uuid4(), uuid4(), uuid4()
     document = _persisted_producer_document(PRINCIPAL_ID, analysis_id)
+    for day in document["days"]:
+        if day["logging_status"] == "complete":
+            day["metric_values"] = [{
+                "metric_key": "nutrient:trans_fat_g",
+                "value": 1,
+                "value_state": "known",
+                "known_entry_count": 1,
+                "total_entry_count": 1,
+                "amount_qualifier": "exact",
+                "unit": "g",
+            }]
+    metric = document["metric_facts"][0]
+    metric.update({
+        "metric_key": "nutrient:trans_fat_g",
+        "unit": "g",
+        "direction": "maximum",
+        "target": {
+            "type": "maximum",
+            "value": 0.1,
+            "lower": None,
+            "upper": None,
+            "source_plan_ids": [],
+        },
+    })
+    metric["current"].update({"value": 1, "status": "above_target"})
     canonical = json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     with Session(engine) as session:
         session.add(Principal(id=PRINCIPAL_ID))
@@ -115,7 +140,11 @@ def _seed_goal(url: str, state: str = "offered") -> UUID:
         session.add(series)
         session.commit()
         recommendation = evaluate_recommendation(session, PRINCIPAL)
-        now = datetime(2026, 8, 17, 9, tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        window_start = date.fromisoformat(document["period_start"])
+        window_end = date.fromisoformat(document["period_end"])
+        assert recommendation.main is not None
+        assert recommendation.main.goal_trackability == "trackable"
         progress_status = "not_yet_reached" if state == "incomplete" else "unknown"
         session.add(
             BehaviorGoal(
@@ -126,17 +155,17 @@ def _seed_goal(url: str, state: str = "offered") -> UUID:
                 sequence_number=1,
                 state=state,
                 version=1,
-                rule_key="sodium_overage",
-                action_key="replace_high_sodium_choice",
+                rule_key=recommendation.main.rule_key,
+                action_key=recommendation.main.action_key,
                 weekly_target_count=3,
                 day_mask=[],
-                window_start=date(2026, 8, 10),
-                window_end=date(2026, 8, 16),
-                rules_version="w3-priority-1.0.0",
-                copy_version="w3-priority-ar-1.0.0",
+                window_start=window_start,
+                window_end=window_end,
+                rules_version="w3-priority-1.1.0",
+                copy_version="w3-priority-ar-1.1.0",
                 progress_document={
-                    "window_start": "2026-08-10",
-                    "window_end": "2026-08-16",
+                    "window_start": window_start.isoformat(),
+                    "window_end": window_end.isoformat(),
                     "progress_count": 1,
                     "target_count": 3,
                     "progress_percent": 33,
@@ -144,9 +173,9 @@ def _seed_goal(url: str, state: str = "offered") -> UUID:
                     "partial_day_count": 0,
                     "unregistered_day_count": 3,
                     "status": progress_status,
-                    "as_of_diary_date": "2026-08-16",
+                    "as_of_diary_date": window_end.isoformat(),
                     "source_day_versions": {},
-                    "calculation_rules_version": "w3-priority-1.0.0",
+                    "calculation_rules_version": "w3-priority-1.1.0",
                     "last_recomputed_at": now.isoformat(),
                 },
                 progress_revision=1,
@@ -193,6 +222,7 @@ def test_duplicate_recommendation_evaluation_has_one_authoritative_result() -> N
         connection.execute(text("DELETE FROM behavior_goal_command_idempotency"))
         connection.execute(text("DELETE FROM behavior_goal_history"))
         connection.execute(text("DELETE FROM behavior_goal"))
+        connection.execute(text("DELETE FROM weekly_priority_evaluation"))
         connection.execute(text("DELETE FROM weekly_priority_evidence_ref"))
         connection.execute(text("DELETE FROM weekly_priority_recommendation"))
     engine.dispose()

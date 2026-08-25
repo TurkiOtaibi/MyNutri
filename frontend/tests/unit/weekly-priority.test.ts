@@ -26,8 +26,9 @@ describe("PLAN 033 progress model", () => {
 
   it("keeps one stable idempotency key for a retry and maps reduce to repeat", () => {
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001");
-    const first = stableGoalCommandAttempt(null, goal, "reduce", 2);
-    const retry = stableGoalCommandAttempt(first, goal, "reduce", 2);
+    const terms = { weeklyTargetCount: 2, scheduledDayMask: [], reminderPreference: "disabled" as const, note: "" };
+    const first = stableGoalCommandAttempt(null, goal, "reduce", terms);
+    const retry = stableGoalCommandAttempt(first, goal, "reduce", terms);
     expect(retry).toBe(first);
     expect(first.command).toEqual({
       event: "repeat",

@@ -1271,6 +1271,21 @@ class WeeklyPriorityRecommendation(SQLModel, table=True):
             name="fk_weekly_priority_analysis_owner",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["source_analysis_id", "principal_id"],
+            ["nutrition_analysis.id", "nutrition_analysis.principal_id"],
+            name="fk_weekly_priority_source_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["superseded_by_id", "principal_id"],
+            ["weekly_priority_recommendation.id", "weekly_priority_recommendation.principal_id"],
+            name="fk_weekly_priority_supersession_owner",
+            ondelete="RESTRICT",
+            use_alter=True,
+            deferrable=True,
+            initially="DEFERRED",
+        ),
         UniqueConstraint("id", "principal_id", name="uq_weekly_priority_id_owner"),
         UniqueConstraint(
             "principal_id",
@@ -1283,6 +1298,7 @@ class WeeklyPriorityRecommendation(SQLModel, table=True):
             "status IN ('selected','none','stale','superseded','safety_suppressed')",
             name="ck_weekly_priority_status",
         ),
+        CheckConstraint("evaluation_mode IN ('live','shadow')", name="ck_weekly_priority_mode"),
         CheckConstraint("period_end - period_start = 6", name="ck_weekly_priority_period").ddl_if(
             dialect="postgresql"
         ),
@@ -1316,14 +1332,14 @@ class WeeklyPriorityRecommendation(SQLModel, table=True):
         sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
     )
     source_analysis_revision_id: uuid.UUID = Field(nullable=False)
-    source_analysis_id: uuid.UUID = Field(
-        sa_column=Column(ForeignKey("nutrition_analysis.id", ondelete="RESTRICT"), nullable=False)
-    )
+    source_analysis_id: uuid.UUID = Field(nullable=False)
     source_analysis_revision: int = Field(sa_column=Column(Integer(), nullable=False))
     schema_version: int = Field(default=1, sa_column=Column(SmallInteger(), nullable=False))
     period_start: date = Field(nullable=False)
     period_end: date = Field(nullable=False)
     as_of_diary_date: date = Field(nullable=False)
+    evaluation_diary_date: date = Field(nullable=False)
+    evaluation_mode: str = Field(default="live", sa_column=Column(String(16), nullable=False))
     status: str = Field(sa_column=Column(String(32), nullable=False))
     rules_version: str = Field(sa_column=Column(String(64), nullable=False))
     copy_version: str = Field(sa_column=Column(String(64), nullable=False))
@@ -1336,17 +1352,62 @@ class WeeklyPriorityRecommendation(SQLModel, table=True):
     )
     input_digest: str = Field(sa_column=Column(String(64), nullable=False))
     content_hash: str = Field(sa_column=Column(String(64), nullable=False))
-    superseded_by_id: uuid.UUID | None = Field(
-        default=None,
-        sa_column=Column(
-            ForeignKey("weekly_priority_recommendation.id", ondelete="RESTRICT"), nullable=True
-        ),
-    )
+    superseded_by_id: uuid.UUID | None = Field(default=None, nullable=True)
     superseded_at: datetime | None = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
     generated_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
     expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+
+
+class WeeklyPriorityEvaluation(SQLModel, table=True):
+    __tablename__ = "weekly_priority_evaluation"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["recommendation_id", "principal_id"],
+            ["weekly_priority_recommendation.id", "weekly_priority_recommendation.principal_id"],
+            name="fk_weekly_priority_evaluation_owner",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "principal_id",
+            "evaluation_mode",
+            "evaluation_diary_date",
+            "recommendation_id",
+            name="uq_weekly_priority_evaluation_identity",
+        ),
+        CheckConstraint("evaluation_mode IN ('live','shadow')", name="ck_priority_eval_mode"),
+        CheckConstraint(
+            "main_trackability IS NULL OR main_trackability IN ('trackable','informational_only')",
+            name="ck_priority_eval_trackability",
+        ),
+        CheckConstraint(
+            "recommendation_selected OR main_trackability IS NULL",
+            name="ck_priority_eval_selection",
+        ),
+        CheckConstraint(
+            "NOT goal_offer_created OR (evaluation_mode='live' AND main_trackability='trackable')",
+            name="ck_priority_eval_offer",
+        ),
+        Index("ix_priority_eval_launch", "evaluation_mode", "evaluation_diary_date"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    recommendation_id: uuid.UUID = Field(nullable=False)
+    evaluation_mode: str = Field(sa_column=Column(String(16), nullable=False))
+    evaluation_diary_date: date = Field(nullable=False)
+    selector_eligible: bool = Field(nullable=False)
+    recommendation_selected: bool = Field(nullable=False)
+    main_trackability: str | None = Field(
+        default=None, sa_column=Column(String(32), nullable=True)
+    )
+    goal_offer_created: bool = Field(default=False, nullable=False)
     created_at: datetime = Field(
         default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
     )
@@ -1432,9 +1493,10 @@ class BehaviorGoal(SQLModel, table=True):
         UniqueConstraint("principal_id", "previous_goal_id", name="uq_behavior_goal_successor"),
         CheckConstraint("sequence_number >= 1 AND version >= 1", name="ck_behavior_goal_versions"),
         CheckConstraint("weekly_target_count BETWEEN 1 AND 7", name="ck_behavior_goal_target"),
-        CheckConstraint("window_end - window_start = 6", name="ck_behavior_goal_window").ddl_if(
-            dialect="postgresql"
-        ),
+        CheckConstraint(
+            "window_end >= window_start AND window_end - window_start <= 6",
+            name="ck_behavior_goal_window",
+        ).ddl_if(dialect="postgresql"),
         CheckConstraint(
             "state IN ('offered','deferred','active','paused','completed','incomplete','rejected','ended','archived')",
             name="ck_behavior_goal_state",
@@ -1553,12 +1615,28 @@ class BehaviorGoalHistory(SQLModel, table=True):
             name="fk_behavior_goal_history_owner",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["root_goal_id", "principal_id"],
+            ["behavior_goal.id", "behavior_goal.principal_id"],
+            name="fk_behavior_goal_history_root_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["previous_goal_id", "principal_id"],
+            ["behavior_goal.id", "behavior_goal.principal_id"],
+            name="fk_behavior_goal_history_previous_owner",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "goal_id", "goal_version", "principal_id", name="uq_behavior_goal_history_revision_owner"
+        ),
         UniqueConstraint("goal_id", "goal_version", name="uq_behavior_goal_history_version"),
         CheckConstraint("actor_type IN ('owner','system')", name="ck_behavior_goal_history_actor"),
         CheckConstraint(
             "event_type IN ('offered','accept','edit','defer','reject','change','changed',"
             "'pause','resume','end','completed','evidence_reopened','progress_updated',"
-            "'finalized_incomplete','repeated_from_previous_window')",
+            "'historical_evidence_changed','finalized_completed','finalized_incomplete',"
+            "'repeated_from_previous_window')",
             name="ck_behavior_goal_history_event",
         ),
         CheckConstraint(
@@ -1602,6 +1680,18 @@ class BehaviorGoalCommandIdempotency(SQLModel, table=True):
             name="fk_behavior_goal_command_source_owner",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["recommendation_id", "principal_id"],
+            ["weekly_priority_recommendation.id", "weekly_priority_recommendation.principal_id"],
+            name="fk_behavior_goal_command_recommendation_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["allocated_goal_id", "principal_id"],
+            ["behavior_goal.id", "behavior_goal.principal_id"],
+            name="fk_behavior_goal_command_allocated_owner",
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint(
             "principal_id",
             "operation",
@@ -1629,16 +1719,8 @@ class BehaviorGoalCommandIdempotency(SQLModel, table=True):
     key_digest: str = Field(sa_column=Column(String(64), nullable=False))
     command_hash: str = Field(sa_column=Column(String(64), nullable=False))
     captured_diary_date: date = Field(nullable=False)
-    recommendation_id: uuid.UUID | None = Field(
-        default=None,
-        sa_column=Column(
-            ForeignKey("weekly_priority_recommendation.id", ondelete="RESTRICT"), nullable=True
-        ),
-    )
-    allocated_goal_id: uuid.UUID | None = Field(
-        default=None,
-        sa_column=Column(ForeignKey("behavior_goal.id", ondelete="RESTRICT"), nullable=True),
-    )
+    recommendation_id: uuid.UUID | None = Field(default=None, nullable=True)
+    allocated_goal_id: uuid.UUID | None = Field(default=None, nullable=True)
     response_status: int = Field(sa_column=Column(SmallInteger(), nullable=False))
     response_headers: dict[str, Any] = Field(
         sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
@@ -1658,6 +1740,16 @@ class BehaviorGoalReminderDelivery(SQLModel, table=True):
             ["goal_id", "principal_id"],
             ["behavior_goal.id", "behavior_goal.principal_id"],
             name="fk_behavior_goal_reminder_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["goal_id", "goal_revision", "principal_id"],
+            [
+                "behavior_goal_history.goal_id",
+                "behavior_goal_history.goal_version",
+                "behavior_goal_history.principal_id",
+            ],
+            name="fk_behavior_goal_reminder_revision_owner",
             ondelete="RESTRICT",
         ),
         UniqueConstraint(

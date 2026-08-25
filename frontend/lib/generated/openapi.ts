@@ -514,6 +514,46 @@ export type BakedGoodType =
   | "biscuits_cookies"
   | "other";
 
+/** BehaviorGoalAcceptCommandV1 */
+export interface BehaviorGoalAcceptCommandV1 {
+  /** Event */
+  event: "accept";
+  /**
+   * Expected Version
+   * @min 1
+   */
+  expected_version: number;
+  /** Note */
+  note?: string | null;
+  /** Reminder Preference */
+  reminder_preference?: "enabled" | "disabled" | null;
+  /** Scheduled Day Mask */
+  scheduled_day_mask?: number[] | null;
+  /** Weekly Target Count */
+  weekly_target_count?: number | null;
+}
+
+/** BehaviorGoalChangeCommandV1 */
+export interface BehaviorGoalChangeCommandV1 {
+  /** Change Reason */
+  change_reason?: "owner_requested" | "evidence_superseded" | null;
+  /** Event */
+  event: "change";
+  /**
+   * Expected Version
+   * @min 1
+   */
+  expected_version: number;
+  /** Note */
+  note?: string | null;
+  /** Reminder Preference */
+  reminder_preference?: "enabled" | "disabled" | null;
+  /** Scheduled Day Mask */
+  scheduled_day_mask?: number[] | null;
+  /** Weekly Target Count */
+  weekly_target_count?: number | null;
+}
+
 /** BehaviorGoalCommandResponseV1 */
 export interface BehaviorGoalCommandResponseV1 {
   goal: BehaviorGoalResponseV1;
@@ -535,20 +575,77 @@ export interface BehaviorGoalCommandResponseV1 {
 }
 
 /** BehaviorGoalCommandV1 */
-export interface BehaviorGoalCommandV1 {
-  /** Change Reason */
-  change_reason?: "owner_requested" | "evidence_superseded" | null;
+export type BehaviorGoalCommandV1 =
+  | ({
+      event: "accept";
+    } & BehaviorGoalAcceptCommandV1)
+  | ({
+      event: "change";
+    } & BehaviorGoalChangeCommandV1)
+  | ({
+      event: "defer";
+    } & BehaviorGoalDeferCommandV1)
+  | ({
+      event: "edit";
+    } & BehaviorGoalEditCommandV1)
+  | ({
+      event: "end";
+    } & BehaviorGoalEndCommandV1)
+  | ({
+      event: "pause";
+    } & BehaviorGoalPauseCommandV1)
+  | ({
+      event: "reject";
+    } & BehaviorGoalRejectCommandV1)
+  | ({
+      event: "repeat";
+    } & BehaviorGoalRepeatCommandV1)
+  | ({
+      event: "resume";
+    } & BehaviorGoalResumeCommandV1);
+
+/** BehaviorGoalCurrentResponseV1 */
+export interface BehaviorGoalCurrentResponseV1 {
+  goal: BehaviorGoalResponseV1 | null;
+  /** Goal Unavailable Reason */
+  goal_unavailable_reason?: "action_not_observable" | null;
+  recommendation: WeeklyPriorityResultV1 | null;
+}
+
+/** BehaviorGoalDeferCommandV1 */
+export interface BehaviorGoalDeferCommandV1 {
   /** Event */
-  event:
-    | "accept"
-    | "edit"
-    | "defer"
-    | "reject"
-    | "change"
-    | "pause"
-    | "resume"
-    | "end"
-    | "repeat";
+  event: "defer";
+  /**
+   * Expected Version
+   * @min 1
+   */
+  expected_version: number;
+}
+
+/** BehaviorGoalEditCommandV1 */
+export interface BehaviorGoalEditCommandV1 {
+  /** Event */
+  event: "edit";
+  /**
+   * Expected Version
+   * @min 1
+   */
+  expected_version: number;
+  /** Note */
+  note?: string | null;
+  /** Reminder Preference */
+  reminder_preference?: "enabled" | "disabled" | null;
+  /** Scheduled Day Mask */
+  scheduled_day_mask?: number[] | null;
+  /** Weekly Target Count */
+  weekly_target_count?: number | null;
+}
+
+/** BehaviorGoalEndCommandV1 */
+export interface BehaviorGoalEndCommandV1 {
+  /** Event */
+  event: "end";
   /**
    * Expected Version
    * @min 1
@@ -564,20 +661,6 @@ export interface BehaviorGoalCommandV1 {
     | "pause_tracking"
     | "other"
     | null;
-  /** Reminder Preference */
-  reminder_preference?: "enabled" | "disabled" | null;
-  /** Repeat Mode */
-  repeat_mode?: "same" | "reduce" | null;
-  /** Scheduled Day Mask */
-  scheduled_day_mask?: number[] | null;
-  /** Weekly Target Count */
-  weekly_target_count?: number | null;
-}
-
-/** BehaviorGoalCurrentResponseV1 */
-export interface BehaviorGoalCurrentResponseV1 {
-  goal: BehaviorGoalResponseV1 | null;
-  recommendation: WeeklyPriorityResultV1 | null;
 }
 
 /** BehaviorGoalHistoryPageV1 */
@@ -586,6 +669,27 @@ export interface BehaviorGoalHistoryPageV1 {
   items: BehaviorGoalResponseV1[];
   /** Next Cursor */
   next_cursor: string | null;
+}
+
+/** BehaviorGoalPauseCommandV1 */
+export interface BehaviorGoalPauseCommandV1 {
+  /** Event */
+  event: "pause";
+  /**
+   * Expected Version
+   * @min 1
+   */
+  expected_version: number;
+  /** Note */
+  note?: string | null;
+  /** Reason */
+  reason?:
+    | "not_relevant"
+    | "too_difficult"
+    | "prefer_other"
+    | "pause_tracking"
+    | "other"
+    | null;
 }
 
 /** BehaviorGoalProgressV1 */
@@ -653,6 +757,42 @@ export interface BehaviorGoalProgressV1 {
    * @format date
    */
   window_start: string;
+}
+
+/** BehaviorGoalRejectCommandV1 */
+export interface BehaviorGoalRejectCommandV1 {
+  /** Event */
+  event: "reject";
+  /**
+   * Expected Version
+   * @min 1
+   */
+  expected_version: number;
+  /** Note */
+  note?: string | null;
+  /** Reason */
+  reason?:
+    | "not_relevant"
+    | "too_difficult"
+    | "prefer_other"
+    | "pause_tracking"
+    | "other"
+    | null;
+}
+
+/** BehaviorGoalRepeatCommandV1 */
+export interface BehaviorGoalRepeatCommandV1 {
+  /** Event */
+  event: "repeat";
+  /**
+   * Expected Version
+   * @min 1
+   */
+  expected_version: number;
+  /** Repeat Mode */
+  repeat_mode: "same" | "reduce";
+  /** Weekly Target Count */
+  weekly_target_count?: number | null;
 }
 
 /** BehaviorGoalResponseV1 */
@@ -784,6 +924,17 @@ export interface BehaviorGoalResponseV1 {
    * @format date
    */
   window_start: string;
+}
+
+/** BehaviorGoalResumeCommandV1 */
+export interface BehaviorGoalResumeCommandV1 {
+  /** Event */
+  event: "resume";
+  /**
+   * Expected Version
+   * @min 1
+   */
+  expected_version: number;
 }
 
 /** CalculationWarningResponse */
@@ -1542,11 +1693,11 @@ export interface NutritionRegistryResponse {
   /** Traits */
   traits: RegistryLabelDefinition[];
   /** Weekly Priority Copy Version */
-  weekly_priority_copy_version: "w3-priority-ar-1.0.0";
+  weekly_priority_copy_version: "w3-priority-ar-1.1.0";
   /** Weekly Priority Rules */
   weekly_priority_rules: Record<string, any>[];
   /** Weekly Priority Rules Version */
-  weekly_priority_rules_version: "w3-priority-1.0.0";
+  weekly_priority_rules_version: "w3-priority-1.1.0";
 }
 
 /** NutritionSnapshot */
@@ -1811,6 +1962,40 @@ export interface PeriodMetricEvidenceV1 {
   value_state: "known" | "explicit_zero" | "unknown";
 }
 
+/** Plan033ErrorDetailV1 */
+export interface Plan033ErrorDetailV1 {
+  /** Code */
+  code:
+    | "VALIDATION_ERROR"
+    | "INVALID_IDEMPOTENCY_KEY"
+    | "RESOURCE_NOT_FOUND"
+    | "GOAL_STATE_CONFLICT"
+    | "GOAL_VERSION_CONFLICT"
+    | "IDEMPOTENCY_KEY_REUSED"
+    | "PRIMARY_GOAL_EXISTS"
+    | "GOAL_REPEAT_PRIORITY_CONFLICT"
+    | "PRIORITY_SOURCE_STALE"
+    | "PRIORITY_SOURCE_SUPERSEDED"
+    | "UNSUPPORTED_PRIORITY_VERSION"
+    | "FEATURE_DISABLED"
+    | "PRIORITY_EVIDENCE_UNAVAILABLE"
+    | "GOAL_WRITE_FAILED";
+  /** Details */
+  details: Record<string, any>;
+  /** Message Ar */
+  message_ar: string;
+  /**
+   * Request Id
+   * @format uuid
+   */
+  request_id: string;
+}
+
+/** Plan033ErrorResponseV1 */
+export interface Plan033ErrorResponseV1 {
+  error: Plan033ErrorDetailV1;
+}
+
 /** PrincipalRole */
 export type PrincipalRole = "user" | "admin";
 
@@ -1847,7 +2032,7 @@ export interface PriorityV1 {
   /** Conflict Decisions */
   conflict_decisions: string[];
   /** Copy Version */
-  copy_version: "w3-priority-ar-1.0.0";
+  copy_version: "w3-priority-ar-1.1.0";
   /**
    * Coverage Percent
    * @min 75
@@ -1858,6 +2043,12 @@ export interface PriorityV1 {
   evidence_refs: OpaqueEvidenceRefV1[];
   /** Facts Used */
   facts_used: WeeklyPriorityFactV1[];
+  /** Goal Trackability */
+  goal_trackability: "trackable" | "informational_only";
+  /** Goal Unavailable Copy Ar */
+  goal_unavailable_copy_ar: string | null;
+  /** Goal Unavailable Reason */
+  goal_unavailable_reason: "action_not_observable" | null;
   /** Rank */
   rank: "main" | "secondary";
   /**
@@ -1871,7 +2062,7 @@ export interface PriorityV1 {
    */
   rule_key: string;
   /** Rules Version */
-  rules_version: "w3-priority-1.0.0";
+  rules_version: "w3-priority-1.1.0";
   /**
    * Title Ar
    * @minLength 1
@@ -2586,7 +2777,7 @@ export interface WeeklyPriorityResultV1 {
   /** Analysis Rules Version */
   analysis_rules_version: string;
   /** Copy Version */
-  copy_version: "w3-priority-ar-1.0.0";
+  copy_version: "w3-priority-ar-1.1.0";
   /** Etag */
   etag: string;
   /** Excluded Alternatives */
@@ -2636,7 +2827,7 @@ export interface WeeklyPriorityResultV1 {
    */
   recommendation_id: string;
   /** Rules Version */
-  rules_version: "w3-priority-1.0.0";
+  rules_version: "w3-priority-1.1.0";
   /**
    * Schema Version
    * @default 1

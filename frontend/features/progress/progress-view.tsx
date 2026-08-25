@@ -1,5 +1,5 @@
 import { AlertTriangle, BarChart3, CheckCircle2, Flag, History, RefreshCw } from "lucide-react";
-import type { RefObject } from "react";
+import type { KeyboardEventHandler, RefObject } from "react";
 
 import type {
   BehaviorGoal,
@@ -17,6 +17,7 @@ import {
   metricLabel,
   metricStatusText,
   PRIORITY_COPY,
+  type GoalEditTerms,
   priorityMessage,
   visibleMetrics
 } from "./progress-model";
@@ -38,6 +39,8 @@ type ProgressViewProps = {
   priority: WeeklyPriorityResult | null;
   priorityLoading: boolean;
   priorityError: boolean;
+  displayWeeklyPriority: boolean;
+  goalUnavailableReason: "action_not_observable" | null;
   goal: BehaviorGoal | null;
   goalHistory: BehaviorGoalHistory | undefined;
   goalHistoryLoading: boolean;
@@ -48,13 +51,18 @@ type ProgressViewProps = {
   goalErrorRef: RefObject<HTMLDivElement | null>;
   announcement: string;
   pendingGoalAction: BehaviorGoal["allowed_actions"][number] | null;
+  goalTerms: GoalEditTerms;
+  dialogRef: RefObject<HTMLDivElement | null>;
+  cancelRef: RefObject<HTMLButtonElement | null>;
   onEvaluate: () => void;
   onRetryLoad: () => void;
   onRetryHistory: () => void;
   onRetryPriority: () => void;
   onRequestGoalCommand: (action: BehaviorGoal["allowed_actions"][number]) => void;
   onCancelGoalCommand: () => void;
-  onConfirmGoalCommand: () => void;
+  onConfirmGoalCommand: (terms: GoalEditTerms) => void;
+  onGoalTermsChange: (terms: GoalEditTerms) => void;
+  onDialogKeyDown: KeyboardEventHandler<HTMLDivElement>;
 };
 
 export function ProgressView({
@@ -73,6 +81,8 @@ export function ProgressView({
   priority,
   priorityLoading,
   priorityError,
+  displayWeeklyPriority,
+  goalUnavailableReason,
   goal,
   goalHistory,
   goalHistoryLoading,
@@ -83,13 +93,18 @@ export function ProgressView({
   goalErrorRef,
   announcement,
   pendingGoalAction,
+  goalTerms,
+  dialogRef,
+  cancelRef,
   onEvaluate,
   onRetryLoad,
   onRetryHistory,
   onRetryPriority,
   onRequestGoalCommand,
   onCancelGoalCommand,
-  onConfirmGoalCommand
+  onConfirmGoalCommand,
+  onGoalTermsChange,
+  onDialogKeyDown
 }: ProgressViewProps) {
   const state = displayState(analysis);
   const metrics = analysis ? visibleMetrics(analysis) : [];
@@ -122,7 +137,7 @@ export function ProgressView({
         </div>
       ) : null}
 
-      <section className={styles.prioritySection} aria-labelledby="weekly-priority-heading" aria-busy={priorityLoading}>
+      {displayWeeklyPriority ? <section className={styles.prioritySection} aria-labelledby="weekly-priority-heading" aria-busy={priorityLoading}>
         <div className={styles.sectionHeading}>
           <Flag aria-hidden="true" />
           <h2 id="weekly-priority-heading">{PRIORITY_COPY.heading}</h2>
@@ -165,7 +180,7 @@ export function ProgressView({
             <p className={styles.metricEvidence}>
               <bdi>{goal.window_start}</bdi> — <bdi>{goal.window_end}</bdi>
             </p>
-            {goalError ? (
+            {goalError && !pendingGoalAction ? (
               <div className={styles.goalError} role="alert" ref={goalErrorRef} tabIndex={-1}>
                 <AlertTriangle aria-hidden="true" />
                 <span>{goalError}</span>
@@ -189,27 +204,96 @@ export function ProgressView({
           <div
             className={styles.dialogBackdrop}
             role="presentation"
-            onKeyDown={(event) => {
-              if (event.key === "Escape") onCancelGoalCommand();
-            }}
+            onKeyDown={onDialogKeyDown}
           >
             <div
               className={styles.commandDialog}
+              ref={dialogRef}
               role="dialog"
               aria-modal="true"
               aria-labelledby="goal-command-dialog-title"
             >
               <h3 id="goal-command-dialog-title">تأكيد الإجراء</h3>
               <p>هل تريد {goalActionCopy[pendingGoalAction]}؟ يمكنك الإلغاء دون تغيير الهدف.</p>
+              {pendingGoalAction === "change" && priority?.main?.goal_trackability === "informational_only" ? (
+                <p className={styles.metricEvidence}>{PRIORITY_COPY.informationalOnly}</p>
+              ) : null}
+              {(["accept", "edit", "change", "reduce"].includes(pendingGoalAction)
+                && !(pendingGoalAction === "change" && priority?.main?.goal_trackability === "informational_only")) ? (
+                <div className={styles.goalEditor}>
+                  <label>
+                    عدد الأيام المستهدف
+                    <input
+                      type="number"
+                      min={1}
+                      max={pendingGoalAction === "reduce" ? Math.max(1, (goal?.weekly_target_count ?? 2) - 1) : 7}
+                      value={goalTerms.weeklyTargetCount}
+                      onChange={(event) => onGoalTermsChange({
+                        ...goalTerms,
+                        weeklyTargetCount: Number(event.target.value)
+                      })}
+                    />
+                  </label>
+                  <fieldset>
+                    <legend>أيام المتابعة الاختيارية</legend>
+                    {["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"].map((label, day) => (
+                      <label key={label}>
+                        <input
+                          type="checkbox"
+                          checked={goalTerms.scheduledDayMask.includes(day)}
+                          onChange={() => onGoalTermsChange({
+                            ...goalTerms,
+                            scheduledDayMask: goalTerms.scheduledDayMask.includes(day)
+                              ? goalTerms.scheduledDayMask.filter((value) => value !== day)
+                              : [...goalTerms.scheduledDayMask, day].sort()
+                          })}
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </fieldset>
+                  <label>
+                    التذكير داخل التطبيق
+                    <select
+                      value={goalTerms.reminderPreference}
+                      onChange={(event) => onGoalTermsChange({
+                        ...goalTerms,
+                        reminderPreference: event.target.value as "enabled" | "disabled"
+                      })}
+                    >
+                      <option value="disabled">بدون تذكير</option>
+                      <option value="enabled">تذكير محكوم</option>
+                    </select>
+                  </label>
+                  <label>
+                    ملاحظة خاصة
+                    <textarea
+                      maxLength={280}
+                      value={goalTerms.note}
+                      onChange={(event) => onGoalTermsChange({ ...goalTerms, note: event.target.value })}
+                    />
+                  </label>
+                </div>
+              ) : null}
+              {goalError ? (
+                <div className={styles.goalError} role="alert" ref={goalErrorRef} tabIndex={-1}>
+                  <AlertTriangle aria-hidden="true" />
+                  <span>{goalError}</span>
+                </div>
+              ) : null}
               <div className={styles.goalActions}>
-                <button type="button" onClick={onCancelGoalCommand} autoFocus>إلغاء</button>
-                <button type="button" onClick={onConfirmGoalCommand} disabled={goalCommandPending}>تأكيد</button>
+                <button ref={cancelRef} type="button" onClick={onCancelGoalCommand}>إلغاء</button>
+                <button type="button" onClick={() => onConfirmGoalCommand(goalTerms)} disabled={goalCommandPending}>تأكيد</button>
               </div>
             </div>
           </div>
         ) : null}
         {!goal && priority?.status === "selected" && !priorityLoading ? (
-          <p className={styles.stateCard}>{PRIORITY_COPY.offer}</p>
+          <p className={styles.stateCard}>
+            {goalUnavailableReason === "action_not_observable"
+              ? priority.main?.goal_unavailable_copy_ar ?? PRIORITY_COPY.informationalOnly
+              : PRIORITY_COPY.offer}
+          </p>
         ) : null}
 
         <section className={styles.goalHistory} aria-labelledby="goal-history-heading">
@@ -228,7 +312,7 @@ export function ProgressView({
             </ol>
           ) : null}
         </section>
-      </section>
+      </section> : null}
 
       {!loading && !loadError && state === "empty" ? (
         <div className={styles.stateCard}>

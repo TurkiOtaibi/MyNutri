@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from sqlmodel import Session
 
 from app.core.auth import PrincipalContext, get_principal_context
@@ -13,6 +15,7 @@ from app.schemas import (
     BehaviorGoalCommandV1,
     BehaviorGoalCurrentResponseV1,
     BehaviorGoalHistoryPageV1,
+    Plan033ErrorResponseV1,
     WeeklyPriorityResultV1,
 )
 from app.services.weekly_priorities import (
@@ -23,8 +26,50 @@ from app.services.weekly_priorities import (
     goal_history,
 )
 
-priority_router = APIRouter(prefix="/progress/weekly-priorities", tags=["weekly-priorities"])
-goal_router = APIRouter(prefix="/progress/behavior-goals", tags=["behavior-goals"])
+
+def _validation_error() -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message_ar": "تحقق من بيانات الطلب.",
+                "details": {},
+                "request_id": str(uuid4()),
+            }
+        },
+    )
+
+
+class Plan033Route(APIRoute):
+    def get_route_handler(self):
+        route_handler = super().get_route_handler()
+
+        async def stable_validation_handler(request: Request):
+            try:
+                return await route_handler(request)
+            except RequestValidationError:
+                return _validation_error()
+
+        return stable_validation_handler
+
+
+priority_router = APIRouter(
+    prefix="/progress/weekly-priorities",
+    tags=["weekly-priorities"],
+    route_class=Plan033Route,
+)
+goal_router = APIRouter(
+    prefix="/progress/behavior-goals", tags=["behavior-goals"], route_class=Plan033Route
+)
+_ERROR_RESPONSES = {
+    400: {"model": Plan033ErrorResponseV1, "description": "Invalid command identity"},
+    404: {"model": Plan033ErrorResponseV1, "description": "Concealed owner-bound resource"},
+    409: {"model": Plan033ErrorResponseV1, "description": "State, source, or version conflict"},
+    422: {"model": Plan033ErrorResponseV1, "description": "Closed command validation error"},
+    503: {"model": Plan033ErrorResponseV1, "description": "Feature or evidence unavailable"},
+    500: {"model": Plan033ErrorResponseV1, "description": "Stable write failure"},
+}
 
 
 def _error(error: WeeklyPriorityError) -> JSONResponse:
@@ -55,7 +100,9 @@ def _unexpected() -> JSONResponse:
     )
 
 
-@priority_router.get("/current", response_model=WeeklyPriorityResultV1)
+@priority_router.get(
+    "/current", response_model=WeeklyPriorityResultV1, responses=_ERROR_RESPONSES
+)
 def get_priority(
     principal: PrincipalContext = Depends(get_principal_context),
     session: Session = Depends(get_session),
@@ -69,7 +116,9 @@ def get_priority(
         return _unexpected()
 
 
-@goal_router.get("/current", response_model=BehaviorGoalCurrentResponseV1)
+@goal_router.get(
+    "/current", response_model=BehaviorGoalCurrentResponseV1, responses=_ERROR_RESPONSES
+)
 def get_goal(
     principal: PrincipalContext = Depends(get_principal_context),
     session: Session = Depends(get_session),
@@ -82,7 +131,9 @@ def get_goal(
         return _unexpected()
 
 
-@goal_router.get("/history", response_model=BehaviorGoalHistoryPageV1)
+@goal_router.get(
+    "/history", response_model=BehaviorGoalHistoryPageV1, responses=_ERROR_RESPONSES
+)
 def get_goal_history(
     cursor: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
@@ -97,7 +148,11 @@ def get_goal_history(
         return _unexpected()
 
 
-@goal_router.post("/{goal_id}/commands", response_model=BehaviorGoalCommandResponseV1)
+@goal_router.post(
+    "/{goal_id}/commands",
+    response_model=BehaviorGoalCommandResponseV1,
+    responses=_ERROR_RESPONSES,
+)
 def post_goal_command(
     goal_id: UUID,
     command: BehaviorGoalCommandV1,

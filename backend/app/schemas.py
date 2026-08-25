@@ -2,10 +2,10 @@ from datetime import date, datetime, timedelta
 from contextvars import ContextVar, Token
 from enum import Enum
 import math
-from typing import Any, Literal
+from typing import Annotated, Any, ClassVar, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator, model_validator
 
 from app.models import (
     ActivityLevel,
@@ -111,8 +111,8 @@ class NutritionRegistryResponse(BaseModel):
     snapshot_schema_version: Literal[3]
     analysis_rules_version: Literal["w3-analysis-1.1.0"]
     analysis_rules_status: Literal["active"]
-    weekly_priority_rules_version: Literal["w3-priority-1.0.0"]
-    weekly_priority_copy_version: Literal["w3-priority-ar-1.0.0"]
+    weekly_priority_rules_version: Literal["w3-priority-1.1.0"]
+    weekly_priority_copy_version: Literal["w3-priority-ar-1.1.0"]
     rules_manifest_hash: str
     calculation_policy: dict[str, Any]
     nutrients: list[RegistryNutrientDefinition]
@@ -1368,12 +1368,16 @@ class WeeklyPriorityAnalysisInputV1(_AnalysisClosedModel):
             raise ValueError("snapshot schema versions must be sorted and unique")
         if self.safety_flags != sorted(set(self.safety_flags)):
             raise ValueError("safety flags must be sorted and unique")
-        if [item.date for item in self.days] != sorted(item.date for item in self.days):
-            raise ValueError("current days must be sorted")
-        if [item.date for item in self.previous_period] != sorted(
-            item.date for item in self.previous_period
-        ):
-            raise ValueError("previous days must be sorted")
+        current_dates = [item.date for item in self.days]
+        previous_dates = [item.date for item in self.previous_period]
+        if current_dates != sorted(set(current_dates)):
+            raise ValueError("current days must be sorted and unique")
+        if previous_dates != sorted(set(previous_dates)):
+            raise ValueError("previous days must be sorted and unique")
+        if any(right - left != timedelta(days=1) for left, right in zip(current_dates, current_dates[1:])):
+            raise ValueError("current days must be consecutive")
+        if any(right - left != timedelta(days=1) for left, right in zip(previous_dates, previous_dates[1:])):
+            raise ValueError("previous days must be consecutive")
         if [item.metric_key for item in self.metric_facts] != sorted(
             {item.metric_key for item in self.metric_facts}
         ):
@@ -1393,6 +1397,23 @@ class WeeklyPriorityAnalysisInputV1(_AnalysisClosedModel):
             raise ValueError("previous period must contain seven days")
         if self.previous_period_end + timedelta(days=1) != self.period_start:
             raise ValueError("periods must be contiguous")
+        if current_dates != [
+            self.period_start + timedelta(days=offset) for offset in range(7)
+        ]:
+            raise ValueError("current days must align to the declared period")
+        if previous_dates != [
+            self.previous_period_start + timedelta(days=offset) for offset in range(7)
+        ]:
+            raise ValueError("previous days must align to the declared period")
+        if self.as_of_diary_date != self.period_end:
+            raise ValueError("as-of Diary date must equal current period end")
+        if any(
+            fact.total_entry_count != day.entry_count
+            for day in (*self.days, *self.previous_period)
+            if day.logging_status == "complete"
+            for fact in day.metric_values
+        ):
+            raise ValueError("day metric total entries must match the day entry count")
         return self
 
 
@@ -1431,11 +1452,29 @@ class PriorityV1(_AnalysisClosedModel):
     action_key: str = Field(min_length=1)
     action_ar: str = Field(min_length=1)
     action_mode: Literal["add", "replace", "review"]
-    rules_version: Literal["w3-priority-1.0.0"]
-    copy_version: Literal["w3-priority-ar-1.0.0"]
+    goal_trackability: Literal["trackable", "informational_only"]
+    goal_unavailable_reason: Literal["action_not_observable"] | None
+    goal_unavailable_copy_ar: str | None
+    rules_version: Literal["w3-priority-1.1.0"]
+    copy_version: Literal["w3-priority-ar-1.1.0"]
     facts_used: list[WeeklyPriorityFactV1]
     evidence_refs: list[OpaqueEvidenceRefV1]
     conflict_decisions: list[str]
+
+    @model_validator(mode="after")
+    def validate_trackability(self):
+        if self.goal_trackability == "trackable" and self.goal_unavailable_reason is not None:
+            raise ValueError("trackable action requires a null unavailable reason")
+        if (
+            self.goal_trackability == "informational_only"
+            and self.goal_unavailable_reason != "action_not_observable"
+        ):
+            raise ValueError("informational action requires action_not_observable")
+        if self.goal_trackability == "trackable" and self.goal_unavailable_copy_ar is not None:
+            raise ValueError("trackable action requires null unavailable copy")
+        if self.goal_trackability == "informational_only" and not self.goal_unavailable_copy_ar:
+            raise ValueError("informational action requires stored unavailable copy")
+        return self
 
 
 class WeeklyPriorityExcludedV1(_AnalysisClosedModel):
@@ -1461,8 +1500,8 @@ class WeeklyPriorityResultV1(_AnalysisClosedModel):
     generated_at: datetime
     expires_at: datetime
     status: WeeklyPriorityStatus
-    rules_version: Literal["w3-priority-1.0.0"]
-    copy_version: Literal["w3-priority-ar-1.0.0"]
+    rules_version: Literal["w3-priority-1.1.0"]
+    copy_version: Literal["w3-priority-ar-1.1.0"]
     analysis_rules_version: str
     nutrition_registry_version: str
     food_group_rules_version: str
@@ -1582,6 +1621,50 @@ class BehaviorGoalResponseV1(_AnalysisClosedModel):
 class BehaviorGoalCurrentResponseV1(_AnalysisClosedModel):
     recommendation: WeeklyPriorityResultV1 | None
     goal: BehaviorGoalResponseV1 | None
+    goal_unavailable_reason: Literal["action_not_observable"] | None = None
+
+    @model_validator(mode="after")
+    def validate_unavailable_reason(self):
+        informational_main = bool(
+            self.recommendation
+            and self.recommendation.status == "selected"
+            and self.recommendation.main
+            and self.recommendation.main.goal_trackability == "informational_only"
+        )
+        if self.goal is not None and self.goal_unavailable_reason is not None:
+            raise ValueError("a current goal cannot also be unavailable")
+        if self.goal is None and informational_main:
+            if self.goal_unavailable_reason != "action_not_observable":
+                raise ValueError("informational main requires action_not_observable")
+        elif self.goal_unavailable_reason is not None:
+            raise ValueError("unavailable reason requires an informational main")
+        return self
+
+
+class Plan033ErrorDetailV1(_AnalysisClosedModel):
+    code: Literal[
+        "VALIDATION_ERROR",
+        "INVALID_IDEMPOTENCY_KEY",
+        "RESOURCE_NOT_FOUND",
+        "GOAL_STATE_CONFLICT",
+        "GOAL_VERSION_CONFLICT",
+        "IDEMPOTENCY_KEY_REUSED",
+        "PRIMARY_GOAL_EXISTS",
+        "GOAL_REPEAT_PRIORITY_CONFLICT",
+        "PRIORITY_SOURCE_STALE",
+        "PRIORITY_SOURCE_SUPERSEDED",
+        "UNSUPPORTED_PRIORITY_VERSION",
+        "FEATURE_DISABLED",
+        "PRIORITY_EVIDENCE_UNAVAILABLE",
+        "GOAL_WRITE_FAILED",
+    ]
+    message_ar: str
+    details: dict[str, Any]
+    request_id: UUID
+
+
+class Plan033ErrorResponseV1(_AnalysisClosedModel):
+    error: Plan033ErrorDetailV1
 
 
 class BehaviorGoalHistoryPageV1(_AnalysisClosedModel):
@@ -1589,46 +1672,122 @@ class BehaviorGoalHistoryPageV1(_AnalysisClosedModel):
     next_cursor: str | None
 
 
-class BehaviorGoalCommandV1(_AnalysisClosedModel):
-    event: Literal[
-        "accept", "edit", "defer", "reject", "change", "pause", "resume", "end", "repeat"
-    ]
+class _BehaviorGoalCommandBase(_AnalysisClosedModel):
     expected_version: int = Field(ge=1)
+
+
+class BehaviorGoalAcceptCommandV1(_BehaviorGoalCommandBase):
+    event: Literal["accept"]
     weekly_target_count: int | None = Field(default=None, ge=1, le=7)
     scheduled_day_mask: list[int] | None = None
-    repeat_mode: Literal["same", "reduce"] | None = None
     reminder_preference: Literal["enabled", "disabled"] | None = None
     note: str | None = Field(default=None, max_length=280)
+
+    @model_validator(mode="after")
+    def validate_mask(self):
+        _validate_command_day_mask(self.scheduled_day_mask)
+        return self
+
+
+class BehaviorGoalEditCommandV1(BehaviorGoalAcceptCommandV1):
+    event: Literal["edit"]
+
+
+class BehaviorGoalDeferCommandV1(_BehaviorGoalCommandBase):
+    event: Literal["defer"]
+
+
+class _BehaviorGoalReasonCommandV1(_BehaviorGoalCommandBase):
     reason: Literal[
         "not_relevant", "too_difficult", "prefer_other", "pause_tracking", "other"
     ] | None = None
+    note: str | None = Field(default=None, max_length=280)
+
+    @model_validator(mode="after")
+    def validate_reason_note(self):
+        if self.note is not None and self.reason != "other":
+            raise ValueError("a private note requires reason=other")
+        return self
+
+
+class BehaviorGoalRejectCommandV1(_BehaviorGoalReasonCommandV1):
+    event: Literal["reject"]
+
+
+class BehaviorGoalPauseCommandV1(_BehaviorGoalReasonCommandV1):
+    event: Literal["pause"]
+
+
+class BehaviorGoalEndCommandV1(_BehaviorGoalReasonCommandV1):
+    event: Literal["end"]
+
+
+class BehaviorGoalChangeCommandV1(BehaviorGoalAcceptCommandV1):
+    event: Literal["change"]
     change_reason: Literal["owner_requested", "evidence_superseded"] | None = None
+
+
+class BehaviorGoalResumeCommandV1(_BehaviorGoalCommandBase):
+    event: Literal["resume"]
+
+
+class BehaviorGoalRepeatCommandV1(_BehaviorGoalCommandBase):
+    event: Literal["repeat"]
+    repeat_mode: Literal["same", "reduce"]
+    weekly_target_count: int | None = Field(default=None, ge=1, le=7)
 
     @model_validator(mode="after")
     def validate_repeat(self):
-        if self.scheduled_day_mask is not None and (
-            self.scheduled_day_mask != sorted(set(self.scheduled_day_mask))
-            or any(day < 0 or day > 6 for day in self.scheduled_day_mask)
-        ):
-            raise ValueError("scheduled day mask must contain unique weekdays 0..6")
-        if self.event == "repeat":
-            if self.repeat_mode is None:
-                raise ValueError("repeat_mode is required")
-            if self.repeat_mode == "same" and self.weekly_target_count is not None:
-                raise ValueError("same repeat cannot override target")
-            if self.repeat_mode == "reduce" and self.weekly_target_count is None:
-                raise ValueError("reduced repeat requires target")
-        elif self.repeat_mode is not None:
-            raise ValueError("repeat_mode is allowed only for repeat")
-        if self.reason is not None and self.event not in {"reject", "end", "pause"}:
-            raise ValueError("reason is allowed only for reject, end, or pause")
-        if self.change_reason is not None and self.event != "change":
-            raise ValueError("change_reason is allowed only for change")
-        if self.note is not None and self.reason != "other":
-            raise ValueError("a private note requires reason=other")
-        if self.event not in {"edit", "accept"} and self.scheduled_day_mask is not None:
-            raise ValueError("scheduled day mask is allowed only for accept or edit")
+        if self.repeat_mode == "same" and self.weekly_target_count is not None:
+            raise ValueError("same repeat cannot override target")
+        if self.repeat_mode == "reduce" and self.weekly_target_count is None:
+            raise ValueError("reduced repeat requires target")
         return self
+
+
+def _validate_command_day_mask(mask: list[int] | None) -> None:
+    if mask is not None and (
+        mask != sorted(set(mask)) or any(day < 0 or day > 6 for day in mask)
+    ):
+        raise ValueError("scheduled day mask must contain unique weekdays 0..6")
+
+
+BehaviorGoalCommandPayloadV1 = Annotated[
+    BehaviorGoalAcceptCommandV1
+    | BehaviorGoalEditCommandV1
+    | BehaviorGoalDeferCommandV1
+    | BehaviorGoalRejectCommandV1
+    | BehaviorGoalChangeCommandV1
+    | BehaviorGoalPauseCommandV1
+    | BehaviorGoalResumeCommandV1
+    | BehaviorGoalEndCommandV1
+    | BehaviorGoalRepeatCommandV1,
+    Field(discriminator="event"),
+]
+
+
+class BehaviorGoalCommandV1(RootModel[BehaviorGoalCommandPayloadV1]):
+    _OPTIONAL_EVENT_FIELDS: ClassVar[frozenset[str]] = frozenset({
+        "weekly_target_count",
+        "scheduled_day_mask",
+        "reminder_preference",
+        "note",
+        "reason",
+        "change_reason",
+        "repeat_mode",
+    })
+
+    def __init__(self, root: Any = None, **data: Any):
+        super().__init__(root=root if root is not None else data)
+
+    def __getattr__(self, name: str) -> Any:
+        root = object.__getattribute__(self, "root")
+        try:
+            return getattr(root, name)
+        except AttributeError:
+            if name in type(self)._OPTIONAL_EVENT_FIELDS:
+                return None
+            raise AttributeError(name) from None
 
 
 class BehaviorGoalCommandResponseV1(_AnalysisClosedModel):

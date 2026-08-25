@@ -28,7 +28,8 @@ export const PRIORITY_COPY = {
   offer: "هل ترغب في تحويل الأولوية إلى هدف أسبوعي؟",
   failure: "تعذر تحميل أولوية الأسبوع. حاول مرة أخرى.",
   commandFailure: "تعذر حفظ الهدف. لم تُفقد بياناتك؛ حاول مجددًا.",
-  repeatSuccess: "بدأ أسبوع جديد للهدف مع الاحتفاظ بنتيجة الأسبوع السابق."
+  repeatSuccess: "بدأ أسبوع جديد للهدف مع الاحتفاظ بنتيجة الأسبوع السابق.",
+  informationalOnly: "هذه الأولوية إرشادية حاليًا؛ لا يمكن تتبع تنفيذ هذه الخطوة تلقائيًا من بيانات اليوميات."
 } as const;
 
 export const goalStateCopy: Record<BehaviorGoal["state"], string> = {
@@ -62,23 +63,47 @@ export type GoalCommandAttempt = {
   command: BehaviorGoalCommand;
 };
 
+export type GoalEditTerms = {
+  weeklyTargetCount: number;
+  scheduledDayMask: number[];
+  reminderPreference: "enabled" | "disabled";
+  note: string;
+};
+
 export function stableGoalCommandAttempt(
   existing: GoalCommandAttempt | null,
   goal: BehaviorGoal,
   action: BehaviorGoal["allowed_actions"][number],
-  weeklyTargetCount?: number
+  terms?: GoalEditTerms
 ): GoalCommandAttempt {
   const event: BehaviorGoalCommand["event"] = action === "reduce" ? "repeat" : action;
   if (existing?.goalId === goal.goal_id && existing.command.event === event) return existing;
+  let command: BehaviorGoalCommand;
+  if (event === "repeat") {
+    command = action === "reduce"
+      ? {
+          event: "repeat",
+          expected_version: goal.version,
+          repeat_mode: "reduce",
+          weekly_target_count: terms?.weeklyTargetCount
+        }
+      : { event: "repeat", expected_version: goal.version, repeat_mode: "same" };
+  } else if (event === "accept" || event === "edit" || event === "change") {
+    command = {
+      event,
+      expected_version: goal.version,
+      weekly_target_count: terms?.weeklyTargetCount,
+      scheduled_day_mask: terms?.scheduledDayMask,
+      reminder_preference: terms?.reminderPreference,
+      note: terms?.note || null
+    } as BehaviorGoalCommand;
+  } else {
+    command = { event, expected_version: goal.version } as BehaviorGoalCommand;
+  }
   return {
     goalId: goal.goal_id,
     key: crypto.randomUUID(),
-    command: {
-      event,
-      expected_version: goal.version,
-      ...(event === "repeat" ? { repeat_mode: action === "reduce" ? "reduce" as const : "same" as const } : {}),
-      ...(weeklyTargetCount === undefined ? {} : { weekly_target_count: weeklyTargetCount })
-    }
+    command
   };
 }
 

@@ -8,8 +8,11 @@ from typing import TYPE_CHECKING, Any, Final
 if TYPE_CHECKING:
     from app.schemas import WeeklyPriorityAnalysisInputV1
 
-WEEKLY_PRIORITY_RULES_VERSION: Final = "w3-priority-1.0.0"
-WEEKLY_PRIORITY_COPY_VERSION: Final = "w3-priority-ar-1.0.0"
+WEEKLY_PRIORITY_RULES_VERSION: Final = "w3-priority-1.1.0"
+WEEKLY_PRIORITY_COPY_VERSION: Final = "w3-priority-ar-1.1.0"
+INFORMATIONAL_COPY_AR: Final = (
+    "هذه الأولوية إرشادية حاليًا؛ لا يمكن تتبع تنفيذ هذه الخطوة تلقائيًا من بيانات اليوميات."
+)
 SUPPORTED_INTERFACE_VERSIONS: Final = frozenset({1})
 SUPPORTED_ANALYSIS_RULES_VERSIONS: Final = frozenset({"w3-analysis-1.1.0"})
 SUPPORTED_NUTRITION_REGISTRY_VERSIONS: Final = frozenset({"2.0.0"})
@@ -56,6 +59,34 @@ RULE_META: Final[dict[str, tuple[int, int, dict[str, str]]]] = {
     "folate_dfe_gap": (3, 280, {"review": "review_food_sources_folate_dfe"}),
     "vitamin_a_rae_gap": (3, 290, {"review": "review_food_sources_vitamin_a_rae"}),
     "iodine_gap": (3, 300, {"review": "review_food_sources_iodine"}),
+}
+
+TRACKABLE_ACTIONS: Final = frozenset(
+    {
+        "replace_trans_fat_choice",
+        "replace_processed_meat_choice",
+        "add_fruit_or_vegetable",
+        "replace_with_fruit_or_vegetable",
+        "add_legumes",
+        "replace_with_legumes",
+        "replace_with_seafood",
+        "add_dairy_or_fortified_alternative",
+        "replace_with_dairy_or_fortified_alternative",
+    }
+)
+ALL_ACTIONS: Final = frozenset(
+    action for _, _, actions in RULE_META.values() for action in actions.values()
+)
+INFORMATIONAL_ACTIONS: Final = ALL_ACTIONS - TRACKABLE_ACTIONS
+ACTION_PROGRESS_METRICS: Final = {
+    "replace_processed_meat_choice": "protein:source_diversity_count",
+    "add_fruit_or_vegetable": "group:fruit_vegetable_g_per_day",
+    "replace_with_fruit_or_vegetable": "group:fruit_vegetable_g_per_day",
+    "add_legumes": "group:legumes_servings_per_period",
+    "replace_with_legumes": "group:legumes_servings_per_period",
+    "replace_with_seafood": "group:seafood_servings_per_period",
+    "add_dairy_or_fortified_alternative": "group:dairy_fortified_servings_per_day",
+    "replace_with_dairy_or_fortified_alternative": "group:dairy_fortified_servings_per_day",
 }
 
 METRIC_RULES: Final[dict[str, str]] = {
@@ -516,17 +547,58 @@ def apply_goal_event(state: dict[str, Any], event: dict[str, Any]) -> dict[str, 
 
 
 def evaluate_progress(vector: dict[str, Any]) -> dict[str, Any]:
+    if "force_qualifies" in vector or "bypass_scheduled_day_mask" in vector:
+        raise ValueError("authoritative progress cannot be bypassed")
     target = vector.get("target_count")
     if not isinstance(target, int) or isinstance(target, bool) or not 1 <= target <= 7:
         raise ValueError("progress target_count must be an integer from 1 to 7")
+    action_key = vector.get("action_key")
+    if action_key not in TRACKABLE_ACTIONS:
+        raise ValueError("informational-only action has no progress predicate")
+    try:
+        window_start = date.fromisoformat(vector["window_start"])
+        window_end = date.fromisoformat(vector["window_end"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("progress requires a valid closed window") from error
+    mask = vector.get("scheduled_day_mask")
+    if mask is not None and (
+        not isinstance(mask, list)
+        or any(
+            not isinstance(item, int)
+            or isinstance(item, bool)
+            or not 0 <= item <= 6
+            for item in mask
+        )
+        or len(mask) != len(set(mask))
+    ):
+        raise ValueError("scheduled_day_mask must be unique ISO weekdays")
+    source_status = vector.get("source_status")
+    if source_status not in {"selected", "stale", "superseded"}:
+        raise ValueError("unknown source_status")
     complete = progress = 0
+    seen_dates: set[date] = set()
     for day in vector.get("days", []):
         status = day.get("logging_status")
         if status not in DAY_STATUSES:
             raise ValueError(f"unknown logging_status: {status!r}")
-        if status == "complete":
+        try:
+            parsed = date.fromisoformat(day["date"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("producer day requires an ISO date") from error
+        if parsed in seen_dates:
+            raise ValueError("producer day dates must be unique")
+        seen_dates.add(parsed)
+        if day.get("analysis_eligible") is not (status == "complete"):
+            raise ValueError("analysis_eligible must match complete status")
+        eligible = (
+            source_status == "selected"
+            and status == "complete"
+            and window_start <= parsed <= window_end
+            and (mask is None or parsed.weekday() in mask)
+        )
+        if eligible:
             complete += 1
-            progress += day.get("qualifies") is True
+            progress += action_day_qualifies(action_key, day)
     if progress >= target:
         status = "achieved"
     elif vector.get("window_ended") and complete < 4:
@@ -542,6 +614,60 @@ def evaluate_progress(vector: dict[str, Any]) -> dict[str, Any]:
         "progress_percent": min(100, round(100 * progress / target)),
         "status": status,
     }
+
+
+def action_trackability(action_key: str) -> tuple[str, str | None]:
+    if action_key not in ALL_ACTIONS:
+        raise ValueError(f"unknown action_key: {action_key!r}")
+    if action_key in TRACKABLE_ACTIONS:
+        return "trackable", None
+    return "informational_only", "action_not_observable"
+
+
+def validate_priority_versions(rules_version: str, copy_version: str) -> None:
+    if rules_version != WEEKLY_PRIORITY_RULES_VERSION:
+        raise ValueError(f"unsupported weekly priority rules version: {rules_version}")
+    if copy_version != WEEKLY_PRIORITY_COPY_VERSION:
+        raise ValueError(f"unsupported weekly priority copy version: {copy_version}")
+
+
+def _day_metric(day: dict[str, Any], metric_key: str) -> dict[str, Any] | None:
+    values = day.get("metric_values")
+    if not isinstance(values, list):
+        raise ValueError("producer-shaped day requires metric_values")
+    matches = [item for item in values if item.get("metric_key") == metric_key]
+    if len(matches) > 1:
+        raise ValueError("producer day metric keys must be unique")
+    return matches[0] if matches else None
+
+
+def action_day_qualifies(action_key: str, day: dict[str, Any]) -> bool:
+    if "qualifies" in day or "force_qualifies" in day:
+        raise ValueError("precomputed qualifies is forbidden")
+    if action_key not in TRACKABLE_ACTIONS:
+        raise ValueError("informational-only action has no progress predicate")
+    if action_key == "replace_trans_fat_choice":
+        fact = _day_metric(day, "nutrient:trans_fat_g")
+        return bool(
+            fact
+            and day.get("entry_count", 0) > 0
+            and fact.get("value_state") == "explicit_zero"
+            and fact.get("value") == 0
+            and fact.get("amount_qualifier") == "exact"
+            and fact.get("total_entry_count", 0) > 0
+            and fact.get("known_entry_count") == fact.get("total_entry_count")
+        )
+    fact = _day_metric(day, ACTION_PROGRESS_METRICS[action_key])
+    value = fact.get("value") if fact else None
+    return bool(
+        fact
+        and fact.get("value_state") == "known"
+        and isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value > 0
+        and fact.get("known_entry_count", 0) > 0
+    )
 
 
 def repeat_response(
@@ -638,6 +764,7 @@ def apply_repeat_event(
         or priority.get("main_rule_key") != source["rule_key"]
         or priority.get("rules_version") != source["rules_version"]
         or priority.get("action_key") != source["action_key"]
+        or priority.get("action_key") not in TRACKABLE_ACTIONS
     ):
         return repeat_response(state, "goal_repeat_priority_conflict")
     mode = event.get("repeat_mode")
@@ -717,16 +844,28 @@ def validate_producer(
 
 def priority_registry() -> list[dict[str, Any]]:
     metric_by_rule = {rule_key: metric_key for metric_key, rule_key in METRIC_RULES.items()}
-    return [
-        {
+    registry = []
+    for key, (tier, order, actions) in sorted(
+        RULE_META.items(), key=lambda item: item[1][1]
+    ):
+        governed_actions = {}
+        for mode, action_key in sorted(actions.items()):
+            trackability, unavailable_reason = action_trackability(action_key)
+            governed_actions[mode] = {
+                "action_key": action_key,
+                "goal_trackability": trackability,
+                "goal_unavailable_reason": unavailable_reason,
+            }
+        registry.append({
             "rule_key": key,
             "metric_key": metric_by_rule[key],
             "tier": tier,
             "taxonomy_order": order,
-            "actions": actions,
+            "actions": governed_actions,
             "title_ar": COPY_CATALOG[key][0],
             "reason_ar": COPY_CATALOG[key][1],
             "action_ar": COPY_CATALOG[key][2],
-        }
-        for key, (tier, order, actions) in sorted(RULE_META.items(), key=lambda item: item[1][1])
-    ]
+            "rules_version": WEEKLY_PRIORITY_RULES_VERSION,
+            "copy_version": WEEKLY_PRIORITY_COPY_VERSION,
+        })
+    return registry
