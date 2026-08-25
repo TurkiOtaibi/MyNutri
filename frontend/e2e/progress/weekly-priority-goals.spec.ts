@@ -164,7 +164,7 @@ test.describe("@plan033 weekly priorities and behavior goals", () => {
         recommendation: priority
       } }));
     await page.goto("/progress");
-    await page.getByRole("button", { name: "تغيير الخطوة" }).click();
+    await page.getByRole("button", { name: "تغيير الهدف" }).click();
     const dialog = page.getByRole("dialog", { name: "تأكيد الإجراء" });
     await expect(dialog.getByText("هذه الأولوية إرشادية حاليًا؛ لا يمكن تتبع تنفيذ هذه الخطوة تلقائيًا من بيانات اليوميات.")).toBeVisible();
     await expect(dialog.getByLabel("عدد الأيام المستهدف")).toHaveCount(0);
