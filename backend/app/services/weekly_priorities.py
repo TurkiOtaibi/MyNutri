@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from base64 import urlsafe_b64decode, urlsafe_b64encode
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 import hashlib
 import hmac
 import json
 import re
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -24,6 +25,7 @@ from app.models import (
     BehaviorGoalReminderDelivery,
     NutritionAnalysis,
     NutritionAnalysisRevision,
+    NutritionAnalysisRevisionEvent,
     Principal,
     WeeklyPriorityEvidenceRef,
     WeeklyPriorityEvaluation,
@@ -48,6 +50,8 @@ from app.schemas import (
     BehaviorGoalCommandV1,
     BehaviorGoalCurrentResponseV1,
     BehaviorGoalHistoryPageV1,
+    BehaviorGoalHistoryItemV1,
+    BehaviorGoalHistorySnapshotV1,
     BehaviorGoalProgressV1,
     BehaviorGoalResponseV1,
     PriorityV1,
@@ -78,6 +82,33 @@ class WeeklyPriorityError(RuntimeError):
     def __init__(self, code: str, status_code: int, message_ar: str) -> None:
         super().__init__(code)
         self.code, self.status_code, self.message_ar = code, status_code, message_ar
+
+
+RecommendationSourceState = Literal[
+    "VALID",
+    "STALE",
+    "SUPERSEDED",
+    "UNSUPPORTED_VERSION",
+    "UNSAFE",
+    "TRACKABILITY_NOT_AVAILABLE",
+]
+
+
+@dataclass(frozen=True)
+class RecommendationSourceValidation:
+    state: RecommendationSourceState
+    series: NutritionAnalysis | None = None
+    revision: NutritionAnalysisRevision | None = None
+    source: WeeklyPriorityAnalysisInputV1 | None = None
+
+
+_STALE_SOURCE_EVENTS = {
+    "day_reopened",
+    "day_version_changed",
+    "target_source_changed",
+    "source_snapshot_corrected",
+    "source_version_unsupported",
+}
 
 
 def _canonical(value: Any) -> bytes:
@@ -335,6 +366,230 @@ def _project_recommendation(row: WeeklyPriorityRecommendation) -> WeeklyPriority
     return WeeklyPriorityResultV1.model_validate(document)
 
 
+def _recommendation_source_validations(
+    session: Session,
+    recommendations: list[WeeklyPriorityRecommendation],
+    *,
+    allow_newer_revision: bool = False,
+    require_trackable: bool = False,
+) -> dict[UUID, RecommendationSourceValidation]:
+    """Validate persisted recommendations against the current PLAN 032 authority.
+
+    The loader is intentionally batch-shaped so scheduled processing does not
+    regress to a source/revision/event query per goal.
+    """
+    if not recommendations:
+        return {}
+    principal_ids = {row.principal_id for row in recommendations}
+    source_analysis_ids = {row.source_analysis_id for row in recommendations}
+    series_rows = list(
+        session.exec(
+            select(NutritionAnalysis)
+            .where(
+                NutritionAnalysis.principal_id.in_(principal_ids),
+                NutritionAnalysis.current_revision_id.is_not(None),
+            )
+            .order_by(
+                NutritionAnalysis.principal_id,
+                NutritionAnalysis.as_of_diary_date.desc(),
+                NutritionAnalysis.id.desc(),
+            )
+        ).all()
+    )
+    latest_by_principal: dict[UUID, NutritionAnalysis] = {}
+    bound_by_id: dict[UUID, NutritionAnalysis] = {}
+    for series in series_rows:
+        latest_by_principal.setdefault(series.principal_id, series)
+        if series.id in source_analysis_ids:
+            bound_by_id[series.id] = series
+    missing_source_ids = source_analysis_ids - set(bound_by_id)
+    if missing_source_ids:
+        for series in session.exec(
+            select(NutritionAnalysis).where(NutritionAnalysis.id.in_(missing_source_ids))
+        ).all():
+            bound_by_id[series.id] = series
+
+    revision_ids = {row.source_analysis_revision_id for row in recommendations}
+    revision_ids.update(
+        series.current_revision_id
+        for series in bound_by_id.values()
+        if series.current_revision_id is not None
+    )
+    revisions = list(
+        session.exec(
+            select(NutritionAnalysisRevision).where(
+                NutritionAnalysisRevision.id.in_(revision_ids)
+            )
+        ).all()
+    )
+    revision_by_id = {row.id: row for row in revisions}
+    events = list(
+        session.exec(
+            select(NutritionAnalysisRevisionEvent).where(
+                NutritionAnalysisRevisionEvent.revision_id.in_(revision_ids)
+            )
+        ).all()
+    )
+    events_by_revision: dict[UUID, set[str]] = {}
+    for event in events:
+        events_by_revision.setdefault(event.revision_id, set()).add(event.event_type)
+
+    validations: dict[UUID, RecommendationSourceValidation] = {}
+    for recommendation in recommendations:
+        if (
+            recommendation.schema_version != 1
+            or recommendation.rules_version != WEEKLY_PRIORITY_RULES_VERSION
+            or recommendation.copy_version != WEEKLY_PRIORITY_COPY_VERSION
+        ):
+            validations[recommendation.id] = RecommendationSourceValidation(
+                "UNSUPPORTED_VERSION"
+            )
+            continue
+        if recommendation.superseded_by_id is not None:
+            validations[recommendation.id] = RecommendationSourceValidation("SUPERSEDED")
+            continue
+        bound_series = bound_by_id.get(recommendation.source_analysis_id)
+        latest_series = latest_by_principal.get(recommendation.principal_id)
+        if bound_series is None or latest_series is None:
+            validations[recommendation.id] = RecommendationSourceValidation("STALE")
+            continue
+        if bound_series.principal_id != recommendation.principal_id:
+            validations[recommendation.id] = RecommendationSourceValidation("STALE")
+            continue
+        if latest_series.id != bound_series.id:
+            validations[recommendation.id] = RecommendationSourceValidation("SUPERSEDED")
+            continue
+        current_revision = revision_by_id.get(bound_series.current_revision_id)
+        bound_revision = revision_by_id.get(recommendation.source_analysis_revision_id)
+        if current_revision is None or bound_revision is None:
+            validations[recommendation.id] = RecommendationSourceValidation("STALE")
+            continue
+        if (
+            bound_revision.analysis_id != recommendation.source_analysis_id
+            or bound_revision.principal_id != recommendation.principal_id
+            or bound_revision.revision != recommendation.source_analysis_revision
+        ):
+            validations[recommendation.id] = RecommendationSourceValidation(
+                "UNSUPPORTED_VERSION"
+            )
+            continue
+        revision_advanced = current_revision.id != bound_revision.id
+        if revision_advanced and not (
+            allow_newer_revision
+            and current_revision.analysis_id == recommendation.source_analysis_id
+            and current_revision.revision > recommendation.source_analysis_revision
+        ):
+            validations[recommendation.id] = RecommendationSourceValidation("SUPERSEDED")
+            continue
+        source_revision = current_revision if revision_advanced else bound_revision
+        event_types = events_by_revision.get(source_revision.id, set())
+        if "superseded_by_revision" in event_types:
+            validations[recommendation.id] = RecommendationSourceValidation("SUPERSEDED")
+            continue
+        try:
+            source = WeeklyPriorityAnalysisInputV1.model_validate(
+                source_revision.analysis_document
+            )
+        except ValueError:
+            validations[recommendation.id] = RecommendationSourceValidation(
+                "UNSUPPORTED_VERSION"
+            )
+            continue
+        if (
+            source.source_analysis_id != source_revision.analysis_id
+            or source.source_analysis_revision != source_revision.revision
+            or source.interface_version != bound_series.interface_version
+            or recommendation.analysis_rules_version != bound_revision.analysis_rules_version
+        ):
+            validations[recommendation.id] = RecommendationSourceValidation(
+                "UNSUPPORTED_VERSION"
+            )
+            continue
+        producer_state = validate_producer(
+            source,
+            stale=bool(event_types & _STALE_SOURCE_EVENTS)
+            or source.generated_at < utcnow() - timedelta(hours=36)
+            or (not allow_newer_revision and _is_expired(recommendation.expires_at)),
+            superseded=False,
+        )
+        if producer_state == "unsupported_version":
+            state: RecommendationSourceState = "UNSUPPORTED_VERSION"
+        elif producer_state == "superseded_analysis":
+            state = "SUPERSEDED"
+        elif producer_state == "stale_analysis":
+            state = "STALE"
+        elif producer_state != "eligible":
+            state = "UNSAFE"
+        else:
+            state = "VALID"
+        if state == "VALID" and require_trackable:
+            try:
+                projected = WeeklyPriorityResultV1.model_validate(
+                    recommendation.result_document
+                )
+            except ValueError:
+                state = "UNSUPPORTED_VERSION"
+            else:
+                if (
+                    projected.status != "selected"
+                    or projected.main is None
+                    or projected.main.goal_trackability != "trackable"
+                ):
+                    state = "TRACKABILITY_NOT_AVAILABLE"
+        validations[recommendation.id] = RecommendationSourceValidation(
+            state, bound_series, source_revision, source
+        )
+    return validations
+
+
+def _validate_recommendation_source(
+    session: Session,
+    recommendation: WeeklyPriorityRecommendation,
+    *,
+    allow_newer_revision: bool = False,
+    require_trackable: bool = False,
+) -> RecommendationSourceValidation:
+    return _recommendation_source_validations(
+        session,
+        [recommendation],
+        allow_newer_revision=allow_newer_revision,
+        require_trackable=require_trackable,
+    )[recommendation.id]
+
+
+def _raise_for_source_state(validation: RecommendationSourceValidation) -> None:
+    if validation.state == "VALID":
+        return
+    code, status, message = {
+        "STALE": (
+            "PRIORITY_SOURCE_STALE",
+            409,
+            "انتهت صلاحية مصدر الأولوية. حدّث التحليل ثم حاول مجددًا.",
+        ),
+        "SUPERSEDED": (
+            "PRIORITY_SOURCE_SUPERSEDED",
+            409,
+            "استُبدل مصدر الأولوية بتحليل أحدث. حدّث الصفحة ثم حاول مجددًا.",
+        ),
+        "UNSUPPORTED_VERSION": (
+            "UNSUPPORTED_PRIORITY_VERSION",
+            422,
+            "إصدار مصدر الأولوية غير مدعوم.",
+        ),
+        "UNSAFE": (
+            "PRIORITY_EVIDENCE_UNAVAILABLE",
+            503,
+            "لا تتوفر بيانات كافية وموثوقة لعرض الأولوية الآن.",
+        ),
+        "TRACKABILITY_NOT_AVAILABLE": (
+            "GOAL_STATE_CONFLICT",
+            409,
+            "لا تتاح متابعة تلقائية لهذه الأولوية حاليًا.",
+        ),
+    }[validation.state]
+    raise WeeklyPriorityError(code, status, message)
+
+
 def _record_evaluation(
     session: Session,
     row: WeeklyPriorityRecommendation,
@@ -579,6 +834,7 @@ def current_recommendation(session: Session, principal: PrincipalContext) -> Wee
             503,
             "لا تتوفر بيانات كافية وموثوقة لعرض الأولوية الآن.",
         )
+    _raise_for_source_state(_validate_recommendation_source(session, row))
     return _project_recommendation(row)
 
 
@@ -605,8 +861,16 @@ def _empty_progress(goal: BehaviorGoal, as_of: date, now: datetime) -> BehaviorG
     )
 
 
-def _goal_snapshot(goal: BehaviorGoal) -> dict[str, Any]:
+def _goal_snapshot(
+    goal: BehaviorGoal, recommendation: WeeklyPriorityRecommendation
+) -> dict[str, Any]:
     """Immutable governed terms and derived state for historical reconstruction."""
+    recommendation_document = WeeklyPriorityResultV1.model_validate(
+        recommendation.result_document
+    )
+    priority = recommendation_document.main
+    if priority is None or priority.action_key != goal.action_key:
+        raise ValueError("goal snapshot requires its persisted source action")
     return {
         "goal_id": str(goal.id),
         "recommendation_id": str(goal.recommendation_id),
@@ -617,6 +881,10 @@ def _goal_snapshot(goal: BehaviorGoal) -> dict[str, Any]:
         "version": goal.version,
         "rule_key": goal.rule_key,
         "action_key": goal.action_key,
+        "action_copy_ar": priority.action_ar,
+        "goal_trackability": priority.goal_trackability,
+        "goal_unavailable_reason": priority.goal_unavailable_reason,
+        "informational_copy_ar": priority.goal_unavailable_copy_ar,
         "weekly_target_count": goal.weekly_target_count,
         "scheduled_day_mask": list(goal.day_mask),
         "owner_note": goal.private_note,
@@ -625,6 +893,20 @@ def _goal_snapshot(goal: BehaviorGoal) -> dict[str, Any]:
         "window_end": goal.window_end.isoformat(),
         "rules_version": goal.rules_version,
         "copy_version": goal.copy_version,
+        "source_analysis_id": str(recommendation.source_analysis_id),
+        "source_analysis_revision_id": str(recommendation.source_analysis_revision_id),
+        "source_analysis_revision": recommendation.source_analysis_revision,
+        "analysis_rules_version": recommendation.analysis_rules_version,
+        "source_versions": dict(recommendation.source_versions),
+        "last_progress_analysis_id": (
+            str(goal.last_progress_analysis_id) if goal.last_progress_analysis_id else None
+        ),
+        "last_progress_analysis_revision_id": (
+            str(goal.last_progress_analysis_revision_id)
+            if goal.last_progress_analysis_revision_id
+            else None
+        ),
+        "last_progress_analysis_revision": goal.last_progress_analysis_revision,
         "progress_revision": goal.progress_revision,
         "progress": dict(goal.progress_document),
         "offered_at": goal.created_at.isoformat(),
@@ -700,6 +982,19 @@ def ensure_offer(
         or _is_expired(recommendation.expires_at)
     ):
         return None
+    recommendation_row = session.exec(
+        select(WeeklyPriorityRecommendation).where(
+            WeeklyPriorityRecommendation.id == recommendation.recommendation_id,
+            WeeklyPriorityRecommendation.principal_id == principal.principal_id,
+        )
+    ).first()
+    if recommendation_row is None:
+        return None
+    source_validation = _validate_recommendation_source(
+        session, recommendation_row, require_trackable=True
+    )
+    if source_validation.state != "VALID":
+        return None
     existing = session.exec(
         select(BehaviorGoal).where(
             BehaviorGoal.principal_id == principal.principal_id,
@@ -760,7 +1055,7 @@ def ensure_offer(
             from_state=None,
             to_state="offered",
             actor_type="system",
-            terms_progress_snapshot=_goal_snapshot(goal),
+            terms_progress_snapshot=_goal_snapshot(goal, recommendation_row),
         )
     )
     evaluation = session.exec(
@@ -784,11 +1079,12 @@ def current_goal(session: Session, principal: PrincipalContext) -> BehaviorGoalC
         return BehaviorGoalCurrentResponseV1(
             recommendation=None, goal=None, goal_unavailable_reason=None
         )
-    recommendation = None
     try:
         recommendation = current_recommendation(session, principal)
-    except WeeklyPriorityError:
-        pass
+    except WeeklyPriorityError as error:
+        if error.code != "PRIORITY_EVIDENCE_UNAVAILABLE":
+            raise
+        recommendation = None
     goal = session.exec(
         select(BehaviorGoal)
         .where(
@@ -809,18 +1105,20 @@ def current_goal(session: Session, principal: PrincipalContext) -> BehaviorGoalC
     )
 
 
-def _encode_cursor(goal: BehaviorGoal) -> str:
+def _encode_cursor(history: BehaviorGoalHistory) -> str:
     return (
-        urlsafe_b64encode(_canonical({"date": goal.window_end.isoformat(), "id": str(goal.id)}))
+        urlsafe_b64encode(
+            _canonical({"occurred_at": history.occurred_at.isoformat(), "id": str(history.id)})
+        )
         .decode()
         .rstrip("=")
     )
 
 
-def _decode_cursor(cursor: str) -> tuple[date, UUID]:
+def _decode_cursor(cursor: str) -> tuple[datetime, UUID]:
     try:
         value = json.loads(urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
-        return date.fromisoformat(value["date"]), UUID(value["id"])
+        return datetime.fromisoformat(value["occurred_at"]), UUID(value["id"])
     except (ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
         raise WeeklyPriorityError("VALIDATION_ERROR", 422, "تحقق من بيانات الطلب.") from error
 
@@ -828,27 +1126,47 @@ def _decode_cursor(cursor: str) -> tuple[date, UUID]:
 def goal_history(
     session: Session, principal: PrincipalContext, limit: int, cursor: str | None
 ) -> BehaviorGoalHistoryPageV1:
-    statement = select(BehaviorGoal).where(
-        BehaviorGoal.principal_id == principal.principal_id,
-        BehaviorGoal.state.in_(["completed", "incomplete", "rejected", "ended", "archived"]),
+    statement = select(BehaviorGoalHistory).where(
+        BehaviorGoalHistory.principal_id == principal.principal_id
     )
     if cursor:
-        end, goal_id = _decode_cursor(cursor)
+        occurred_at, history_id = _decode_cursor(cursor)
         statement = statement.where(
             or_(
-                BehaviorGoal.window_end < end,
-                and_(BehaviorGoal.window_end == end, BehaviorGoal.id < goal_id),
+                BehaviorGoalHistory.occurred_at < occurred_at,
+                and_(
+                    BehaviorGoalHistory.occurred_at == occurred_at,
+                    BehaviorGoalHistory.id < history_id,
+                ),
             )
         )
     rows = list(
         session.exec(
-            statement.order_by(BehaviorGoal.window_end.desc(), BehaviorGoal.id.desc()).limit(
-                limit + 1
-            )
+            statement.order_by(
+                BehaviorGoalHistory.occurred_at.desc(), BehaviorGoalHistory.id.desc()
+            ).limit(limit + 1)
         ).all()
     )
     return BehaviorGoalHistoryPageV1(
-        items=[_goal_response(item) for item in rows[:limit]],
+        items=[
+            BehaviorGoalHistoryItemV1(
+                history_id=item.id,
+                goal_id=item.goal_id,
+                root_goal_id=item.root_goal_id,
+                previous_goal_id=item.previous_goal_id,
+                sequence_number=item.sequence_number,
+                goal_version=item.goal_version,
+                event_type=item.event_type,
+                from_state=item.from_state,
+                to_state=item.to_state,
+                occurred_at=item.occurred_at,
+                reason=item.reason,
+                snapshot=BehaviorGoalHistorySnapshotV1.model_validate(
+                    item.terms_progress_snapshot
+                ),
+            )
+            for item in rows[:limit]
+        ],
         next_cursor=_encode_cursor(rows[limit - 1]) if len(rows) > limit else None,
     )
 
@@ -944,19 +1262,11 @@ def command_goal(
         .with_for_update()
     ).one()
     if command.event in {"accept", "edit", "defer", "resume"}:
-        projected_source = _project_recommendation(recommendation)
-        if projected_source.status != "selected" or projected_source.main is None:
-            raise WeeklyPriorityError(
-                "PRIORITY_SOURCE_STALE",
-                409,
-                "انتهت صلاحية مصدر الأولوية. حدّث التحليل ثم حاول مجددًا.",
+        _raise_for_source_state(
+            _validate_recommendation_source(
+                session, recommendation, require_trackable=True
             )
-        if command.event == "accept" and (
-            projected_source.main.goal_trackability != "trackable"
-        ):
-            raise WeeklyPriorityError(
-                "GOAL_STATE_CONFLICT", 409, "لا تتاح متابعة تلقائية لهذه الأولوية حاليًا."
-            )
+        )
     now, authority = utcnow(), diary_calendar_authority()
     previous = _goal_response(goal, authority)
     created: BehaviorGoal | None = None
@@ -983,6 +1293,12 @@ def command_goal(
             .order_by(WeeklyPriorityRecommendation.created_at.desc())
             .with_for_update()
         ).first()
+        if current is not None:
+            _raise_for_source_state(
+                _validate_recommendation_source(
+                    session, current, require_trackable=True
+                )
+            )
         projected = _project_recommendation(current) if current else None
         if (
             not projected
@@ -1066,7 +1382,7 @@ def command_goal(
                 to_state="active",
                 request_digest=command_hash,
                 actor_type="owner",
-                terms_progress_snapshot=_goal_snapshot(created),
+                terms_progress_snapshot=_goal_snapshot(created, current),
             )
         )
         result, response_goal = (
@@ -1083,6 +1399,8 @@ def command_goal(
             .order_by(WeeklyPriorityRecommendation.created_at.desc())
             .with_for_update()
         ).first()
+        if current is not None:
+            _raise_for_source_state(_validate_recommendation_source(session, current))
         projected = _project_recommendation(current) if current else None
         if not projected or not projected.main:
             raise WeeklyPriorityError(
@@ -1111,7 +1429,7 @@ def command_goal(
                         request_digest=command_hash,
                         actor_type="owner",
                         reason=command.change_reason or "owner_requested",
-                        terms_progress_snapshot=_goal_snapshot(goal),
+                        terms_progress_snapshot=_goal_snapshot(goal, recommendation),
                     )
                 )
             result, response_goal = "change_available", goal
@@ -1153,7 +1471,7 @@ def command_goal(
                     request_digest=command_hash,
                     actor_type="owner",
                     reason=command.change_reason or "owner_requested",
-                    terms_progress_snapshot=_goal_snapshot(goal),
+                    terms_progress_snapshot=_goal_snapshot(goal, current),
                 )
             )
             result, response_goal = "changed", goal
@@ -1237,7 +1555,7 @@ def command_goal(
                 request_digest=command_hash,
                 actor_type="owner",
                 reason=command.change_reason if command.event == "change" else command.reason,
-                terms_progress_snapshot=_goal_snapshot(goal),
+                terms_progress_snapshot=_goal_snapshot(goal, recommendation),
             )
         )
         result, response_goal = (
@@ -1287,27 +1605,29 @@ def recompute_goal_progress(
     goal: BehaviorGoal,
     *,
     source_override: WeeklyPriorityAnalysisInputV1 | None = None,
+    recommendation: WeeklyPriorityRecommendation | None = None,
+    source_validation: RecommendationSourceValidation | None = None,
 ) -> bool:
     """Recompute from the persisted PLAN 032 contract; never read Diary rows."""
-    analysis = None
-    if source_override is None:
-        try:
-            analysis = current_analysis(session, PrincipalContext(principal_id=goal.principal_id))
-        except Exception:
-            return False
-    source = source_override or analysis.priority_input
-    if (
-        validate_producer(
-            source,
-            stale=(
-                analysis.lifecycle_status == "stale"
-                if analysis
-                else source.generated_at < utcnow() - timedelta(hours=36)
-            ),
-            superseded=(analysis.lifecycle_status == "superseded" if analysis else False),
-        )
-        != "eligible"
-    ):
+    if recommendation is None:
+        recommendation = session.exec(
+            select(WeeklyPriorityRecommendation).where(
+                WeeklyPriorityRecommendation.id == goal.recommendation_id,
+                WeeklyPriorityRecommendation.principal_id == goal.principal_id,
+            )
+        ).first()
+    if recommendation is None:
+        return False
+    validation = source_validation or _validate_recommendation_source(
+        session,
+        recommendation,
+        allow_newer_revision=True,
+        require_trackable=True,
+    )
+    if validation.state != "VALID":
+        return False
+    source = source_override or validation.source
+    if source is None or validate_producer(source) != "eligible":
         return False
     if goal.action_key not in TRACKABLE_ACTIONS:
         return False
@@ -1369,7 +1689,18 @@ def recompute_goal_progress(
     current_evidence = {
         key: value for key, value in document.items() if key != "last_recomputed_at"
     }
+    source_cursor_changed = bool(
+        validation.revision
+        and goal.last_progress_analysis_revision_id != validation.revision.id
+    )
+    if validation.revision is not None:
+        goal.last_progress_analysis_id = validation.revision.analysis_id
+        goal.last_progress_analysis_revision_id = validation.revision.id
+        goal.last_progress_analysis_revision = validation.revision.revision
     if current_evidence == previous_evidence:
+        if source_cursor_changed:
+            goal.updated_at = now
+            session.add(goal)
         return False
     old_state = goal.state
     if status == "achieved" and goal.state == "active":
@@ -1403,7 +1734,7 @@ def recompute_goal_progress(
             from_state=old_state,
             to_state=goal.state,
             actor_type="system",
-            terms_progress_snapshot=_goal_snapshot(goal),
+            terms_progress_snapshot=_goal_snapshot(goal, recommendation),
         )
     )
     return True
@@ -1413,78 +1744,57 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
     if not 1 <= limit <= 500:
         raise ValueError("limit must be between 1 and 500")
     today, now = diary_calendar_authority().current_diary_date, utcnow()
+    normal_due = or_(
+        and_(
+            BehaviorGoal.state.in_(["active", "paused"]),
+            or_(
+                BehaviorGoal.window_end < today,
+                and_(
+                    BehaviorGoal.state == "active",
+                    BehaviorGoal.window_start <= today - timedelta(days=3),
+                ),
+            ),
+        ),
+        and_(
+            BehaviorGoal.state == "completed",
+            BehaviorGoal.reviewed_at.is_(None),
+            BehaviorGoal.window_end < today,
+        ),
+    )
+    finalized_evidence_due = and_(
+        BehaviorGoal.state == "completed",
+        BehaviorGoal.reviewed_at.is_not(None),
+        NutritionAnalysis.current_revision_id.is_not(None),
+        or_(
+            BehaviorGoal.last_progress_analysis_revision_id.is_(None),
+            BehaviorGoal.last_progress_analysis_revision_id
+            != NutritionAnalysis.current_revision_id,
+        ),
+    )
     rows = list(
         session.exec(
             select(BehaviorGoal)
-            .where(
-                or_(
-                    and_(
-                        BehaviorGoal.state.in_(["active", "paused"]),
-                        or_(
-                            BehaviorGoal.window_end < today,
-                            and_(
-                                BehaviorGoal.state == "active",
-                                BehaviorGoal.window_start <= today - timedelta(days=3),
-                            ),
-                        ),
-                    ),
-                    and_(
-                        BehaviorGoal.state == "completed",
-                        BehaviorGoal.reviewed_at.is_(None),
-                        BehaviorGoal.window_end < today,
-                    ),
-                )
+            .join(
+                WeeklyPriorityRecommendation,
+                and_(
+                    WeeklyPriorityRecommendation.id == BehaviorGoal.recommendation_id,
+                    WeeklyPriorityRecommendation.principal_id == BehaviorGoal.principal_id,
+                ),
             )
+            .join(
+                NutritionAnalysis,
+                and_(
+                    NutritionAnalysis.id
+                    == WeeklyPriorityRecommendation.source_analysis_id,
+                    NutritionAnalysis.principal_id == BehaviorGoal.principal_id,
+                ),
+            )
+            .where(or_(normal_due, finalized_evidence_due))
             .order_by(BehaviorGoal.window_end, BehaviorGoal.id)
             .limit(limit)
             .with_for_update(skip_locked=True)
         ).all()
     )
-    principal_ids = {goal.principal_id for goal in rows}
-    series_rows = list(
-        session.exec(
-            select(NutritionAnalysis)
-            .where(
-                NutritionAnalysis.principal_id.in_(principal_ids),
-                NutritionAnalysis.current_revision_id.is_not(None),
-            )
-            .order_by(
-                NutritionAnalysis.principal_id,
-                NutritionAnalysis.as_of_diary_date.desc(),
-                NutritionAnalysis.id.desc(),
-            )
-        ).all()
-    ) if principal_ids else []
-    current_series: dict[UUID, NutritionAnalysis] = {}
-    for series in series_rows:
-        current_series.setdefault(series.principal_id, series)
-    revision_ids = {
-        series.current_revision_id
-        for series in current_series.values()
-        if series.current_revision_id is not None
-    }
-    revisions = (
-        list(
-            session.exec(
-                select(NutritionAnalysisRevision).where(
-                    NutritionAnalysisRevision.id.in_(revision_ids)
-                )
-            ).all()
-        )
-        if revision_ids
-        else []
-    )
-    revision_by_id = {revision.id: revision for revision in revisions}
-    source_by_principal: dict[UUID, WeeklyPriorityAnalysisInputV1] = {}
-    for principal_id, series in current_series.items():
-        revision = revision_by_id.get(series.current_revision_id)
-        if revision is not None:
-            try:
-                source_by_principal[principal_id] = WeeklyPriorityAnalysisInputV1.model_validate(
-                    revision.analysis_document
-                )
-            except ValueError:
-                continue
     existing_reminders = {
         (row.goal_id, row.goal_revision, row.reminder_type)
         for row in (
@@ -1505,29 +1815,36 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
         ).all()
     ) if rows else []
     recommendation_by_id = {row.id: row for row in recommendation_rows}
+    progress_validations = _recommendation_source_validations(
+        session,
+        recommendation_rows,
+        allow_newer_revision=True,
+        require_trackable=True,
+    )
+    action_validations = _recommendation_source_validations(
+        session, recommendation_rows, require_trackable=True
+    )
     finalized = reminders = recomputed = 0
     delivery_enabled = get_settings().behavior_goal_reminder_delivery_enabled
     for goal in rows:
-        source = source_by_principal.get(goal.principal_id)
-        if source is not None:
-            recomputed += recompute_goal_progress(session, goal, source_override=source)
-        progress = BehaviorGoalProgressV1.model_validate(goal.progress_document)
         recommendation = recommendation_by_id.get(goal.recommendation_id)
-        source_actionable = bool(
-            source
-            and recommendation
-            and recommendation.superseded_by_id is None
-            and recommendation.rules_version == WEEKLY_PRIORITY_RULES_VERSION
-            and recommendation.copy_version == WEEKLY_PRIORITY_COPY_VERSION
-            and recommendation.source_analysis_id == source.source_analysis_id
-            and recommendation.source_analysis_revision == source.source_analysis_revision
-            and validate_producer(
-                source,
-                stale=source.generated_at < now - timedelta(hours=36),
-                superseded=False,
+        if recommendation is None:
+            continue
+        progress_validation = progress_validations[recommendation.id]
+        if (
+            progress_validation.state == "VALID"
+            and progress_validation.revision is not None
+            and goal.last_progress_analysis_revision_id
+            != progress_validation.revision.id
+        ):
+            recomputed += recompute_goal_progress(
+                session,
+                goal,
+                recommendation=recommendation,
+                source_validation=progress_validation,
             )
-            == "eligible"
-        )
+        progress = BehaviorGoalProgressV1.model_validate(goal.progress_document)
+        source_actionable = action_validations[recommendation.id].state == "VALID"
         finalization_boundary = _finalization_boundary(goal.window_end)
         ended = now >= finalization_boundary
         previous_state = goal.state
@@ -1552,7 +1869,7 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
                     from_state=previous_state,
                     to_state="incomplete",
                     actor_type="system",
-                    terms_progress_snapshot=_goal_snapshot(goal),
+                    terms_progress_snapshot=_goal_snapshot(goal, recommendation),
                 )
             )
         elif ended and goal.state == "completed" and goal.reviewed_at is None:
@@ -1573,7 +1890,7 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
                     from_state="completed",
                     to_state="completed",
                     actor_type="system",
-                    terms_progress_snapshot=_goal_snapshot(goal),
+                    terms_progress_snapshot=_goal_snapshot(goal, recommendation),
                 )
             )
         reminder_type = (

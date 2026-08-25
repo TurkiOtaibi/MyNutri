@@ -304,9 +304,9 @@ export function ProgressView({
           {goalHistory?.items.length ? (
             <ol>
               {goalHistory.items.map((item) => (
-                <li key={item.goal_id}>
-                  <span>{goalStateCopy[item.state]}</span>
-                  <bdi>{item.window_start} — {item.window_end}</bdi>
+                <li key={item.history_id}>
+                  <span>{goalStateCopy[item.to_state]}</span>
+                  <bdi>{item.snapshot.window_start} — {item.snapshot.window_end}</bdi>
                 </li>
               ))}
             </ol>

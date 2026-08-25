@@ -200,6 +200,8 @@ def test_weekly_priority_and_goal_openapi_is_closed_owner_only_and_bounded() -> 
         "WeeklyPriorityResultV1",
         "PriorityV1",
         "BehaviorGoalResponseV1",
+        "BehaviorGoalHistoryItemV1",
+        "BehaviorGoalHistorySnapshotV1",
         "BehaviorGoalCommandResponseV1",
     ):
         assert schema["components"]["schemas"][name]["additionalProperties"] is False
@@ -215,6 +217,24 @@ def test_weekly_priority_and_goal_openapi_is_closed_owner_only_and_bounded() -> 
         "trackable",
         "informational_only",
     }
+    history_page = schema["components"]["schemas"]["BehaviorGoalHistoryPageV1"]
+    assert history_page["properties"]["items"]["items"] == {
+        "$ref": "#/components/schemas/BehaviorGoalHistoryItemV1"
+    }
+    history_item = schema["components"]["schemas"]["BehaviorGoalHistoryItemV1"]
+    assert history_item["properties"]["snapshot"] == {
+        "$ref": "#/components/schemas/BehaviorGoalHistorySnapshotV1"
+    }
+    error_codes = set(
+        schema["components"]["schemas"]["Plan033ErrorDetailV1"]["properties"]["code"][
+            "enum"
+        ]
+    )
+    assert {
+        "PRIORITY_SOURCE_STALE",
+        "PRIORITY_SOURCE_SUPERSEDED",
+        "UNSUPPORTED_PRIORITY_VERSION",
+    } <= error_codes
 
 
 def test_plan033_request_validation_uses_the_stable_error_envelope() -> None:

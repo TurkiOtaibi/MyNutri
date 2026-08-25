@@ -62,7 +62,7 @@ BASELINE_HASHES = {
     "9f2a1b6c3d05_plan025_admin_diary_order_index.py": "727052a802eeee1d6e4f493fc7d21e963cf6f6de7a7b78b102bf42c3d7c2c152",
     "b7e31a4c9d20_add_diary_day_status.py": "cef968f1e3786213eef07a337e5a178501305dfb07a47a772a370a2f8c50d939",
     "c3a7e6d5f210_add_nutrition_pattern_analysis.py": "eb23950260d4e338c4a2db537a65eff594aad76d3caaee17aa4e3c32896f7617",
-    "22733dbf5249_add_weekly_priorities_and_behavior_goals.py": "e30d8512200e4069ed7a6c9412128342564ba8bc83bc92dee7b85177400ba980",
+    "22733dbf5249_add_weekly_priorities_and_behavior_goals.py": "c87895c76113e316297dccbe65428861c4c89ef91c8ef44e4325e1f664a3ce9c",
     "df46234d2a7e_constrain_finite_food_nutrients.py": "70767434911230795129b4702f8d4bf2e9a4add9dcf1607c3fa648dfebdd0674",
 }
 DEPLOYMENT_PRINCIPAL = UUID("00000000-0000-0000-0000-000000000001")
@@ -171,6 +171,11 @@ def test_plan033_migration_is_additive_owner_bound_and_fails_closed() -> None:
         assert constraint in migration
     assert 'sa.Column("evaluation_diary_date", sa.Date(), nullable=False)' in migration
     assert 'sa.Column("evaluation_mode", sa.String(16), nullable=False)' in migration
+    assert "fk_behavior_goal_progress_source_owner" in migration
+    assert "ix_behavior_goal_due_progress_source" in migration
+    assert "REVOKE ALL PRIVILEGES ON TABLE public.%I FROM PUBLIC" in migration
+    assert "ARRAY['anon', 'authenticated']" in migration
+    assert "IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = data_api_role)" in migration
 POSTGRESQL_AUTHORITATIVE_CHECK_DEFINITIONS = {
     "ck_diary_entry_versioned_shape": (
         "CHECK (snapshot_schema_version IS NULL OR "
@@ -567,6 +572,58 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     check_output = check_result.stdout + check_result.stderr
     assert "alembic.autogenerate.checkconstraint_byname" in check_output
     assert "No new upgrade operations detected." in check_output
+
+
+@pytest.mark.migration
+def test_plan033_tables_deny_supabase_data_api_roles_and_preserve_backend_owner() -> None:
+    url = _database_url()
+    _reset_database(url)
+    engine = create_engine(url, isolation_level="AUTOCOMMIT")
+    with engine.connect() as connection:
+        for role in ("anon", "authenticated"):
+            exists = connection.execute(
+                text("SELECT 1 FROM pg_roles WHERE rolname=:role"), {"role": role}
+            ).scalar_one_or_none()
+            if exists is None:
+                connection.execute(text(f'CREATE ROLE "{role}" NOLOGIN'))
+    engine.dispose()
+    _run_alembic(url, "upgrade", "head")
+    tables = (
+        "weekly_priority_recommendation",
+        "weekly_priority_evaluation",
+        "weekly_priority_evidence_ref",
+        "behavior_goal",
+        "behavior_goal_history",
+        "behavior_goal_command_idempotency",
+        "behavior_goal_reminder_delivery",
+    )
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        for table in tables:
+            for role in ("anon", "authenticated"):
+                for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                    assert connection.execute(
+                        text("SELECT has_table_privilege(:role, :table, :privilege)"),
+                        {"role": role, "table": f"public.{table}", "privilege": privilege},
+                    ).scalar_one() is False
+            for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                assert connection.execute(
+                    text("SELECT has_table_privilege(current_user, :table, :privilege)"),
+                    {"table": f"public.{table}", "privilege": privilege},
+                ).scalar_one() is True
+    for role in ("anon", "authenticated"):
+        for table in tables:
+            for statement in (
+                f"SELECT * FROM public.{table} LIMIT 1",
+                f"INSERT INTO public.{table} DEFAULT VALUES",
+            ):
+                with engine.connect() as connection:
+                    transaction = connection.begin()
+                    connection.execute(text(f"SET LOCAL ROLE {role}"))
+                    with pytest.raises(DBAPIError, match="permission denied"):
+                        connection.execute(text(statement))
+                    transaction.rollback()
+    engine.dispose()
 
 
 def _seed_plan021_profile(url: str) -> None:

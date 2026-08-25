@@ -1667,8 +1667,107 @@ class Plan033ErrorResponseV1(_AnalysisClosedModel):
     error: Plan033ErrorDetailV1
 
 
+class BehaviorGoalHistorySnapshotV1(_AnalysisClosedModel):
+    goal_id: UUID
+    recommendation_id: UUID
+    root_goal_id: UUID
+    previous_goal_id: UUID | None
+    sequence_number: int = Field(ge=1)
+    state: BehaviorGoalState
+    version: int = Field(ge=1)
+    rule_key: str
+    action_key: str
+    action_copy_ar: str
+    goal_trackability: Literal["trackable"]
+    goal_unavailable_reason: None = None
+    informational_copy_ar: str | None = None
+    weekly_target_count: int = Field(ge=1, le=7)
+    scheduled_day_mask: list[int]
+    owner_note: str | None = Field(default=None, max_length=280)
+    reminder_preference: Literal["enabled", "disabled"]
+    window_start: date
+    window_end: date
+    rules_version: str
+    copy_version: str
+    source_analysis_id: UUID
+    source_analysis_revision_id: UUID
+    source_analysis_revision: int = Field(ge=1)
+    analysis_rules_version: str
+    source_versions: dict[str, Any]
+    last_progress_analysis_id: UUID | None
+    last_progress_analysis_revision_id: UUID | None
+    last_progress_analysis_revision: int | None = Field(default=None, ge=1)
+    progress_revision: int = Field(ge=1)
+    progress: BehaviorGoalProgressV1
+    offered_at: datetime
+    accepted_at: datetime | None
+    deferred_at: datetime | None
+    deferred_until: date | None
+    changed_at: datetime | None
+    paused_at: datetime | None
+    resumed_at: datetime | None
+    completed_at: datetime | None
+    reviewed_at: datetime | None
+    rejected_at: datetime | None
+    ended_at: datetime | None
+    archived_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+    @model_validator(mode="after")
+    def validate_day_mask(self):
+        if self.scheduled_day_mask != sorted(set(self.scheduled_day_mask)) or any(
+            day < 0 or day > 6 for day in self.scheduled_day_mask
+        ):
+            raise ValueError("scheduled day mask must contain unique weekdays 0..6")
+        cursor_values = (
+            self.last_progress_analysis_id,
+            self.last_progress_analysis_revision_id,
+            self.last_progress_analysis_revision,
+        )
+        if any(value is None for value in cursor_values) and any(
+            value is not None for value in cursor_values
+        ):
+            raise ValueError("progress source cursor must be entirely null or populated")
+        return self
+
+
+class BehaviorGoalHistoryItemV1(_AnalysisClosedModel):
+    schema_version: Literal[1] = 1
+    history_id: UUID
+    goal_id: UUID
+    root_goal_id: UUID
+    previous_goal_id: UUID | None
+    sequence_number: int = Field(ge=1)
+    goal_version: int = Field(ge=1)
+    event_type: Literal[
+        "offered",
+        "accept",
+        "edit",
+        "defer",
+        "reject",
+        "change",
+        "changed",
+        "pause",
+        "resume",
+        "end",
+        "completed",
+        "evidence_reopened",
+        "progress_updated",
+        "historical_evidence_changed",
+        "finalized_completed",
+        "finalized_incomplete",
+        "repeated_from_previous_window",
+    ]
+    from_state: BehaviorGoalState | None
+    to_state: BehaviorGoalState
+    occurred_at: datetime
+    reason: str | None
+    snapshot: BehaviorGoalHistorySnapshotV1
+
+
 class BehaviorGoalHistoryPageV1(_AnalysisClosedModel):
-    items: list[BehaviorGoalResponseV1]
+    items: list[BehaviorGoalHistoryItemV1]
     next_cursor: str | None
 
 

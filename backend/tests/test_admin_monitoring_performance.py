@@ -37,6 +37,7 @@ from app.models import (
 from app.services.pattern_analysis import analysis_history
 from app.services.weekly_priorities import process_due_goals
 from app.services.diary import AdminDiaryCursorError, _encode_admin_diary_cursor
+from test_weekly_priorities import _persist_trackable_graph
 
 ADMIN_ID = UUID("00000000-0000-0000-0000-0000000000aa")
 USER_ID = UUID("00000000-0000-0000-0000-0000000000bb")
@@ -749,37 +750,40 @@ def test_plan032_history_limit_100_uses_constant_bulk_queries(admin_context) -> 
 
 def test_plan033_due_batch_bulk_loads_sources_and_reminders(admin_context) -> None:
     _client, session = admin_context
-    now = datetime(2026, 1, 20, 8, tzinfo=timezone.utc)
+    principal_id, source, _series, _revision, recommendation = (
+        _persist_trackable_graph(session)
+    )
+    now = datetime.now(timezone.utc)
     for index in range(100):
         goal_id = uuid4()
         session.add(
             BehaviorGoal(
                 id=goal_id,
-                principal_id=USER_ID,
-                recommendation_id=uuid4(),
+                principal_id=principal_id,
+                recommendation_id=recommendation.id,
                 root_goal_id=goal_id,
                 sequence_number=1,
                 state="completed",
                 version=1,
                 rule_key="fruit_vegetable_gap",
                 action_key="add_fruit_or_vegetable",
-                weekly_target_count=3,
+                weekly_target_count=1,
                 day_mask=[],
-                window_start=date(2026, 1, 1),
-                window_end=date(2026, 1, 7),
+                window_start=source.period_start,
+                window_end=source.period_end - timedelta(days=1),
                 rules_version="w3-priority-1.1.0",
                 copy_version="w3-priority-ar-1.1.0",
                 progress_document={
-                    "window_start": "2026-01-01",
-                    "window_end": "2026-01-07",
+                    "window_start": source.period_start.isoformat(),
+                    "window_end": (source.period_end - timedelta(days=1)).isoformat(),
                     "progress_count": 3,
-                    "target_count": 3,
+                    "target_count": 1,
                     "progress_percent": 100,
                     "complete_day_count": 4,
                     "partial_day_count": 0,
                     "unregistered_day_count": 3,
                     "status": "achieved",
-                    "as_of_diary_date": "2026-01-07",
+                    "as_of_diary_date": source.as_of_diary_date.isoformat(),
                     "source_day_versions": {},
                     "calculation_rules_version": "w3-priority-1.1.0",
                     "last_recomputed_at": now.isoformat(),
@@ -794,4 +798,6 @@ def test_plan033_due_batch_bulk_loads_sources_and_reminders(admin_context) -> No
         result = process_due_goals(session, limit=100)
     reads = [statement for statement in statements if statement.startswith("select ")]
     assert result["processed"] == 100
-    assert len(reads) <= 5
+    # One bounded goal/reminder/recommendation batch plus two bounded source
+    # validation batches; the count must not grow with the number of goals.
+    assert len(reads) <= 9

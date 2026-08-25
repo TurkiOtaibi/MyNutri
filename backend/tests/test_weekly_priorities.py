@@ -17,13 +17,16 @@ from app.core.auth import PrincipalContext
 from app.core.calendar import diary_calendar_authority
 from app.models import (
     BehaviorGoal,
+    BehaviorGoalHistory,
     NutritionAnalysis,
     NutritionAnalysisRevision,
+    NutritionAnalysisRevisionEvent,
     Principal,
     WeeklyPriorityRecommendation,
 )
 
 from app.nutrition_rules.weekly_priority import (
+    COPY_CATALOG,
     INFORMATIONAL_COPY_AR,
     STABLE_REPEAT_IDENTITY_FIELDS,
     WEEKLY_PRIORITY_COPY_VERSION,
@@ -36,17 +39,28 @@ from app.nutrition_rules.weekly_priority import (
     select,
     validate_priority_versions,
 )
-from app.schemas import BehaviorGoalCommandV1, WeeklyPriorityAnalysisInputV1
+from app.schemas import (
+    BehaviorGoalCommandV1,
+    PriorityV1,
+    WeeklyPriorityAnalysisInputV1,
+    WeeklyPriorityResultV1,
+)
 import app.services.weekly_priorities as weekly_priority_service
 from app.services.weekly_priorities import (
     _accepted_goal_window,
     _empty_progress,
     _finalization_boundary,
+    _goal_snapshot,
     _selection_input,
+    RecommendationSourceValidation,
     evaluate_recommendation,
+    command_goal,
     goal_history,
+    process_due_goals,
     recompute_goal_progress,
+    WeeklyPriorityError,
 )
+from app.api.routes.weekly_priorities import get_priority
 
 VECTORS = (
     Path(__file__).parents[2]
@@ -241,6 +255,170 @@ def _persisted_producer_document(principal_id: UUID, analysis_id: UUID) -> dict:
     return WeeklyPriorityAnalysisInputV1.model_validate(document).model_dump(mode="json")
 
 
+def _trackable_recommendation_row(
+    principal_id: UUID,
+    source: WeeklyPriorityAnalysisInputV1,
+    source_revision_id: UUID,
+) -> WeeklyPriorityRecommendation:
+    recommendation_id = uuid4()
+    title, reason, action = COPY_CATALOG["fruit_vegetable_gap"]
+    main = PriorityV1(
+        rule_key="fruit_vegetable_gap",
+        rank="main",
+        category="positive",
+        title_ar=title,
+        reason_ar=reason,
+        coverage_percent=100,
+        complete_day_count=4,
+        action_key="add_fruit_or_vegetable",
+        action_ar=action,
+        action_mode="add",
+        goal_trackability="trackable",
+        goal_unavailable_reason=None,
+        goal_unavailable_copy_ar=None,
+        rules_version=WEEKLY_PRIORITY_RULES_VERSION,
+        copy_version=WEEKLY_PRIORITY_COPY_VERSION,
+        facts_used=[
+            {
+                "metric_key": "group:fruit_vegetable_g_per_day",
+                "value": 100,
+                "unit": "g",
+                "target": None,
+                "comparison": "below_target",
+                "period": "current",
+            }
+        ],
+        evidence_refs=[],
+        conflict_decisions=[],
+    )
+    result = WeeklyPriorityResultV1(
+        recommendation_id=recommendation_id,
+        source_analysis_id=source.source_analysis_id,
+        source_analysis_revision=source.source_analysis_revision,
+        period_start=source.period_start,
+        period_end=source.period_end,
+        generated_at=source.generated_at,
+        expires_at=_finalization_boundary(source.period_end),
+        status="selected",
+        rules_version=WEEKLY_PRIORITY_RULES_VERSION,
+        copy_version=WEEKLY_PRIORITY_COPY_VERSION,
+        analysis_rules_version=source.analysis_rules_version,
+        nutrition_registry_version=source.nutrition_registry_version,
+        food_group_rules_version=source.food_group_rules_version,
+        nova_rules_version=source.nova_rules_version,
+        snapshot_schema_versions=source.snapshot_schema_versions,
+        target_plan_refs=source.target_plan_refs,
+        main=main,
+        secondary=None,
+        excluded_alternatives=[],
+        none_reason=None,
+        etag=f'"weekly-priority-{recommendation_id}"',
+    )
+    return WeeklyPriorityRecommendation(
+        id=recommendation_id,
+        principal_id=principal_id,
+        source_analysis_revision_id=source_revision_id,
+        source_analysis_id=source.source_analysis_id,
+        source_analysis_revision=source.source_analysis_revision,
+        period_start=source.period_start,
+        period_end=source.period_end,
+        as_of_diary_date=source.as_of_diary_date,
+        evaluation_diary_date=source.as_of_diary_date,
+        evaluation_mode="live",
+        status="selected",
+        rules_version=WEEKLY_PRIORITY_RULES_VERSION,
+        copy_version=WEEKLY_PRIORITY_COPY_VERSION,
+        analysis_rules_version=source.analysis_rules_version,
+        source_versions={
+            "nutrition_registry_version": source.nutrition_registry_version,
+            "food_group_rules_version": source.food_group_rules_version,
+            "nova_rules_version": source.nova_rules_version,
+            "snapshot_schema_versions": source.snapshot_schema_versions,
+        },
+        result_document=result.model_dump(mode="json"),
+        input_digest="1" * 64,
+        content_hash="2" * 64,
+        generated_at=source.generated_at,
+        expires_at=result.expires_at,
+    )
+
+
+def _persist_trackable_graph(
+    session: Session,
+) -> tuple[
+    UUID,
+    WeeklyPriorityAnalysisInputV1,
+    NutritionAnalysis,
+    NutritionAnalysisRevision,
+    WeeklyPriorityRecommendation,
+]:
+    principal_id, analysis_id, revision_id = uuid4(), uuid4(), uuid4()
+    source = WeeklyPriorityAnalysisInputV1.model_validate(
+        _persisted_producer_document(principal_id, analysis_id)
+    )
+    days = []
+    for index, day in enumerate(source.days):
+        if day.logging_status != "complete":
+            days.append(day)
+            continue
+        days.append(
+            day.model_copy(
+                update={
+                    "metric_values": [
+                        day.metric_values[0].model_copy(
+                            update={
+                                "metric_key": "group:fruit_vegetable_g_per_day",
+                                "value": 100.0 if index == 0 else 0.0,
+                                "value_state": "known",
+                                "unit": "g",
+                            }
+                        )
+                    ]
+                }
+            )
+        )
+    source = source.model_copy(update={"days": days})
+    document = source.model_dump(mode="json")
+    canonical = json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    session.add(Principal(id=principal_id))
+    session.commit()
+    series = NutritionAnalysis(
+        id=analysis_id,
+        principal_id=principal_id,
+        as_of_diary_date=source.as_of_diary_date,
+        calendar_timezone="Asia/Riyadh",
+    )
+    session.add(series)
+    session.commit()
+    revision = NutritionAnalysisRevision(
+        id=revision_id,
+        analysis_id=analysis_id,
+        principal_id=principal_id,
+        revision=1,
+        period_start=source.period_start,
+        period_end=source.period_end,
+        previous_period_start=source.previous_period_start,
+        previous_period_end=source.previous_period_end,
+        analysis_rules_version=source.analysis_rules_version,
+        source_versions={},
+        source_input_hash="1" * 64,
+        content_hash=hashlib.sha256(canonical.encode()).hexdigest(),
+        complete_day_count=4,
+        previous_complete_day_count=0,
+        result_status="available",
+        analysis_document=document,
+    )
+    session.add(revision)
+    session.commit()
+    series.current_revision_id = revision.id
+    series.current_revision_number = revision.revision
+    session.add(series)
+    recommendation = _trackable_recommendation_row(principal_id, source, revision.id)
+    session.add(recommendation)
+    session.commit()
+    return principal_id, source, series, revision, recommendation
+
+
 def test_production_orchestration_consumes_persisted_plan032_and_persists_result() -> None:
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     SQLModel.metadata.create_all(engine)
@@ -296,6 +474,293 @@ def test_production_orchestration_consumes_persisted_plan032_and_persists_result
         assert evaluate_recommendation(session, PrincipalContext(principal_id)) == result
 
 
+@pytest.mark.parametrize(
+    ("mutation", "expected_code"),
+    [
+        ("stale", "PRIORITY_SOURCE_STALE"),
+        ("superseded", "PRIORITY_SOURCE_SUPERSEDED"),
+        ("unsupported", "UNSUPPORTED_PRIORITY_VERSION"),
+    ],
+)
+def test_current_priority_route_emits_distinct_source_errors(
+    mutation: str, expected_code: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(
+        weekly_priority_service,
+        "get_settings",
+        lambda: SimpleNamespace(weekly_priorities_display_enabled=True),
+    )
+    with Session(engine) as session:
+        principal_id, _source, _series, revision, recommendation = (
+            _persist_trackable_graph(session)
+        )
+        if mutation == "unsupported":
+            recommendation.rules_version = "w3-priority-1.0.0"
+            session.add(recommendation)
+        else:
+            session.add(
+                NutritionAnalysisRevisionEvent(
+                    revision_id=revision.id,
+                    principal_id=principal_id,
+                    event_type=(
+                        "day_reopened"
+                        if mutation == "stale"
+                        else "superseded_by_revision"
+                    ),
+                    successor_revision_id=None,
+                    reason="formal-review-source-oracle",
+                )
+            )
+        session.commit()
+        response = get_priority(PrincipalContext(principal_id), session)
+        assert response.status_code in {409, 422}
+        payload = json.loads(response.body)
+        assert payload["error"]["code"] == expected_code
+
+
+def test_idempotent_accept_replay_precedes_newer_source_rejection() -> None:
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        principal_id, source, series, _revision, recommendation = _persist_trackable_graph(
+            session
+        )
+        goal_id = uuid4()
+        now = datetime.now(timezone.utc)
+        goal = BehaviorGoal(
+            id=goal_id,
+            principal_id=principal_id,
+            recommendation_id=recommendation.id,
+            root_goal_id=goal_id,
+            sequence_number=1,
+            state="offered",
+            version=1,
+            rule_key="fruit_vegetable_gap",
+            action_key="add_fruit_or_vegetable",
+            weekly_target_count=3,
+            day_mask=[],
+            window_start=source.period_start,
+            window_end=source.period_end,
+            rules_version=WEEKLY_PRIORITY_RULES_VERSION,
+            copy_version=WEEKLY_PRIORITY_COPY_VERSION,
+            progress_document={},
+            progress_revision=1,
+            reminder_preference="disabled",
+        )
+        goal.progress_document = _empty_progress(
+            goal, source.as_of_diary_date, now
+        ).model_dump(mode="json")
+        session.add(goal)
+        session.commit()
+        command = BehaviorGoalCommandV1(event="accept", expected_version=1)
+        original, status, replayed = command_goal(
+            session, PrincipalContext(principal_id), goal_id, command, "accept-on-r1"
+        )
+        assert status == 200 and not replayed
+
+        next_document = source.model_copy(
+            update={"source_analysis_revision": 2, "generated_at": datetime.now(timezone.utc)}
+        ).model_dump(mode="json")
+        next_revision = NutritionAnalysisRevision(
+            id=uuid4(),
+            analysis_id=series.id,
+            principal_id=principal_id,
+            revision=2,
+            period_start=source.period_start,
+            period_end=source.period_end,
+            previous_period_start=source.previous_period_start,
+            previous_period_end=source.previous_period_end,
+            analysis_rules_version=source.analysis_rules_version,
+            source_versions={},
+            source_input_hash="3" * 64,
+            content_hash="4" * 64,
+            complete_day_count=4,
+            previous_complete_day_count=0,
+            result_status="available",
+            analysis_document=next_document,
+        )
+        session.add(next_revision)
+        session.commit()
+        series.current_revision_id = next_revision.id
+        series.current_revision_number = 2
+        session.add(series)
+        session.commit()
+
+        replay, replay_status, replayed = command_goal(
+            session, PrincipalContext(principal_id), goal_id, command, "accept-on-r1"
+        )
+        assert replay_status == 200 and replayed and replay == original
+        with pytest.raises(WeeklyPriorityError) as captured:
+            command_goal(
+                session,
+                PrincipalContext(principal_id),
+                goal_id,
+                BehaviorGoalCommandV1(event="edit", expected_version=2),
+                "new-command-on-r2",
+            )
+        assert captured.value.code == "PRIORITY_SOURCE_SUPERSEDED"
+
+
+def test_scheduled_job_revisits_finalized_goal_once_for_new_plan032_revision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        principal_id, source, series, revision, recommendation = _persist_trackable_graph(
+            session
+        )
+        after_boundary = _finalization_boundary(source.period_end) + timedelta(minutes=1)
+        source = source.model_copy(update={"generated_at": after_boundary})
+        revision.analysis_document = source.model_dump(mode="json")
+        recommendation.generated_at = after_boundary
+        session.add(revision)
+        session.add(recommendation)
+        goal_id = uuid4()
+        progress = {
+            **_empty_progress(
+                BehaviorGoal(
+                    id=goal_id,
+                    principal_id=principal_id,
+                    recommendation_id=recommendation.id,
+                    root_goal_id=goal_id,
+                    sequence_number=1,
+                    state="completed",
+                    version=1,
+                    rule_key="fruit_vegetable_gap",
+                    action_key="add_fruit_or_vegetable",
+                    weekly_target_count=1,
+                    day_mask=[],
+                    window_start=source.period_start,
+                    window_end=source.period_end,
+                    rules_version=WEEKLY_PRIORITY_RULES_VERSION,
+                    copy_version=WEEKLY_PRIORITY_COPY_VERSION,
+                    progress_document={},
+                    progress_revision=1,
+                    reminder_preference="disabled",
+                    completed_at=after_boundary - timedelta(days=1),
+                ),
+                source.as_of_diary_date,
+                after_boundary,
+            ).model_dump(mode="json"),
+            "progress_count": 1,
+            "progress_percent": 100,
+            "complete_day_count": 4,
+            "unregistered_day_count": 3,
+            "status": "achieved",
+        }
+        goal = BehaviorGoal(
+            id=goal_id,
+            principal_id=principal_id,
+            recommendation_id=recommendation.id,
+            root_goal_id=goal_id,
+            sequence_number=1,
+            state="completed",
+            version=1,
+            rule_key="fruit_vegetable_gap",
+            action_key="add_fruit_or_vegetable",
+            weekly_target_count=1,
+            day_mask=[],
+            window_start=source.period_start,
+            window_end=source.period_end,
+            rules_version=WEEKLY_PRIORITY_RULES_VERSION,
+            copy_version=WEEKLY_PRIORITY_COPY_VERSION,
+            progress_document=progress,
+            progress_revision=1,
+            last_progress_analysis_id=series.id,
+            last_progress_analysis_revision_id=revision.id,
+            last_progress_analysis_revision=1,
+            reminder_preference="disabled",
+            completed_at=after_boundary - timedelta(days=1),
+        )
+        session.add(goal)
+        session.commit()
+        monkeypatch.setattr(weekly_priority_service, "utcnow", lambda: after_boundary)
+        monkeypatch.setattr(
+            weekly_priority_service,
+            "diary_calendar_authority",
+            lambda: SimpleNamespace(current_diary_date=source.period_end + timedelta(days=2)),
+        )
+        first = process_due_goals(session)
+        assert first["finalized"] == 1
+        session.refresh(goal)
+        assert goal.reviewed_at.replace(tzinfo=timezone.utc) == after_boundary
+
+        changed_days = [
+            day.model_copy(
+                update={
+                    "logging_status_version": day.logging_status_version + 1,
+                    "metric_values": [
+                        fact.model_copy(update={"value": 0.0})
+                        for fact in day.metric_values
+                    ],
+                }
+            )
+            if day.logging_status == "complete"
+            else day
+            for day in source.days
+        ]
+        advanced = source.model_copy(
+            update={
+                "source_analysis_revision": 2,
+                "generated_at": after_boundary + timedelta(minutes=1),
+                "days": changed_days,
+            }
+        )
+        next_revision = NutritionAnalysisRevision(
+            id=uuid4(),
+            analysis_id=series.id,
+            principal_id=principal_id,
+            revision=2,
+            period_start=advanced.period_start,
+            period_end=advanced.period_end,
+            previous_period_start=advanced.previous_period_start,
+            previous_period_end=advanced.previous_period_end,
+            analysis_rules_version=advanced.analysis_rules_version,
+            source_versions={},
+            source_input_hash="5" * 64,
+            content_hash="6" * 64,
+            complete_day_count=4,
+            previous_complete_day_count=0,
+            result_status="available",
+            analysis_document=advanced.model_dump(mode="json"),
+        )
+        session.add(next_revision)
+        session.commit()
+        series.current_revision_id = next_revision.id
+        series.current_revision_number = 2
+        session.add(series)
+        session.commit()
+        second = process_due_goals(session)
+        assert second["recomputed"] == 1
+        session.refresh(goal)
+        assert goal.last_progress_analysis_revision_id == next_revision.id
+        events = session.exec(
+            sql_select(BehaviorGoalHistory).where(BehaviorGoalHistory.goal_id == goal.id)
+        ).all()
+        assert {item.event_type for item in events} == {
+            "finalized_completed",
+            "historical_evidence_changed",
+        }
+        third = process_due_goals(session)
+        assert third["processed"] == 0
+        assert len(
+            session.exec(
+                sql_select(BehaviorGoalHistory).where(
+                    BehaviorGoalHistory.goal_id == goal.id
+                )
+            ).all()
+        ) == 2
+
+
 def test_goal_history_is_owner_scoped_cursor_stable_and_one_query_for_100_rows() -> None:
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     SQLModel.metadata.create_all(engine)
@@ -320,32 +785,74 @@ def test_goal_history_is_owner_scoped_cursor_stable_and_one_query_for_100_rows()
         session.add(Principal(id=principal_id))
         session.add(Principal(id=other_id))
         session.commit()
-        # The history projection only needs the immutable goal rows; repository
-        # ownership constraints are rehearsed separately on PostgreSQL.
+        # The API reads immutable history rows directly; repository ownership
+        # constraints are rehearsed separately on PostgreSQL.
         for index in range(101):
             goal_id = uuid4()
             start = date(2026, 1, 1) + timedelta(days=index * 7)
             session.add(
-                BehaviorGoal(
-                    id=goal_id,
+                BehaviorGoalHistory(
+                    goal_id=goal_id,
                     principal_id=principal_id,
-                    recommendation_id=recommendation_id,
                     root_goal_id=goal_id,
                     sequence_number=1,
-                    state="ended",
-                    version=1,
-                    rule_key="sodium_overage",
-                    action_key="replace_high_sodium_choice",
-                    weekly_target_count=3,
-                    day_mask=[],
-                    window_start=start,
-                    window_end=start + timedelta(days=6),
-                    rules_version="w3-priority-1.1.0",
-                    copy_version="w3-priority-ar-1.1.0",
-                    progress_document={**progress, "window_start": start.isoformat(), "window_end": (start + timedelta(days=6)).isoformat()},
-                    progress_revision=1,
-                    reminder_preference="disabled",
-                    ended_at=now,
+                    goal_version=1,
+                    event_type="end",
+                    from_state="active",
+                    to_state="ended",
+                    actor_type="owner",
+                    occurred_at=now + timedelta(seconds=index),
+                    terms_progress_snapshot={
+                        "goal_id": str(goal_id),
+                        "recommendation_id": str(recommendation_id),
+                        "root_goal_id": str(goal_id),
+                        "previous_goal_id": None,
+                        "sequence_number": 1,
+                        "state": "ended",
+                        "version": 1,
+                        "rule_key": "fruit_vegetable_gap",
+                        "action_key": "add_fruit_or_vegetable",
+                        "action_copy_ar": "أضف حصة من الخضار أو الفاكهة.",
+                        "goal_trackability": "trackable",
+                        "goal_unavailable_reason": None,
+                        "informational_copy_ar": None,
+                        "weekly_target_count": 3,
+                        "scheduled_day_mask": [],
+                        "owner_note": None,
+                        "reminder_preference": "disabled",
+                        "window_start": start.isoformat(),
+                        "window_end": (start + timedelta(days=6)).isoformat(),
+                        "rules_version": "w3-priority-1.1.0",
+                        "copy_version": "w3-priority-ar-1.1.0",
+                        "source_analysis_id": str(uuid4()),
+                        "source_analysis_revision_id": str(uuid4()),
+                        "source_analysis_revision": 1,
+                        "analysis_rules_version": "w3-analysis-1.1.0",
+                        "source_versions": {},
+                        "last_progress_analysis_id": None,
+                        "last_progress_analysis_revision_id": None,
+                        "last_progress_analysis_revision": None,
+                        "progress_revision": 1,
+                        "progress": {
+                            **progress,
+                            "window_start": start.isoformat(),
+                            "window_end": (start + timedelta(days=6)).isoformat(),
+                        },
+                        "offered_at": now.isoformat(),
+                        "accepted_at": now.isoformat(),
+                        "deferred_at": None,
+                        "deferred_until": None,
+                        "changed_at": None,
+                        "paused_at": None,
+                        "resumed_at": None,
+                        "completed_at": None,
+                        "reviewed_at": None,
+                        "rejected_at": None,
+                        "ended_at": now.isoformat(),
+                        "archived_at": None,
+                        "created_at": now.isoformat(),
+                        "updated_at": now.isoformat(),
+                    },
                 )
             )
         session.commit()
@@ -363,7 +870,102 @@ def test_goal_history_is_owner_scoped_cursor_stable_and_one_query_for_100_rows()
         assert queries == 1
         second = goal_history(session, PrincipalContext(principal_id), 100, first.next_cursor)
         assert len(second.items) == 1
-        assert set(item.goal_id for item in first.items).isdisjoint(item.goal_id for item in second.items)
+        assert set(item.history_id for item in first.items).isdisjoint(
+            item.history_id for item in second.items
+        )
+
+
+def test_goal_history_projection_is_immutable_after_current_goal_mutation() -> None:
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        principal_id, source, _series, _revision, recommendation = (
+            _persist_trackable_graph(session)
+        )
+        goal_id = uuid4()
+        now = datetime.now(timezone.utc)
+        goal = BehaviorGoal(
+            id=goal_id,
+            principal_id=principal_id,
+            recommendation_id=recommendation.id,
+            root_goal_id=goal_id,
+            sequence_number=1,
+            state="active",
+            version=1,
+            rule_key="fruit_vegetable_gap",
+            action_key="add_fruit_or_vegetable",
+            weekly_target_count=3,
+            day_mask=[],
+            window_start=source.period_start,
+            window_end=source.period_end,
+            rules_version=WEEKLY_PRIORITY_RULES_VERSION,
+            copy_version=WEEKLY_PRIORITY_COPY_VERSION,
+            progress_document={},
+            progress_revision=1,
+            reminder_preference="disabled",
+            accepted_at=now,
+        )
+        goal.progress_document = _empty_progress(
+            goal, source.as_of_diary_date, now
+        ).model_dump(mode="json")
+        session.add(goal)
+        for version, event_type, state, progress_count in (
+            (1, "accept", "active", 0),
+            (2, "progress_updated", "active", 1),
+            (3, "completed", "completed", 3),
+            (4, "historical_evidence_changed", "completed", 2),
+        ):
+            goal.version = version
+            goal.state = state
+            goal.progress_revision = version
+            goal.progress_document = {
+                **goal.progress_document,
+                "progress_count": progress_count,
+                "progress_percent": round(progress_count * 100 / 3),
+                "status": "achieved" if progress_count == 3 else "in_progress",
+                "last_recomputed_at": (now + timedelta(minutes=version)).isoformat(),
+            }
+            if state == "completed":
+                goal.completed_at = now + timedelta(minutes=version)
+            session.add(
+                BehaviorGoalHistory(
+                    goal_id=goal.id,
+                    principal_id=principal_id,
+                    root_goal_id=goal.id,
+                    sequence_number=1,
+                    goal_version=version,
+                    event_type=event_type,
+                    from_state=None if version == 1 else "active",
+                    to_state=state,
+                    actor_type="owner" if version == 1 else "system",
+                    terms_progress_snapshot=_goal_snapshot(goal, recommendation),
+                    occurred_at=now + timedelta(minutes=version),
+                )
+            )
+        session.add(goal)
+        session.commit()
+        before = goal_history(
+            session, PrincipalContext(principal_id), 20, None
+        ).model_dump(mode="json")
+        goal.weekly_target_count = 7
+        goal.day_mask = [0]
+        goal.private_note = "mutable current row"
+        goal.progress_document = {**goal.progress_document, "progress_count": 7}
+        goal.updated_at = now + timedelta(days=1)
+        session.add(goal)
+        session.commit()
+        after = goal_history(
+            session, PrincipalContext(principal_id), 20, None
+        ).model_dump(mode="json")
+        assert after == before
+        assert [item["snapshot"]["progress"]["progress_count"] for item in before["items"]] == [
+            2,
+            3,
+            1,
+            0,
+        ]
 
 
 @pytest.mark.parametrize(
@@ -536,11 +1138,24 @@ def test_completion_reopens_before_grace_and_late_evidence_creates_immutable_rev
         )
         fruit_days.append(day.model_copy(update={"metric_values": [fact]}))
     source = source.model_copy(update={"days": fruit_days})
+    source_revision_id = uuid4()
+    recommendation = _trackable_recommendation_row(
+        principal_id, source, source_revision_id
+    )
+    validation = RecommendationSourceValidation(
+        "VALID",
+        revision=SimpleNamespace(
+            id=source_revision_id,
+            analysis_id=source.source_analysis_id,
+            revision=source.source_analysis_revision,
+        ),
+        source=source,
+    )
     goal_id = uuid4()
     goal = BehaviorGoal(
         id=goal_id,
         principal_id=principal_id,
-        recommendation_id=uuid4(),
+        recommendation_id=recommendation.id,
         root_goal_id=goal_id,
         sequence_number=1,
         state="active",
@@ -570,12 +1185,24 @@ def test_completion_reopens_before_grace_and_late_evidence_creates_immutable_rev
 
     recorder = Recorder()
     monkeypatch.setattr(weekly_priority_service, "utcnow", lambda: before_boundary)
-    assert recompute_goal_progress(recorder, goal, source_override=source)
+    assert recompute_goal_progress(
+        recorder,
+        goal,
+        source_override=source,
+        recommendation=recommendation,
+        source_validation=validation,
+    )
     assert goal.state == "completed"
     completed_history = recorder.added[-1]
     assert completed_history.event_type == "completed"
     completed_snapshot = deepcopy(completed_history.terms_progress_snapshot)
-    assert not recompute_goal_progress(recorder, goal, source_override=source)
+    assert not recompute_goal_progress(
+        recorder,
+        goal,
+        source_override=source,
+        recommendation=recommendation,
+        source_validation=validation,
+    )
 
     changed_day = source.days[0].model_copy(
         update={
@@ -590,7 +1217,13 @@ def test_completion_reopens_before_grace_and_late_evidence_creates_immutable_rev
     changed_source = source.model_copy(
         update={"days": [changed_day, *source.days[1:]], "generated_at": before_boundary}
     )
-    assert recompute_goal_progress(recorder, goal, source_override=changed_source)
+    assert recompute_goal_progress(
+        recorder,
+        goal,
+        source_override=changed_source,
+        recommendation=recommendation,
+        source_validation=validation,
+    )
     assert goal.state == "active"
     assert recorder.added[-1].event_type == "evidence_reopened"
 
@@ -606,7 +1239,13 @@ def test_completion_reopens_before_grace_and_late_evidence_creates_immutable_rev
     monkeypatch.setattr(
         weekly_priority_service, "utcnow", lambda: before_boundary + timedelta(minutes=1)
     )
-    assert recompute_goal_progress(recorder, goal, source_override=restored_source)
+    assert recompute_goal_progress(
+        recorder,
+        goal,
+        source_override=restored_source,
+        recommendation=recommendation,
+        source_validation=validation,
+    )
     assert goal.state == "completed"
     assert recorder.added[-1].event_type == "completed"
 
@@ -618,6 +1257,12 @@ def test_completion_reopens_before_grace_and_late_evidence_creates_immutable_rev
     changed_source = changed_source.model_copy(
         update={"days": [late_day, *source.days[1:]], "generated_at": after_boundary}
     )
-    assert recompute_goal_progress(recorder, goal, source_override=changed_source)
+    assert recompute_goal_progress(
+        recorder,
+        goal,
+        source_override=changed_source,
+        recommendation=recommendation,
+        source_validation=validation,
+    )
     assert recorder.added[-1].event_type == "historical_evidence_changed"
     assert completed_history.terms_progress_snapshot == completed_snapshot

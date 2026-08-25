@@ -131,6 +131,9 @@ def upgrade() -> None:
         sa.Column("copy_version", sa.String(64), nullable=False),
         sa.Column("progress_document", _json(), nullable=False),
         sa.Column("progress_revision", sa.Integer(), nullable=False, server_default="1"),
+        sa.Column("last_progress_analysis_id", _uuid()),
+        sa.Column("last_progress_analysis_revision_id", _uuid()),
+        sa.Column("last_progress_analysis_revision", sa.Integer()),
         sa.Column("reminder_preference", sa.String(16), nullable=False, server_default="disabled"),
         sa.Column("external_notifications_enabled", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("private_note", sa.String(280)),
@@ -149,6 +152,12 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.ForeignKeyConstraint(["principal_id"], ["principal.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["recommendation_id", "principal_id"], ["weekly_priority_recommendation.id", "weekly_priority_recommendation.principal_id"], name="fk_behavior_goal_recommendation_owner", ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["last_progress_analysis_id", "last_progress_analysis_revision_id", "principal_id"],
+            ["nutrition_analysis_revision.analysis_id", "nutrition_analysis_revision.id", "nutrition_analysis_revision.principal_id"],
+            name="fk_behavior_goal_progress_source_owner",
+            ondelete="RESTRICT",
+        ),
         sa.ForeignKeyConstraint(["root_goal_id", "principal_id"], ["behavior_goal.id", "behavior_goal.principal_id"], name="fk_behavior_goal_root_owner", ondelete="RESTRICT", deferrable=True, initially="DEFERRED"),
         sa.ForeignKeyConstraint(["previous_goal_id", "principal_id"], ["behavior_goal.id", "behavior_goal.principal_id"], name="fk_behavior_goal_previous_owner", ondelete="RESTRICT", deferrable=True, initially="DEFERRED"),
         sa.UniqueConstraint("id", "principal_id", name="uq_behavior_goal_id_owner"),
@@ -165,9 +174,19 @@ def upgrade() -> None:
         sa.CheckConstraint("jsonb_typeof(day_mask)='array' AND jsonb_array_length(day_mask) <= 7", name="ck_behavior_goal_day_mask"),
         sa.CheckConstraint("reminder_preference IN ('enabled','disabled')", name="ck_behavior_goal_reminder_preference"),
         sa.CheckConstraint("(state <> 'deferred' OR (deferred_at IS NOT NULL AND deferred_until IS NOT NULL)) AND (state <> 'paused' OR paused_at IS NOT NULL) AND (state <> 'completed' OR completed_at IS NOT NULL) AND (state <> 'incomplete' OR reviewed_at IS NOT NULL) AND (state <> 'rejected' OR rejected_at IS NOT NULL) AND (state <> 'ended' OR ended_at IS NOT NULL)", name="ck_behavior_goal_state_timestamps"),
+        sa.CheckConstraint(
+            "(last_progress_analysis_id IS NULL AND last_progress_analysis_revision_id IS NULL AND last_progress_analysis_revision IS NULL) OR "
+            "(last_progress_analysis_id IS NOT NULL AND last_progress_analysis_revision_id IS NOT NULL AND last_progress_analysis_revision >= 1)",
+            name="ck_behavior_goal_progress_source",
+        ),
     )
     op.create_index("uq_behavior_goal_one_primary", "behavior_goal", ["principal_id"], unique=True, postgresql_where=sa.text("state IN ('active','paused')"))
     op.create_index("ix_behavior_goal_history", "behavior_goal", ["principal_id", sa.text("window_end DESC"), sa.text("created_at DESC"), sa.text("id DESC")])
+    op.create_index(
+        "ix_behavior_goal_due_progress_source",
+        "behavior_goal",
+        ["state", "reviewed_at", "last_progress_analysis_revision_id", "window_end", "id"],
+    )
 
     op.create_table(
         "behavior_goal_history",
@@ -234,6 +253,47 @@ def upgrade() -> None:
     )
     op.create_index("ix_behavior_goal_reminder_due", "behavior_goal_reminder_delivery", ["status", "deferred_until"])
 
+    # PLAN 033 is server-authoritative. Older Supabase projects may grant new
+    # public-schema tables to Data API roles through default privileges, while
+    # ordinary PostgreSQL CI does not define those roles. Revoke conditionally
+    # so both environments enforce the same least-privilege boundary.
+    op.execute(
+        """
+        DO $plan033_data_api$
+        DECLARE
+            plan033_table text;
+            data_api_role text;
+        BEGIN
+            FOREACH plan033_table IN ARRAY ARRAY[
+                'weekly_priority_recommendation',
+                'weekly_priority_evaluation',
+                'weekly_priority_evidence_ref',
+                'behavior_goal',
+                'behavior_goal_history',
+                'behavior_goal_command_idempotency',
+                'behavior_goal_reminder_delivery'
+            ]
+            LOOP
+                EXECUTE format(
+                    'REVOKE ALL PRIVILEGES ON TABLE public.%I FROM PUBLIC',
+                    plan033_table
+                );
+                FOREACH data_api_role IN ARRAY ARRAY['anon', 'authenticated']
+                LOOP
+                    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = data_api_role) THEN
+                        EXECUTE format(
+                            'REVOKE ALL PRIVILEGES ON TABLE public.%I FROM %I',
+                            plan033_table,
+                            data_api_role
+                        );
+                    END IF;
+                END LOOP;
+            END LOOP;
+        END
+        $plan033_data_api$;
+        """
+    )
+
 
 def downgrade() -> None:
     if context.is_offline_mode():
@@ -256,6 +316,7 @@ def downgrade() -> None:
     op.drop_index("ix_behavior_goal_history_goal_time", table_name="behavior_goal_history")
     op.drop_table("behavior_goal_history")
     op.drop_index("ix_behavior_goal_history", table_name="behavior_goal")
+    op.drop_index("ix_behavior_goal_due_progress_source", table_name="behavior_goal")
     op.drop_index("uq_behavior_goal_one_primary", table_name="behavior_goal")
     op.drop_table("behavior_goal")
     op.drop_index("ix_weekly_priority_evidence_principal_date", table_name="weekly_priority_evidence_ref")

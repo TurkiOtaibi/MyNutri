@@ -1469,6 +1469,20 @@ class BehaviorGoal(SQLModel, table=True):
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
+            [
+                "last_progress_analysis_id",
+                "last_progress_analysis_revision_id",
+                "principal_id",
+            ],
+            [
+                "nutrition_analysis_revision.analysis_id",
+                "nutrition_analysis_revision.id",
+                "nutrition_analysis_revision.principal_id",
+            ],
+            name="fk_behavior_goal_progress_source_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
             ["root_goal_id", "principal_id"],
             ["behavior_goal.id", "behavior_goal.principal_id"],
             name="fk_behavior_goal_root_owner",
@@ -1521,6 +1535,15 @@ class BehaviorGoal(SQLModel, table=True):
             "AND (state <> 'ended' OR ended_at IS NOT NULL)",
             name="ck_behavior_goal_state_timestamps",
         ),
+        CheckConstraint(
+            "(last_progress_analysis_id IS NULL "
+            "AND last_progress_analysis_revision_id IS NULL "
+            "AND last_progress_analysis_revision IS NULL) OR "
+            "(last_progress_analysis_id IS NOT NULL "
+            "AND last_progress_analysis_revision_id IS NOT NULL "
+            "AND last_progress_analysis_revision >= 1)",
+            name="ck_behavior_goal_progress_source",
+        ),
         Index(
             "uq_behavior_goal_one_primary",
             "principal_id",
@@ -1534,6 +1557,14 @@ class BehaviorGoal(SQLModel, table=True):
             desc("window_end"),
             desc("created_at"),
             desc("id"),
+        ),
+        Index(
+            "ix_behavior_goal_due_progress_source",
+            "state",
+            "reviewed_at",
+            "last_progress_analysis_revision_id",
+            "window_end",
+            "id",
         ),
     )
 
@@ -1562,6 +1593,11 @@ class BehaviorGoal(SQLModel, table=True):
         sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
     )
     progress_revision: int = Field(default=1, sa_column=Column(Integer(), nullable=False))
+    last_progress_analysis_id: uuid.UUID | None = Field(default=None, nullable=True)
+    last_progress_analysis_revision_id: uuid.UUID | None = Field(default=None, nullable=True)
+    last_progress_analysis_revision: int | None = Field(
+        default=None, sa_column=Column(Integer(), nullable=True)
+    )
     reminder_preference: str = Field(
         default="disabled", sa_column=Column(String(16), nullable=False)
     )

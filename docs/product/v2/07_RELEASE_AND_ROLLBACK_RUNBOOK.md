@@ -303,3 +303,12 @@ Once any PLAN 033 row exists, the migration's populated downgrade refuses
 destructive removal; schema downgrade is not the production rollback method.
 Reminder eligibility is computed locally, but external provider delivery and
 provider scheduling remain outside this release and need separate authority.
+
+Before approving the PLAN 033 migration or deployment on Supabase, record a
+Data API privilege preflight for all seven PLAN 033 tables. Inspect the actual
+project exposure settings and prove that both `anon` and `authenticated` lack
+`SELECT`, `INSERT`, `UPDATE`, and `DELETE`; direct reads and writes under each
+role must fail. In the same disposable/read-only verification window, prove the
+Backend service database role can still read and write through its normal
+server-owned path. Do not proceed to migration, deployment, or activation when
+either client role has direct table access or Backend access is impaired.

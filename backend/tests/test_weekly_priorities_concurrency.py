@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -31,6 +31,7 @@ from app.services.weekly_priorities import (
     WeeklyPriorityError,
     command_goal,
     evaluate_recommendation,
+    process_due_goals,
 )
 from test_weekly_priorities import _persisted_producer_document
 
@@ -213,6 +214,16 @@ def _run_evaluation(url: str, barrier: Barrier):
         engine.dispose()
 
 
+def _run_due(url: str, barrier: Barrier):
+    engine = create_engine(url)
+    try:
+        with Session(engine) as session:
+            barrier.wait()
+            return process_due_goals(session, limit=10)
+    finally:
+        engine.dispose()
+
+
 @pytest.mark.migration
 def test_duplicate_recommendation_evaluation_has_one_authoritative_result() -> None:
     url = _prepare()
@@ -296,4 +307,83 @@ def test_concurrent_repeat_and_reduce_create_at_most_one_successor() -> None:
         assert len(successors) == 1
         source = session.get(BehaviorGoal, goal_id)
         assert source is not None and source.state == "incomplete" and source.version == 1
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_concurrent_due_workers_process_one_new_revision_once() -> None:
+    url = _prepare()
+    goal_id = _seed_goal(url)
+    engine = create_engine(url)
+    with Session(engine) as session:
+        goal = session.get(BehaviorGoal, goal_id)
+        recommendation = session.exec(select(WeeklyPriorityRecommendation)).one()
+        series = session.get(NutritionAnalysis, recommendation.source_analysis_id)
+        first_revision = session.get(
+            NutritionAnalysisRevision, recommendation.source_analysis_revision_id
+        )
+        assert goal is not None and series is not None and first_revision is not None
+        now = datetime.now(timezone.utc)
+        goal.state = "completed"
+        goal.completed_at = now - timedelta(days=8)
+        goal.reviewed_at = now - timedelta(days=1)
+        goal.window_start = date.today() - timedelta(days=14)
+        goal.window_end = goal.window_start + timedelta(days=6)
+        goal.progress_document = {
+            **goal.progress_document,
+            "window_start": goal.window_start.isoformat(),
+            "window_end": goal.window_end.isoformat(),
+            "progress_count": 1,
+            "progress_percent": 33,
+            "status": "achieved",
+        }
+        goal.last_progress_analysis_id = series.id
+        goal.last_progress_analysis_revision_id = first_revision.id
+        goal.last_progress_analysis_revision = first_revision.revision
+        next_document = dict(first_revision.analysis_document)
+        next_document["source_analysis_revision"] = 2
+        next_document["generated_at"] = now.isoformat()
+        next_revision = NutritionAnalysisRevision(
+            id=uuid4(),
+            analysis_id=series.id,
+            principal_id=PRINCIPAL_ID,
+            revision=2,
+            period_start=first_revision.period_start,
+            period_end=first_revision.period_end,
+            previous_period_start=first_revision.previous_period_start,
+            previous_period_end=first_revision.previous_period_end,
+            analysis_rules_version=first_revision.analysis_rules_version,
+            source_versions=first_revision.source_versions,
+            source_input_hash="7" * 64,
+            content_hash="8" * 64,
+            complete_day_count=first_revision.complete_day_count,
+            previous_complete_day_count=first_revision.previous_complete_day_count,
+            result_status=first_revision.result_status,
+            analysis_document=next_document,
+        )
+        session.add(goal)
+        session.add(next_revision)
+        session.commit()
+        series.current_revision_id = next_revision.id
+        series.current_revision_number = 2
+        session.add(series)
+        session.commit()
+    engine.dispose()
+
+    barrier = Barrier(2)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(lambda _: _run_due(url, barrier), range(2)))
+    assert sum(item["processed"] for item in outcomes) == 1
+    assert sum(item["recomputed"] for item in outcomes) == 1
+    engine = create_engine(url)
+    with Session(engine) as session:
+        goal = session.get(BehaviorGoal, goal_id)
+        assert goal is not None and goal.last_progress_analysis_revision == 2
+        events = session.exec(
+            select(BehaviorGoalHistory).where(
+                BehaviorGoalHistory.goal_id == goal_id,
+                BehaviorGoalHistory.event_type == "historical_evidence_changed",
+            )
+        ).all()
+        assert len(events) == 1
     engine.dispose()

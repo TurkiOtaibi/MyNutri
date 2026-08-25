@@ -663,12 +663,246 @@ export interface BehaviorGoalEndCommandV1 {
     | null;
 }
 
+/** BehaviorGoalHistoryItemV1 */
+export interface BehaviorGoalHistoryItemV1 {
+  /** Event Type */
+  event_type:
+    | "offered"
+    | "accept"
+    | "edit"
+    | "defer"
+    | "reject"
+    | "change"
+    | "changed"
+    | "pause"
+    | "resume"
+    | "end"
+    | "completed"
+    | "evidence_reopened"
+    | "progress_updated"
+    | "historical_evidence_changed"
+    | "finalized_completed"
+    | "finalized_incomplete"
+    | "repeated_from_previous_window";
+  /** From State */
+  from_state:
+    | "offered"
+    | "deferred"
+    | "active"
+    | "paused"
+    | "completed"
+    | "incomplete"
+    | "rejected"
+    | "ended"
+    | "archived"
+    | null;
+  /**
+   * Goal Id
+   * @format uuid
+   */
+  goal_id: string;
+  /**
+   * Goal Version
+   * @min 1
+   */
+  goal_version: number;
+  /**
+   * History Id
+   * @format uuid
+   */
+  history_id: string;
+  /**
+   * Occurred At
+   * @format date-time
+   */
+  occurred_at: string;
+  /** Previous Goal Id */
+  previous_goal_id: string | null;
+  /** Reason */
+  reason: string | null;
+  /**
+   * Root Goal Id
+   * @format uuid
+   */
+  root_goal_id: string;
+  /**
+   * Schema Version
+   * @default 1
+   */
+  schema_version?: 1;
+  /**
+   * Sequence Number
+   * @min 1
+   */
+  sequence_number: number;
+  snapshot: BehaviorGoalHistorySnapshotV1;
+  /** To State */
+  to_state:
+    | "offered"
+    | "deferred"
+    | "active"
+    | "paused"
+    | "completed"
+    | "incomplete"
+    | "rejected"
+    | "ended"
+    | "archived";
+}
+
 /** BehaviorGoalHistoryPageV1 */
 export interface BehaviorGoalHistoryPageV1 {
   /** Items */
-  items: BehaviorGoalResponseV1[];
+  items: BehaviorGoalHistoryItemV1[];
   /** Next Cursor */
   next_cursor: string | null;
+}
+
+/** BehaviorGoalHistorySnapshotV1 */
+export interface BehaviorGoalHistorySnapshotV1 {
+  /** Accepted At */
+  accepted_at: string | null;
+  /** Action Copy Ar */
+  action_copy_ar: string;
+  /** Action Key */
+  action_key: string;
+  /** Analysis Rules Version */
+  analysis_rules_version: string;
+  /** Archived At */
+  archived_at: string | null;
+  /** Changed At */
+  changed_at: string | null;
+  /** Completed At */
+  completed_at: string | null;
+  /** Copy Version */
+  copy_version: string;
+  /**
+   * Created At
+   * @format date-time
+   */
+  created_at: string;
+  /** Deferred At */
+  deferred_at: string | null;
+  /** Deferred Until */
+  deferred_until: string | null;
+  /** Ended At */
+  ended_at: string | null;
+  /**
+   * Goal Id
+   * @format uuid
+   */
+  goal_id: string;
+  /** Goal Trackability */
+  goal_trackability: "trackable";
+  /** Goal Unavailable Reason */
+  goal_unavailable_reason?: null;
+  /** Informational Copy Ar */
+  informational_copy_ar?: string | null;
+  /** Last Progress Analysis Id */
+  last_progress_analysis_id: string | null;
+  /** Last Progress Analysis Revision */
+  last_progress_analysis_revision?: number | null;
+  /** Last Progress Analysis Revision Id */
+  last_progress_analysis_revision_id: string | null;
+  /**
+   * Offered At
+   * @format date-time
+   */
+  offered_at: string;
+  /** Owner Note */
+  owner_note?: string | null;
+  /** Paused At */
+  paused_at: string | null;
+  /** Previous Goal Id */
+  previous_goal_id: string | null;
+  progress: BehaviorGoalProgressV1;
+  /**
+   * Progress Revision
+   * @min 1
+   */
+  progress_revision: number;
+  /**
+   * Recommendation Id
+   * @format uuid
+   */
+  recommendation_id: string;
+  /** Rejected At */
+  rejected_at: string | null;
+  /** Reminder Preference */
+  reminder_preference: "enabled" | "disabled";
+  /** Resumed At */
+  resumed_at: string | null;
+  /** Reviewed At */
+  reviewed_at: string | null;
+  /**
+   * Root Goal Id
+   * @format uuid
+   */
+  root_goal_id: string;
+  /** Rule Key */
+  rule_key: string;
+  /** Rules Version */
+  rules_version: string;
+  /** Scheduled Day Mask */
+  scheduled_day_mask: number[];
+  /**
+   * Sequence Number
+   * @min 1
+   */
+  sequence_number: number;
+  /**
+   * Source Analysis Id
+   * @format uuid
+   */
+  source_analysis_id: string;
+  /**
+   * Source Analysis Revision
+   * @min 1
+   */
+  source_analysis_revision: number;
+  /**
+   * Source Analysis Revision Id
+   * @format uuid
+   */
+  source_analysis_revision_id: string;
+  /** Source Versions */
+  source_versions: Record<string, any>;
+  /** State */
+  state:
+    | "offered"
+    | "deferred"
+    | "active"
+    | "paused"
+    | "completed"
+    | "incomplete"
+    | "rejected"
+    | "ended"
+    | "archived";
+  /**
+   * Updated At
+   * @format date-time
+   */
+  updated_at: string;
+  /**
+   * Version
+   * @min 1
+   */
+  version: number;
+  /**
+   * Weekly Target Count
+   * @min 1
+   * @max 7
+   */
+  weekly_target_count: number;
+  /**
+   * Window End
+   * @format date
+   */
+  window_end: string;
+  /**
+   * Window Start
+   * @format date
+   */
+  window_start: string;
 }
 
 /** BehaviorGoalPauseCommandV1 */
