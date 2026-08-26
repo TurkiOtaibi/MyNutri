@@ -1188,7 +1188,20 @@ class NutritionAnalysisRevisionEvent(SQLModel, table=True):
             "successor_revision_id",
             name="uq_nutrition_analysis_event_identity",
         ),
+        UniqueConstraint(
+            "id",
+            "principal_id",
+            "occurred_at",
+            name="uq_nutrition_analysis_event_owner_time",
+        ),
         Index("ix_nutrition_analysis_event_revision_time", "revision_id", "occurred_at"),
+        Index(
+            "ix_nutrition_analysis_event_owner_revision_time_id",
+            "principal_id",
+            "revision_id",
+            "occurred_at",
+            "id",
+        ),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -1468,6 +1481,20 @@ class BehaviorGoal(SQLModel, table=True):
         ),
         ForeignKeyConstraint(
             [
+                "last_progress_attempt_event_id",
+                "principal_id",
+                "last_progress_attempt_event_occurred_at",
+            ],
+            [
+                "nutrition_analysis_revision_event.id",
+                "nutrition_analysis_revision_event.principal_id",
+                "nutrition_analysis_revision_event.occurred_at",
+            ],
+            name="fk_behavior_goal_progress_attempt_event_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            [
                 "last_progress_analysis_id",
                 "last_progress_analysis_revision_id",
                 "principal_id",
@@ -1565,6 +1592,13 @@ class BehaviorGoal(SQLModel, table=True):
             "AND last_progress_attempt_analysis_revision >= 1)",
             name="ck_behavior_goal_progress_attempt_source",
         ),
+        CheckConstraint(
+            "(last_progress_attempt_event_id IS NULL "
+            "AND last_progress_attempt_event_occurred_at IS NULL) OR "
+            "(last_progress_attempt_event_id IS NOT NULL "
+            "AND last_progress_attempt_event_occurred_at IS NOT NULL)",
+            name="ck_behavior_goal_progress_attempt_event",
+        ),
         Index(
             "uq_behavior_goal_one_primary",
             "principal_id",
@@ -1615,6 +1649,19 @@ class BehaviorGoal(SQLModel, table=True):
                 "AND last_progress_attempt_analysis_revision_id IS NOT NULL"
             ),
         ),
+        Index(
+            "ix_behavior_goal_finalized_attempt_event",
+            "last_progress_attempt_event_occurred_at",
+            "last_progress_attempt_event_id",
+            "window_end",
+            "id",
+            postgresql_where=sa_text(
+                "state = 'completed' AND reviewed_at IS NOT NULL"
+            ),
+            sqlite_where=sa_text(
+                "state = 'completed' AND reviewed_at IS NOT NULL"
+            ),
+        ),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -1653,6 +1700,10 @@ class BehaviorGoal(SQLModel, table=True):
     )
     last_progress_attempt_analysis_revision: int | None = Field(
         default=None, sa_column=Column(Integer(), nullable=True)
+    )
+    last_progress_attempt_event_id: uuid.UUID | None = Field(default=None, nullable=True)
+    last_progress_attempt_event_occurred_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
     reminder_preference: str = Field(
         default="disabled", sa_column=Column(String(16), nullable=False)

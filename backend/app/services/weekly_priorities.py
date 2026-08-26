@@ -11,7 +11,7 @@ from typing import Any, Literal
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, case, exists, or_, tuple_
+from sqlalchemy import and_, case, exists, func, or_, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -60,11 +60,22 @@ from app.schemas import (
     WeeklyPriorityFactV1,
     WeeklyPriorityResultV1,
 )
-from app.services.pattern_analysis import current_analysis
+from app.services.pattern_analysis import (
+    PatternAnalysisError,
+    current_analysis,
+    refresh_historical_analysis,
+)
 
 _KEY_RE = re.compile(r"^[\x21-\x7e]{1,128}$")
 _RIYADH = ZoneInfo("Asia/Riyadh")
 _PRIMARY_STATES = {"active", "paused"}
+_PRODUCER_INVALIDATION_EVENTS = (
+    "day_reopened",
+    "day_version_changed",
+    "target_source_changed",
+    "source_snapshot_corrected",
+    "source_version_unsupported",
+)
 _ALLOWED_ACTIONS: dict[str, list[str]] = {
     "offered": ["accept", "edit", "defer", "reject"],
     "deferred": ["accept", "reject"],
@@ -368,6 +379,7 @@ def _recommendation_source_validations(
     recommendations: list[WeeklyPriorityRecommendation],
     *,
     allow_newer_revision: bool = False,
+    allow_insufficient_progress_evidence: bool = False,
     require_trackable: bool = False,
 ) -> dict[UUID, RecommendationSourceValidation]:
     """Validate persisted recommendations against the current PLAN 032 authority.
@@ -461,7 +473,7 @@ def _recommendation_source_validations(
                 "STALE", bound_series, current_revision
             )
             continue
-        if latest_series.id != bound_series.id:
+        if latest_series.id != bound_series.id and not allow_newer_revision:
             validations[recommendation.id] = RecommendationSourceValidation(
                 "SUPERSEDED", bound_series, current_revision
             )
@@ -520,6 +532,7 @@ def _recommendation_source_validations(
             or source.generated_at < utcnow() - timedelta(hours=36)
             or (not allow_newer_revision and _is_expired(recommendation.expires_at)),
             superseded=False,
+            require_selector_eligibility=not allow_insufficient_progress_evidence,
         )
         if producer_state == "unsupported_version":
             state: RecommendationSourceState = "UNSUPPORTED_VERSION"
@@ -554,12 +567,14 @@ def _validate_recommendation_source(
     recommendation: WeeklyPriorityRecommendation,
     *,
     allow_newer_revision: bool = False,
+    allow_insufficient_progress_evidence: bool = False,
     require_trackable: bool = False,
 ) -> RecommendationSourceValidation:
     return _recommendation_source_validations(
         session,
         [recommendation],
         allow_newer_revision=allow_newer_revision,
+        allow_insufficient_progress_evidence=allow_insufficient_progress_evidence,
         require_trackable=require_trackable,
     )[recommendation.id]
 
@@ -1646,12 +1661,16 @@ def recompute_goal_progress(
         session,
         recommendation,
         allow_newer_revision=True,
+        allow_insufficient_progress_evidence=True,
         require_trackable=True,
     )
     if validation.state != "VALID":
         return False
     source = source_override or validation.source
-    if source is None or validate_producer(source) != "eligible":
+    if (
+        source is None
+        or validate_producer(source, require_selector_eligibility=False) != "eligible"
+    ):
         return False
     if goal.action_key not in TRACKABLE_ACTIONS:
         return False
@@ -1781,15 +1800,6 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
             BehaviorGoal.window_end < today,
         ),
     )
-    normal_rows = list(
-        session.exec(
-            select(BehaviorGoal)
-            .where(normal_due)
-            .order_by(BehaviorGoal.window_end, BehaviorGoal.id)
-            .limit(limit)
-            .with_for_update(skip_locked=True)
-        ).all()
-    )
     finalized_unattempted = and_(
         BehaviorGoal.state == "completed",
         BehaviorGoal.reviewed_at.is_not(None),
@@ -1812,6 +1822,108 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
             )
         ),
     )
+    finalized_revision_advanced = and_(
+        BehaviorGoal.state == "completed",
+        BehaviorGoal.reviewed_at.is_not(None),
+        BehaviorGoal.last_progress_attempt_analysis_revision_id.is_not(None),
+        exists(
+            select(1)
+            .select_from(WeeklyPriorityRecommendation)
+            .join(
+                NutritionAnalysis,
+                and_(
+                    NutritionAnalysis.id == WeeklyPriorityRecommendation.source_analysis_id,
+                    NutritionAnalysis.principal_id == BehaviorGoal.principal_id,
+                ),
+            )
+            .where(
+                WeeklyPriorityRecommendation.id == BehaviorGoal.recommendation_id,
+                WeeklyPriorityRecommendation.principal_id == BehaviorGoal.principal_id,
+                BehaviorGoal.last_progress_attempt_analysis_id == NutritionAnalysis.id,
+                NutritionAnalysis.current_revision_id.is_not(None),
+                NutritionAnalysis.current_revision_number.is_not(None),
+                BehaviorGoal.last_progress_attempt_analysis_revision
+                < NutritionAnalysis.current_revision_number,
+            )
+        ),
+    )
+    finalized_event_pending = and_(
+        BehaviorGoal.state == "completed",
+        BehaviorGoal.reviewed_at.is_not(None),
+        exists(
+            select(1)
+            .select_from(WeeklyPriorityRecommendation)
+            .join(
+                NutritionAnalysisRevision,
+                and_(
+                    NutritionAnalysisRevision.analysis_id
+                    == WeeklyPriorityRecommendation.source_analysis_id,
+                    NutritionAnalysisRevision.principal_id == BehaviorGoal.principal_id,
+                ),
+            )
+            .join(
+                NutritionAnalysisRevisionEvent,
+                and_(
+                    NutritionAnalysisRevisionEvent.revision_id
+                    == NutritionAnalysisRevision.id,
+                    NutritionAnalysisRevisionEvent.principal_id == BehaviorGoal.principal_id,
+                ),
+            )
+            .where(
+                WeeklyPriorityRecommendation.id == BehaviorGoal.recommendation_id,
+                WeeklyPriorityRecommendation.principal_id == BehaviorGoal.principal_id,
+                NutritionAnalysisRevisionEvent.event_type.in_(
+                    _PRODUCER_INVALIDATION_EVENTS
+                ),
+                or_(
+                    BehaviorGoal.last_progress_attempt_event_id.is_(None),
+                    NutritionAnalysisRevisionEvent.occurred_at
+                    > BehaviorGoal.last_progress_attempt_event_occurred_at,
+                    and_(
+                        NutritionAnalysisRevisionEvent.occurred_at
+                        == BehaviorGoal.last_progress_attempt_event_occurred_at,
+                        NutritionAnalysisRevisionEvent.id
+                        > BehaviorGoal.last_progress_attempt_event_id,
+                    ),
+                ),
+            )
+        ),
+    )
+
+    # Lock owners before goal/source rows so historical producer refresh follows
+    # the same Principal -> series -> day/revision ordering as public analysis.
+    principal_ids = set(
+        session.exec(
+            select(BehaviorGoal.principal_id)
+            .where(
+                or_(
+                    normal_due,
+                    finalized_unattempted,
+                    finalized_revision_advanced,
+                    finalized_event_pending,
+                )
+            )
+            .order_by(BehaviorGoal.window_end, BehaviorGoal.id)
+            .limit(limit * 4)
+        ).all()
+    )
+    if principal_ids:
+        session.exec(
+            select(Principal)
+            .where(Principal.id.in_(principal_ids))
+            .order_by(Principal.id)
+            .with_for_update()
+        ).all()
+
+    normal_rows = list(
+        session.exec(
+            select(BehaviorGoal)
+            .where(normal_due)
+            .order_by(BehaviorGoal.window_end, BehaviorGoal.id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        ).all()
+    )
     unattempted_rows = list(
         session.exec(
             select(BehaviorGoal)
@@ -1825,31 +1937,7 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
     advanced_rows = list(
         session.exec(
             select(BehaviorGoal)
-            .where(
-                BehaviorGoal.state == "completed",
-                BehaviorGoal.reviewed_at.is_not(None),
-                BehaviorGoal.last_progress_attempt_analysis_revision_id.is_not(None),
-                exists(
-                    select(1)
-                    .select_from(WeeklyPriorityRecommendation)
-                    .join(
-                        NutritionAnalysis,
-                        and_(
-                            NutritionAnalysis.id == WeeklyPriorityRecommendation.source_analysis_id,
-                            NutritionAnalysis.principal_id == BehaviorGoal.principal_id,
-                        ),
-                    )
-                    .where(
-                        WeeklyPriorityRecommendation.id == BehaviorGoal.recommendation_id,
-                        WeeklyPriorityRecommendation.principal_id == BehaviorGoal.principal_id,
-                        BehaviorGoal.last_progress_attempt_analysis_id == NutritionAnalysis.id,
-                        NutritionAnalysis.current_revision_id.is_not(None),
-                        NutritionAnalysis.current_revision_number.is_not(None),
-                        BehaviorGoal.last_progress_attempt_analysis_revision
-                        < NutritionAnalysis.current_revision_number,
-                    )
-                ),
-            )
+            .where(finalized_revision_advanced)
             .order_by(
                 BehaviorGoal.last_progress_attempt_analysis_id,
                 BehaviorGoal.last_progress_attempt_analysis_revision,
@@ -1862,7 +1950,28 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
         if remaining_historical_capacity
         else []
     )
-    historical_rows = [*unattempted_rows, *advanced_rows]
+    selected_historical_ids = {goal.id for goal in [*unattempted_rows, *advanced_rows]}
+    remaining_historical_capacity -= len(advanced_rows)
+    event_rows = list(
+        session.exec(
+            select(BehaviorGoal)
+            .where(
+                finalized_event_pending,
+                BehaviorGoal.id.not_in(selected_historical_ids),
+            )
+            .order_by(
+                BehaviorGoal.last_progress_attempt_event_occurred_at,
+                BehaviorGoal.last_progress_attempt_event_id,
+                BehaviorGoal.window_end,
+                BehaviorGoal.id,
+            )
+            .limit(remaining_historical_capacity)
+            .with_for_update(skip_locked=True)
+        ).all()
+        if remaining_historical_capacity
+        else []
+    )
+    historical_rows = [*unattempted_rows, *advanced_rows, *event_rows]
     rows = [*normal_rows, *historical_rows]
     historical_goal_ids = {goal.id for goal in historical_rows}
     existing_reminders = {
@@ -1889,10 +1998,105 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
         else []
     )
     recommendation_by_id = {row.id: row for row in recommendation_rows}
+
+    pending_event_by_goal: dict[UUID, NutritionAnalysisRevisionEvent] = {}
+    event_recommendations = [
+        recommendation_by_id[goal.recommendation_id]
+        for goal in event_rows
+        if goal.recommendation_id in recommendation_by_id
+    ]
+    if event_recommendations:
+        source_keys = {
+            (row.source_analysis_id, row.principal_id) for row in event_recommendations
+        }
+        ranked_events = (
+            select(
+                NutritionAnalysisRevisionEvent.id.label("event_id"),
+                NutritionAnalysisRevisionEvent.principal_id.label("principal_id"),
+                NutritionAnalysisRevisionEvent.occurred_at.label("occurred_at"),
+                NutritionAnalysisRevision.analysis_id.label("analysis_id"),
+                func.row_number()
+                .over(
+                    partition_by=(
+                        NutritionAnalysisRevision.analysis_id,
+                        NutritionAnalysisRevisionEvent.principal_id,
+                    ),
+                    order_by=(
+                        NutritionAnalysisRevisionEvent.occurred_at.desc(),
+                        NutritionAnalysisRevisionEvent.id.desc(),
+                    ),
+                )
+                .label("event_rank"),
+            )
+            .join(
+                NutritionAnalysisRevision,
+                NutritionAnalysisRevision.id == NutritionAnalysisRevisionEvent.revision_id,
+            )
+            .where(
+                tuple_(
+                    NutritionAnalysisRevision.analysis_id,
+                    NutritionAnalysisRevisionEvent.principal_id,
+                ).in_(source_keys),
+                NutritionAnalysisRevisionEvent.event_type.in_(
+                    _PRODUCER_INVALIDATION_EVENTS
+                ),
+            )
+            .subquery()
+        )
+        latest_event_rows = session.exec(
+            select(
+                ranked_events.c.event_id,
+                ranked_events.c.principal_id,
+                ranked_events.c.occurred_at,
+                ranked_events.c.analysis_id,
+            ).where(ranked_events.c.event_rank == 1)
+        ).all()
+        latest_by_source = {
+            (row.analysis_id, row.principal_id): session.get(
+                NutritionAnalysisRevisionEvent, row.event_id
+            )
+            for row in latest_event_rows
+        }
+        refreshed_sources: set[tuple[UUID, UUID, UUID]] = set()
+        for goal in event_rows:
+            recommendation = recommendation_by_id.get(goal.recommendation_id)
+            if recommendation is None:
+                continue
+            event = latest_by_source.get(
+                (recommendation.source_analysis_id, goal.principal_id)
+            )
+            if event is None:
+                continue
+            event_cursor = (event.occurred_at, event.id)
+            goal_cursor = (
+                goal.last_progress_attempt_event_occurred_at,
+                goal.last_progress_attempt_event_id,
+            )
+            if goal_cursor[0] is not None and event_cursor <= goal_cursor:
+                continue
+            pending_event_by_goal[goal.id] = event
+            refresh_key = (goal.principal_id, recommendation.source_analysis_id, event.id)
+            if refresh_key in refreshed_sources:
+                continue
+            try:
+                refresh_historical_analysis(
+                    session,
+                    PrincipalContext(goal.principal_id),
+                    recommendation.source_analysis_id,
+                    event.id,
+                )
+            except PatternAnalysisError:
+                # The immutable event is still recorded as attempted below; a
+                # later event remains independently eligible. Successful source
+                # cursors are advanced only after persisted producer validation.
+                pass
+            refreshed_sources.add(refresh_key)
+
     progress_validations = _recommendation_source_validations(
         session,
         recommendation_rows,
         allow_newer_revision=True,
+        allow_insufficient_progress_evidence=True,
         require_trackable=True,
     )
     action_validations = _recommendation_source_validations(
@@ -1904,6 +2108,11 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
         recommendation = recommendation_by_id.get(goal.recommendation_id)
         if recommendation is None:
             continue
+        pending_event = pending_event_by_goal.get(goal.id)
+        if pending_event is not None:
+            goal.last_progress_attempt_event_id = pending_event.id
+            goal.last_progress_attempt_event_occurred_at = pending_event.occurred_at
+            session.add(goal)
         progress_validation = progress_validations[recommendation.id]
         attempted_revision = progress_validation.revision
         attempted_cursor_changed = bool(

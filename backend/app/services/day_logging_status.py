@@ -227,6 +227,20 @@ def record_entry_mutation(
             occurred_at=now,
         )
     )
+    # PLAN 032 owns historical source invalidation. Entry mutations are only
+    # possible while a day is non-complete, but they still need a distinct,
+    # owner-bound day-version identity so an older analysis window can be
+    # refreshed after a previous reopen was already attempted.
+    from app.services.pattern_analysis import append_stale_events_for_date
+
+    append_stale_events_for_date(
+        session,
+        principal.principal_id,
+        diary_date,
+        "day_version_changed",
+        "diary_entry_changed",
+        row.version,
+    )
     return row
 
 
@@ -363,6 +377,17 @@ def command_day_status(
             diary_date,
             "day_reopened",
             "completed_day_reopened",
+            row.version,
+        )
+    else:
+        from app.services.pattern_analysis import append_stale_events_for_date
+
+        append_stale_events_for_date(
+            session,
+            principal.principal_id,
+            diary_date,
+            "day_version_changed",
+            "day_completed",
             row.version,
         )
     response = _project(row, diary_date, count, authority)

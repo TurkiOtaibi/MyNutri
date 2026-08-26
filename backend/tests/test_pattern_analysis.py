@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.pool import StaticPool
@@ -13,16 +13,27 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from app.core.auth import PrincipalContext
 from app.core.calendar import diary_calendar_authority
 from app.models import (
+    BehaviorGoal,
+    BehaviorGoalHistory,
     DiaryEntry,
     DiaryDayStatus,
     DiaryDayStatusValue,
+    NutritionAnalysis,
     NutritionAnalysisRevision,
     NutritionAnalysisRevisionEvent,
     Principal,
     TargetProvenance,
+    WeeklyPriorityRecommendation,
 )
 from app.nutrition_rules.analysis import evaluate_contract_case, require_analysis_rules
-from app.schemas import AnalysisDayFactV1, AnalysisEvaluateCommandV1, AnalysisMetricFactV1
+from app.schemas import (
+    AnalysisDayFactV1,
+    AnalysisEvaluateCommandV1,
+    AnalysisMetricFactV1,
+    BehaviorGoalProgressV1,
+    WeeklyPriorityAnalysisInputV1,
+)
+from app.services import weekly_priorities as weekly_priority_service
 from app.api.routes import nutrition_analysis as nutrition_analysis_route
 from app.services import pattern_analysis
 from app.services.pattern_analysis import (
@@ -31,7 +42,10 @@ from app.services.pattern_analysis import (
     append_stale_events_for_date,
     evaluate_analysis,
     exact_revision,
+    refresh_historical_analysis,
 )
+from app.services.day_logging_status import command_day_status
+from app.services.weekly_priorities import evaluate_recommendation, process_due_goals
 
 
 VECTORS = (
@@ -178,6 +192,7 @@ def _production_evidence_session(
     group_known: bool,
     reviewed_nova: bool,
     incompatible_carb: bool,
+    contributions: list[dict] | None = None,
 ) -> tuple[Session, PrincipalContext]:
     principal_id = UUID("00000000-0000-0000-0000-000000000322")
     engine = create_engine(
@@ -210,7 +225,9 @@ def _production_evidence_session(
                 target_provenance=TargetProvenance.no_target_source,
                 snapshot_schema_version=3,
                 nutrition_snapshot=_snapshot_v3(
-                    group_known=group_known, reviewed_nova=reviewed_nova
+                    group_known=group_known,
+                    reviewed_nova=reviewed_nova,
+                    contributions=contributions,
                 ),
             )
         )
@@ -691,4 +708,283 @@ def test_stale_event_is_append_only_and_cross_owner_revision_is_hidden(
             1,
         )
     assert (hidden.value.status_code, hidden.value.code) == (404, "RESOURCE_NOT_FOUND")
+    session.close()
+
+
+def test_historical_refresh_preserves_original_series_and_insufficient_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, principal = _production_evidence_session(
+        monkeypatch,
+        group_known=True,
+        reviewed_nova=True,
+        incompatible_carb=False,
+    )
+    d0 = diary_calendar_authority(datetime(2026, 8, 17, 9, tzinfo=timezone.utc))
+    original, status, _ = evaluate_analysis(
+        session,
+        principal,
+        AnalysisEvaluateCommandV1(expected_current_revision=None),
+        "historical-d0",
+        '"analysis-none"',
+    )
+    assert status == 201
+    s0 = original.source_analysis_id
+    original_revision = session.exec(
+        select(NutritionAnalysisRevision).where(
+            NutritionAnalysisRevision.analysis_id == s0,
+            NutritionAnalysisRevision.revision == 1,
+        )
+    ).one()
+    monkeypatch.setattr(weekly_priority_service, "diary_calendar_authority", lambda: d0)
+    monkeypatch.setattr(
+        weekly_priority_service,
+        "utcnow",
+        lambda: datetime(2026, 8, 17, 9, tzinfo=timezone.utc),
+    )
+    recommendation = evaluate_recommendation(session, principal)
+    assert recommendation.main is not None
+    assert recommendation.main.action_key == "add_fruit_or_vegetable"
+    recommendation_row = session.exec(
+        select(WeeklyPriorityRecommendation).where(
+            WeeklyPriorityRecommendation.id == recommendation.recommendation_id
+        )
+    ).one()
+    goal_id = uuid4()
+    progress = BehaviorGoalProgressV1(
+        window_start=original.period_start,
+        window_end=original.period_end,
+        progress_count=1,
+        target_count=1,
+        progress_percent=100,
+        complete_day_count=4,
+        partial_day_count=0,
+        unregistered_day_count=3,
+        status="achieved",
+        as_of_diary_date=original.as_of_diary_date,
+        source_day_versions={},
+        calculation_rules_version=recommendation.rules_version,
+        last_recomputed_at=datetime(2026, 8, 18, 8, tzinfo=timezone.utc),
+    )
+    goal = BehaviorGoal(
+        id=goal_id,
+        principal_id=principal.principal_id,
+        recommendation_id=recommendation.recommendation_id,
+        root_goal_id=goal_id,
+        sequence_number=1,
+        state="completed",
+        version=2,
+        rule_key=recommendation.main.rule_key,
+        action_key=recommendation.main.action_key,
+        weekly_target_count=1,
+        day_mask=[],
+        window_start=original.period_start,
+        window_end=original.period_end,
+        rules_version=recommendation.rules_version,
+        copy_version=recommendation.copy_version,
+        progress_document=progress.model_dump(mode="json"),
+        progress_revision=2,
+        last_progress_analysis_id=s0,
+        last_progress_analysis_revision_id=original_revision.id,
+        last_progress_analysis_revision=1,
+        last_progress_attempt_analysis_id=s0,
+        last_progress_attempt_analysis_revision_id=original_revision.id,
+        last_progress_attempt_analysis_revision=1,
+        reminder_preference="disabled",
+        completed_at=datetime(2026, 8, 18, 8, tzinfo=timezone.utc),
+        reviewed_at=datetime(2026, 8, 20, 8, tzinfo=timezone.utc),
+        accepted_at=datetime(2026, 8, 10, 8, tzinfo=timezone.utc),
+    )
+    session.add(goal)
+    session.flush()
+    original_history = BehaviorGoalHistory(
+        goal_id=goal.id,
+        principal_id=goal.principal_id,
+        root_goal_id=goal.root_goal_id,
+        sequence_number=1,
+        goal_version=goal.version,
+        event_type="finalized_completed",
+        from_state="completed",
+        to_state="completed",
+        actor_type="system",
+        terms_progress_snapshot=weekly_priority_service._goal_snapshot(
+            goal, recommendation_row
+        ),
+    )
+    session.add(original_history)
+    session.commit()
+    original_history_snapshot = dict(original_history.terms_progress_snapshot)
+
+    d1 = diary_calendar_authority(datetime(2026, 8, 18, 9, tzinfo=timezone.utc))
+    session.add(
+        DiaryDayStatus(
+            principal_id=principal.principal_id,
+            diary_date=d1.current_diary_date,
+            status=DiaryDayStatusValue.complete,
+            version=1,
+            entry_count=1,
+            completed_at=datetime(2026, 8, 18, 8, tzinfo=timezone.utc),
+        )
+    )
+    session.add(
+        DiaryEntry(
+            principal_id=principal.principal_id,
+            entry_date=d1.current_diary_date,
+            quantity=1,
+            target_provenance=TargetProvenance.no_target_source,
+            snapshot_schema_version=3,
+            nutrition_snapshot=_snapshot_v3(group_known=True, reviewed_nova=True),
+        )
+    )
+    session.commit()
+    monkeypatch.setattr(pattern_analysis, "diary_calendar_authority", lambda: d1)
+    monkeypatch.setattr(
+        pattern_analysis,
+        "project_week_target_context",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        pattern_analysis,
+        "target_for_date",
+        lambda _context, day: _target_source(
+            UUID("00000000-0000-4000-8000-000000000203"),
+            day,
+            carb=250,
+            fat=70,
+        ),
+    )
+    later, later_status, _ = evaluate_analysis(
+        session,
+        principal,
+        AnalysisEvaluateCommandV1(expected_current_revision=None),
+        "historical-d1",
+        '"analysis-none"',
+    )
+    assert later_status == 201
+    assert later.source_analysis_id != s0
+    s1 = later.source_analysis_id
+
+    reopened_date = d0.current_diary_date - timedelta(days=3)
+    reopened, replayed = command_day_status(
+        session,
+        principal,
+        reopened_date,
+        "reopen",
+        1,
+        "historical-reopen",
+        d1,
+    )
+    assert not replayed and reopened.logging_status == "partial"
+    event = session.exec(
+        select(NutritionAnalysisRevisionEvent)
+        .join(
+            NutritionAnalysisRevision,
+            NutritionAnalysisRevision.id == NutritionAnalysisRevisionEvent.revision_id,
+        )
+        .where(
+            NutritionAnalysisRevision.analysis_id == s0,
+            NutritionAnalysisRevisionEvent.event_type == "day_reopened",
+            NutritionAnalysisRevisionEvent.source_day_version == 2,
+        )
+    ).one()
+    monkeypatch.setattr(weekly_priority_service, "diary_calendar_authority", lambda: d1)
+    monkeypatch.setattr(
+        weekly_priority_service,
+        "utcnow",
+        lambda: datetime(2026, 8, 26, 9, tzinfo=timezone.utc),
+    )
+    first_due = process_due_goals(session, limit=100)
+    assert first_due == {
+        "processed": 1,
+        "recomputed": 1,
+        "finalized": 0,
+        "reminders": 0,
+    }
+    refreshed = session.exec(
+        select(NutritionAnalysisRevision).where(
+            NutritionAnalysisRevision.analysis_id == s0,
+            NutritionAnalysisRevision.revision == 2,
+        )
+    ).one()
+    assert (refreshed.analysis_id, refreshed.revision) == (s0, 2)
+    assert refreshed.result_status == "insufficient"
+    assert refreshed.complete_day_count == 3
+    assert sum(
+        day.analysis_eligible
+        for day in WeeklyPriorityAnalysisInputV1.model_validate(
+            refreshed.analysis_document
+        ).days
+    ) == 3
+    assert session.get(NutritionAnalysis, s1).current_revision_number == 1
+    session.refresh(goal)
+    assert goal.progress_document["status"] == "insufficient_evidence"
+    assert goal.last_progress_attempt_event_id == event.id
+    assert goal.last_progress_analysis_revision_id == refreshed.id
+    changed_history = session.exec(
+        select(BehaviorGoalHistory)
+        .where(
+            BehaviorGoalHistory.goal_id == goal.id,
+            BehaviorGoalHistory.event_type == "historical_evidence_changed",
+        )
+        .order_by(BehaviorGoalHistory.occurred_at, BehaviorGoalHistory.id)
+    ).all()
+    assert len(changed_history) == 1
+    assert original_history.terms_progress_snapshot == original_history_snapshot
+
+    unchanged, duplicate_created = refresh_historical_analysis(
+        session, principal, s0, event.id
+    )
+    session.commit()
+    assert not duplicate_created and unchanged.id == refreshed.id
+    assert process_due_goals(session, limit=100)["processed"] == 0
+
+    completed, completed_replay = command_day_status(
+        session,
+        principal,
+        reopened_date,
+        "complete",
+        2,
+        "historical-recomplete",
+        d1,
+    )
+    assert not completed_replay and completed.logging_status == "complete"
+    next_event = session.exec(
+        select(NutritionAnalysisRevisionEvent)
+        .join(
+            NutritionAnalysisRevision,
+            NutritionAnalysisRevision.id == NutritionAnalysisRevisionEvent.revision_id,
+        )
+        .where(
+            NutritionAnalysisRevision.analysis_id == s0,
+            NutritionAnalysisRevisionEvent.event_type == "day_version_changed",
+            NutritionAnalysisRevisionEvent.source_day_version == 3,
+        )
+    ).one()
+    second_due = process_due_goals(session, limit=100)
+    assert second_due == {
+        "processed": 1,
+        "recomputed": 1,
+        "finalized": 0,
+        "reminders": 0,
+    }
+    recompleted = session.exec(
+        select(NutritionAnalysisRevision).where(
+            NutritionAnalysisRevision.analysis_id == s0,
+            NutritionAnalysisRevision.revision == 3,
+        )
+    ).one()
+    assert (recompleted.analysis_id, recompleted.revision) == (s0, 3)
+    assert recompleted.result_status == "available"
+    assert recompleted.complete_day_count == 4
+    session.refresh(goal)
+    assert goal.last_progress_attempt_event_id == next_event.id
+    assert goal.last_progress_analysis_revision_id == recompleted.id
+    assert goal.progress_document["status"] == "not_yet_reached"
+    changed_history = session.exec(
+        select(BehaviorGoalHistory).where(
+            BehaviorGoalHistory.goal_id == goal.id,
+            BehaviorGoalHistory.event_type == "historical_evidence_changed",
+        )
+    ).all()
+    assert len(changed_history) == 2
     session.close()

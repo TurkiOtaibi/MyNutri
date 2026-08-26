@@ -1005,9 +1005,11 @@ def _build_document(
     previous_days: list[AnalysisDayFactV1],
     entry_map: dict[date, list[_EntryFact]],
     targets: dict[date, Any],
+    *,
+    require_selector_evidence: bool = True,
 ) -> dict[str, Any]:
     complete_current = sum(day.logging_status == "complete" for day in current_days)
-    if complete_current < 4:
+    if require_selector_evidence and complete_current < 4:
         raise PatternAnalysisError(
             "INSUFFICIENT_ANALYSIS_EVIDENCE", 422, "التحليل غير متاح لعدم كفاية الأيام المكتملة"
         )
@@ -1102,6 +1104,180 @@ def _build_document(
         safety_flags=sorted(safety),
     )
     return priority.model_dump(mode="json")
+
+
+def _persist_analysis_revision(
+    session: Session,
+    principal: PrincipalContext,
+    series: NutritionAnalysis,
+    source: dict[str, Any],
+    current_days: list[AnalysisDayFactV1],
+    previous_days: list[AnalysisDayFactV1],
+    entry_map: dict[date, list[_EntryFact]],
+    targets: dict[date, Any],
+    *,
+    require_selector_evidence: bool,
+) -> tuple[NutritionAnalysisRevision, bool]:
+    """Persist one producer revision without committing the caller transaction."""
+    source_hash = _hash(source)
+    current_revision = (
+        session.get(NutritionAnalysisRevision, series.current_revision_id)
+        if series.current_revision_id
+        else None
+    )
+    if (
+        current_revision
+        and current_revision.source_input_hash == source_hash
+        and current_revision.analysis_rules_version == ANALYSIS_RULES_VERSION
+    ):
+        return current_revision, False
+
+    revision_number = (series.current_revision_number or 0) + 1
+    generated = utcnow()
+    document = _build_document(
+        principal,
+        series,
+        revision_number,
+        generated,
+        source,
+        current_days,
+        previous_days,
+        entry_map,
+        targets,
+        require_selector_evidence=require_selector_evidence,
+    )
+    complete_current = sum(day.logging_status == "complete" for day in current_days)
+    revision = NutritionAnalysisRevision(
+        analysis_id=series.id,
+        principal_id=principal.principal_id,
+        revision=revision_number,
+        period_start=current_days[0].date,
+        period_end=current_days[-1].date,
+        previous_period_start=previous_days[0].date,
+        previous_period_end=previous_days[-1].date,
+        analysis_rules_version=ANALYSIS_RULES_VERSION,
+        source_versions=source["versions"],
+        source_input_hash=source_hash,
+        content_hash=_content_hash(document),
+        complete_day_count=complete_current,
+        previous_complete_day_count=sum(
+            day.logging_status == "complete" for day in previous_days
+        ),
+        result_status="available" if complete_current >= 4 else "insufficient",
+        result_reason=None if complete_current >= 4 else "insufficient_complete_days",
+        analysis_document=document,
+        supersedes_revision_id=current_revision.id if current_revision else None,
+        generated_at=generated,
+        finalized_at=generated,
+    )
+    session.add(revision)
+    session.flush()
+    for period_name, period_days in (("current", current_days), ("previous", previous_days)):
+        for day in period_days:
+            if day.logging_status != "complete":
+                continue
+            for fact in entry_map[day.date]:
+                for metric_key, (unit, _) in sorted(METRIC_REGISTRY.items()):
+                    value = _entry_metric_value(fact, metric_key)
+                    session.add(
+                        NutritionAnalysisEvidenceRef(
+                            revision_id=revision.id,
+                            principal_id=principal.principal_id,
+                            period=period_name,
+                            diary_date=day.date,
+                            day_version=day.logging_status_version,
+                            source_ref=fact.entry.id,
+                            snapshot_schema_version=fact.entry.snapshot_schema_version,
+                            metric_key=metric_key,
+                            source_version=fact.source_version,
+                            value=value,
+                            value_state=(
+                                "unknown"
+                                if value is None
+                                else "explicit_zero"
+                                if value == 0
+                                else "known"
+                            ),
+                            unit=unit,
+                        )
+                    )
+    if current_revision:
+        session.add(
+            NutritionAnalysisRevisionEvent(
+                revision_id=current_revision.id,
+                principal_id=principal.principal_id,
+                event_type="superseded_by_revision",
+                successor_revision_id=revision.id,
+                reason="source_input_changed",
+                occurred_at=generated,
+            )
+        )
+    revision.finalized_at = utcnow()
+    series.current_revision_id = revision.id
+    series.current_revision_number = revision_number
+    series.updated_at = generated
+    session.add(revision)
+    session.add(series)
+    session.flush()
+    return revision, True
+
+
+def refresh_historical_analysis(
+    session: Session,
+    principal: PrincipalContext,
+    analysis_id: UUID,
+    invalidation_event_id: UUID,
+) -> tuple[NutritionAnalysisRevision, bool]:
+    """Refresh an existing historical series from producer-owned raw sources.
+
+    The caller owns the surrounding transaction and Principal lock. The series
+    date, rather than today's Diary date, is the immutable window authority.
+    """
+    event = session.exec(
+        select(NutritionAnalysisRevisionEvent)
+        .join(
+            NutritionAnalysisRevision,
+            NutritionAnalysisRevision.id == NutritionAnalysisRevisionEvent.revision_id,
+        )
+        .where(
+            NutritionAnalysisRevisionEvent.id == invalidation_event_id,
+            NutritionAnalysisRevisionEvent.principal_id == principal.principal_id,
+            NutritionAnalysisRevision.analysis_id == analysis_id,
+            NutritionAnalysisRevisionEvent.event_type.in_(_STALE_EVENTS),
+        )
+        .with_for_update()
+    ).first()
+    if event is None:
+        raise PatternAnalysisError(
+            "ANALYSIS_SOURCE_CHANGED", 409, "تغيّرت بيانات المصدر. حاول مرة أخرى."
+        )
+    series = session.exec(
+        select(NutritionAnalysis)
+        .where(
+            NutritionAnalysis.id == analysis_id,
+            NutritionAnalysis.principal_id == principal.principal_id,
+            NutritionAnalysis.interface_version == 1,
+        )
+        .with_for_update()
+    ).first()
+    if series is None:
+        raise PatternAnalysisError(
+            "ANALYSIS_SOURCE_CHANGED", 409, "تغيّرت بيانات المصدر. حاول مرة أخرى."
+        )
+    source, current_days, previous_days, entry_map, targets = _build_source(
+        session, principal, series.as_of_diary_date
+    )
+    return _persist_analysis_revision(
+        session,
+        principal,
+        series,
+        source,
+        current_days,
+        previous_days,
+        entry_map,
+        targets,
+        require_selector_evidence=False,
+    )
 
 
 def _events(
@@ -1412,110 +1588,19 @@ def evaluate_analysis(
         source, current_days, previous_days, entry_map, targets = _build_source(
             session, principal, as_of
         )
-        source_hash = _hash(source)
-        current_revision = (
-            session.get(NutritionAnalysisRevision, series.current_revision_id)
-            if series.current_revision_id
-            else None
+        revision, created = _persist_analysis_revision(
+            session,
+            principal,
+            series,
+            source,
+            current_days,
+            previous_days,
+            entry_map,
+            targets,
+            require_selector_evidence=True,
         )
-        if (
-            current_revision
-            and current_revision.source_input_hash == source_hash
-            and current_revision.analysis_rules_version == ANALYSIS_RULES_VERSION
-        ):
-            response = _response(session, series, current_revision)
-            status_code = 200
-        else:
-            revision_number = (series.current_revision_number or 0) + 1
-            generated = utcnow()
-            document = _build_document(
-                principal,
-                series,
-                revision_number,
-                generated,
-                source,
-                current_days,
-                previous_days,
-                entry_map,
-                targets,
-            )
-            content_hash = _content_hash(document)
-            revision = NutritionAnalysisRevision(
-                analysis_id=series.id,
-                principal_id=principal.principal_id,
-                revision=revision_number,
-                period_start=current_days[0].date,
-                period_end=current_days[-1].date,
-                previous_period_start=previous_days[0].date,
-                previous_period_end=previous_days[-1].date,
-                analysis_rules_version=ANALYSIS_RULES_VERSION,
-                source_versions=source["versions"],
-                source_input_hash=source_hash,
-                content_hash=content_hash,
-                complete_day_count=sum(day.logging_status == "complete" for day in current_days),
-                previous_complete_day_count=sum(
-                    day.logging_status == "complete" for day in previous_days
-                ),
-                result_status="available",
-                result_reason=None,
-                analysis_document=document,
-                supersedes_revision_id=current_revision.id if current_revision else None,
-                generated_at=generated,
-                finalized_at=generated,
-            )
-            session.add(revision)
-            session.flush()
-            for period_name, period_days in (
-                ("current", current_days),
-                ("previous", previous_days),
-            ):
-                for day in period_days:
-                    if day.logging_status != "complete":
-                        continue
-                    for fact in entry_map[day.date]:
-                        for metric_key, (unit, _) in sorted(METRIC_REGISTRY.items()):
-                            value = _entry_metric_value(fact, metric_key)
-                            session.add(
-                                NutritionAnalysisEvidenceRef(
-                                    revision_id=revision.id,
-                                    principal_id=principal.principal_id,
-                                    period=period_name,
-                                    diary_date=day.date,
-                                    day_version=day.logging_status_version,
-                                    source_ref=fact.entry.id,
-                                    snapshot_schema_version=fact.entry.snapshot_schema_version,
-                                    metric_key=metric_key,
-                                    source_version=fact.source_version,
-                                    value=value,
-                                    value_state=(
-                                        "unknown"
-                                        if value is None
-                                        else "explicit_zero"
-                                        if value == 0
-                                        else "known"
-                                    ),
-                                    unit=unit,
-                                )
-                            )
-            if current_revision:
-                session.add(
-                    NutritionAnalysisRevisionEvent(
-                        revision_id=current_revision.id,
-                        principal_id=principal.principal_id,
-                        event_type="superseded_by_revision",
-                        successor_revision_id=revision.id,
-                        reason="source_input_changed",
-                        occurred_at=generated,
-                    )
-                )
-            revision.finalized_at = utcnow()
-            session.add(revision)
-            series.current_revision_id = revision.id
-            series.current_revision_number = revision_number
-            series.updated_at = generated
-            session.add(series)
-            response = _response(session, series, revision)
-            status_code = 201
+        response = _response(session, series, revision)
+        status_code = 201 if created else 200
         now = utcnow()
         session.add(
             NutritionAnalysisCommandIdempotency(

@@ -23,6 +23,7 @@ from app.models import (
     BehaviorGoalHistory,
     NutritionAnalysis,
     NutritionAnalysisRevision,
+    NutritionAnalysisRevisionEvent,
     Principal,
     WeeklyPriorityRecommendation,
 )
@@ -488,4 +489,72 @@ def test_concurrent_due_workers_record_one_rejected_revision_attempt() -> None:
             == []
         )
         assert process_due_goals(session, limit=10)["processed"] == 0
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_concurrent_due_workers_refresh_one_stale_historical_series_once() -> None:
+    url = _prepare()
+    goal_id = _seed_goal(url)
+    engine = create_engine(url)
+    with Session(engine) as session:
+        goal = session.get(BehaviorGoal, goal_id)
+        recommendation = session.exec(select(WeeklyPriorityRecommendation)).one()
+        series = session.get(NutritionAnalysis, recommendation.source_analysis_id)
+        first_revision = session.get(
+            NutritionAnalysisRevision, recommendation.source_analysis_revision_id
+        )
+        assert goal is not None and series is not None and first_revision is not None
+        now = datetime.now(timezone.utc)
+        goal.state = "completed"
+        goal.completed_at = now - timedelta(days=8)
+        goal.reviewed_at = now - timedelta(days=1)
+        goal.last_progress_analysis_id = series.id
+        goal.last_progress_analysis_revision_id = first_revision.id
+        goal.last_progress_analysis_revision = first_revision.revision
+        goal.last_progress_attempt_analysis_id = series.id
+        goal.last_progress_attempt_analysis_revision_id = first_revision.id
+        goal.last_progress_attempt_analysis_revision = first_revision.revision
+        event = NutritionAnalysisRevisionEvent(
+            revision_id=first_revision.id,
+            principal_id=PRINCIPAL_ID,
+            event_type="day_reopened",
+            reason="completed_day_reopened",
+            source_day_version=2,
+        )
+        session.add(goal)
+        session.add(event)
+        session.commit()
+        event_id = event.id
+    engine.dispose()
+
+    barrier = Barrier(2)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(lambda _: _run_due(url, barrier), range(2)))
+    assert sum(item["processed"] for item in outcomes) <= 2, outcomes
+    assert sum(item["recomputed"] for item in outcomes) == 1, outcomes
+
+    engine = create_engine(url)
+    with Session(engine) as session:
+        goal = session.get(BehaviorGoal, goal_id)
+        series = session.exec(select(NutritionAnalysis)).one()
+        revisions = session.exec(select(NutritionAnalysisRevision)).all()
+        history = session.exec(
+            select(BehaviorGoalHistory).where(BehaviorGoalHistory.goal_id == goal_id)
+        ).all()
+        assert goal is not None and goal.last_progress_attempt_event_id == event_id
+        assert goal.last_progress_analysis_revision == 2
+        assert series.current_revision_number == 2
+        assert len(revisions) == 2
+        assert len(history) == 1
+        assert history[0].event_type in {
+            "evidence_reopened",
+            "historical_evidence_changed",
+        }
+        assert process_due_goals(session, limit=10)["recomputed"] == 0
+        assert len(
+            session.exec(
+                select(BehaviorGoalHistory).where(BehaviorGoalHistory.goal_id == goal_id)
+            ).all()
+        ) == 1
     engine.dispose()

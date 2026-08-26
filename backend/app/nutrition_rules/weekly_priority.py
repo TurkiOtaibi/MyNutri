@@ -820,7 +820,11 @@ def apply_repeat_event(
 
 
 def validate_producer(
-    source: WeeklyPriorityAnalysisInputV1, *, stale: bool = False, superseded: bool = False
+    source: WeeklyPriorityAnalysisInputV1,
+    *,
+    stale: bool = False,
+    superseded: bool = False,
+    require_selector_eligibility: bool = True,
 ) -> str:
     if (
         source.interface_version not in SUPPORTED_INTERFACE_VERSIONS
@@ -837,7 +841,7 @@ def validate_producer(
         return "stale_analysis"
     if source.safety_flags:
         return "safety_exclusion"
-    if sum(day.analysis_eligible for day in source.days) < 4:
+    if require_selector_eligibility and sum(day.analysis_eligible for day in source.days) < 4:
         return "invalid_analysis_input"
     return "eligible"
 

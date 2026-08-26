@@ -25,6 +25,19 @@ def _json() -> postgresql.JSONB:
 
 
 def upgrade() -> None:
+    # PLAN 032 is already deployed. This unreleased PLAN 033 revision adds only
+    # the owner/time identity and lookup needed to consume immutable producer
+    # invalidation events without changing the PLAN 032 public contract.
+    op.create_unique_constraint(
+        "uq_nutrition_analysis_event_owner_time",
+        "nutrition_analysis_revision_event",
+        ["id", "principal_id", "occurred_at"],
+    )
+    op.create_index(
+        "ix_nutrition_analysis_event_owner_revision_time_id",
+        "nutrition_analysis_revision_event",
+        ["principal_id", "revision_id", "occurred_at", "id"],
+    )
     op.create_table(
         "weekly_priority_recommendation",
         sa.Column("id", _uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
@@ -241,6 +254,8 @@ def upgrade() -> None:
         sa.Column("last_progress_attempt_analysis_id", _uuid()),
         sa.Column("last_progress_attempt_analysis_revision_id", _uuid()),
         sa.Column("last_progress_attempt_analysis_revision", sa.Integer()),
+        sa.Column("last_progress_attempt_event_id", _uuid()),
+        sa.Column("last_progress_attempt_event_occurred_at", sa.DateTime(timezone=True)),
         sa.Column("reminder_preference", sa.String(16), nullable=False, server_default="disabled"),
         sa.Column(
             "external_notifications_enabled",
@@ -277,6 +292,20 @@ def upgrade() -> None:
             ["recommendation_id", "principal_id"],
             ["weekly_priority_recommendation.id", "weekly_priority_recommendation.principal_id"],
             name="fk_behavior_goal_recommendation_owner",
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            [
+                "last_progress_attempt_event_id",
+                "principal_id",
+                "last_progress_attempt_event_occurred_at",
+            ],
+            [
+                "nutrition_analysis_revision_event.id",
+                "nutrition_analysis_revision_event.principal_id",
+                "nutrition_analysis_revision_event.occurred_at",
+            ],
+            name="fk_behavior_goal_progress_attempt_event_owner",
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
@@ -361,6 +390,11 @@ def upgrade() -> None:
             "(last_progress_attempt_analysis_id IS NOT NULL AND last_progress_attempt_analysis_revision_id IS NOT NULL AND last_progress_attempt_analysis_revision >= 1)",
             name="ck_behavior_goal_progress_attempt_source",
         ),
+        sa.CheckConstraint(
+            "(last_progress_attempt_event_id IS NULL AND last_progress_attempt_event_occurred_at IS NULL) OR "
+            "(last_progress_attempt_event_id IS NOT NULL AND last_progress_attempt_event_occurred_at IS NOT NULL)",
+            name="ck_behavior_goal_progress_attempt_event",
+        ),
     )
     op.create_index(
         "uq_behavior_goal_one_primary",
@@ -406,6 +440,17 @@ def upgrade() -> None:
             "state = 'completed' AND reviewed_at IS NOT NULL "
             "AND last_progress_attempt_analysis_revision_id IS NOT NULL"
         ),
+    )
+    op.create_index(
+        "ix_behavior_goal_finalized_attempt_event",
+        "behavior_goal",
+        [
+            "last_progress_attempt_event_occurred_at",
+            "last_progress_attempt_event_id",
+            "window_end",
+            "id",
+        ],
+        postgresql_where=sa.text("state = 'completed' AND reviewed_at IS NOT NULL"),
     )
 
     op.create_table(
@@ -678,6 +723,7 @@ def downgrade() -> None:
     op.drop_table("behavior_goal_history")
     op.drop_index("ix_behavior_goal_history", table_name="behavior_goal")
     op.drop_index("ix_behavior_goal_due_progress_source", table_name="behavior_goal")
+    op.drop_index("ix_behavior_goal_finalized_attempt_event", table_name="behavior_goal")
     op.drop_index("ix_behavior_goal_finalized_attempt_revision", table_name="behavior_goal")
     op.drop_index("ix_behavior_goal_finalized_unattempted", table_name="behavior_goal")
     op.drop_index("uq_behavior_goal_one_primary", table_name="behavior_goal")
@@ -691,3 +737,12 @@ def downgrade() -> None:
     op.drop_index("ix_weekly_priority_current", table_name="weekly_priority_recommendation")
     op.drop_index("uq_weekly_priority_one_selected", table_name="weekly_priority_recommendation")
     op.drop_table("weekly_priority_recommendation")
+    op.drop_index(
+        "ix_nutrition_analysis_event_owner_revision_time_id",
+        table_name="nutrition_analysis_revision_event",
+    )
+    op.drop_constraint(
+        "uq_nutrition_analysis_event_owner_time",
+        "nutrition_analysis_revision_event",
+        type_="unique",
+    )

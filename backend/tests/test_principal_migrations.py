@@ -62,7 +62,7 @@ BASELINE_HASHES = {
     "9f2a1b6c3d05_plan025_admin_diary_order_index.py": "727052a802eeee1d6e4f493fc7d21e963cf6f6de7a7b78b102bf42c3d7c2c152",
     "b7e31a4c9d20_add_diary_day_status.py": "cef968f1e3786213eef07a337e5a178501305dfb07a47a772a370a2f8c50d939",
     "c3a7e6d5f210_add_nutrition_pattern_analysis.py": "eb23950260d4e338c4a2db537a65eff594aad76d3caaee17aa4e3c32896f7617",
-    "22733dbf5249_add_weekly_priorities_and_behavior_goals.py": "0e24c362f9a53d076417412e60311e2fd3f4847d091d17c7fdd5a0cc7425f9ba",
+    "22733dbf5249_add_weekly_priorities_and_behavior_goals.py": "d340c5e285b45c461bf2a4820b346634611afce82f37de9f14e2802f668bb6e5",
     "df46234d2a7e_constrain_finite_food_nutrients.py": "70767434911230795129b4702f8d4bf2e9a4add9dcf1607c3fa648dfebdd0674",
 }
 DEPLOYMENT_PRINCIPAL = UUID("00000000-0000-0000-0000-000000000001")
@@ -176,7 +176,12 @@ def test_plan033_migration_is_additive_owner_bound_and_fails_closed() -> None:
     assert "ix_behavior_goal_due_progress_source" in migration
     assert "ix_behavior_goal_finalized_unattempted" in migration
     assert "ix_behavior_goal_finalized_attempt_revision" in migration
+    assert "ix_behavior_goal_finalized_attempt_event" in migration
     assert "ix_behavior_goal_history_principal_occurred_id" in migration
+    assert "uq_nutrition_analysis_event_owner_time" in migration
+    assert "ix_nutrition_analysis_event_owner_revision_time_id" in migration
+    assert "fk_behavior_goal_progress_attempt_event_owner" in migration
+    assert "ck_behavior_goal_progress_attempt_event" in migration
     assert "REVOKE ALL PRIVILEGES ON TABLE public.%I FROM PUBLIC" in migration
     assert "ARRAY['anon', 'authenticated']" in migration
     assert "IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = data_api_role)" in migration
@@ -613,6 +618,8 @@ def test_plan033_tables_deny_supabase_data_api_roles_and_preserve_backend_owner(
             "last_progress_attempt_analysis_id",
             "last_progress_attempt_analysis_revision_id",
             "last_progress_attempt_analysis_revision",
+            "last_progress_attempt_event_id",
+            "last_progress_attempt_event_occurred_at",
         }.issubset(goal_columns)
         indexes = {
             row[0]: row[1]
@@ -620,12 +627,14 @@ def test_plan033_tables_deny_supabase_data_api_roles_and_preserve_backend_owner(
                 text(
                     "SELECT indexname, indexdef FROM pg_indexes "
                     "WHERE schemaname='public' AND tablename IN "
-                    "('behavior_goal','behavior_goal_history')"
+                    "('behavior_goal','behavior_goal_history',"
+                    "'nutrition_analysis_revision_event')"
                 )
             )
         }
         assert "ix_behavior_goal_finalized_unattempted" in indexes
         assert "ix_behavior_goal_finalized_attempt_revision" in indexes
+        assert "ix_behavior_goal_finalized_attempt_event" in indexes
         for index_name in (
             "ix_behavior_goal_finalized_unattempted",
             "ix_behavior_goal_finalized_attempt_revision",
@@ -634,6 +643,9 @@ def test_plan033_tables_deny_supabase_data_api_roles_and_preserve_backend_owner(
             assert "reviewed_at IS NOT NULL" in indexes[index_name]
         assert indexes["ix_behavior_goal_history_principal_occurred_id"].endswith(
             "(principal_id, occurred_at DESC, id DESC)"
+        )
+        assert indexes["ix_nutrition_analysis_event_owner_revision_time_id"].endswith(
+            "(principal_id, revision_id, occurred_at, id)"
         )
         for table in tables:
             for role in ("anon", "authenticated"):
