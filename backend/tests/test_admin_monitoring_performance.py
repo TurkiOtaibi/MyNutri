@@ -35,6 +35,7 @@ from app.models import (
     Profile,
     Sex,
     TargetProvenance,
+    WeeklyPriorityRecommendation,
 )
 from app.services.pattern_analysis import analysis_history
 import app.services.weekly_priorities as weekly_priority_service
@@ -827,6 +828,215 @@ def test_plan033_due_batch_bulk_loads_sources_and_reminders(admin_context) -> No
     # Cohort/owner discovery, one bounded goal/reminder/recommendation batch,
     # and two bounded source-validation batches are constant in goal count.
     assert len(reads) <= 14
+
+
+def _add_current_analysis_history(
+    session: Session,
+    *,
+    principal_id: UUID,
+    source,
+    history_depth: int,
+) -> NutritionAnalysis:
+    series_rows = [
+        NutritionAnalysis(
+            id=uuid4(),
+            principal_id=principal_id,
+            as_of_diary_date=source.as_of_diary_date + timedelta(days=index),
+            calendar_timezone="Asia/Riyadh",
+        )
+        for index in range(1, history_depth)
+    ]
+    session.add_all(series_rows)
+    session.flush()
+    revisions = [
+        NutritionAnalysisRevision(
+            id=uuid4(),
+            analysis_id=series.id,
+            principal_id=principal_id,
+            revision=1,
+            period_start=source.period_start,
+            period_end=source.period_end,
+            previous_period_start=source.previous_period_start,
+            previous_period_end=source.previous_period_end,
+            analysis_rules_version=source.analysis_rules_version,
+            source_versions={},
+            source_input_hash=series.id.hex * 2,
+            content_hash=series.id.hex[::-1] * 2,
+            complete_day_count=4,
+            previous_complete_day_count=0,
+            result_status="available",
+            analysis_document={},
+        )
+        for series in series_rows
+    ]
+    session.add_all(revisions)
+    session.flush()
+    for series, revision in zip(series_rows, revisions, strict=True):
+        series.current_revision_id = revision.id
+        series.current_revision_number = revision.revision
+        session.add(series)
+    session.commit()
+    return series_rows[-1]
+
+
+@pytest.mark.parametrize("history_depth", [10, 100, 500])
+def test_plan033_postgresql_source_authority_is_bounded_by_owner_and_bound_series(
+    plan025_postgresql_session: Session,
+    history_depth: int,
+) -> None:
+    session = plan025_postgresql_session
+    graphs = [_persist_trackable_graph(session) for _ in range(2)]
+    recommendation_ids = [graph[4].id for graph in graphs]
+    expected_latest = {
+        principal_id: _add_current_analysis_history(
+            session,
+            principal_id=principal_id,
+            source=source,
+            history_depth=history_depth,
+        ).id
+        for principal_id, source, _series, _revision, _recommendation in graphs
+    }
+    session.expunge_all()
+    recommendations = list(
+        session.exec(
+            select(WeeklyPriorityRecommendation).where(
+                WeeklyPriorityRecommendation.id.in_(recommendation_ids)
+            )
+        ).all()
+    )
+    materialized_series: set[UUID] = set()
+
+    def record_series_load(series, _context) -> None:
+        materialized_series.add(series.id)
+
+    event.listen(NutritionAnalysis, "load", record_series_load)
+    try:
+        with _capture_statements(session) as statements:
+            authority = weekly_priority_service._load_recommendation_source_authority(
+                session, recommendations
+            )
+    finally:
+        event.remove(NutritionAnalysis, "load", record_series_load)
+
+    bound_ids = {row.source_analysis_id for row in recommendations}
+    principal_ids = {row.principal_id for row in recommendations}
+    assert set(authority.bound_by_id) == bound_ids
+    assert {
+        principal_id: series.id
+        for principal_id, series in authority.latest_by_principal.items()
+    } == expected_latest
+    assert all(
+        authority.bound_by_id[row.source_analysis_id].principal_id == row.principal_id
+        for row in recommendations
+    )
+    assert materialized_series == bound_ids | set(expected_latest.values())
+    assert len(materialized_series) <= len(bound_ids) + len(principal_ids)
+
+    progress = weekly_priority_service._validate_recommendation_sources(
+        recommendations,
+        authority,
+        allow_newer_revision=True,
+        allow_insufficient_progress_evidence=True,
+        require_trackable=True,
+    )
+    actions = weekly_priority_service._validate_recommendation_sources(
+        recommendations, authority, require_trackable=True
+    )
+    assert {result.state for result in progress.values()} == {"VALID"}
+    assert {result.state for result in actions.values()} == {"SUPERSEDED"}
+
+    source_authority_selects = [
+        statement
+        for statement in statements
+        if statement.startswith("select ")
+        and any(
+            f" from {table} " in statement
+            for table in (
+                "nutrition_analysis",
+                "nutrition_analysis_revision",
+                "nutrition_analysis_revision_event",
+            )
+        )
+    ]
+    assert len(source_authority_selects) == 4
+
+    if history_depth == 500:
+        session.execute(text("ANALYZE nutrition_analysis"))
+        principal_a, principal_b = sorted(principal_ids)
+        plan = _explain(
+            session,
+            "SELECT latest.* FROM nutrition_analysis AS latest "
+            "JOIN (SELECT principal.id AS principal_id, "
+            "(SELECT candidate.id FROM nutrition_analysis AS candidate "
+            "WHERE candidate.principal_id=principal.id "
+            "AND candidate.current_revision_id IS NOT NULL "
+            "ORDER BY candidate.as_of_diary_date DESC, candidate.id DESC LIMIT 1) "
+            "AS series_id FROM principal WHERE principal.id IN (:principal_a, :principal_b)) "
+            "AS latest_by_principal ON latest.id=latest_by_principal.series_id",
+            principal_a=principal_a,
+            principal_b=principal_b,
+        )
+        nodes = _walk_plan(plan)
+        latest_index_scans = [
+            node
+            for node in nodes
+            if node.get("Index Name") == "ix_nutrition_analysis_principal_date_desc"
+            and node["Node Type"] in {"Index Scan", "Index Only Scan"}
+        ]
+        assert latest_index_scans, plan
+        assert not any(
+            node["Node Type"] in {"Sort", "Incremental Sort"}
+            and any(
+                descendant.get("Relation Name") == "nutrition_analysis"
+                for descendant in _walk_plan(node)
+            )
+            for node in nodes
+        ), plan
+
+
+def test_plan033_scheduler_reuses_one_source_authority_batch(
+    plan025_postgresql_session: Session,
+) -> None:
+    session = plan025_postgresql_session
+    graphs = [_persist_trackable_graph(session) for _ in range(2)]
+    for principal_id, source, series, revision, recommendation in graphs:
+        _add_due_goal(
+            session,
+            principal_id=principal_id,
+            source=source,
+            series=series,
+            revision=revision,
+            recommendation=recommendation,
+            state="active",
+            reviewed=False,
+        )
+    session.commit()
+
+    with _capture_statements(session) as statements:
+        result = process_due_goals(session, limit=100)
+
+    authority_series_loads = [
+        statement
+        for statement in statements
+        if statement.startswith("select nutrition_analysis.id, ")
+        and " from nutrition_analysis " in statement
+    ]
+    authority_revision_loads = [
+        statement
+        for statement in statements
+        if statement.startswith("select nutrition_analysis_revision.id, ")
+        and " from nutrition_analysis_revision " in statement
+    ]
+    authority_event_loads = [
+        statement
+        for statement in statements
+        if statement.startswith("select nutrition_analysis_revision_event.id, ")
+        and " from nutrition_analysis_revision_event " in statement
+    ]
+    assert result["processed"] == 2
+    assert len(authority_series_loads) == 2
+    assert len(authority_revision_loads) == 1
+    assert len(authority_event_loads) == 1
 
 
 def _add_due_goal(

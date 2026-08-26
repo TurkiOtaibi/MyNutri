@@ -113,6 +113,14 @@ class RecommendationSourceValidation:
     source: WeeklyPriorityAnalysisInputV1 | None = None
 
 
+@dataclass(frozen=True)
+class RecommendationSourceAuthority:
+    bound_by_id: dict[UUID, NutritionAnalysis]
+    latest_by_principal: dict[UUID, NutritionAnalysis]
+    revision_by_id: dict[UUID, NutritionAnalysisRevision]
+    events_by_revision: dict[UUID, set[str]]
+
+
 _STALE_SOURCE_EVENTS = {
     "day_reopened",
     "day_version_changed",
@@ -374,49 +382,61 @@ def _project_recommendation(row: WeeklyPriorityRecommendation) -> WeeklyPriority
     return WeeklyPriorityResultV1.model_validate(document)
 
 
-def _recommendation_source_validations(
+def _load_recommendation_source_authority(
     session: Session,
     recommendations: list[WeeklyPriorityRecommendation],
-    *,
-    allow_newer_revision: bool = False,
-    allow_insufficient_progress_evidence: bool = False,
-    require_trackable: bool = False,
-) -> dict[UUID, RecommendationSourceValidation]:
-    """Validate persisted recommendations against the current PLAN 032 authority.
+) -> RecommendationSourceAuthority:
+    """Load the bounded PLAN 032 authority needed for recommendation validation.
 
-    The loader is intentionally batch-shaped so scheduled processing does not
-    regress to a source/revision/event query per goal.
+    Bound historical series are loaded directly. Latest current series are
+    selected once per Principal in the database through an indexed correlated
+    top-one probe, so lifetime date-keyed history is never materialized here.
     """
     if not recommendations:
-        return {}
+        return RecommendationSourceAuthority({}, {}, {}, {})
     principal_ids = {row.principal_id for row in recommendations}
     source_analysis_ids = {row.source_analysis_id for row in recommendations}
-    series_rows = list(
+
+    bound_rows = list(
         session.exec(
-            select(NutritionAnalysis)
-            .where(
-                NutritionAnalysis.principal_id.in_(principal_ids),
-                NutritionAnalysis.current_revision_id.is_not(None),
-            )
-            .order_by(
-                NutritionAnalysis.principal_id,
-                NutritionAnalysis.as_of_diary_date.desc(),
-                NutritionAnalysis.id.desc(),
-            )
+            select(NutritionAnalysis).where(NutritionAnalysis.id.in_(source_analysis_ids))
         ).all()
     )
-    latest_by_principal: dict[UUID, NutritionAnalysis] = {}
-    bound_by_id: dict[UUID, NutritionAnalysis] = {}
-    for series in series_rows:
-        latest_by_principal.setdefault(series.principal_id, series)
-        if series.id in source_analysis_ids:
-            bound_by_id[series.id] = series
-    missing_source_ids = source_analysis_ids - set(bound_by_id)
-    if missing_source_ids:
-        for series in session.exec(
-            select(NutritionAnalysis).where(NutritionAnalysis.id.in_(missing_source_ids))
-        ).all():
-            bound_by_id[series.id] = series
+    bound_by_id = {row.id: row for row in bound_rows}
+
+    latest_series_id = (
+        select(NutritionAnalysis.id)
+        .where(
+            NutritionAnalysis.principal_id == Principal.id,
+            NutritionAnalysis.current_revision_id.is_not(None),
+        )
+        .order_by(
+            NutritionAnalysis.as_of_diary_date.desc(),
+            NutritionAnalysis.id.desc(),
+        )
+        .limit(1)
+        .correlate(Principal)
+        .scalar_subquery()
+    )
+    latest_ids_by_principal = (
+        select(
+            Principal.id.label("principal_id"),
+            latest_series_id.label("series_id"),
+        )
+        .where(Principal.id.in_(principal_ids))
+        .subquery()
+    )
+    latest_rows = list(
+        session.exec(
+            select(NutritionAnalysis)
+            .join(
+                latest_ids_by_principal,
+                latest_ids_by_principal.c.series_id == NutritionAnalysis.id,
+            )
+            .where(latest_ids_by_principal.c.series_id.is_not(None))
+        ).all()
+    )
+    latest_by_principal = {row.principal_id: row for row in latest_rows}
 
     revision_ids = {row.source_analysis_revision_id for row in recommendations}
     revision_ids.update(
@@ -440,6 +460,28 @@ def _recommendation_source_validations(
     events_by_revision: dict[UUID, set[str]] = {}
     for event in events:
         events_by_revision.setdefault(event.revision_id, set()).add(event.event_type)
+
+    return RecommendationSourceAuthority(
+        bound_by_id=bound_by_id,
+        latest_by_principal=latest_by_principal,
+        revision_by_id=revision_by_id,
+        events_by_revision=events_by_revision,
+    )
+
+
+def _validate_recommendation_sources(
+    recommendations: list[WeeklyPriorityRecommendation],
+    authority: RecommendationSourceAuthority,
+    *,
+    allow_newer_revision: bool = False,
+    allow_insufficient_progress_evidence: bool = False,
+    require_trackable: bool = False,
+) -> dict[UUID, RecommendationSourceValidation]:
+    """Apply one centralized policy to an immutable loaded source authority."""
+    bound_by_id = authority.bound_by_id
+    latest_by_principal = authority.latest_by_principal
+    revision_by_id = authority.revision_by_id
+    events_by_revision = authority.events_by_revision
 
     validations: dict[UUID, RecommendationSourceValidation] = {}
     for recommendation in recommendations:
@@ -560,6 +602,25 @@ def _recommendation_source_validations(
             state, bound_series, source_revision, source
         )
     return validations
+
+
+def _recommendation_source_validations(
+    session: Session,
+    recommendations: list[WeeklyPriorityRecommendation],
+    *,
+    allow_newer_revision: bool = False,
+    allow_insufficient_progress_evidence: bool = False,
+    require_trackable: bool = False,
+) -> dict[UUID, RecommendationSourceValidation]:
+    """Convenience validator for non-batch callers using one bounded DB load."""
+    authority = _load_recommendation_source_authority(session, recommendations)
+    return _validate_recommendation_sources(
+        recommendations,
+        authority,
+        allow_newer_revision=allow_newer_revision,
+        allow_insufficient_progress_evidence=allow_insufficient_progress_evidence,
+        require_trackable=require_trackable,
+    )
 
 
 def _validate_recommendation_source(
@@ -2136,15 +2197,18 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
                 pass
             refreshed_sources.add(refresh_key)
 
-    progress_validations = _recommendation_source_validations(
-        session,
+    source_authority = _load_recommendation_source_authority(session, recommendation_rows)
+    progress_validations = _validate_recommendation_sources(
         recommendation_rows,
+        source_authority,
         allow_newer_revision=True,
         allow_insufficient_progress_evidence=True,
         require_trackable=True,
     )
-    action_validations = _recommendation_source_validations(
-        session, recommendation_rows, require_trackable=True
+    action_validations = _validate_recommendation_sources(
+        recommendation_rows,
+        source_authority,
+        require_trackable=True,
     )
     finalized = reminders = recomputed = 0
     delivery_enabled = get_settings().behavior_goal_reminder_delivery_enabled
