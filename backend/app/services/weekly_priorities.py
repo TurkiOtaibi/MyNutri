@@ -1890,86 +1890,121 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
         ),
     )
 
-    # Lock owners before goal/source rows so historical producer refresh follows
-    # the same Principal -> series -> day/revision ordering as public analysis.
-    principal_ids = set(
-        session.exec(
-            select(BehaviorGoal.principal_id)
-            .where(
-                or_(
-                    normal_due,
-                    finalized_unattempted,
-                    finalized_revision_advanced,
-                    finalized_event_pending,
-                )
-            )
-            .order_by(BehaviorGoal.window_end, BehaviorGoal.id)
-            .limit(limit * 4)
-        ).all()
+    # Discover the exact bounded cohort without taking goal locks. The owner set
+    # is derived from this work only, then locked in canonical Principal order.
+    # Goal eligibility is re-checked after those owner locks are held; workers
+    # never claim replacement work for an owner they did not lock.
+    def discover_candidates(predicate, *, order_by, capacity, excluded_ids=frozenset()):
+        if capacity <= 0:
+            return []
+        query = select(
+            BehaviorGoal.id.label("goal_id"),
+            BehaviorGoal.principal_id.label("principal_id"),
+        ).where(predicate)
+        if excluded_ids:
+            query = query.where(BehaviorGoal.id.not_in(excluded_ids))
+        return list(session.exec(query.order_by(*order_by).limit(capacity)).all())
+
+    normal_candidates = discover_candidates(
+        normal_due,
+        order_by=(BehaviorGoal.window_end, BehaviorGoal.id),
+        capacity=limit,
     )
-    if principal_ids:
+    unattempted_candidates = discover_candidates(
+        finalized_unattempted,
+        order_by=(BehaviorGoal.window_end, BehaviorGoal.id),
+        capacity=limit,
+    )
+    remaining_historical_capacity = limit - len(unattempted_candidates)
+    advanced_candidates = discover_candidates(
+        finalized_revision_advanced,
+        order_by=(
+            BehaviorGoal.last_progress_attempt_analysis_id,
+            BehaviorGoal.last_progress_attempt_analysis_revision,
+            BehaviorGoal.window_end,
+            BehaviorGoal.id,
+        ),
+        capacity=remaining_historical_capacity,
+    )
+    selected_historical_candidate_ids = {
+        row.goal_id for row in [*unattempted_candidates, *advanced_candidates]
+    }
+    remaining_historical_capacity -= len(advanced_candidates)
+    event_candidates = discover_candidates(
+        finalized_event_pending,
+        order_by=(
+            BehaviorGoal.last_progress_attempt_event_occurred_at,
+            BehaviorGoal.last_progress_attempt_event_id,
+            BehaviorGoal.window_end,
+            BehaviorGoal.id,
+        ),
+        capacity=remaining_historical_capacity,
+        excluded_ids=selected_historical_candidate_ids,
+    )
+    all_candidates = [
+        *normal_candidates,
+        *unattempted_candidates,
+        *advanced_candidates,
+        *event_candidates,
+    ]
+    principal_ids = sorted({row.principal_id for row in all_candidates})
+    locked_principal_ids = set(
         session.exec(
-            select(Principal)
+            select(Principal.id)
             .where(Principal.id.in_(principal_ids))
             .order_by(Principal.id)
             .with_for_update()
         ).all()
+        if principal_ids
+        else []
+    )
 
-    normal_rows = list(
-        session.exec(
-            select(BehaviorGoal)
-            .where(normal_due)
-            .order_by(BehaviorGoal.window_end, BehaviorGoal.id)
-            .limit(limit)
-            .with_for_update(skip_locked=True)
-        ).all()
+    def reclaim_candidates(candidates, predicate, *, order_by):
+        candidate_ids = {row.goal_id for row in candidates}
+        if not candidate_ids or not locked_principal_ids:
+            return []
+        return list(
+            session.exec(
+                select(BehaviorGoal)
+                .where(
+                    BehaviorGoal.id.in_(candidate_ids),
+                    BehaviorGoal.principal_id.in_(locked_principal_ids),
+                    predicate,
+                )
+                .order_by(*order_by)
+                .with_for_update(skip_locked=True)
+            ).all()
+        )
+
+    normal_rows = reclaim_candidates(
+        normal_candidates,
+        normal_due,
+        order_by=(BehaviorGoal.window_end, BehaviorGoal.id),
     )
-    unattempted_rows = list(
-        session.exec(
-            select(BehaviorGoal)
-            .where(finalized_unattempted)
-            .order_by(BehaviorGoal.window_end, BehaviorGoal.id)
-            .limit(limit)
-            .with_for_update(skip_locked=True)
-        ).all()
+    unattempted_rows = reclaim_candidates(
+        unattempted_candidates,
+        finalized_unattempted,
+        order_by=(BehaviorGoal.window_end, BehaviorGoal.id),
     )
-    remaining_historical_capacity = limit - len(unattempted_rows)
-    advanced_rows = list(
-        session.exec(
-            select(BehaviorGoal)
-            .where(finalized_revision_advanced)
-            .order_by(
-                BehaviorGoal.last_progress_attempt_analysis_id,
-                BehaviorGoal.last_progress_attempt_analysis_revision,
-                BehaviorGoal.window_end,
-                BehaviorGoal.id,
-            )
-            .limit(remaining_historical_capacity)
-            .with_for_update(skip_locked=True)
-        ).all()
-        if remaining_historical_capacity
-        else []
+    advanced_rows = reclaim_candidates(
+        advanced_candidates,
+        finalized_revision_advanced,
+        order_by=(
+            BehaviorGoal.last_progress_attempt_analysis_id,
+            BehaviorGoal.last_progress_attempt_analysis_revision,
+            BehaviorGoal.window_end,
+            BehaviorGoal.id,
+        ),
     )
-    selected_historical_ids = {goal.id for goal in [*unattempted_rows, *advanced_rows]}
-    remaining_historical_capacity -= len(advanced_rows)
-    event_rows = list(
-        session.exec(
-            select(BehaviorGoal)
-            .where(
-                finalized_event_pending,
-                BehaviorGoal.id.not_in(selected_historical_ids),
-            )
-            .order_by(
-                BehaviorGoal.last_progress_attempt_event_occurred_at,
-                BehaviorGoal.last_progress_attempt_event_id,
-                BehaviorGoal.window_end,
-                BehaviorGoal.id,
-            )
-            .limit(remaining_historical_capacity)
-            .with_for_update(skip_locked=True)
-        ).all()
-        if remaining_historical_capacity
-        else []
+    event_rows = reclaim_candidates(
+        event_candidates,
+        finalized_event_pending,
+        order_by=(
+            BehaviorGoal.last_progress_attempt_event_occurred_at,
+            BehaviorGoal.last_progress_attempt_event_id,
+            BehaviorGoal.window_end,
+            BehaviorGoal.id,
+        ),
     )
     historical_rows = [*unattempted_rows, *advanced_rows, *event_rows]
     rows = [*normal_rows, *historical_rows]
@@ -2051,11 +2086,20 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
                 ranked_events.c.analysis_id,
             ).where(ranked_events.c.event_rank == 1)
         ).all()
+        latest_event_ids = {row.event_id for row in latest_event_rows}
+        event_by_id = {
+            event.id: event
+            for event in session.exec(
+                select(NutritionAnalysisRevisionEvent).where(
+                    NutritionAnalysisRevisionEvent.id.in_(latest_event_ids)
+                )
+            ).all()
+        }
         latest_by_source = {
-            (row.analysis_id, row.principal_id): session.get(
-                NutritionAnalysisRevisionEvent, row.event_id
-            )
+            (row.analysis_id, row.principal_id): event_by_id[row.event_id]
             for row in latest_event_rows
+            if row.event_id in event_by_id
+            and event_by_id[row.event_id].principal_id == row.principal_id
         }
         refreshed_sources: set[tuple[UUID, UUID, UUID]] = set()
         for goal in event_rows:

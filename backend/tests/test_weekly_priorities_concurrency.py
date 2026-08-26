@@ -12,7 +12,7 @@ from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import make_url
 from sqlmodel import Session, select
 
@@ -221,11 +221,23 @@ def _run_evaluation(url: str, barrier: Barrier):
 
 def _run_due(url: str, barrier: Barrier):
     engine = create_engine(url)
+    locked_principal_ids: set[UUID] = set()
+
+    def capture_locks(_connection, _cursor, statement, parameters, _context, _executemany):
+        normalized = " ".join(statement.split()).lower()
+        if " from principal " not in normalized or " for update" not in normalized:
+            return
+        values = parameters.values() if isinstance(parameters, dict) else parameters
+        locked_principal_ids.update(value for value in values if isinstance(value, UUID))
+
+    event.listen(engine, "before_cursor_execute", capture_locks)
     try:
         with Session(engine) as session:
             barrier.wait()
-            return process_due_goals(session, limit=10)
+            result = process_due_goals(session, limit=10)
+            return {**result, "locked_principal_ids": locked_principal_ids}
     finally:
+        event.remove(engine, "before_cursor_execute", capture_locks)
         engine.dispose()
 
 
@@ -533,6 +545,10 @@ def test_concurrent_due_workers_refresh_one_stale_historical_series_once() -> No
         outcomes = list(executor.map(lambda _: _run_due(url, barrier), range(2)))
     assert sum(item["processed"] for item in outcomes) <= 2, outcomes
     assert sum(item["recomputed"] for item in outcomes) == 1, outcomes
+    assert all(
+        item["processed"] == 0 or PRINCIPAL_ID in item["locked_principal_ids"]
+        for item in outcomes
+    ), outcomes
 
     engine = create_engine(url)
     with Session(engine) as session:
