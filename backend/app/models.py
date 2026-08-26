@@ -1404,9 +1404,7 @@ class WeeklyPriorityEvaluation(SQLModel, table=True):
     evaluation_diary_date: date = Field(nullable=False)
     selector_eligible: bool = Field(nullable=False)
     recommendation_selected: bool = Field(nullable=False)
-    main_trackability: str | None = Field(
-        default=None, sa_column=Column(String(32), nullable=True)
-    )
+    main_trackability: str | None = Field(default=None, sa_column=Column(String(32), nullable=True))
     goal_offer_created: bool = Field(default=False, nullable=False)
     created_at: datetime = Field(
         default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
@@ -1483,6 +1481,20 @@ class BehaviorGoal(SQLModel, table=True):
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
+            [
+                "last_progress_attempt_analysis_id",
+                "last_progress_attempt_analysis_revision_id",
+                "principal_id",
+            ],
+            [
+                "nutrition_analysis_revision.analysis_id",
+                "nutrition_analysis_revision.id",
+                "nutrition_analysis_revision.principal_id",
+            ],
+            name="fk_behavior_goal_progress_attempt_source_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
             ["root_goal_id", "principal_id"],
             ["behavior_goal.id", "behavior_goal.principal_id"],
             name="fk_behavior_goal_root_owner",
@@ -1544,6 +1556,15 @@ class BehaviorGoal(SQLModel, table=True):
             "AND last_progress_analysis_revision >= 1)",
             name="ck_behavior_goal_progress_source",
         ),
+        CheckConstraint(
+            "(last_progress_attempt_analysis_id IS NULL "
+            "AND last_progress_attempt_analysis_revision_id IS NULL "
+            "AND last_progress_attempt_analysis_revision IS NULL) OR "
+            "(last_progress_attempt_analysis_id IS NOT NULL "
+            "AND last_progress_attempt_analysis_revision_id IS NOT NULL "
+            "AND last_progress_attempt_analysis_revision >= 1)",
+            name="ck_behavior_goal_progress_attempt_source",
+        ),
         Index(
             "uq_behavior_goal_one_primary",
             "principal_id",
@@ -1565,6 +1586,34 @@ class BehaviorGoal(SQLModel, table=True):
             "last_progress_analysis_revision_id",
             "window_end",
             "id",
+        ),
+        Index(
+            "ix_behavior_goal_finalized_unattempted",
+            "window_end",
+            "id",
+            postgresql_where=sa_text(
+                "state = 'completed' AND reviewed_at IS NOT NULL "
+                "AND last_progress_attempt_analysis_revision_id IS NULL"
+            ),
+            sqlite_where=sa_text(
+                "state = 'completed' AND reviewed_at IS NOT NULL "
+                "AND last_progress_attempt_analysis_revision_id IS NULL"
+            ),
+        ),
+        Index(
+            "ix_behavior_goal_finalized_attempt_revision",
+            "last_progress_attempt_analysis_id",
+            "last_progress_attempt_analysis_revision",
+            "window_end",
+            "id",
+            postgresql_where=sa_text(
+                "state = 'completed' AND reviewed_at IS NOT NULL "
+                "AND last_progress_attempt_analysis_revision_id IS NOT NULL"
+            ),
+            sqlite_where=sa_text(
+                "state = 'completed' AND reviewed_at IS NOT NULL "
+                "AND last_progress_attempt_analysis_revision_id IS NOT NULL"
+            ),
         ),
     )
 
@@ -1596,6 +1645,13 @@ class BehaviorGoal(SQLModel, table=True):
     last_progress_analysis_id: uuid.UUID | None = Field(default=None, nullable=True)
     last_progress_analysis_revision_id: uuid.UUID | None = Field(default=None, nullable=True)
     last_progress_analysis_revision: int | None = Field(
+        default=None, sa_column=Column(Integer(), nullable=True)
+    )
+    last_progress_attempt_analysis_id: uuid.UUID | None = Field(default=None, nullable=True)
+    last_progress_attempt_analysis_revision_id: uuid.UUID | None = Field(
+        default=None, nullable=True
+    )
+    last_progress_attempt_analysis_revision: int | None = Field(
         default=None, sa_column=Column(Integer(), nullable=True)
     )
     reminder_preference: str = Field(
@@ -1664,7 +1720,10 @@ class BehaviorGoalHistory(SQLModel, table=True):
             ondelete="RESTRICT",
         ),
         UniqueConstraint(
-            "goal_id", "goal_version", "principal_id", name="uq_behavior_goal_history_revision_owner"
+            "goal_id",
+            "goal_version",
+            "principal_id",
+            name="uq_behavior_goal_history_revision_owner",
         ),
         UniqueConstraint("goal_id", "goal_version", name="uq_behavior_goal_history_version"),
         CheckConstraint("actor_type IN ('owner','system')", name="ck_behavior_goal_history_actor"),
@@ -1681,6 +1740,12 @@ class BehaviorGoalHistory(SQLModel, table=True):
             name="ck_behavior_goal_history_reason",
         ),
         Index("ix_behavior_goal_history_goal_time", "goal_id", desc("occurred_at")),
+        Index(
+            "ix_behavior_goal_history_principal_occurred_id",
+            "principal_id",
+            desc("occurred_at"),
+            desc("id"),
+        ),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)

@@ -75,28 +75,32 @@ def _seed_goal(url: str, state: str = "offered") -> UUID:
     document = _persisted_producer_document(PRINCIPAL_ID, analysis_id)
     for day in document["days"]:
         if day["logging_status"] == "complete":
-            day["metric_values"] = [{
-                "metric_key": "nutrient:trans_fat_g",
-                "value": 1,
-                "value_state": "known",
-                "known_entry_count": 1,
-                "total_entry_count": 1,
-                "amount_qualifier": "exact",
-                "unit": "g",
-            }]
+            day["metric_values"] = [
+                {
+                    "metric_key": "nutrient:trans_fat_g",
+                    "value": 1,
+                    "value_state": "known",
+                    "known_entry_count": 1,
+                    "total_entry_count": 1,
+                    "amount_qualifier": "exact",
+                    "unit": "g",
+                }
+            ]
     metric = document["metric_facts"][0]
-    metric.update({
-        "metric_key": "nutrient:trans_fat_g",
-        "unit": "g",
-        "direction": "maximum",
-        "target": {
-            "type": "maximum",
-            "value": 0.1,
-            "lower": None,
-            "upper": None,
-            "source_plan_ids": [],
-        },
-    })
+    metric.update(
+        {
+            "metric_key": "nutrient:trans_fat_g",
+            "unit": "g",
+            "direction": "maximum",
+            "target": {
+                "type": "maximum",
+                "value": 0.1,
+                "lower": None,
+                "upper": None,
+                "source_plan_ids": [],
+            },
+        }
+    )
     metric["current"].update({"value": 1, "status": "above_target"})
     canonical = json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     with Session(engine) as session:
@@ -255,7 +259,9 @@ def test_duplicate_accept_replays_one_authoritative_response() -> None:
     barrier = Barrier(2)
     command = BehaviorGoalCommandV1(event="accept", expected_version=1)
     with ThreadPoolExecutor(max_workers=2) as executor:
-        outcomes = list(executor.map(lambda _: _run(url, goal_id, "same-key", command, barrier), range(2)))
+        outcomes = list(
+            executor.map(lambda _: _run(url, goal_id, "same-key", command, barrier), range(2))
+        )
     assert sorted(outcomes) == [(200, False, "accepted"), (200, True, "accepted")]
     engine = create_engine(url)
     with Session(engine) as session:
@@ -303,7 +309,9 @@ def test_concurrent_repeat_and_reduce_create_at_most_one_successor() -> None:
     }
     engine = create_engine(url)
     with Session(engine) as session:
-        successors = session.exec(select(BehaviorGoal).where(BehaviorGoal.previous_goal_id == goal_id)).all()
+        successors = session.exec(
+            select(BehaviorGoal).where(BehaviorGoal.previous_goal_id == goal_id)
+        ).all()
         assert len(successors) == 1
         source = session.get(BehaviorGoal, goal_id)
         assert source is not None and source.state == "incomplete" and source.version == 1
@@ -340,6 +348,9 @@ def test_concurrent_due_workers_process_one_new_revision_once() -> None:
         goal.last_progress_analysis_id = series.id
         goal.last_progress_analysis_revision_id = first_revision.id
         goal.last_progress_analysis_revision = first_revision.revision
+        goal.last_progress_attempt_analysis_id = series.id
+        goal.last_progress_attempt_analysis_revision_id = first_revision.id
+        goal.last_progress_attempt_analysis_revision = first_revision.revision
         next_document = dict(first_revision.analysis_document)
         next_document["source_analysis_revision"] = 2
         next_document["generated_at"] = now.isoformat()
@@ -379,6 +390,7 @@ def test_concurrent_due_workers_process_one_new_revision_once() -> None:
     with Session(engine) as session:
         goal = session.get(BehaviorGoal, goal_id)
         assert goal is not None and goal.last_progress_analysis_revision == 2
+        assert goal.last_progress_attempt_analysis_revision == 2
         events = session.exec(
             select(BehaviorGoalHistory).where(
                 BehaviorGoalHistory.goal_id == goal_id,
@@ -386,4 +398,94 @@ def test_concurrent_due_workers_process_one_new_revision_once() -> None:
             )
         ).all()
         assert len(events) == 1
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_concurrent_due_workers_record_one_rejected_revision_attempt() -> None:
+    url = _prepare()
+    goal_id = _seed_goal(url)
+    engine = create_engine(url)
+    with Session(engine) as session:
+        goal = session.get(BehaviorGoal, goal_id)
+        recommendation = session.exec(select(WeeklyPriorityRecommendation)).one()
+        series = session.get(NutritionAnalysis, recommendation.source_analysis_id)
+        first_revision = session.get(
+            NutritionAnalysisRevision, recommendation.source_analysis_revision_id
+        )
+        assert goal is not None and series is not None and first_revision is not None
+        now = datetime.now(timezone.utc)
+        goal.state = "completed"
+        goal.completed_at = now - timedelta(days=8)
+        goal.reviewed_at = now - timedelta(days=1)
+        goal.window_start = date.today() - timedelta(days=14)
+        goal.window_end = goal.window_start + timedelta(days=6)
+        goal.progress_document = {
+            **goal.progress_document,
+            "window_start": goal.window_start.isoformat(),
+            "window_end": goal.window_end.isoformat(),
+            "progress_count": 1,
+            "progress_percent": 33,
+            "status": "achieved",
+        }
+        goal.last_progress_analysis_id = series.id
+        goal.last_progress_analysis_revision_id = first_revision.id
+        goal.last_progress_analysis_revision = first_revision.revision
+        goal.last_progress_attempt_analysis_id = series.id
+        goal.last_progress_attempt_analysis_revision_id = first_revision.id
+        goal.last_progress_attempt_analysis_revision = first_revision.revision
+        invalid_document = dict(first_revision.analysis_document)
+        invalid_document["source_analysis_revision"] = 2
+        invalid_document["generated_at"] = now.isoformat()
+        invalid_document["interface_version"] = 99
+        rejected_revision = NutritionAnalysisRevision(
+            id=uuid4(),
+            analysis_id=series.id,
+            principal_id=PRINCIPAL_ID,
+            revision=2,
+            period_start=first_revision.period_start,
+            period_end=first_revision.period_end,
+            previous_period_start=first_revision.previous_period_start,
+            previous_period_end=first_revision.previous_period_end,
+            analysis_rules_version=first_revision.analysis_rules_version,
+            source_versions=first_revision.source_versions,
+            source_input_hash="9" * 64,
+            content_hash="a" * 64,
+            complete_day_count=first_revision.complete_day_count,
+            previous_complete_day_count=first_revision.previous_complete_day_count,
+            result_status=first_revision.result_status,
+            analysis_document=invalid_document,
+        )
+        rejected_revision_id = rejected_revision.id
+        session.add(goal)
+        session.add(rejected_revision)
+        session.commit()
+        series.current_revision_id = rejected_revision.id
+        series.current_revision_number = 2
+        session.add(series)
+        session.commit()
+    engine.dispose()
+
+    barrier = Barrier(2)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(lambda _: _run_due(url, barrier), range(2)))
+    assert sum(item["processed"] for item in outcomes) == 1
+    assert sum(item["recomputed"] for item in outcomes) == 0
+    engine = create_engine(url)
+    with Session(engine) as session:
+        goal = session.get(BehaviorGoal, goal_id)
+        assert goal is not None
+        assert goal.last_progress_analysis_revision == 1
+        assert goal.last_progress_attempt_analysis_revision == 2
+        assert goal.last_progress_attempt_analysis_revision_id == rejected_revision_id
+        assert (
+            session.exec(
+                select(BehaviorGoalHistory).where(
+                    BehaviorGoalHistory.goal_id == goal_id,
+                    BehaviorGoalHistory.event_type == "historical_evidence_changed",
+                )
+            ).all()
+            == []
+        )
+        assert process_due_goals(session, limit=10)["processed"] == 0
     engine.dispose()

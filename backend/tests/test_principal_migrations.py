@@ -62,7 +62,7 @@ BASELINE_HASHES = {
     "9f2a1b6c3d05_plan025_admin_diary_order_index.py": "727052a802eeee1d6e4f493fc7d21e963cf6f6de7a7b78b102bf42c3d7c2c152",
     "b7e31a4c9d20_add_diary_day_status.py": "cef968f1e3786213eef07a337e5a178501305dfb07a47a772a370a2f8c50d939",
     "c3a7e6d5f210_add_nutrition_pattern_analysis.py": "eb23950260d4e338c4a2db537a65eff594aad76d3caaee17aa4e3c32896f7617",
-    "22733dbf5249_add_weekly_priorities_and_behavior_goals.py": "c87895c76113e316297dccbe65428861c4c89ef91c8ef44e4325e1f664a3ce9c",
+    "22733dbf5249_add_weekly_priorities_and_behavior_goals.py": "0e24c362f9a53d076417412e60311e2fd3f4847d091d17c7fdd5a0cc7425f9ba",
     "df46234d2a7e_constrain_finite_food_nutrients.py": "70767434911230795129b4702f8d4bf2e9a4add9dcf1607c3fa648dfebdd0674",
 }
 DEPLOYMENT_PRINCIPAL = UUID("00000000-0000-0000-0000-000000000001")
@@ -108,11 +108,10 @@ AUTHORITATIVE_HISTORICAL_CHECKS = {
 
 def test_plan031_migration_is_additive_without_completion_backfill_and_fails_closed() -> None:
     migration = (
-        Path(__file__).parents[1]
-        / "alembic/versions/b7e31a4c9d20_add_diary_day_status.py"
+        Path(__file__).parents[1] / "alembic/versions/b7e31a4c9d20_add_diary_day_status.py"
     ).read_text(encoding="utf-8")
-    assert "create_table(\n        \"diary_day_status\"" in migration
-    assert "create_table(\n        \"diary_day_status_history\"" in migration
+    assert 'create_table(\n        "diary_day_status"' in migration
+    assert 'create_table(\n        "diary_day_status_history"' in migration
     assert "INSERT INTO DIARY_DAY_STATUS" not in migration.upper()
     assert "PLAN031_BACKFILL_MUST_REMAIN_EMPTY" in migration
     assert "PLAN031 downgrade requires an online empty-table preflight" in migration
@@ -172,10 +171,17 @@ def test_plan033_migration_is_additive_owner_bound_and_fails_closed() -> None:
     assert 'sa.Column("evaluation_diary_date", sa.Date(), nullable=False)' in migration
     assert 'sa.Column("evaluation_mode", sa.String(16), nullable=False)' in migration
     assert "fk_behavior_goal_progress_source_owner" in migration
+    assert "fk_behavior_goal_progress_attempt_source_owner" in migration
+    assert "ck_behavior_goal_progress_attempt_source" in migration
     assert "ix_behavior_goal_due_progress_source" in migration
+    assert "ix_behavior_goal_finalized_unattempted" in migration
+    assert "ix_behavior_goal_finalized_attempt_revision" in migration
+    assert "ix_behavior_goal_history_principal_occurred_id" in migration
     assert "REVOKE ALL PRIVILEGES ON TABLE public.%I FROM PUBLIC" in migration
     assert "ARRAY['anon', 'authenticated']" in migration
     assert "IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = data_api_role)" in migration
+
+
 POSTGRESQL_AUTHORITATIVE_CHECK_DEFINITIONS = {
     "ck_diary_entry_versioned_shape": (
         "CHECK (snapshot_schema_version IS NULL OR "
@@ -193,9 +199,7 @@ POSTGRESQL_AUTHORITATIVE_CHECK_DEFINITIONS = {
         "jsonb_typeof(legacy_target_document -> "
         "'resolved_targets'::text) = 'object'::text)"
     ),
-    "ck_profile_cut_intensity": (
-        "CHECK (cut_intensity = ANY (ARRAY[0.150, 0.200, 0.250]))"
-    ),
+    "ck_profile_cut_intensity": ("CHECK (cut_intensity = ANY (ARRAY[0.150, 0.200, 0.250]))"),
 }
 PLAN009_GROUP_NAN_CONSTRAINTS = frozenset(
     {
@@ -387,10 +391,7 @@ def _normalized_revision_hash(path: Path) -> str:
 def _assert_immutable_revision_hashes(versions: Path) -> None:
     revision_files = {path.name for path in versions.glob("*.py")}
     assert revision_files == set(BASELINE_HASHES)
-    actual = {
-        name: _normalized_revision_hash(versions / name)
-        for name in BASELINE_HASHES
-    }
+    actual = {name: _normalized_revision_hash(versions / name) for name in BASELINE_HASHES}
     assert actual == BASELINE_HASHES
 
 
@@ -414,9 +415,10 @@ def test_immutable_baseline_revision_hashes_detect_mutation(tmp_path: Path) -> N
 
 @pytest.mark.migration
 def test_authoritative_historical_checks_are_in_metadata_and_sqlite_safe() -> None:
-    for table_name, (constraint_name, expected_expression) in (
-        AUTHORITATIVE_HISTORICAL_CHECKS.items()
-    ):
+    for table_name, (
+        constraint_name,
+        expected_expression,
+    ) in AUTHORITATIVE_HISTORICAL_CHECKS.items():
         checks = [
             constraint
             for constraint in SQLModel.metadata.tables[table_name].constraints
@@ -438,16 +440,16 @@ def test_authoritative_historical_checks_are_in_metadata_and_sqlite_safe() -> No
     sqlite_inspector = inspect(sqlite_engine)
     sqlite_checks = {
         table_name: [
-            constraint["name"]
-            for constraint in sqlite_inspector.get_check_constraints(table_name)
+            constraint["name"] for constraint in sqlite_inspector.get_check_constraints(table_name)
         ]
         for table_name in AUTHORITATIVE_HISTORICAL_CHECKS
     }
 
     assert sqlite_checks["profile"].count("ck_profile_cut_intensity") == 1
-    assert "ck_legacy_transition_document_shape" not in sqlite_checks[
-        "legacy_target_transition_snapshots"
-    ]
+    assert (
+        "ck_legacy_transition_document_shape"
+        not in sqlite_checks["legacy_target_transition_snapshots"]
+    )
     assert "ck_diary_entry_versioned_shape" not in sqlite_checks["diary_entry"]
 
     profile_insert = text(
@@ -532,8 +534,7 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
         ).all()
     assert len(authoritative_checks) == len(POSTGRESQL_AUTHORITATIVE_CHECK_DEFINITIONS)
     assert {
-        name: _normalized_check_expression(definition)
-        for name, definition in authoritative_checks
+        name: _normalized_check_expression(definition) for name, definition in authoritative_checks
     } == {
         name: _normalized_check_expression(definition)
         for name, definition in POSTGRESQL_AUTHORITATIVE_CHECK_DEFINITIONS.items()
@@ -559,9 +560,9 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     assert {"food_group_contribution", "food_analytical_trait"}.issubset(
         inspector.get_table_names()
     )
-    assert {
-        "legacy_target_transition_snapshots", "target_plan", "idempotency_record"
-    }.issubset(inspector.get_table_names())
+    assert {"legacy_target_transition_snapshots", "target_plan", "idempotency_record"}.issubset(
+        inspector.get_table_names()
+    )
     diary_columns = {column["name"]: column for column in inspector.get_columns("diary_entry")}
     assert diary_columns["target_plan_id"]["nullable"] is True
     assert diary_columns["snapshot_schema_version"]["nullable"] is True
@@ -599,18 +600,59 @@ def test_plan033_tables_deny_supabase_data_api_roles_and_preserve_backend_owner(
     )
     engine = create_engine(url)
     with engine.connect() as connection:
+        goal_columns = {
+            row[0]
+            for row in connection.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema='public' AND table_name='behavior_goal'"
+                )
+            )
+        }
+        assert {
+            "last_progress_attempt_analysis_id",
+            "last_progress_attempt_analysis_revision_id",
+            "last_progress_attempt_analysis_revision",
+        }.issubset(goal_columns)
+        indexes = {
+            row[0]: row[1]
+            for row in connection.execute(
+                text(
+                    "SELECT indexname, indexdef FROM pg_indexes "
+                    "WHERE schemaname='public' AND tablename IN "
+                    "('behavior_goal','behavior_goal_history')"
+                )
+            )
+        }
+        assert "ix_behavior_goal_finalized_unattempted" in indexes
+        assert "ix_behavior_goal_finalized_attempt_revision" in indexes
+        for index_name in (
+            "ix_behavior_goal_finalized_unattempted",
+            "ix_behavior_goal_finalized_attempt_revision",
+        ):
+            assert "(state)::text = 'completed'::text" in indexes[index_name]
+            assert "reviewed_at IS NOT NULL" in indexes[index_name]
+        assert indexes["ix_behavior_goal_history_principal_occurred_id"].endswith(
+            "(principal_id, occurred_at DESC, id DESC)"
+        )
         for table in tables:
             for role in ("anon", "authenticated"):
                 for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
-                    assert connection.execute(
-                        text("SELECT has_table_privilege(:role, :table, :privilege)"),
-                        {"role": role, "table": f"public.{table}", "privilege": privilege},
-                    ).scalar_one() is False
+                    assert (
+                        connection.execute(
+                            text("SELECT has_table_privilege(:role, :table, :privilege)"),
+                            {"role": role, "table": f"public.{table}", "privilege": privilege},
+                        ).scalar_one()
+                        is False
+                    )
             for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
-                assert connection.execute(
-                    text("SELECT has_table_privilege(current_user, :table, :privilege)"),
-                    {"table": f"public.{table}", "privilege": privilege},
-                ).scalar_one() is True
+                assert (
+                    connection.execute(
+                        text("SELECT has_table_privilege(current_user, :table, :privilege)"),
+                        {"table": f"public.{table}", "privilege": privilege},
+                    ).scalar_one()
+                    is True
+                )
     for role in ("anon", "authenticated"):
         for table in tables:
             for statement in (
@@ -725,12 +767,10 @@ def _plan021_schema_signature(url: str) -> tuple[frozenset[str], ...]:
     engine = create_engine(url)
     inspector = inspect(engine)
     target_uniques = frozenset(
-        constraint["name"]
-        for constraint in inspector.get_unique_constraints("target_plan")
+        constraint["name"] for constraint in inspector.get_unique_constraints("target_plan")
     )
     ledger_uniques = frozenset(
-        constraint["name"]
-        for constraint in inspector.get_unique_constraints("idempotency_record")
+        constraint["name"] for constraint in inspector.get_unique_constraints("idempotency_record")
     )
     target_indexes = frozenset(index["name"] for index in inspector.get_indexes("target_plan"))
     target_foreign_keys = frozenset(
@@ -803,9 +843,7 @@ def _assert_plan021_operation_scoped_schema(url: str) -> None:
     assert "uq_target_plan_principal_key" not in target_uniques
     assert "uq_target_plan_id_principal" in target_uniques
     assert "uq_idempotency_scope" in ledger_uniques
-    assert {"uq_target_plan_one_active", "uq_target_plan_one_scheduled"}.issubset(
-        target_indexes
-    )
+    assert {"uq_target_plan_one_active", "uq_target_plan_one_scheduled"}.issubset(target_indexes)
     assert {
         "fk_target_plan_profile_owner",
         "fk_target_plan_predecessor_owner",
@@ -897,12 +935,10 @@ def test_plan021_downgrade_restores_constraint_before_cross_operation_reuse() ->
     engine = create_engine(url)
     inspector = inspect(engine)
     target_uniques = {
-        constraint["name"]
-        for constraint in inspector.get_unique_constraints("target_plan")
+        constraint["name"] for constraint in inspector.get_unique_constraints("target_plan")
     }
     ledger_uniques = {
-        constraint["name"]
-        for constraint in inspector.get_unique_constraints("idempotency_record")
+        constraint["name"] for constraint in inspector.get_unique_constraints("idempotency_record")
     }
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
@@ -943,9 +979,7 @@ def test_plan021_downgrade_blocks_duplicate_visible_keys_atomically() -> None:
     before_data = _plan021_data_signature(url)
     before_schema = _plan021_schema_signature(url)
     assert len(before_data[0]) == 2
-    assert {
-        (record[0], record[1], record[4]) for record in before_data[1]
-    } == {
+    assert {(record[0], record[1], record[4]) for record in before_data[1]} == {
         ("target_plan.activate", shared_key, activation_id),
         ("target_plan.replace", shared_key, replacement_id),
     }
@@ -1036,7 +1070,9 @@ def test_transition_snapshot_constraints_and_immutability() -> None:
     with engine.begin() as connection:
         with pytest.raises(DBAPIError, match="immutable"):
             connection.execute(
-                text("UPDATE legacy_target_transition_snapshots SET transition_date='2026-07-17' WHERE id=:id"),
+                text(
+                    "UPDATE legacy_target_transition_snapshots SET transition_date='2026-07-17' WHERE id=:id"
+                ),
                 {"id": snapshot_id},
             )
     with engine.begin() as connection:
@@ -1052,9 +1088,7 @@ def test_transition_snapshot_constraints_and_immutability() -> None:
             TRANSITION_SNAPSHOT_REVISION
         )
         assert connection.execute(
-            text(
-                "SELECT transition_date FROM legacy_target_transition_snapshots WHERE id=:id"
-            ),
+            text("SELECT transition_date FROM legacy_target_transition_snapshots WHERE id=:id"),
             {"id": snapshot_id},
         ).scalar_one() == date(2026, 7, 16)
         assert connection.execute(text("SELECT 1")).scalar_one() == 1
@@ -1253,10 +1287,13 @@ def test_snapshot_v2_database_shape_is_immutable_and_blocks_lossy_downgrade() ->
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
             SNAPSHOT_V2_REVISION
         )
-        assert connection.execute(
-            text("SELECT nutrition_snapshot::text FROM diary_entry WHERE id=:id"),
-            {"id": entry_id},
-        ).scalar_one() == before_delete
+        assert (
+            connection.execute(
+                text("SELECT nutrition_snapshot::text FROM diary_entry WHERE id=:id"),
+                {"id": entry_id},
+            ).scalar_one()
+            == before_delete
+        )
         assert connection.execute(text("SELECT 1")).scalar_one() == 1
     engine.dispose()
 
@@ -1404,7 +1441,9 @@ def test_concurrent_first_legacy_activations_create_one_snapshot_and_plan() -> N
     profile_id = uuid4()
     with engine.begin() as connection:
         connection.execute(
-            text("INSERT INTO principal (id,status,created_at,updated_at) VALUES (:id,'active',now(),now())"),
+            text(
+                "INSERT INTO principal (id,status,created_at,updated_at) VALUES (:id,'active',now(),now())"
+            ),
             {"id": DEPLOYMENT_PRINCIPAL},
         )
     _run_alembic(url, "upgrade", "head")
@@ -1423,8 +1462,14 @@ def test_concurrent_first_legacy_activations_create_one_snapshot_and_plan() -> N
             {"id": profile_id, "principal": DEPLOYMENT_PRINCIPAL},
         )
     draft = ProfilePreview(
-        sex="male", birth_date=date(1990, 1, 1), height_cm=175, weight_kg=82,
-        activity_level="moderate", goal="maintain", protein_per_kg=1.2, fat_pct=0.25,
+        sex="male",
+        birth_date=date(1990, 1, 1),
+        height_cm=175,
+        weight_kg=82,
+        activity_level="moderate",
+        goal="maintain",
+        protein_per_kg=1.2,
+        fat_pct=0.25,
         selected_cut_intensity=0.2,
     )
     preview = to_target_response(draft)
@@ -1449,7 +1494,12 @@ def test_concurrent_first_legacy_activations_create_one_snapshot_and_plan() -> N
     assert results.count("created") == 1
     assert set(results) == {"created", "TARGET_PLAN_PENDING_EXISTS"}
     with engine.connect() as connection:
-        assert connection.execute(text("SELECT count(*) FROM legacy_target_transition_snapshots")).scalar_one() == 1
+        assert (
+            connection.execute(
+                text("SELECT count(*) FROM legacy_target_transition_snapshots")
+            ).scalar_one()
+            == 1
+        )
         assert connection.execute(text("SELECT count(*) FROM target_plan")).scalar_one() == 1
         assert connection.execute(text("SELECT count(*) FROM idempotency_record")).scalar_one() == 1
     engine.dispose()
@@ -1491,12 +1541,15 @@ def test_plan021_concurrent_same_operation_is_one_execution_and_one_replay() -> 
     with engine.connect() as connection:
         assert connection.execute(text("SELECT count(*) FROM target_plan")).scalar_one() == 1
         assert connection.execute(text("SELECT count(*) FROM idempotency_record")).scalar_one() == 1
-        assert connection.execute(
-            text(
-                "SELECT operation FROM idempotency_record "
-                "WHERE idempotency_key='plan021-same-operation-race'"
-            )
-        ).scalar_one() == "target_plan.activate"
+        assert (
+            connection.execute(
+                text(
+                    "SELECT operation FROM idempotency_record "
+                    "WHERE idempotency_key='plan021-same-operation-race'"
+                )
+            ).scalar_one()
+            == "target_plan.activate"
+        )
     engine.dispose()
 
 
@@ -1576,10 +1629,7 @@ def test_plan021_concurrent_cross_operation_sessions_reuse_visible_key() -> None
         assert connection.execute(text("SELECT count(*) FROM idempotency_record")).scalar_one() == 2
         assert set(
             connection.execute(
-                text(
-                    "SELECT operation FROM idempotency_record "
-                    "WHERE idempotency_key=:key"
-                ),
+                text("SELECT operation FROM idempotency_record WHERE idempotency_key=:key"),
                 {"key": shared_key},
             ).scalars()
         ) == {"target_plan.activate", "target_plan.replace"}
@@ -1638,8 +1688,7 @@ def _seed_plan023_diary_entry(url: str) -> tuple[UUID, UUID, UUID]:
 def _plan023_constraint_names(url: str) -> set[str]:
     engine = create_engine(url)
     names = {
-        constraint["name"]
-        for constraint in inspect(engine).get_check_constraints("diary_entry")
+        constraint["name"] for constraint in inspect(engine).get_check_constraints("diary_entry")
     }
     engine.dispose()
     return names
@@ -1660,8 +1709,7 @@ def test_plan023_model_has_one_named_positive_finite_quantity_check() -> None:
     checks = [
         constraint
         for constraint in DiaryEntry.__table__.constraints
-        if isinstance(constraint, CheckConstraint)
-        and constraint.name == PLAN023_CONSTRAINT
+        if isinstance(constraint, CheckConstraint) and constraint.name == PLAN023_CONSTRAINT
     ]
 
     assert len(checks) == 1
@@ -1724,10 +1772,7 @@ def test_plan023_invalid_predecessor_rows_fail_closed_then_clean_fixture_upgrade
         engine = create_engine(url)
         with engine.begin() as connection:
             connection.execute(
-                text(
-                    "UPDATE diary_entry SET quantity = CAST(:quantity AS numeric) "
-                    "WHERE id = :id"
-                ),
+                text("UPDATE diary_entry SET quantity = CAST(:quantity AS numeric) WHERE id = :id"),
                 {"quantity": invalid, "id": entry_id},
             )
         engine.dispose()
@@ -1743,9 +1788,10 @@ def test_plan023_invalid_predecessor_rows_fail_closed_then_clean_fixture_upgrade
         assert str(entry_id) in output
         engine = create_engine(url)
         with engine.connect() as connection:
-            assert connection.execute(
-                text("SELECT version_num FROM alembic_version")
-            ).scalar_one() == PLAN021_REVISION
+            assert (
+                connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                == PLAN021_REVISION
+            )
         engine.dispose()
         assert PLAN023_CONSTRAINT not in _plan023_constraint_names(url)
         assert _plan023_quantity_text(url, entry_id) == before
@@ -1821,10 +1867,13 @@ def test_plan023_postgresql_direct_writes_enforce_positive_finite_quantity() -> 
                 )
         _assert_plan023_direct_write_rejected(insert_rejected.value, invalid)
         with engine.connect() as connection:
-            assert connection.execute(
-                text("SELECT count(*) FROM diary_entry WHERE id = :id"),
-                {"id": inserted_id},
-            ).scalar_one() == 0
+            assert (
+                connection.execute(
+                    text("SELECT count(*) FROM diary_entry WHERE id = :id"),
+                    {"id": inserted_id},
+                ).scalar_one()
+                == 0
+            )
 
         with pytest.raises(DBAPIError) as update_rejected:
             with engine.begin() as connection:
@@ -1883,9 +1932,7 @@ def _assert_plan009_special_value_failure(
 ) -> None:
     if special == "NaN":
         approved_names = (
-            frozenset({constraint_names})
-            if isinstance(constraint_names, str)
-            else constraint_names
+            frozenset({constraint_names}) if isinstance(constraint_names, str) else constraint_names
         )
         assert isinstance(error.orig, CheckViolation)
         assert error.orig.sqlstate == "23514"
@@ -1974,17 +2021,13 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
             set(FOOD_GROUP_NUMERIC_COLUMNS),
         ),
     }
-    for constraint_name, (table_name, expected_columns) in (
-        expected_constraint_metadata.items()
-    ):
+    for constraint_name, (table_name, expected_columns) in expected_constraint_metadata.items():
         constraint = constraints[constraint_name]
         assert constraint.convalidated is True
         assert constraint.table_name == table_name
         assert set(constraint.column_names) == expected_columns
         for special in ("NaN", "Infinity", "-Infinity"):
-            assert constraint.definition.count(f"'{special}'::numeric") == len(
-                expected_columns
-            )
+            assert constraint.definition.count(f"'{special}'::numeric") == len(expected_columns)
 
     def insert_values(insert_id: UUID, name: str) -> dict[str, object]:
         return {
@@ -2018,10 +2061,13 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
                 rejected.value, special, "ck_food_numeric_values_finite"
             )
             with engine.connect() as connection:
-                assert connection.execute(
-                    text("SELECT count(*) FROM food WHERE id = :food"),
-                    {"food": rejected_id},
-                ).scalar_one() == 0
+                assert (
+                    connection.execute(
+                        text("SELECT count(*) FROM food WHERE id = :food"),
+                        {"food": rejected_id},
+                    ).scalar_one()
+                    == 0
+                )
 
     for field in FOOD_NUMERIC_COLUMNS:
         with engine.connect() as connection:
@@ -2034,8 +2080,7 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
                 with engine.begin() as connection:
                     connection.execute(
                         text(
-                            f"UPDATE food SET {field} = CAST(:special AS numeric) "
-                            "WHERE id = :food"
+                            f"UPDATE food SET {field} = CAST(:special AS numeric) WHERE id = :food"
                         ),
                         {"special": special, "food": food_id},
                     )
@@ -2043,10 +2088,13 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
                 rejected.value, special, "ck_food_numeric_values_finite"
             )
             with engine.connect() as connection:
-                assert connection.execute(
-                    text(f"SELECT {field} FROM food WHERE id = :food"),
-                    {"food": food_id},
-                ).one()[0] == original
+                assert (
+                    connection.execute(
+                        text(f"SELECT {field} FROM food WHERE id = :food"),
+                        {"food": food_id},
+                    ).one()[0]
+                    == original
+                )
 
     contribution_id = uuid4()
     with Session(engine) as session:
@@ -2082,13 +2130,16 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
             rejected.value, special, PLAN009_GROUP_NAN_CONSTRAINTS
         )
         with engine.connect() as connection:
-            assert connection.execute(
-                text(
-                    "SELECT count(*) FROM food_group_contribution "
-                    "WHERE food_id = :food AND group_key = 'vegetables'"
-                ),
-                {"food": food_id},
-            ).scalar_one() == 0
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM food_group_contribution "
+                        "WHERE food_id = :food AND group_key = 'vegetables'"
+                    ),
+                    {"food": food_id},
+                ).scalar_one()
+                == 0
+            )
     for special in ("NaN", "Infinity", "-Infinity"):
         with pytest.raises(DBAPIError) as rejected:
             with engine.begin() as connection:
@@ -2104,9 +2155,7 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
         )
         with engine.connect() as connection:
             assert connection.execute(
-                text(
-                    "SELECT amount_per_100_basis FROM food_group_contribution WHERE id = :id"
-                ),
+                text("SELECT amount_per_100_basis FROM food_group_contribution WHERE id = :id"),
                 {"id": contribution_id},
             ).scalar_one() == Decimal("100.000")
 
@@ -2521,9 +2570,7 @@ def _assert_plan012_guard_failure(
             PLAN012_GUARD_REVISION
         )
     engine.dispose()
-    result = _run_alembic(
-        url, "downgrade", "0013_v2_shared_food_catalog", check=False
-    )
+    result = _run_alembic(url, "downgrade", "0013_v2_shared_food_catalog", check=False)
     output = result.stdout + result.stderr
 
     assert result.returncode != 0
@@ -2636,8 +2683,7 @@ def test_plan012_non_null_legacy_ledger_blocks_irreversible_boundary() -> None:
     audit_before = _plan012_audit_signature(url)
     actual_by_id = {row[0]: row[1:] for row in v2_before}
     assert actual_by_id == {
-        food_id: _plan012_expected_tuple(legacy_key)
-        for legacy_key, food_id in identifiers.items()
+        food_id: _plan012_expected_tuple(legacy_key) for legacy_key, food_id in identifiers.items()
     }
 
     _assert_plan012_guard_failure(
@@ -2661,12 +2707,15 @@ def test_plan012_legacy_null_origin_blocks_before_frozen_0014_downgrade() -> Non
     assert before_food == ((identifiers[None], *_plan012_expected_tuple(None)),)
     engine = create_engine(url)
     with engine.connect() as connection:
-        assert connection.execute(
-            text(
-                "SELECT count(*) FROM food_taxonomy_v2_migration_audit "
-                "WHERE legacy_primary_category_key IS NULL"
-            )
-        ).scalar_one() == 1
+        assert (
+            connection.execute(
+                text(
+                    "SELECT count(*) FROM food_taxonomy_v2_migration_audit "
+                    "WHERE legacy_primary_category_key IS NULL"
+                )
+            ).scalar_one()
+            == 1
+        )
     engine.dispose()
 
     _assert_plan012_guard_failure(
@@ -2807,7 +2856,10 @@ def test_plan032_populated_downgrade_refuses_without_deleting_history() -> None:
     assert "PLAN032 downgrade blocked" in result.stdout + result.stderr
     with engine.connect() as connection:
         assert connection.execute(text("SELECT count(*) FROM nutrition_analysis")).scalar_one() == 1
-        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == PLAN033_REVISION
+        assert (
+            connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            == PLAN033_REVISION
+        )
     engine.dispose()
 
 
@@ -2897,8 +2949,14 @@ def test_plan033_populated_downgrade_refuses_without_deleting_history() -> None:
     assert result.returncode != 0
     assert "PLAN033 downgrade blocked" in result.stdout + result.stderr
     with engine.connect() as connection:
-        assert connection.execute(
-            text("SELECT count(*) FROM weekly_priority_recommendation")
-        ).scalar_one() == 1
-        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == PLAN033_REVISION
+        assert (
+            connection.execute(
+                text("SELECT count(*) FROM weekly_priority_recommendation")
+            ).scalar_one()
+            == 1
+        )
+        assert (
+            connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            == PLAN033_REVISION
+        )
     engine.dispose()
