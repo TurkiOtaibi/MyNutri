@@ -23,18 +23,25 @@ from app.db.session import get_session
 from app.main import app
 from app.models import (
     ActivityLevel,
+    BehaviorGoal,
+    BehaviorGoalHistory,
     DiaryEntry,
     Goal,
     NutritionAnalysis,
     NutritionAnalysisRevision,
+    NutritionAnalysisRevisionEvent,
     Principal,
     PrincipalRole,
     Profile,
     Sex,
     TargetProvenance,
+    WeeklyPriorityRecommendation,
 )
 from app.services.pattern_analysis import analysis_history
+import app.services.weekly_priorities as weekly_priority_service
+from app.services.weekly_priorities import process_due_goals
 from app.services.diary import AdminDiaryCursorError, _encode_admin_diary_cursor
+from test_weekly_priorities import _persist_trackable_graph
 
 ADMIN_ID = UUID("00000000-0000-0000-0000-0000000000aa")
 USER_ID = UUID("00000000-0000-0000-0000-0000000000bb")
@@ -108,6 +115,31 @@ def _capture_statements(session: Session):
         yield statements
     finally:
         event.remove(engine, "before_cursor_execute", capture)
+
+
+@contextmanager
+def _capture_executions(session: Session):
+    executions: list[tuple[str, object]] = []
+
+    def capture(_connection, _cursor, statement, parameters, _context, _executemany) -> None:
+        executions.append((" ".join(statement.split()).lower(), parameters))
+
+    engine = session.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        yield executions
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+
+def _parameter_uuids(parameters: object) -> set[UUID]:
+    if isinstance(parameters, dict):
+        values = tuple(parameters.values())
+    elif isinstance(parameters, (list, tuple)):
+        values = parameters
+    else:
+        values = (parameters,)
+    return {value for value in values if isinstance(value, UUID)}
 
 
 def _snapshot() -> dict:
@@ -633,7 +665,7 @@ def test_plan025_migration_rehearsal_catalog_and_reversibility(
     plan025_postgresql_database: str,
 ) -> None:
     heads = _run_alembic(plan025_postgresql_database, "heads")
-    assert heads.stdout.strip() == "c3a7e6d5f210 (head)"
+    assert heads.stdout.strip() == "22733dbf5249 (head)"
     _run_alembic(plan025_postgresql_database, "upgrade", "head")
     engine = sa_create_engine(plan025_postgresql_database)
     try:
@@ -743,3 +775,873 @@ def test_plan032_history_limit_100_uses_constant_bulk_queries(admin_context) -> 
     assert [item.period_end for item in page.items] == sorted(
         (item.period_end for item in page.items), reverse=True
     )
+
+
+def test_plan033_due_batch_bulk_loads_sources_and_reminders(admin_context) -> None:
+    _client, session = admin_context
+    principal_id, source, _series, _revision, recommendation = _persist_trackable_graph(session)
+    now = datetime.now(timezone.utc)
+    for index in range(100):
+        goal_id = uuid4()
+        session.add(
+            BehaviorGoal(
+                id=goal_id,
+                principal_id=principal_id,
+                recommendation_id=recommendation.id,
+                root_goal_id=goal_id,
+                sequence_number=1,
+                state="completed",
+                version=1,
+                rule_key="fruit_vegetable_gap",
+                action_key="add_fruit_or_vegetable",
+                weekly_target_count=1,
+                day_mask=[],
+                window_start=source.period_start,
+                window_end=source.period_end - timedelta(days=1),
+                rules_version="w3-priority-1.1.0",
+                copy_version="w3-priority-ar-1.1.0",
+                progress_document={
+                    "window_start": source.period_start.isoformat(),
+                    "window_end": (source.period_end - timedelta(days=1)).isoformat(),
+                    "progress_count": 3,
+                    "target_count": 1,
+                    "progress_percent": 100,
+                    "complete_day_count": 4,
+                    "partial_day_count": 0,
+                    "unregistered_day_count": 3,
+                    "status": "achieved",
+                    "as_of_diary_date": source.as_of_diary_date.isoformat(),
+                    "source_day_versions": {},
+                    "calculation_rules_version": "w3-priority-1.1.0",
+                    "last_recomputed_at": now.isoformat(),
+                },
+                progress_revision=1,
+                reminder_preference="disabled",
+                completed_at=now,
+            )
+        )
+    session.commit()
+    with _capture_statements(session) as statements:
+        result = process_due_goals(session, limit=100)
+    reads = [statement for statement in statements if statement.startswith("select ")]
+    assert result["processed"] == 100
+    # Cohort/owner discovery, one bounded goal/reminder/recommendation batch,
+    # and two bounded source-validation batches are constant in goal count.
+    assert len(reads) <= 14
+
+
+def _add_current_analysis_history(
+    session: Session,
+    *,
+    principal_id: UUID,
+    source,
+    history_depth: int,
+) -> NutritionAnalysis:
+    series_rows = [
+        NutritionAnalysis(
+            id=uuid4(),
+            principal_id=principal_id,
+            as_of_diary_date=source.as_of_diary_date + timedelta(days=index),
+            calendar_timezone="Asia/Riyadh",
+        )
+        for index in range(1, history_depth)
+    ]
+    session.add_all(series_rows)
+    session.flush()
+    revisions = [
+        NutritionAnalysisRevision(
+            id=uuid4(),
+            analysis_id=series.id,
+            principal_id=principal_id,
+            revision=1,
+            period_start=source.period_start,
+            period_end=source.period_end,
+            previous_period_start=source.previous_period_start,
+            previous_period_end=source.previous_period_end,
+            analysis_rules_version=source.analysis_rules_version,
+            source_versions={},
+            source_input_hash=series.id.hex * 2,
+            content_hash=series.id.hex[::-1] * 2,
+            complete_day_count=4,
+            previous_complete_day_count=0,
+            result_status="available",
+            analysis_document={},
+        )
+        for series in series_rows
+    ]
+    session.add_all(revisions)
+    session.flush()
+    for series, revision in zip(series_rows, revisions, strict=True):
+        series.current_revision_id = revision.id
+        series.current_revision_number = revision.revision
+        session.add(series)
+    session.commit()
+    return series_rows[-1]
+
+
+@pytest.mark.parametrize("history_depth", [10, 100, 500])
+def test_plan033_postgresql_source_authority_is_bounded_by_owner_and_bound_series(
+    plan025_postgresql_session: Session,
+    history_depth: int,
+) -> None:
+    session = plan025_postgresql_session
+    graphs = [_persist_trackable_graph(session) for _ in range(2)]
+    recommendation_ids = [graph[4].id for graph in graphs]
+    expected_latest = {
+        principal_id: _add_current_analysis_history(
+            session,
+            principal_id=principal_id,
+            source=source,
+            history_depth=history_depth,
+        ).id
+        for principal_id, source, _series, _revision, _recommendation in graphs
+    }
+    session.expunge_all()
+    recommendations = list(
+        session.exec(
+            select(WeeklyPriorityRecommendation).where(
+                WeeklyPriorityRecommendation.id.in_(recommendation_ids)
+            )
+        ).all()
+    )
+    materialized_series: set[UUID] = set()
+
+    def record_series_load(series, _context) -> None:
+        materialized_series.add(series.id)
+
+    event.listen(NutritionAnalysis, "load", record_series_load)
+    try:
+        with _capture_statements(session) as statements:
+            authority = weekly_priority_service._load_recommendation_source_authority(
+                session, recommendations
+            )
+    finally:
+        event.remove(NutritionAnalysis, "load", record_series_load)
+
+    bound_ids = {row.source_analysis_id for row in recommendations}
+    principal_ids = {row.principal_id for row in recommendations}
+    assert set(authority.bound_by_id) == bound_ids
+    assert {
+        principal_id: series.id
+        for principal_id, series in authority.latest_by_principal.items()
+    } == expected_latest
+    assert all(
+        authority.bound_by_id[row.source_analysis_id].principal_id == row.principal_id
+        for row in recommendations
+    )
+    assert materialized_series == bound_ids | set(expected_latest.values())
+    assert len(materialized_series) <= len(bound_ids) + len(principal_ids)
+
+    progress = weekly_priority_service._validate_recommendation_sources(
+        recommendations,
+        authority,
+        allow_newer_revision=True,
+        allow_insufficient_progress_evidence=True,
+        require_trackable=True,
+    )
+    actions = weekly_priority_service._validate_recommendation_sources(
+        recommendations, authority, require_trackable=True
+    )
+    assert {result.state for result in progress.values()} == {"VALID"}
+    assert {result.state for result in actions.values()} == {"SUPERSEDED"}
+
+    source_authority_selects = [
+        statement
+        for statement in statements
+        if statement.startswith("select ")
+        and any(
+            f" from {table} " in statement
+            for table in (
+                "nutrition_analysis",
+                "nutrition_analysis_revision",
+                "nutrition_analysis_revision_event",
+            )
+        )
+    ]
+    assert len(source_authority_selects) == 4
+
+    if history_depth == 500:
+        session.execute(text("ANALYZE nutrition_analysis"))
+        principal_a, principal_b = sorted(principal_ids)
+        plan = _explain(
+            session,
+            "SELECT latest.* FROM nutrition_analysis AS latest "
+            "JOIN (SELECT principal.id AS principal_id, "
+            "(SELECT candidate.id FROM nutrition_analysis AS candidate "
+            "WHERE candidate.principal_id=principal.id "
+            "AND candidate.current_revision_id IS NOT NULL "
+            "ORDER BY candidate.as_of_diary_date DESC, candidate.id DESC LIMIT 1) "
+            "AS series_id FROM principal WHERE principal.id IN (:principal_a, :principal_b)) "
+            "AS latest_by_principal ON latest.id=latest_by_principal.series_id",
+            principal_a=principal_a,
+            principal_b=principal_b,
+        )
+        nodes = _walk_plan(plan)
+        latest_index_scans = [
+            node
+            for node in nodes
+            if node.get("Index Name") == "ix_nutrition_analysis_principal_date_desc"
+            and node["Node Type"] in {"Index Scan", "Index Only Scan"}
+        ]
+        assert latest_index_scans, plan
+        assert not any(
+            node["Node Type"] in {"Sort", "Incremental Sort"}
+            and any(
+                descendant.get("Relation Name") == "nutrition_analysis"
+                for descendant in _walk_plan(node)
+            )
+            for node in nodes
+        ), plan
+
+
+def test_plan033_scheduler_reuses_one_source_authority_batch(
+    plan025_postgresql_session: Session,
+) -> None:
+    session = plan025_postgresql_session
+    graphs = [_persist_trackable_graph(session) for _ in range(2)]
+    for principal_id, source, series, revision, recommendation in graphs:
+        _add_due_goal(
+            session,
+            principal_id=principal_id,
+            source=source,
+            series=series,
+            revision=revision,
+            recommendation=recommendation,
+            state="active",
+            reviewed=False,
+        )
+    session.commit()
+
+    with _capture_statements(session) as statements:
+        result = process_due_goals(session, limit=100)
+
+    authority_series_loads = [
+        statement
+        for statement in statements
+        if statement.startswith("select nutrition_analysis.id, ")
+        and " from nutrition_analysis " in statement
+    ]
+    authority_revision_loads = [
+        statement
+        for statement in statements
+        if statement.startswith("select nutrition_analysis_revision.id, ")
+        and " from nutrition_analysis_revision " in statement
+    ]
+    authority_event_loads = [
+        statement
+        for statement in statements
+        if statement.startswith("select nutrition_analysis_revision_event.id, ")
+        and " from nutrition_analysis_revision_event " in statement
+    ]
+    assert result["processed"] == 2
+    assert len(authority_series_loads) == 2
+    assert len(authority_revision_loads) == 1
+    assert len(authority_event_loads) == 1
+
+
+def _add_due_goal(
+    session: Session,
+    *,
+    principal_id: UUID,
+    source,
+    series: NutritionAnalysis,
+    revision: NutritionAnalysisRevision,
+    recommendation,
+    state: str,
+    reviewed: bool,
+) -> BehaviorGoal:
+    now = datetime.now(timezone.utc)
+    goal_id = uuid4()
+    window_end = source.period_end if reviewed else source.period_end - timedelta(days=4)
+    status = "achieved" if state == "completed" else "not_yet_reached"
+    goal = BehaviorGoal(
+        id=goal_id,
+        principal_id=principal_id,
+        recommendation_id=recommendation.id,
+        root_goal_id=goal_id,
+        sequence_number=1,
+        state=state,
+        version=1,
+        rule_key="fruit_vegetable_gap",
+        action_key="add_fruit_or_vegetable",
+        weekly_target_count=3,
+        day_mask=[],
+        window_start=source.period_start,
+        window_end=window_end,
+        rules_version="w3-priority-1.1.0",
+        copy_version="w3-priority-ar-1.1.0",
+        progress_document={
+            "window_start": source.period_start.isoformat(),
+            "window_end": window_end.isoformat(),
+            "progress_count": 3 if state == "completed" else 0,
+            "target_count": 3,
+            "progress_percent": 100 if state == "completed" else 0,
+            "complete_day_count": 4,
+            "partial_day_count": 0,
+            "unregistered_day_count": 3,
+            "status": status,
+            "as_of_diary_date": source.as_of_diary_date.isoformat(),
+            "source_day_versions": {},
+            "calculation_rules_version": "w3-priority-1.1.0",
+            "last_recomputed_at": now.isoformat(),
+        },
+        progress_revision=1,
+        last_progress_analysis_id=series.id,
+        last_progress_analysis_revision_id=revision.id,
+        last_progress_analysis_revision=revision.revision,
+        last_progress_attempt_analysis_id=series.id,
+        last_progress_attempt_analysis_revision_id=revision.id,
+        last_progress_attempt_analysis_revision=revision.revision,
+        reminder_preference="disabled",
+        completed_at=now - timedelta(days=2) if state == "completed" else None,
+        reviewed_at=now - timedelta(days=1) if reviewed else None,
+    )
+    session.add(goal)
+    return goal
+
+
+def _locked_principals(executions: list[tuple[str, object]]) -> set[UUID]:
+    return set().union(
+        *(
+            _parameter_uuids(parameters)
+            for statement, parameters in executions
+            if " from principal " in statement and " for update" in statement
+        )
+    )
+
+
+def _principal_lock_parameter_order(executions: list[tuple[str, object]]) -> list[UUID]:
+    for statement, parameters in executions:
+        if " from principal " not in statement or " for update" not in statement:
+            continue
+        values = tuple(parameters.values()) if isinstance(parameters, dict) else parameters
+        return [value for value in values if isinstance(value, UUID)]
+    return []
+
+
+def test_plan033_postgresql_due_claims_only_exact_locked_owner_cohort(
+    plan025_postgresql_session: Session, monkeypatch
+) -> None:
+    session = plan025_postgresql_session
+    principal_a, source_a, series_a, revision_a, recommendation_a = (
+        _persist_trackable_graph(session)
+    )
+    principal_b, source_b, series_b, revision_b, recommendation_b = (
+        _persist_trackable_graph(session)
+    )
+    invalidation = NutritionAnalysisRevisionEvent(
+        revision_id=revision_a.id,
+        principal_id=principal_a,
+        event_type="day_reopened",
+        reason="completed_day_reopened",
+        source_day_version=2,
+    )
+    session.add(invalidation)
+    event_goals = [
+        _add_due_goal(
+            session,
+            principal_id=principal_a,
+            source=source_a,
+            series=series_a,
+            revision=revision_a,
+            recommendation=recommendation_a,
+            state="completed",
+            reviewed=True,
+        )
+        for _ in range(401)
+    ]
+    normal_goal = _add_due_goal(
+        session,
+        principal_id=principal_b,
+        source=source_b,
+        series=series_b,
+        revision=revision_b,
+        recommendation=recommendation_b,
+        state="active",
+        reviewed=False,
+    )
+    session.commit()
+    monkeypatch.setattr(weekly_priority_service, "refresh_historical_analysis", lambda *_: None)
+
+    with _capture_executions(session) as executions:
+        result = process_due_goals(session, limit=100)
+
+    locked = _locked_principals(executions)
+    session.refresh(normal_goal)
+    attempted = sum(
+        1
+        for goal in event_goals
+        if session.get(BehaviorGoal, goal.id).last_progress_attempt_event_id == invalidation.id
+    )
+    assert result["processed"] == 101
+    assert normal_goal.state == "incomplete"
+    assert attempted == 100
+    assert locked == {principal_a, principal_b}
+    assert {principal_a, principal_b}.issubset(locked)
+
+
+def test_plan033_postgresql_mixed_cohorts_lock_every_processed_owner(
+    plan025_postgresql_session: Session, monkeypatch
+) -> None:
+    session = plan025_postgresql_session
+    graphs = [_persist_trackable_graph(session) for _ in range(4)]
+    goals = []
+    for index, (principal_id, source, series, revision, recommendation) in enumerate(graphs):
+        state, reviewed = ("active", False) if index in {0, 3} else ("completed", True)
+        goals.append(
+            _add_due_goal(
+                session,
+                principal_id=principal_id,
+                source=source,
+                series=series,
+                revision=revision,
+                recommendation=recommendation,
+                state=state,
+                reviewed=reviewed,
+            )
+        )
+    principal_b, source_b, series_b, revision_b, _recommendation_b = graphs[1]
+    next_document = source_b.model_copy(
+        update={"source_analysis_revision": 2, "generated_at": datetime.now(timezone.utc)}
+    ).model_dump(mode="json")
+    next_revision = NutritionAnalysisRevision(
+        id=uuid4(),
+        analysis_id=series_b.id,
+        principal_id=principal_b,
+        revision=2,
+        period_start=source_b.period_start,
+        period_end=source_b.period_end,
+        previous_period_start=source_b.previous_period_start,
+        previous_period_end=source_b.previous_period_end,
+        analysis_rules_version=source_b.analysis_rules_version,
+        source_versions={},
+        source_input_hash="d" * 64,
+        content_hash="e" * 64,
+        complete_day_count=4,
+        previous_complete_day_count=0,
+        result_status="available",
+        analysis_document=next_document,
+    )
+    session.add(next_revision)
+    session.commit()
+    series_b.current_revision_id = next_revision.id
+    series_b.current_revision_number = 2
+    session.add(series_b)
+    principal_c, _source_c, _series_c, revision_c, _recommendation_c = graphs[2]
+    session.add(
+        NutritionAnalysisRevisionEvent(
+            revision_id=revision_c.id,
+            principal_id=principal_c,
+            event_type="day_version_changed",
+            reason="diary_entry_changed",
+            source_day_version=2,
+        )
+    )
+    session.commit()
+    monkeypatch.setattr(weekly_priority_service, "refresh_historical_analysis", lambda *_: None)
+
+    with _capture_executions(session) as executions:
+        result = process_due_goals(session, limit=100)
+
+    locked = _locked_principals(executions)
+    processed_owners = {goal.principal_id for goal in goals}
+    assert result["processed"] == 4
+    assert locked == processed_owners
+    assert _principal_lock_parameter_order(executions) == sorted(processed_owners)
+
+
+@pytest.mark.parametrize("event_source_count", [1, 10, 100])
+def test_plan033_event_entity_hydration_is_one_bulk_query(
+    plan025_postgresql_session: Session, monkeypatch, event_source_count: int
+) -> None:
+    session = plan025_postgresql_session
+    for _ in range(event_source_count):
+        principal_id, source, series, revision, recommendation = _persist_trackable_graph(session)
+        session.add(
+            NutritionAnalysisRevisionEvent(
+                revision_id=revision.id,
+                principal_id=principal_id,
+                event_type="day_version_changed",
+                reason="diary_entry_changed",
+                source_day_version=2,
+            )
+        )
+        _add_due_goal(
+            session,
+            principal_id=principal_id,
+            source=source,
+            series=series,
+            revision=revision,
+            recommendation=recommendation,
+            state="completed",
+            reviewed=True,
+        )
+    session.commit()
+    monkeypatch.setattr(weekly_priority_service, "refresh_historical_analysis", lambda *_: None)
+
+    with _capture_statements(session) as statements:
+        result = process_due_goals(session, limit=event_source_count)
+
+    event_entity_loads = [
+        statement
+        for statement in statements
+        if statement.startswith(
+            "select nutrition_analysis_revision_event.id, "
+            "nutrition_analysis_revision_event.revision_id"
+        )
+        and "nutrition_analysis_revision_event.id in (" in statement
+    ]
+    ranked_event_queries = [
+        statement
+        for statement in statements
+        if "row_number() over" in statement
+        and "nutrition_analysis_revision_event" in statement
+        and "event_rank" in statement
+    ]
+    event_point_loads = [
+        statement
+        for statement in statements
+        if statement.startswith(
+            "select nutrition_analysis_revision_event.id, "
+            "nutrition_analysis_revision_event.revision_id"
+        )
+        and "nutrition_analysis_revision_event.id = " in statement
+    ]
+    assert result["processed"] == event_source_count
+    assert len(ranked_event_queries) == 1
+    assert len(event_entity_loads) == 1
+    assert event_point_loads == []
+
+
+def test_plan033_postgresql_finalized_revision_discovery_is_bounded_and_indexed(
+    plan025_postgresql_session: Session,
+) -> None:
+    session = plan025_postgresql_session
+    principal_id, source, series, first_revision, recommendation = _persist_trackable_graph(session)
+    now = datetime(2026, 8, 26, 12, tzinfo=timezone.utc)
+    next_document = source.model_copy(
+        update={"source_analysis_revision": 2, "generated_at": now}
+    ).model_dump(mode="json")
+    next_revision = NutritionAnalysisRevision(
+        id=uuid4(),
+        analysis_id=series.id,
+        principal_id=principal_id,
+        revision=2,
+        period_start=source.period_start,
+        period_end=source.period_end,
+        previous_period_start=source.previous_period_start,
+        previous_period_end=source.previous_period_end,
+        analysis_rules_version=source.analysis_rules_version,
+        source_versions={},
+        source_input_hash="b" * 64,
+        content_hash="c" * 64,
+        complete_day_count=4,
+        previous_complete_day_count=0,
+        result_status="available",
+        analysis_document=next_document,
+    )
+    session.add(next_revision)
+    session.commit()
+    series.current_revision_id = next_revision.id
+    series.current_revision_number = 2
+    session.add(series)
+    session.add_all(
+        [
+            BehaviorGoal(
+                id=(goal_id := uuid4()),
+                principal_id=principal_id,
+                recommendation_id=recommendation.id,
+                root_goal_id=goal_id,
+                sequence_number=1,
+                state="completed",
+                version=1,
+                rule_key="fruit_vegetable_gap",
+                action_key="add_fruit_or_vegetable",
+                weekly_target_count=3,
+                day_mask=[],
+                window_start=source.period_start,
+                window_end=source.period_end,
+                rules_version="w3-priority-1.1.0",
+                copy_version="w3-priority-ar-1.1.0",
+                progress_document={},
+                progress_revision=1,
+                last_progress_analysis_id=series.id,
+                last_progress_analysis_revision_id=first_revision.id,
+                last_progress_analysis_revision=1,
+                last_progress_attempt_analysis_id=series.id,
+                last_progress_attempt_analysis_revision_id=first_revision.id,
+                last_progress_attempt_analysis_revision=1,
+                reminder_preference="disabled",
+                completed_at=now - timedelta(days=1),
+                reviewed_at=now,
+            )
+            for _ in range(2_000)
+        ]
+    )
+    session.commit()
+    session.execute(text("ANALYZE behavior_goal"))
+    plan = _explain(
+        session,
+        "SELECT goal.id FROM behavior_goal AS goal "
+        "WHERE goal.state='completed' AND goal.reviewed_at IS NOT NULL "
+        "AND goal.last_progress_attempt_analysis_revision_id IS NOT NULL "
+        "AND EXISTS (SELECT 1 FROM weekly_priority_recommendation AS recommendation "
+        "JOIN nutrition_analysis AS analysis "
+        "ON analysis.id=recommendation.source_analysis_id "
+        "AND analysis.principal_id=goal.principal_id "
+        "WHERE recommendation.id=goal.recommendation_id "
+        "AND recommendation.principal_id=goal.principal_id "
+        "AND goal.last_progress_attempt_analysis_id=analysis.id "
+        "AND analysis.current_revision_id IS NOT NULL "
+        "AND analysis.current_revision_number IS NOT NULL "
+        "AND goal.last_progress_attempt_analysis_revision < analysis.current_revision_number) "
+        "ORDER BY goal.last_progress_attempt_analysis_id, "
+        "goal.last_progress_attempt_analysis_revision, goal.window_end, goal.id LIMIT 100",
+    )
+    nodes = _walk_plan(plan)
+    goal_scans = [
+        node
+        for node in nodes
+        if node.get("Relation Name") == "behavior_goal"
+        and node.get("Index Name") == "ix_behavior_goal_finalized_attempt_revision"
+    ]
+    assert len(goal_scans) == 1, plan
+    assert goal_scans[0]["Node Type"] in {"Index Scan", "Index Only Scan"}
+    assert not any(
+        node["Node Type"] == "Seq Scan" and node.get("Relation Name") == "behavior_goal"
+        for node in nodes
+    )
+    assert not any(node["Node Type"] in {"Sort", "Incremental Sort"} for node in nodes)
+    assert plan["Node Type"] == "Limit" and plan["Actual Rows"] == 100
+
+
+def test_plan033_postgresql_finalized_event_discovery_is_owner_source_indexed(
+    plan025_postgresql_session: Session,
+) -> None:
+    session = plan025_postgresql_session
+    principal_id, source, series, first_revision, recommendation = _persist_trackable_graph(
+        session
+    )
+    other_principal, _other_source, _other_series, other_revision, _other_recommendation = (
+        _persist_trackable_graph(session)
+    )
+    now = datetime(2026, 8, 26, 12, tzinfo=timezone.utc)
+    event = NutritionAnalysisRevisionEvent(
+        revision_id=first_revision.id,
+        principal_id=principal_id,
+        event_type="day_reopened",
+        reason="completed_day_reopened",
+        source_day_version=2,
+        occurred_at=now,
+    )
+    session.add(event)
+    session.add_all(
+        [
+            NutritionAnalysisRevisionEvent(
+                revision_id=other_revision.id,
+                principal_id=other_principal,
+                event_type="day_version_changed",
+                reason="diary_entry_changed",
+                source_day_version=index + 1,
+                occurred_at=now + timedelta(microseconds=index + 1),
+            )
+            for index in range(4_000)
+        ]
+    )
+    session.add_all(
+        [
+            BehaviorGoal(
+                id=(goal_id := uuid4()),
+                principal_id=principal_id,
+                recommendation_id=recommendation.id,
+                root_goal_id=goal_id,
+                sequence_number=1,
+                state="completed",
+                version=1,
+                rule_key="fruit_vegetable_gap",
+                action_key="add_fruit_or_vegetable",
+                weekly_target_count=3,
+                day_mask=[],
+                window_start=source.period_start,
+                window_end=source.period_end,
+                rules_version="w3-priority-1.1.0",
+                copy_version="w3-priority-ar-1.1.0",
+                progress_document={},
+                progress_revision=1,
+                last_progress_analysis_id=series.id,
+                last_progress_analysis_revision_id=first_revision.id,
+                last_progress_analysis_revision=1,
+                last_progress_attempt_analysis_id=series.id,
+                last_progress_attempt_analysis_revision_id=first_revision.id,
+                last_progress_attempt_analysis_revision=1,
+                reminder_preference="disabled",
+                completed_at=now - timedelta(days=1),
+                reviewed_at=now,
+            )
+            for _ in range(2_000)
+        ]
+    )
+    session.commit()
+    session.execute(text("ANALYZE behavior_goal"))
+    session.execute(text("ANALYZE nutrition_analysis_revision_event"))
+
+    candidate_plan = _explain(
+        session,
+        "SELECT goal.id FROM behavior_goal AS goal "
+        "WHERE goal.state='completed' AND goal.reviewed_at IS NOT NULL "
+        "AND EXISTS (SELECT 1 FROM weekly_priority_recommendation AS recommendation "
+        "JOIN nutrition_analysis_revision AS revision "
+        "ON revision.analysis_id=recommendation.source_analysis_id "
+        "AND revision.principal_id=goal.principal_id "
+        "JOIN nutrition_analysis_revision_event AS event "
+        "ON event.revision_id=revision.id AND event.principal_id=goal.principal_id "
+        "WHERE recommendation.id=goal.recommendation_id "
+        "AND recommendation.principal_id=goal.principal_id "
+        "AND event.event_type IN ('day_reopened','day_version_changed',"
+        "'target_source_changed','source_snapshot_corrected','source_version_unsupported') "
+        "AND (goal.last_progress_attempt_event_id IS NULL "
+        "OR (event.occurred_at,event.id) > "
+        "(goal.last_progress_attempt_event_occurred_at,goal.last_progress_attempt_event_id))) "
+        "ORDER BY goal.last_progress_attempt_event_occurred_at, "
+        "goal.last_progress_attempt_event_id, goal.window_end, goal.id LIMIT 100",
+    )
+    candidate_nodes = _walk_plan(candidate_plan)
+    assert any(
+        node.get("Index Name") == "ix_behavior_goal_finalized_attempt_event"
+        for node in candidate_nodes
+    ), candidate_plan
+    assert not any(
+        node["Node Type"] == "Seq Scan" and node.get("Relation Name") == "behavior_goal"
+        for node in candidate_nodes
+    )
+    assert candidate_plan["Node Type"] == "Limit" and candidate_plan["Actual Rows"] == 100
+
+    event_plan = _explain(
+        session,
+        "SELECT event.id, event.occurred_at FROM nutrition_analysis_revision_event AS event "
+        "WHERE event.principal_id=:principal_id AND event.revision_id=:revision_id "
+        "AND event.event_type IN ('day_reopened','day_version_changed',"
+        "'target_source_changed','source_snapshot_corrected','source_version_unsupported') "
+        "ORDER BY event.occurred_at DESC, event.id DESC LIMIT 1",
+        principal_id=principal_id,
+        revision_id=first_revision.id,
+    )
+    event_nodes = _walk_plan(event_plan)
+    assert any(
+        node.get("Index Name")
+        == "ix_nutrition_analysis_event_owner_revision_time_id"
+        for node in event_nodes
+    ), event_plan
+    assert not any(
+        node["Node Type"] == "Seq Scan"
+        and node.get("Relation Name") == "nutrition_analysis_revision_event"
+        for node in event_nodes
+    )
+
+
+def test_plan033_postgresql_history_keyset_uses_owner_scoped_index(
+    plan025_postgresql_session: Session,
+) -> None:
+    session = plan025_postgresql_session
+    target_principal, target_source, _target_series, _target_revision, target_recommendation = (
+        _persist_trackable_graph(session)
+    )
+    other_principal, other_source, _other_series, _other_revision, other_recommendation = (
+        _persist_trackable_graph(session)
+    )
+    now = datetime(2026, 8, 26, 12, tzinfo=timezone.utc)
+
+    def add_goal(principal_id, source, recommendation):
+        goal_id = uuid4()
+        session.add(
+            BehaviorGoal(
+                id=goal_id,
+                principal_id=principal_id,
+                recommendation_id=recommendation.id,
+                root_goal_id=goal_id,
+                sequence_number=1,
+                state="ended",
+                version=1,
+                rule_key="fruit_vegetable_gap",
+                action_key="add_fruit_or_vegetable",
+                weekly_target_count=3,
+                day_mask=[],
+                window_start=source.period_start,
+                window_end=source.period_end,
+                rules_version="w3-priority-1.1.0",
+                copy_version="w3-priority-ar-1.1.0",
+                progress_document={},
+                progress_revision=1,
+                reminder_preference="disabled",
+                ended_at=now,
+            )
+        )
+        session.commit()
+        return goal_id
+
+    target_goal = add_goal(target_principal, target_source, target_recommendation)
+    other_goal = add_goal(other_principal, other_source, other_recommendation)
+    target_rows: list[BehaviorGoalHistory] = []
+    for index in range(1_500):
+        target_rows.append(
+            BehaviorGoalHistory(
+                goal_id=target_goal,
+                principal_id=target_principal,
+                root_goal_id=target_goal,
+                sequence_number=1,
+                goal_version=index + 1,
+                event_type="progress_updated",
+                from_state="active",
+                to_state="active",
+                actor_type="system",
+                occurred_at=now - timedelta(seconds=index),
+                terms_progress_snapshot={},
+            )
+        )
+    session.add_all(target_rows)
+    session.add_all(
+        [
+            BehaviorGoalHistory(
+                goal_id=other_goal,
+                principal_id=other_principal,
+                root_goal_id=other_goal,
+                sequence_number=1,
+                goal_version=index + 1,
+                event_type="progress_updated",
+                from_state="active",
+                to_state="active",
+                actor_type="system",
+                occurred_at=now - timedelta(milliseconds=index),
+                terms_progress_snapshot={},
+            )
+            for index in range(4_000)
+        ]
+    )
+    session.commit()
+    session.execute(text("ANALYZE behavior_goal_history"))
+    cursor = target_rows[999]
+    plan = _explain(
+        session,
+        "SELECT * FROM behavior_goal_history "
+        "WHERE principal_id=:principal_id "
+        "AND (occurred_at, id) < (:occurred_at, :history_id) "
+        "ORDER BY occurred_at DESC, id DESC LIMIT 51",
+        principal_id=target_principal,
+        occurred_at=cursor.occurred_at,
+        history_id=cursor.id,
+    )
+    nodes = _walk_plan(plan)
+    history_scans = [
+        node
+        for node in nodes
+        if node.get("Relation Name") == "behavior_goal_history"
+        and node["Node Type"] in {"Index Scan", "Index Only Scan"}
+    ]
+    assert len(history_scans) == 1, plan
+    assert history_scans[0]["Index Name"] == "ix_behavior_goal_history_principal_occurred_id"
+    assert not any(node["Node Type"] in {"Sort", "Incremental Sort"} for node in nodes)
+    assert not any(
+        node["Node Type"] == "Seq Scan" and node.get("Relation Name") == "behavior_goal_history"
+        for node in nodes
+    )
+    assert plan["Actual Rows"] == 51

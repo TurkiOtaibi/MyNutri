@@ -86,6 +86,7 @@ jobs:
         env:
           ENVIRONMENT: production
           SUPABASE_URL: https://ci-fixture.supabase.co
+          WEEKLY_PRIORITY_IDEMPOTENCY_HMAC_SECRET: ci-only-weekly-priority-hmac-secret-0001
           PGPASSWORD: postgres
         run: |
           alembic upgrade head

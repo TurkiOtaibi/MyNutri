@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     supabase_jwt_kid_max_length: int = Field(default=256, ge=1, le=1_024)
     calendar_timezone: str = "Asia/Riyadh"
     snapshot_v3_writer_enabled: bool = True
+    weekly_priorities_shadow_v1: bool = False
+    weekly_priorities_display_enabled: bool = False
+    behavior_goal_offers_enabled: bool = False
+    behavior_goal_reminder_delivery_enabled: bool = False
+    weekly_priority_idempotency_hmac_secret: str = "dev-only-weekly-priority-secret"
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")
 
@@ -135,6 +140,10 @@ def validate_runtime_configuration(settings: Settings) -> None:
         raise RuntimeError("SUPABASE_JWT_AUDIENCE is required in production.")
     if not settings.effective_supabase_jwks_url.startswith("https://"):
         raise RuntimeError("SUPABASE_JWKS_URL must be HTTPS in production.")
+    if len(settings.weekly_priority_idempotency_hmac_secret) < 32:
+        raise RuntimeError(
+            "WEEKLY_PRIORITY_IDEMPOTENCY_HMAC_SECRET must contain at least 32 characters in production."
+        )
 
 
 @lru_cache

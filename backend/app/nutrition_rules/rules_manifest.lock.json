@@ -8,7 +8,9 @@
     "registry_schema_version": 2,
     "snapshot_schema_version": 3,
     "analysis_rules_version": "w3-analysis-1.1.0",
-    "analysis_rules_status": "active"
+    "analysis_rules_status": "active",
+    "weekly_priority_rules_version": "w3-priority-1.1.0",
+    "weekly_priority_copy_version": "w3-priority-ar-1.1.0"
   },
-  "sha256": "28d73a38e20441fa7176113c4b05a44554fbd8126f062888ffd3a53db6c20196"
+  "sha256": "51d84f4ae48a9bf424e5b8b43fd9c71e3085500ff2a3052af7ccf0fc27f7daf9"
 }

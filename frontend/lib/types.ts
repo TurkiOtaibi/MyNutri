@@ -107,6 +107,13 @@ export type PatternAnalysisHistory = DeepRequired<OpenApi.NutritionPatternAnalys
 export type PatternAnalysisHistoryItem = DeepRequired<OpenApi.NutritionPatternAnalysisHistoryItemV1>;
 export type PatternAnalysisMetric = DeepRequired<OpenApi.AnalysisMetricFactV1>;
 export type WeeklyPriorityAnalysisInputV1 = DeepRequired<OpenApi.WeeklyPriorityAnalysisInputV1>;
+export type WeeklyPriorityResult = DeepRequired<OpenApi.WeeklyPriorityResultV1>;
+export type WeeklyPriority = DeepRequired<OpenApi.PriorityV1>;
+export type BehaviorGoal = DeepRequired<OpenApi.BehaviorGoalResponseV1>;
+export type BehaviorGoalCurrent = DeepRequired<OpenApi.BehaviorGoalCurrentResponseV1>;
+export type BehaviorGoalHistory = DeepRequired<OpenApi.BehaviorGoalHistoryPageV1>;
+export type BehaviorGoalCommand = OpenApi.BehaviorGoalCommandV1;
+export type BehaviorGoalCommandResponse = DeepRequired<OpenApi.BehaviorGoalCommandResponseV1>;
 export type DaySummary = Omit<DeepRequired<OpenApi.DaySummary>, "totals" | "targets"> & {
   totals: NutritionTotals;
   targets: TargetResponse | null;

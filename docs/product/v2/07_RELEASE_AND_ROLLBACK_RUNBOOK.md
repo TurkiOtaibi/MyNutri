@@ -255,3 +255,60 @@ Rolling back the JWKS policy removes the application-owned snapshot,
 singleflight, cooldown, and input limits and restores the prior PyJWT client
 behavior. Retain fail-closed authentication during rollback; do not accept
 expired cached keys.
+
+## PLAN 033 weekly priorities and behavior goals
+
+PLAN 033 is shipped with four independent, fail-safe Backend switches. Keep
+`WEEKLY_PRIORITIES_SHADOW_V1`, `WEEKLY_PRIORITIES_DISPLAY_ENABLED`,
+`BEHAVIOR_GOAL_OFFERS_ENABLED`, and
+`BEHAVIOR_GOAL_REMINDER_DELIVERY_ENABLED` disabled until the Project Owner
+authorizes the corresponding rollout stage. Set a production-only
+`WEEKLY_PRIORITY_IDEMPOTENCY_HMAC_SECRET` containing at least 32 random
+characters; never expose or casually rotate it because stored command lookup
+digests depend on it.
+
+Run bounded jobs directly from the Backend working directory:
+
+```text
+python -m app.ops.weekly_priority_jobs shadow --limit 100
+python -m app.ops.weekly_priority_jobs report
+python -m app.ops.weekly_priority_jobs due --limit 100
+```
+
+Shadow mode requires the shadow switch on while display, offers, and reminder
+delivery remain off. It persists governed recommendations but never creates a
+goal or reminder. Launch review requires at least 28 consecutive shadow days
+and at least 1,000 eligible evaluations, plus the frozen manual-review and
+safety evidence. The report keeps eligible evaluations, selected
+recommendations, selected trackable mains, selected informational-only mains,
+and actual goal offers as distinct counters; informational recommendations
+remain in the selector denominator and never count as offers. Provider
+scheduling, Render workers, activation, and traffic percentages require
+separate authorization.
+
+The first supported PLAN 033 implementation versions are
+`w3-priority-1.1.0` and `w3-priority-ar-1.1.0` with public schema version 1.
+The withdrawn pre-release 1.0.0 rules/copy versions have no alias or fallback.
+Exactly nine actions support Diary-derived tracking; the other nineteen remain
+visible informational priorities and create no goal, progress, reminder, or
+repeat/reduce lifecycle.
+
+Apply additive revision `22733dbf5249` only after normal backup/recovery and
+deployment approval. It descends from `c3a7e6d5f210`, creates six PLAN 033
+entities plus the explicit shadow/evaluation provenance ledger, and performs
+no historical backfill. An older Backend can run against
+the additive schema. Application rollback therefore disables display, offers,
+and delivery and deploys compatible code while retaining immutable history.
+Once any PLAN 033 row exists, the migration's populated downgrade refuses
+destructive removal; schema downgrade is not the production rollback method.
+Reminder eligibility is computed locally, but external provider delivery and
+provider scheduling remain outside this release and need separate authority.
+
+Before approving the PLAN 033 migration or deployment on Supabase, record a
+Data API privilege preflight for all seven PLAN 033 tables. Inspect the actual
+project exposure settings and prove that both `anon` and `authenticated` lack
+`SELECT`, `INSERT`, `UPDATE`, and `DELETE`; direct reads and writes under each
+role must fail. In the same disposable/read-only verification window, prove the
+Backend service database role can still read and write through its normal
+server-owned path. Do not proceed to migration, deployment, or activation when
+either client role has direct table access or Backend access is impaired.

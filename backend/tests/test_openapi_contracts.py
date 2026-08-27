@@ -3,14 +3,17 @@ from __future__ import annotations
 from typing import get_type_hints
 
 import pytest
-from fastapi import HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi.testclient import TestClient
 from pydantic import TypeAdapter
 
 from app.api.routes.diary import _command_expected_version, add_entry, edit_entry
 from app.api.routes.foods import add_food, edit_food
+from app.api.routes.weekly_priorities import Plan033Route
 from app.main import app
 from app.nutrition_rules.manifest import registry_response
 from app.schemas import (
+    BehaviorGoalCommandV1,
     DiaryDayStatusCommand,
     NutritionRegistryResponse,
     WeeklyPriorityAnalysisInputV1,
@@ -169,3 +172,84 @@ def test_pattern_analysis_openapi_is_closed_versioned_and_owner_only() -> None:
     assert monitoring["properties"]["latency_band_counts"] == {
         "$ref": "#/components/schemas/AnalysisLatencyBandCountsV1"
     }
+
+
+def test_weekly_priority_and_goal_openapi_is_closed_owner_only_and_bounded() -> None:
+    schema = app.openapi()
+    paths = schema["paths"]
+    expected = {
+        "/progress/weekly-priorities/current": {"get"},
+        "/progress/behavior-goals/current": {"get"},
+        "/progress/behavior-goals/history": {"get"},
+        "/progress/behavior-goals/{goal_id}/commands": {"post"},
+    }
+    for path, methods in expected.items():
+        assert set(paths[path]) == methods
+        for method in methods:
+            assert paths[path][method]["security"] == [{"BearerAuth": []}]
+    assert not any(path.startswith("/admin/weekly") for path in paths)
+    command_route = paths["/progress/behavior-goals/{goal_id}/commands"]["post"]
+    headers = {item["name"]: item for item in command_route["parameters"] if item["in"] == "header"}
+    assert headers["Idempotency-Key"]["required"] is True
+    history_limit = next(
+        item for item in paths["/progress/behavior-goals/history"]["get"]["parameters"]
+        if item["name"] == "limit"
+    )
+    assert history_limit["schema"]["maximum"] == 100
+    for name in (
+        "WeeklyPriorityResultV1",
+        "PriorityV1",
+        "BehaviorGoalResponseV1",
+        "BehaviorGoalHistoryItemV1",
+        "BehaviorGoalHistorySnapshotV1",
+        "BehaviorGoalCommandResponseV1",
+    ):
+        assert schema["components"]["schemas"][name]["additionalProperties"] is False
+    command = schema["components"]["schemas"]["BehaviorGoalCommandV1"]
+    assert command["discriminator"]["propertyName"] == "event"
+    assert len(command["oneOf"]) == 9
+    for status in ("400", "404", "409", "422", "500", "503"):
+        assert command_route["responses"][status]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/Plan033ErrorResponseV1"
+        }
+    priority = schema["components"]["schemas"]["PriorityV1"]
+    assert set(priority["properties"]["goal_trackability"]["enum"]) == {
+        "trackable",
+        "informational_only",
+    }
+    history_page = schema["components"]["schemas"]["BehaviorGoalHistoryPageV1"]
+    assert history_page["properties"]["items"]["items"] == {
+        "$ref": "#/components/schemas/BehaviorGoalHistoryItemV1"
+    }
+    history_item = schema["components"]["schemas"]["BehaviorGoalHistoryItemV1"]
+    assert history_item["properties"]["snapshot"] == {
+        "$ref": "#/components/schemas/BehaviorGoalHistorySnapshotV1"
+    }
+    error_codes = set(
+        schema["components"]["schemas"]["Plan033ErrorDetailV1"]["properties"]["code"][
+            "enum"
+        ]
+    )
+    assert {
+        "PRIORITY_SOURCE_STALE",
+        "PRIORITY_SOURCE_SUPERSEDED",
+        "UNSUPPORTED_PRIORITY_VERSION",
+    } <= error_codes
+
+
+def test_plan033_request_validation_uses_the_stable_error_envelope() -> None:
+    isolated = FastAPI()
+    router = APIRouter(route_class=Plan033Route)
+
+    @router.post("/commands")
+    def command(payload: BehaviorGoalCommandV1):
+        return payload
+
+    isolated.include_router(router)
+    response = TestClient(isolated).post(
+        "/commands", json={"event": "pause", "expected_version": 1, "note": "irrelevant"}
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert response.json()["error"]["details"] == {}
+    assert response.json()["error"]["request_id"]

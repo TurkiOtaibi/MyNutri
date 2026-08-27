@@ -2,6 +2,7 @@
   width: min(100% - 2rem, 72rem);
   margin-inline: auto;
   padding-block: 2rem 4rem;
+  overflow-x: clip;
 }
 
 .hero,
@@ -19,7 +20,8 @@
 .eyebrow { font-size: .85rem; font-weight: 700; color: #18734b !important; }
 
 .primaryAction,
-.errorCard button {
+.errorCard button,
+.goalActions button {
   min-height: 44px;
   border: 0;
   border-radius: .8rem;
@@ -48,6 +50,42 @@
   background: #fff;
   padding: 1.15rem;
 }
+.prioritySection { margin-top: 1.5rem; }
+.sectionHeading { display: flex; align-items: center; gap: .6rem; }
+.sectionHeading h2 { margin: 0; }
+.priorityCard,
+.goalCard,
+.goalHistory {
+  margin-top: 1rem;
+  border: 1px solid #d9e3dd;
+  border-radius: 1rem;
+  background: #fff;
+  padding: 1.15rem;
+}
+.priorityCard h3,
+.goalCard h3,
+.goalHistory h3 { margin-top: 0; }
+.priorityAction { font-weight: 700; color: #176b45; }
+.secondaryPriority { display: grid; gap: .35rem; border-top: 1px solid #e8eeea; padding-top: .9rem; }
+.goalProgress { display: grid; grid-template-columns: auto minmax(8rem, 1fr); gap: 1rem; align-items: center; }
+.goalProgress progress { width: 100%; accent-color: #176b45; }
+.goalActions { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: 1rem; }
+.goalActions button { background: #176b45; }
+.goalActions button:disabled { opacity: .65; cursor: wait; }
+.dialogBackdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 1rem; background: rgb(15 23 42 / 55%); }
+.commandDialog { width: min(100%, 28rem); border-radius: 1rem; background: #fff; color: #172033; padding: 1.25rem; box-shadow: 0 1.5rem 4rem rgb(15 23 42 / 30%); }
+.goalEditor { display: grid; gap: .85rem; margin-top: 1rem; }
+.goalEditor label { display: grid; gap: .35rem; font-weight: 700; }
+.goalEditor input,
+.goalEditor select,
+.goalEditor textarea { min-height: 44px; border: 1px solid #9aa9a1; border-radius: .65rem; padding: .55rem; font: inherit; }
+.goalEditor textarea { min-height: 5rem; resize: vertical; }
+.goalEditor fieldset { display: flex; flex-wrap: wrap; gap: .5rem 1rem; border: 1px solid #d9e3dd; border-radius: .75rem; }
+.goalEditor fieldset label { display: flex; align-items: center; gap: .4rem; font-weight: 400; }
+.goalEditor fieldset input { min-height: auto; }
+.goalError { display: flex; gap: .5rem; align-items: center; border: 1px solid #bd3434; border-radius: .75rem; padding: .75rem; }
+.goalHistory ol { margin: 0; padding: 0; list-style: none; }
+.goalHistory li { display: flex; justify-content: space-between; gap: 1rem; border-top: 1px solid #e8eeea; padding-block: .75rem; }
 .stateCard { text-align: center; padding-block: 2.5rem; }
 .errorCard,
 .notice { display: flex; gap: .75rem; align-items: center; }
@@ -83,4 +121,8 @@
   .primaryAction { width: 100%; }
   .metricGrid { grid-template-columns: 1fr; }
   .history li { grid-template-columns: 1fr; gap: .25rem; }
+  .goalActions { display: grid; grid-template-columns: 1fr; }
+  .goalActions button { width: 100%; }
+  .goalProgress,
+  .goalHistory li { grid-template-columns: 1fr; display: grid; }
 }

@@ -20,6 +20,7 @@ from app.core.calendar import diary_calendar_authority
 from app.models import (
     DiaryDayStatus,
     DiaryDayStatusValue,
+    NutritionAnalysis,
     NutritionAnalysisCommandIdempotency,
     NutritionAnalysisRevision,
     NutritionAnalysisRevisionEvent,
@@ -28,7 +29,11 @@ from app.models import (
 from app.schemas import AnalysisEvaluateCommandV1
 from app.services import pattern_analysis
 from app.services.day_logging_status import command_day_status
-from app.services.pattern_analysis import PatternAnalysisError, evaluate_analysis
+from app.services.pattern_analysis import (
+    PatternAnalysisError,
+    evaluate_analysis,
+    refresh_historical_analysis,
+)
 
 
 PRINCIPAL_ID = UUID("00000000-0000-0000-0000-000000000321")
@@ -168,6 +173,7 @@ def test_reopen_and_evaluation_serialize_without_losing_stale_event() -> None:
             '"analysis-none"',
         )
     engine.dispose()
+
     owner_locked = Event()
     evaluation_attempted = Event()
 
@@ -238,4 +244,75 @@ def test_reopen_and_evaluation_serialize_without_losing_stale_event() -> None:
         assert sum(event.event_type == "day_reopened" for event in events) == 1
         assert sum(event.event_type == "superseded_by_revision" for event in events) == 1
         assert len(session.exec(select(NutritionAnalysisRevision)).all()) == 2
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_two_historical_refresh_workers_create_one_revision() -> None:
+    url = _database_url()
+    _prepare(url)
+    engine = create_engine(url)
+    with Session(engine) as session:
+        first, _, _ = evaluate_analysis(
+            session,
+            PRINCIPAL,
+            AnalysisEvaluateCommandV1(expected_current_revision=None),
+            "historical-initial",
+            '"analysis-none"',
+        )
+        command_day_status(
+            session,
+            PRINCIPAL,
+            AUTHORITY.current_diary_date,
+            "reopen",
+            1,
+            "historical-reopen",
+            AUTHORITY,
+        )
+        event_id = session.exec(
+            select(NutritionAnalysisRevisionEvent.id).where(
+                NutritionAnalysisRevisionEvent.event_type == "day_reopened"
+            )
+        ).one()
+    engine.dispose()
+    barrier = Barrier(2)
+
+    def worker() -> tuple[int, bool]:
+        worker_engine = create_engine(url)
+        try:
+            with Session(worker_engine) as session:
+                barrier.wait()
+                session.exec(
+                    select(Principal)
+                    .where(Principal.id == PRINCIPAL_ID)
+                    .with_for_update()
+                ).one()
+                revision, created = refresh_historical_analysis(
+                    session, PRINCIPAL, first.source_analysis_id, event_id
+                )
+                session.commit()
+                return revision.revision, created
+        finally:
+            worker_engine.dispose()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = sorted(executor.map(lambda _: worker(), range(2)))
+    assert outcomes == [(2, False), (2, True)]
+
+    engine = create_engine(url)
+    with Session(engine) as session:
+        series = session.get(NutritionAnalysis, first.source_analysis_id)
+        revisions = session.exec(
+            select(NutritionAnalysisRevision).where(
+                NutritionAnalysisRevision.analysis_id == first.source_analysis_id
+            )
+        ).all()
+        supersessions = session.exec(
+            select(NutritionAnalysisRevisionEvent).where(
+                NutritionAnalysisRevisionEvent.event_type == "superseded_by_revision"
+            )
+        ).all()
+        assert series is not None and series.current_revision_number == 2
+        assert len(revisions) == 2
+        assert len(supersessions) == 1
     engine.dispose()

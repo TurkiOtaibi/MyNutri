@@ -584,7 +584,7 @@ class Food(SQLModel, table=True):
         alias="principal_id",
         sa_column=Column(
             ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False, index=True
-        )
+        ),
     )
     updated_by_principal_id: uuid.UUID | None = Field(
         default=None,
@@ -709,9 +709,7 @@ class FoodTaxonomyV2MigrationAudit(SQLModel, table=True):
     )
     recorded_at: datetime = Field(
         default_factory=utcnow,
-        sa_column=Column(
-            DateTime(timezone=True), nullable=False, server_default=sa_text("now()")
-        ),
+        sa_column=Column(DateTime(timezone=True), nullable=False, server_default=sa_text("now()")),
     )
 
 
@@ -742,7 +740,7 @@ class FoodGroupContribution(SQLModel, table=True):
         alias="principal_id",
         sa_column=Column(
             ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False, index=True
-        )
+        ),
     )
     food_id: uuid.UUID = Field(nullable=False, index=True)
     group_key: str = Field(sa_column=Column(Text(), nullable=False))
@@ -774,7 +772,7 @@ class FoodAnalyticalTrait(SQLModel, table=True):
         alias="principal_id",
         sa_column=Column(
             ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False, index=True
-        )
+        ),
     )
     food_id: uuid.UUID = Field(nullable=False, index=True)
     trait_key: str = Field(sa_column=Column(Text(), nullable=False))
@@ -788,9 +786,7 @@ class DiaryDayStatus(SQLModel, table=True):
     __tablename__ = "diary_day_status"
     __table_args__ = (
         UniqueConstraint("id", "principal_id", name="uq_diary_day_status_id_principal"),
-        UniqueConstraint(
-            "principal_id", "diary_date", name="uq_diary_day_status_principal_date"
-        ),
+        UniqueConstraint("principal_id", "diary_date", name="uq_diary_day_status_principal_date"),
         CheckConstraint("status IN ('partial','complete')", name="ck_diary_day_status_value"),
         CheckConstraint("version >= 1", name="ck_diary_day_status_version"),
         CheckConstraint("entry_count >= 0", name="ck_diary_day_status_entry_count"),
@@ -1013,7 +1009,9 @@ class NutritionAnalysis(SQLModel, table=True):
     calendar_timezone: str = Field(sa_column=Column(String(64), nullable=False))
     interface_version: int = Field(default=1, sa_column=Column(SmallInteger(), nullable=False))
     current_revision_id: uuid.UUID | None = Field(default=None, nullable=True)
-    current_revision_number: int | None = Field(default=None, sa_column=Column(Integer(), nullable=True))
+    current_revision_number: int | None = Field(
+        default=None, sa_column=Column(Integer(), nullable=True)
+    )
     created_at: datetime = Field(
         default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
     )
@@ -1126,10 +1124,18 @@ class NutritionAnalysisEvidenceRef(SQLModel, table=True):
             "metric_key",
             name="uq_nutrition_analysis_evidence_identity",
         ),
-        CheckConstraint("period IN ('current','previous')", name="ck_nutrition_analysis_evidence_period"),
+        CheckConstraint(
+            "period IN ('current','previous')", name="ck_nutrition_analysis_evidence_period"
+        ),
         CheckConstraint("day_version >= 0", name="ck_nutrition_analysis_evidence_day_version"),
-        CheckConstraint("snapshot_schema_version IN (2,3)", name="ck_nutrition_analysis_evidence_snapshot_version"),
-        CheckConstraint("value_state IN ('known','explicit_zero','unknown')", name="ck_nutrition_analysis_evidence_value_state"),
+        CheckConstraint(
+            "snapshot_schema_version IN (2,3)",
+            name="ck_nutrition_analysis_evidence_snapshot_version",
+        ),
+        CheckConstraint(
+            "value_state IN ('known','explicit_zero','unknown')",
+            name="ck_nutrition_analysis_evidence_value_state",
+        ),
         CheckConstraint(
             "(value_state='unknown' AND value IS NULL) OR "
             "(value_state='explicit_zero' AND value=0) OR "
@@ -1182,7 +1188,20 @@ class NutritionAnalysisRevisionEvent(SQLModel, table=True):
             "successor_revision_id",
             name="uq_nutrition_analysis_event_identity",
         ),
+        UniqueConstraint(
+            "id",
+            "principal_id",
+            "occurred_at",
+            name="uq_nutrition_analysis_event_owner_time",
+        ),
         Index("ix_nutrition_analysis_event_revision_time", "revision_id", "occurred_at"),
+        Index(
+            "ix_nutrition_analysis_event_owner_revision_time_id",
+            "principal_id",
+            "revision_id",
+            "occurred_at",
+            "id",
+        ),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -1198,7 +1217,9 @@ class NutritionAnalysisRevisionEvent(SQLModel, table=True):
         ),
     )
     reason: str = Field(sa_column=Column(String(96), nullable=False))
-    source_day_version: int | None = Field(default=None, sa_column=Column(BigInteger(), nullable=True))
+    source_day_version: int | None = Field(
+        default=None, sa_column=Column(BigInteger(), nullable=True)
+    )
     occurred_at: datetime = Field(
         default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
     )
@@ -1211,8 +1232,13 @@ class NutritionAnalysisCommandIdempotency(SQLModel, table=True):
         UniqueConstraint(
             "principal_id", "operation", "key_digest", name="uq_nutrition_analysis_command_scope"
         ),
-        CheckConstraint("length(key_digest) = 64 AND length(command_hash) = 64", name="ck_nutrition_analysis_command_hashes"),
-        CheckConstraint("response_status IN (200,201)", name="ck_nutrition_analysis_command_status"),
+        CheckConstraint(
+            "length(key_digest) = 64 AND length(command_hash) = 64",
+            name="ck_nutrition_analysis_command_hashes",
+        ),
+        CheckConstraint(
+            "response_status IN (200,201)", name="ck_nutrition_analysis_command_status"
+        ),
         Index("ix_nutrition_analysis_command_expiry", "expires_at"),
     )
 
@@ -1226,9 +1252,7 @@ class NutritionAnalysisCommandIdempotency(SQLModel, table=True):
     captured_date: date = Field(nullable=False)
     analysis_id: uuid.UUID | None = Field(
         default=None,
-        sa_column=Column(
-            ForeignKey("nutrition_analysis.id", ondelete="RESTRICT"), nullable=True
-        ),
+        sa_column=Column(ForeignKey("nutrition_analysis.id", ondelete="RESTRICT"), nullable=True),
     )
     revision_id: uuid.UUID | None = Field(
         default=None,
@@ -1249,3 +1273,676 @@ class NutritionAnalysisCommandIdempotency(SQLModel, table=True):
         default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
     )
     expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class WeeklyPriorityRecommendation(SQLModel, table=True):
+    __tablename__ = "weekly_priority_recommendation"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["source_analysis_revision_id", "principal_id"],
+            ["nutrition_analysis_revision.id", "nutrition_analysis_revision.principal_id"],
+            name="fk_weekly_priority_analysis_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["source_analysis_id", "principal_id"],
+            ["nutrition_analysis.id", "nutrition_analysis.principal_id"],
+            name="fk_weekly_priority_source_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["superseded_by_id", "principal_id"],
+            ["weekly_priority_recommendation.id", "weekly_priority_recommendation.principal_id"],
+            name="fk_weekly_priority_supersession_owner",
+            ondelete="RESTRICT",
+            use_alter=True,
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        UniqueConstraint("id", "principal_id", name="uq_weekly_priority_id_owner"),
+        UniqueConstraint(
+            "principal_id",
+            "source_analysis_revision_id",
+            "rules_version",
+            name="uq_weekly_priority_source_rules",
+        ),
+        CheckConstraint("schema_version = 1", name="ck_weekly_priority_schema"),
+        CheckConstraint(
+            "status IN ('selected','none','stale','superseded','safety_suppressed')",
+            name="ck_weekly_priority_status",
+        ),
+        CheckConstraint("evaluation_mode IN ('live','shadow')", name="ck_weekly_priority_mode"),
+        CheckConstraint("period_end - period_start = 6", name="ck_weekly_priority_period").ddl_if(
+            dialect="postgresql"
+        ),
+        CheckConstraint(
+            "length(input_digest) = 64 AND length(content_hash) = 64",
+            name="ck_weekly_priority_hash",
+        ),
+        CheckConstraint(
+            "(superseded_by_id IS NULL AND superseded_at IS NULL) OR "
+            "(superseded_by_id IS NOT NULL AND superseded_at IS NOT NULL)",
+            name="ck_weekly_priority_supersession",
+        ),
+        Index(
+            "uq_weekly_priority_one_selected",
+            "principal_id",
+            unique=True,
+            postgresql_where=sa_text("superseded_at IS NULL AND status='selected'"),
+            sqlite_where=sa_text("superseded_at IS NULL AND status='selected'"),
+        ),
+        Index(
+            "ix_weekly_priority_current",
+            "principal_id",
+            desc("period_end"),
+            desc("created_at"),
+            desc("id"),
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    source_analysis_revision_id: uuid.UUID = Field(nullable=False)
+    source_analysis_id: uuid.UUID = Field(nullable=False)
+    source_analysis_revision: int = Field(sa_column=Column(Integer(), nullable=False))
+    schema_version: int = Field(default=1, sa_column=Column(SmallInteger(), nullable=False))
+    period_start: date = Field(nullable=False)
+    period_end: date = Field(nullable=False)
+    as_of_diary_date: date = Field(nullable=False)
+    evaluation_diary_date: date = Field(nullable=False)
+    evaluation_mode: str = Field(default="live", sa_column=Column(String(16), nullable=False))
+    status: str = Field(sa_column=Column(String(32), nullable=False))
+    rules_version: str = Field(sa_column=Column(String(64), nullable=False))
+    copy_version: str = Field(sa_column=Column(String(64), nullable=False))
+    analysis_rules_version: str = Field(sa_column=Column(String(64), nullable=False))
+    source_versions: dict[str, Any] = Field(
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    )
+    result_document: dict[str, Any] = Field(
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    )
+    input_digest: str = Field(sa_column=Column(String(64), nullable=False))
+    content_hash: str = Field(sa_column=Column(String(64), nullable=False))
+    superseded_by_id: uuid.UUID | None = Field(default=None, nullable=True)
+    superseded_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    generated_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+
+
+class WeeklyPriorityEvaluation(SQLModel, table=True):
+    __tablename__ = "weekly_priority_evaluation"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["recommendation_id", "principal_id"],
+            ["weekly_priority_recommendation.id", "weekly_priority_recommendation.principal_id"],
+            name="fk_weekly_priority_evaluation_owner",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "principal_id",
+            "evaluation_mode",
+            "evaluation_diary_date",
+            "recommendation_id",
+            name="uq_weekly_priority_evaluation_identity",
+        ),
+        CheckConstraint("evaluation_mode IN ('live','shadow')", name="ck_priority_eval_mode"),
+        CheckConstraint(
+            "main_trackability IS NULL OR main_trackability IN ('trackable','informational_only')",
+            name="ck_priority_eval_trackability",
+        ),
+        CheckConstraint(
+            "recommendation_selected OR main_trackability IS NULL",
+            name="ck_priority_eval_selection",
+        ),
+        CheckConstraint(
+            "NOT goal_offer_created OR (evaluation_mode='live' AND main_trackability='trackable')",
+            name="ck_priority_eval_offer",
+        ),
+        Index("ix_priority_eval_launch", "evaluation_mode", "evaluation_diary_date"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    recommendation_id: uuid.UUID = Field(nullable=False)
+    evaluation_mode: str = Field(sa_column=Column(String(16), nullable=False))
+    evaluation_diary_date: date = Field(nullable=False)
+    selector_eligible: bool = Field(nullable=False)
+    recommendation_selected: bool = Field(nullable=False)
+    main_trackability: str | None = Field(default=None, sa_column=Column(String(32), nullable=True))
+    goal_offer_created: bool = Field(default=False, nullable=False)
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+
+
+class WeeklyPriorityEvidenceRef(SQLModel, table=True):
+    __tablename__ = "weekly_priority_evidence_ref"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["recommendation_id", "principal_id"],
+            ["weekly_priority_recommendation.id", "weekly_priority_recommendation.principal_id"],
+            name="fk_weekly_priority_evidence_owner",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "recommendation_id",
+            "metric_key",
+            "evidence_kind",
+            "opaque_source_id",
+            "diary_date",
+            name="uq_weekly_priority_evidence_identity",
+        ),
+        CheckConstraint(
+            "coverage_percent IS NULL OR coverage_percent BETWEEN 0 AND 100",
+            name="ck_weekly_priority_evidence_coverage",
+        ),
+        CheckConstraint("evidence_kind = 'analysis_fact'", name="ck_weekly_priority_evidence_kind"),
+        CheckConstraint(
+            "value IS NULL OR value NOT IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)",
+            name="ck_weekly_priority_evidence_finite",
+        ).ddl_if(dialect="postgresql"),
+        Index("ix_weekly_priority_evidence_principal_date", "principal_id", desc("diary_date")),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    recommendation_id: uuid.UUID = Field(nullable=False)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    metric_key: str = Field(sa_column=Column(String(96), nullable=False))
+    evidence_kind: str = Field(sa_column=Column(String(32), nullable=False))
+    opaque_source_id: uuid.UUID = Field(nullable=False)
+    source_version: str = Field(sa_column=Column(String(64), nullable=False))
+    diary_date: date = Field(nullable=False)
+    value: float | None = Field(default=None, sa_column=Column(Numeric(24, 6), nullable=True))
+    unit: str = Field(sa_column=Column(String(32), nullable=False))
+    coverage_percent: float | None = Field(
+        default=None, sa_column=Column(Numeric(6, 3), nullable=True)
+    )
+
+
+class BehaviorGoal(SQLModel, table=True):
+    __tablename__ = "behavior_goal"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["recommendation_id", "principal_id"],
+            ["weekly_priority_recommendation.id", "weekly_priority_recommendation.principal_id"],
+            name="fk_behavior_goal_recommendation_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            [
+                "last_progress_attempt_event_id",
+                "principal_id",
+                "last_progress_attempt_event_occurred_at",
+            ],
+            [
+                "nutrition_analysis_revision_event.id",
+                "nutrition_analysis_revision_event.principal_id",
+                "nutrition_analysis_revision_event.occurred_at",
+            ],
+            name="fk_behavior_goal_progress_attempt_event_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            [
+                "last_progress_analysis_id",
+                "last_progress_analysis_revision_id",
+                "principal_id",
+            ],
+            [
+                "nutrition_analysis_revision.analysis_id",
+                "nutrition_analysis_revision.id",
+                "nutrition_analysis_revision.principal_id",
+            ],
+            name="fk_behavior_goal_progress_source_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            [
+                "last_progress_attempt_analysis_id",
+                "last_progress_attempt_analysis_revision_id",
+                "principal_id",
+            ],
+            [
+                "nutrition_analysis_revision.analysis_id",
+                "nutrition_analysis_revision.id",
+                "nutrition_analysis_revision.principal_id",
+            ],
+            name="fk_behavior_goal_progress_attempt_source_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["root_goal_id", "principal_id"],
+            ["behavior_goal.id", "behavior_goal.principal_id"],
+            name="fk_behavior_goal_root_owner",
+            ondelete="RESTRICT",
+            use_alter=True,
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        ForeignKeyConstraint(
+            ["previous_goal_id", "principal_id"],
+            ["behavior_goal.id", "behavior_goal.principal_id"],
+            name="fk_behavior_goal_previous_owner",
+            ondelete="RESTRICT",
+            use_alter=True,
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        UniqueConstraint("id", "principal_id", name="uq_behavior_goal_id_owner"),
+        UniqueConstraint(
+            "principal_id", "root_goal_id", "sequence_number", name="uq_behavior_goal_sequence"
+        ),
+        UniqueConstraint("principal_id", "previous_goal_id", name="uq_behavior_goal_successor"),
+        CheckConstraint("sequence_number >= 1 AND version >= 1", name="ck_behavior_goal_versions"),
+        CheckConstraint("weekly_target_count BETWEEN 1 AND 7", name="ck_behavior_goal_target"),
+        CheckConstraint(
+            "window_end >= window_start AND window_end - window_start <= 6",
+            name="ck_behavior_goal_window",
+        ).ddl_if(dialect="postgresql"),
+        CheckConstraint(
+            "state IN ('offered','deferred','active','paused','completed','incomplete','rejected','ended','archived')",
+            name="ck_behavior_goal_state",
+        ),
+        CheckConstraint(
+            "private_note IS NULL OR length(private_note) <= 280", name="ck_behavior_goal_note"
+        ),
+        CheckConstraint(
+            "jsonb_typeof(day_mask)='array' AND jsonb_array_length(day_mask) <= 7",
+            name="ck_behavior_goal_day_mask",
+        ).ddl_if(dialect="postgresql"),
+        CheckConstraint(
+            "reminder_preference IN ('enabled','disabled')",
+            name="ck_behavior_goal_reminder_preference",
+        ),
+        CheckConstraint(
+            "(state <> 'deferred' OR (deferred_at IS NOT NULL AND deferred_until IS NOT NULL)) "
+            "AND (state <> 'paused' OR paused_at IS NOT NULL) "
+            "AND (state <> 'completed' OR completed_at IS NOT NULL) "
+            "AND (state <> 'incomplete' OR reviewed_at IS NOT NULL) "
+            "AND (state <> 'rejected' OR rejected_at IS NOT NULL) "
+            "AND (state <> 'ended' OR ended_at IS NOT NULL)",
+            name="ck_behavior_goal_state_timestamps",
+        ),
+        CheckConstraint(
+            "(last_progress_analysis_id IS NULL "
+            "AND last_progress_analysis_revision_id IS NULL "
+            "AND last_progress_analysis_revision IS NULL) OR "
+            "(last_progress_analysis_id IS NOT NULL "
+            "AND last_progress_analysis_revision_id IS NOT NULL "
+            "AND last_progress_analysis_revision >= 1)",
+            name="ck_behavior_goal_progress_source",
+        ),
+        CheckConstraint(
+            "(last_progress_attempt_analysis_id IS NULL "
+            "AND last_progress_attempt_analysis_revision_id IS NULL "
+            "AND last_progress_attempt_analysis_revision IS NULL) OR "
+            "(last_progress_attempt_analysis_id IS NOT NULL "
+            "AND last_progress_attempt_analysis_revision_id IS NOT NULL "
+            "AND last_progress_attempt_analysis_revision >= 1)",
+            name="ck_behavior_goal_progress_attempt_source",
+        ),
+        CheckConstraint(
+            "(last_progress_attempt_event_id IS NULL "
+            "AND last_progress_attempt_event_occurred_at IS NULL) OR "
+            "(last_progress_attempt_event_id IS NOT NULL "
+            "AND last_progress_attempt_event_occurred_at IS NOT NULL)",
+            name="ck_behavior_goal_progress_attempt_event",
+        ),
+        Index(
+            "uq_behavior_goal_one_primary",
+            "principal_id",
+            unique=True,
+            postgresql_where=sa_text("state IN ('active','paused')"),
+            sqlite_where=sa_text("state IN ('active','paused')"),
+        ),
+        Index(
+            "ix_behavior_goal_history",
+            "principal_id",
+            desc("window_end"),
+            desc("created_at"),
+            desc("id"),
+        ),
+        Index(
+            "ix_behavior_goal_due_progress_source",
+            "state",
+            "reviewed_at",
+            "last_progress_analysis_revision_id",
+            "window_end",
+            "id",
+        ),
+        Index(
+            "ix_behavior_goal_finalized_unattempted",
+            "window_end",
+            "id",
+            postgresql_where=sa_text(
+                "state = 'completed' AND reviewed_at IS NOT NULL "
+                "AND last_progress_attempt_analysis_revision_id IS NULL"
+            ),
+            sqlite_where=sa_text(
+                "state = 'completed' AND reviewed_at IS NOT NULL "
+                "AND last_progress_attempt_analysis_revision_id IS NULL"
+            ),
+        ),
+        Index(
+            "ix_behavior_goal_finalized_attempt_revision",
+            "last_progress_attempt_analysis_id",
+            "last_progress_attempt_analysis_revision",
+            "window_end",
+            "id",
+            postgresql_where=sa_text(
+                "state = 'completed' AND reviewed_at IS NOT NULL "
+                "AND last_progress_attempt_analysis_revision_id IS NOT NULL"
+            ),
+            sqlite_where=sa_text(
+                "state = 'completed' AND reviewed_at IS NOT NULL "
+                "AND last_progress_attempt_analysis_revision_id IS NOT NULL"
+            ),
+        ),
+        Index(
+            "ix_behavior_goal_finalized_attempt_event",
+            "last_progress_attempt_event_occurred_at",
+            "last_progress_attempt_event_id",
+            "window_end",
+            "id",
+            postgresql_where=sa_text(
+                "state = 'completed' AND reviewed_at IS NOT NULL"
+            ),
+            sqlite_where=sa_text(
+                "state = 'completed' AND reviewed_at IS NOT NULL"
+            ),
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    recommendation_id: uuid.UUID = Field(nullable=False)
+    root_goal_id: uuid.UUID = Field(nullable=False)
+    previous_goal_id: uuid.UUID | None = Field(default=None, nullable=True)
+    sequence_number: int = Field(default=1, sa_column=Column(Integer(), nullable=False))
+    state: str = Field(sa_column=Column(String(24), nullable=False))
+    version: int = Field(default=1, sa_column=Column(Integer(), nullable=False))
+    rule_key: str = Field(sa_column=Column(String(64), nullable=False))
+    action_key: str = Field(sa_column=Column(String(96), nullable=False))
+    weekly_target_count: int = Field(sa_column=Column(SmallInteger(), nullable=False))
+    day_mask: list[int] = Field(
+        default_factory=list,
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False),
+    )
+    window_start: date = Field(nullable=False)
+    window_end: date = Field(nullable=False)
+    rules_version: str = Field(sa_column=Column(String(64), nullable=False))
+    copy_version: str = Field(sa_column=Column(String(64), nullable=False))
+    progress_document: dict[str, Any] = Field(
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    )
+    progress_revision: int = Field(default=1, sa_column=Column(Integer(), nullable=False))
+    last_progress_analysis_id: uuid.UUID | None = Field(default=None, nullable=True)
+    last_progress_analysis_revision_id: uuid.UUID | None = Field(default=None, nullable=True)
+    last_progress_analysis_revision: int | None = Field(
+        default=None, sa_column=Column(Integer(), nullable=True)
+    )
+    last_progress_attempt_analysis_id: uuid.UUID | None = Field(default=None, nullable=True)
+    last_progress_attempt_analysis_revision_id: uuid.UUID | None = Field(
+        default=None, nullable=True
+    )
+    last_progress_attempt_analysis_revision: int | None = Field(
+        default=None, sa_column=Column(Integer(), nullable=True)
+    )
+    last_progress_attempt_event_id: uuid.UUID | None = Field(default=None, nullable=True)
+    last_progress_attempt_event_occurred_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    reminder_preference: str = Field(
+        default="disabled", sa_column=Column(String(16), nullable=False)
+    )
+    external_notifications_enabled: bool = Field(default=False, nullable=False)
+    private_note: str | None = Field(default=None, sa_column=Column(String(280), nullable=True))
+    accepted_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    deferred_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    deferred_until: date | None = Field(default=None, nullable=True)
+    paused_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    changed_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    resumed_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    completed_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    reviewed_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    rejected_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    ended_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    archived_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    updated_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+
+
+class BehaviorGoalHistory(SQLModel, table=True):
+    __tablename__ = "behavior_goal_history"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["goal_id", "principal_id"],
+            ["behavior_goal.id", "behavior_goal.principal_id"],
+            name="fk_behavior_goal_history_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["root_goal_id", "principal_id"],
+            ["behavior_goal.id", "behavior_goal.principal_id"],
+            name="fk_behavior_goal_history_root_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["previous_goal_id", "principal_id"],
+            ["behavior_goal.id", "behavior_goal.principal_id"],
+            name="fk_behavior_goal_history_previous_owner",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "goal_id",
+            "goal_version",
+            "principal_id",
+            name="uq_behavior_goal_history_revision_owner",
+        ),
+        UniqueConstraint("goal_id", "goal_version", name="uq_behavior_goal_history_version"),
+        CheckConstraint("actor_type IN ('owner','system')", name="ck_behavior_goal_history_actor"),
+        CheckConstraint(
+            "event_type IN ('offered','accept','edit','defer','reject','change','changed',"
+            "'pause','resume','end','completed','evidence_reopened','progress_updated',"
+            "'historical_evidence_changed','finalized_completed','finalized_incomplete',"
+            "'repeated_from_previous_window')",
+            name="ck_behavior_goal_history_event",
+        ),
+        CheckConstraint(
+            "reason IS NULL OR reason IN ('not_relevant','too_difficult','prefer_other',"
+            "'pause_tracking','other','owner_requested','evidence_superseded')",
+            name="ck_behavior_goal_history_reason",
+        ),
+        Index("ix_behavior_goal_history_goal_time", "goal_id", desc("occurred_at")),
+        Index(
+            "ix_behavior_goal_history_principal_occurred_id",
+            "principal_id",
+            desc("occurred_at"),
+            desc("id"),
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    goal_id: uuid.UUID = Field(nullable=False)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    root_goal_id: uuid.UUID = Field(nullable=False)
+    previous_goal_id: uuid.UUID | None = Field(default=None, nullable=True)
+    sequence_number: int = Field(nullable=False)
+    goal_version: int = Field(nullable=False)
+    event_type: str = Field(sa_column=Column(String(64), nullable=False))
+    from_state: str | None = Field(default=None, sa_column=Column(String(24), nullable=True))
+    to_state: str = Field(sa_column=Column(String(24), nullable=False))
+    request_digest: str | None = Field(default=None, sa_column=Column(String(64), nullable=True))
+    actor_type: str = Field(sa_column=Column(String(16), nullable=False))
+    reason: str | None = Field(default=None, sa_column=Column(String(64), nullable=True))
+    terms_progress_snapshot: dict[str, Any] = Field(
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    )
+    occurred_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    request_id: str | None = Field(default=None, sa_column=Column(String(64), nullable=True))
+
+
+class BehaviorGoalCommandIdempotency(SQLModel, table=True):
+    __tablename__ = "behavior_goal_command_idempotency"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["source_goal_id", "principal_id"],
+            ["behavior_goal.id", "behavior_goal.principal_id"],
+            name="fk_behavior_goal_command_source_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["recommendation_id", "principal_id"],
+            ["weekly_priority_recommendation.id", "weekly_priority_recommendation.principal_id"],
+            name="fk_behavior_goal_command_recommendation_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["allocated_goal_id", "principal_id"],
+            ["behavior_goal.id", "behavior_goal.principal_id"],
+            name="fk_behavior_goal_command_allocated_owner",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "principal_id",
+            "operation",
+            "source_goal_id",
+            "key_digest",
+            name="uq_behavior_goal_command_scope",
+        ),
+        CheckConstraint(
+            "length(key_digest) = 64 AND length(command_hash) = 64",
+            name="ck_behavior_goal_command_hashes",
+        ),
+        CheckConstraint(
+            "response_status BETWEEN 200 AND 599",
+            name="ck_behavior_goal_command_status",
+        ),
+        Index("ix_behavior_goal_command_completed", "principal_id", desc("completed_at")),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    operation: str = Field(sa_column=Column(String(64), nullable=False))
+    source_goal_id: uuid.UUID = Field(nullable=False)
+    key_digest: str = Field(sa_column=Column(String(64), nullable=False))
+    command_hash: str = Field(sa_column=Column(String(64), nullable=False))
+    captured_diary_date: date = Field(nullable=False)
+    recommendation_id: uuid.UUID | None = Field(default=None, nullable=True)
+    allocated_goal_id: uuid.UUID | None = Field(default=None, nullable=True)
+    response_status: int = Field(sa_column=Column(SmallInteger(), nullable=False))
+    response_headers: dict[str, Any] = Field(
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    )
+    response_document: dict[str, Any] = Field(
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    )
+    completed_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+
+
+class BehaviorGoalReminderDelivery(SQLModel, table=True):
+    __tablename__ = "behavior_goal_reminder_delivery"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["goal_id", "principal_id"],
+            ["behavior_goal.id", "behavior_goal.principal_id"],
+            name="fk_behavior_goal_reminder_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["goal_id", "goal_revision", "principal_id"],
+            [
+                "behavior_goal_history.goal_id",
+                "behavior_goal_history.goal_version",
+                "behavior_goal_history.principal_id",
+            ],
+            name="fk_behavior_goal_reminder_revision_owner",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "goal_id", "goal_revision", "reminder_type", name="uq_behavior_goal_reminder_cap"
+        ),
+        CheckConstraint("attempts IN (0,1)", name="ck_behavior_goal_reminder_attempts"),
+        CheckConstraint(
+            "reminder_type IN ('midweek','endweek_review')",
+            name="ck_behavior_goal_reminder_type",
+        ),
+        CheckConstraint(
+            "channel IN ('in_app','external')",
+            name="ck_behavior_goal_reminder_channel",
+        ),
+        CheckConstraint(
+            "status IN ('eligible','deferred','sent','failed','suppressed')",
+            name="ck_behavior_goal_reminder_status",
+        ),
+        Index("ix_behavior_goal_reminder_due", "status", "deferred_until"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    goal_id: uuid.UUID = Field(nullable=False)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    goal_revision: int = Field(nullable=False)
+    reminder_type: str = Field(sa_column=Column(String(32), nullable=False))
+    channel: str = Field(sa_column=Column(String(16), nullable=False))
+    eligibility_diary_date: date = Field(nullable=False)
+    deferred_until: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    status: str = Field(sa_column=Column(String(24), nullable=False))
+    provider_receipt_digest: str | None = Field(
+        default=None, sa_column=Column(String(64), nullable=True)
+    )
+    attempts: int = Field(default=0, sa_column=Column(SmallInteger(), nullable=False))
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    updated_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )

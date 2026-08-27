@@ -1,5 +1,9 @@
 import type {
   AdminDiaryPage,
+  BehaviorGoalCommand,
+  BehaviorGoalCommandResponse,
+  BehaviorGoalCurrent,
+  BehaviorGoalHistory,
   DiaryEntryInput,
   DiaryEntryResponse,
   DiaryDayStatusResponse,
@@ -17,6 +21,7 @@ import type {
   TargetResponse,
   TargetPlanActivationResponse,
   TargetPlanHistoryResponse,
+  WeeklyPriorityResult,
   WeekSummary
 } from "./types";
 import type {
@@ -46,6 +51,10 @@ export class ApiError extends Error {
 }
 
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return (await apiFetchWithResponse<T>(path, init)).body;
+}
+
+async function apiFetchWithResponse<T>(path: string, init: RequestInit = {}): Promise<{ body: T; response: Response }> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -64,7 +73,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   });
 
   if (response.status === 204) {
-    return undefined as T;
+    return { body: undefined as T, response };
   }
 
   if (!response.ok) {
@@ -85,7 +94,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     throw new ApiError(message, response.status, detail, code);
   }
 
-  return response.json() as Promise<T>;
+  return { body: await response.json() as T, response };
 }
 
 export function getCurrentAccount(options: { accessToken: string; signal?: AbortSignal }): Promise<CurrentAccount> {
@@ -416,4 +425,65 @@ export function evaluatePatternAnalysis(
       body: JSON.stringify({ expected_current_revision: expectedRevision })
     })
   );
+}
+
+export async function getCurrentWeeklyPriority(
+  accessToken: string | null | undefined,
+  signal?: AbortSignal
+): Promise<WeeklyPriorityResult | null> {
+  try {
+    return await apiFetch<WeeklyPriorityResult>(
+      "/progress/weekly-priorities/current",
+      authorizedInit(accessToken, signal)
+    );
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 503 && error.code === "PRIORITY_EVIDENCE_UNAVAILABLE") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export function getCurrentBehaviorGoal(
+  accessToken: string | null | undefined,
+  signal?: AbortSignal
+): Promise<BehaviorGoalCurrent> {
+  return apiFetch<BehaviorGoalCurrent>(
+    "/progress/behavior-goals/current",
+    authorizedInit(accessToken, signal)
+  );
+}
+
+export function listBehaviorGoalHistory(
+  accessToken: string | null | undefined,
+  cursor?: string | null,
+  limit = 20,
+  signal?: AbortSignal
+): Promise<BehaviorGoalHistory> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
+  return apiFetch<BehaviorGoalHistory>(
+    `/progress/behavior-goals/history?${params.toString()}`,
+    authorizedInit(accessToken, signal)
+  );
+}
+
+export function commandBehaviorGoal(
+  goalId: string,
+  command: BehaviorGoalCommand,
+  idempotencyKey: string,
+  accessToken: string | null | undefined,
+  signal?: AbortSignal
+): Promise<BehaviorGoalCommandResponse & { idempotent_replayed: boolean }> {
+  return apiFetchWithResponse<BehaviorGoalCommandResponse>(
+    `/progress/behavior-goals/${goalId}/commands`,
+    authorizedInit(accessToken, signal, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify(command)
+    })
+  ).then(({ body, response }) => ({
+    ...body,
+    idempotent_replayed: response.headers.get("Idempotent-Replayed") === "true"
+  }));
 }
