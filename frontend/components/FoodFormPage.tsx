@@ -20,7 +20,7 @@ import {
   type FoodFormErrors,
   type FoodFormValues
 } from "@/lib/food";
-import type { FoodResponse, NovaClassification } from "@/lib/types";
+import type { FoodResponse } from "@/lib/types";
 
 import { FoodDeleteDialog } from "./FoodDeleteDialog";
 import { FoodFormActions, FoodGroupFields, FormSection, NumberField, SelectField, TextAreaField, TextField } from "@/features/foods/food-form-fields";
@@ -182,7 +182,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saveMutation.isPending || !registryQuery.data || registryQuery.data.registry_schema_version !== 2) return;
+    if (saveMutation.isPending || !registryQuery.data || registryQuery.data.registry_schema_version !== 3) return;
     const nextErrors = validateFoodForm(form);
     setErrors(nextErrors);
     if (hasFoodErrors(nextErrors)) {
@@ -237,7 +237,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     );
   }
 
-  if (registryQuery.data.registry_schema_version !== 2) {
+  if (registryQuery.data.registry_schema_version !== 3) {
     return (
       <section className="section-panel">
         <div className="state-note" role="alert">إصدار سجل التغذية غير متوافق. يلزم تحديث التطبيق أو التواصل مع الدعم قبل حفظ الطعام.</div>
@@ -403,7 +403,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
           <div className="field"><span>موثوقية المصدر</span><div className="input" aria-label="موثوقية المصدر الحالية">{reliabilityLabel}</div></div>
         </FormSection>
 
-        <FormSection title="المكونات وتصنيف NOVA">
+        <FormSection title="المكونات">
           {errors.ingredients ? <div className="field-error" role="alert">{errors.ingredients}</div> : null}
           <TextAreaField label="المكونات" value={form.ingredients.text ?? ""} onChange={(value) => setForm((current) => ({ ...current, ingredients: { ...current.ingredients, text: value } }))} />
           <SelectField
@@ -414,12 +414,6 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
           />
           <TextField label="اسم مصدر المكونات" value={form.ingredients.source_name ?? ""} onChange={(value) => setForm((current) => ({ ...current, ingredients: { ...current.ingredients, source_name: value } }))} />
           <TextField label="مرجع مصدر المكونات" value={form.ingredients.source_reference ?? ""} onChange={(value) => setForm((current) => ({ ...current, ingredients: { ...current.ingredients, source_reference: value } }))} />
-          <SelectField
-            label="تصنيف NOVA"
-            value={form.nova?.classification ?? ""}
-            onChange={(value) => setForm((current) => ({ ...current, nova: value ? { classification: value as NovaClassification } : null }))}
-            options={[["", "غير مراجع"], ...registry.nova.classifications.map((item) => [String(item), registry.nova.labels_ar[String(item)]] as [string, string])]}
-          />
         </FormSection>
 
         <FoodGroupFields form={form} setForm={setForm} registry={registry} error={errors.group_contributions ?? errors.analytical_traits} />

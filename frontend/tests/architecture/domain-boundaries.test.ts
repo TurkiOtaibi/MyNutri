@@ -83,8 +83,8 @@ function expectTransportBoundary(source: string) {
   expect(source).toContain('apiFetch<DiaryEntryResponse>("/diary/entries"');
   expect(source).toContain('`/diary/days/${diaryDate}/status`');
   expect(source).toContain('`/diary/days/${diaryDate}/${action}`');
-  expect(source).toContain('"/progress/nutrition-analysis/current"');
-  expect(source).toContain('"/progress/nutrition-analysis/evaluate"');
+  expect(source).toContain('"/progress/nutrition-analysis/v2/current"');
+  expect(source).toContain('"/progress/nutrition-analysis/v2/evaluate"');
   expect(source).toContain('"/progress/weekly-priorities/current"');
   expect(source).toContain('"/progress/behavior-goals/current"');
   expect(source).toContain('`/progress/behavior-goals/${goalId}/commands`');

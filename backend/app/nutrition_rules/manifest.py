@@ -14,7 +14,6 @@ from app.nutrition_rules.registry import (
     GRAIN_TYPE_DEFINITIONS,
     INGREDIENT_SOURCE_LABELS_AR,
     INGREDIENT_SOURCE_TYPES,
-    NOVA,
     NUTRIENTS,
     FOOD_CATEGORIES,
     FOOD_CATEGORY_LABELS_AR,
@@ -59,10 +58,10 @@ def rules_manifest() -> dict[str, Any]:
             for key in INGREDIENT_SOURCE_TYPES
         ],
         "reliability_levels": list(RELIABILITY_LEVELS),
-        "nova": NOVA,
         "analysis_metrics": [
             {"key": key, "unit": value[0], "direction": value[1]}
             for key, value in sorted(METRIC_REGISTRY.items())
+            if not key.startswith("nova:")
         ],
         "weekly_priority_rules": priority_registry(),
     }
@@ -98,7 +97,6 @@ def registry_response() -> dict[str, Any]:
         "ingredient_source_types": manifest["ingredient_source_types"],
         "ingredient_source_definitions": manifest["ingredient_source_definitions"],
         "reliability_levels": manifest["reliability_levels"],
-        "nova": manifest["nova"],
         "analysis_metrics": manifest["analysis_metrics"],
         "weekly_priority_rules": manifest["weekly_priority_rules"],
     }

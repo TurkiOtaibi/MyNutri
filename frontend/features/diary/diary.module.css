@@ -939,6 +939,7 @@
 :global(.compact-week-day) {
   position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   gap: 2px;
   min-width: 0;
@@ -959,6 +960,13 @@
 :global(.compact-week-day) small {
   font-size: 10px;
   white-space: nowrap;
+}
+
+:global(.compact-week-day) small {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 :global(.compact-week-day) i {

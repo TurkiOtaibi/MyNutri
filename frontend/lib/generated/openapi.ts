@@ -148,8 +148,8 @@ export interface AdminUserSummary {
   status: PrincipalStatus;
 }
 
-/** AnalysisComparisonV1 */
-export interface AnalysisComparisonV1 {
+/** AnalysisComparisonV2 */
+export interface AnalysisComparisonV2 {
   /** Difference */
   difference: number | null;
   /** Normalized Adverse Delta */
@@ -196,8 +196,8 @@ export interface AnalysisCompleteDayBandCountsV1 {
   "6-7": number;
 }
 
-/** AnalysisContributorV1 */
-export interface AnalysisContributorV1 {
+/** AnalysisContributorV2 */
+export interface AnalysisContributorV2 {
   /**
    * Contribution Value
    * @min 0
@@ -230,18 +230,18 @@ export interface AnalysisContributorV1 {
   unit: string;
 }
 
-/** AnalysisContributorsV1 */
-export interface AnalysisContributorsV1 {
+/** AnalysisContributorsV2 */
+export interface AnalysisContributorsV2 {
   /**
    * Current
    * @maxItems 5
    */
-  current: AnalysisContributorV1[];
+  current: AnalysisContributorV2[];
   /**
    * Previous
    * @maxItems 5
    */
-  previous: AnalysisContributorV1[];
+  previous: AnalysisContributorV2[];
 }
 
 /** AnalysisCoverageBandCountsV1 */
@@ -268,8 +268,8 @@ export interface AnalysisCoverageBandCountsV1 {
   unknown: number;
 }
 
-/** AnalysisDayFactV1 */
-export interface AnalysisDayFactV1 {
+/** AnalysisDayFactV2 */
+export interface AnalysisDayFactV2 {
   /** Analysis Eligible */
   analysis_eligible: boolean;
   /** Completed At */
@@ -292,13 +292,13 @@ export interface AnalysisDayFactV1 {
    */
   logging_status_version: number;
   /** Metric Values */
-  metric_values: AnalysisDayMetricValueV1[];
+  metric_values: AnalysisDayMetricValueV2[];
   /** Snapshot Schema Versions */
   snapshot_schema_versions: number[];
 }
 
-/** AnalysisDayMetricValueV1 */
-export interface AnalysisDayMetricValueV1 {
+/** AnalysisDayMetricValueV2 */
+export interface AnalysisDayMetricValueV2 {
   /** Amount Qualifier */
   amount_qualifier: "exact" | "at_least" | "unavailable";
   /**
@@ -327,8 +327,8 @@ export interface AnalysisDayMetricValueV1 {
   value_state: "known" | "explicit_zero" | "unknown";
 }
 
-/** AnalysisEvaluateCommandV1 */
-export interface AnalysisEvaluateCommandV1 {
+/** AnalysisEvaluateCommandV2 */
+export interface AnalysisEvaluateCommandV2 {
   /** Expected Current Revision */
   expected_current_revision?: number | null;
 }
@@ -362,41 +362,1124 @@ export interface AnalysisLatencyBandCountsV1 {
   unknown: number;
 }
 
-/** AnalysisMetricFactV1 */
-export interface AnalysisMetricFactV1 {
-  /** Aggregation */
-  aggregation:
-    | "average_numeric_days"
-    | "sum_period"
-    | "distinct_positive_dates"
-    | "ratio_percent"
-    | "distinct_source_count";
-  comparison: AnalysisComparisonV1;
-  contributors: AnalysisContributorsV1;
-  current: PeriodMetricEvidenceV1;
-  /** Direction */
-  direction: "minimum" | "maximum" | "range" | "minimize" | "monitor_only";
+/** AnalysisMetricEnergyCaloriesKcalPerDayV2 */
+export interface AnalysisMetricEnergyCaloriesKcalPerDayV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "maximum"
+   */
+  direction?: "maximum";
   /**
    * Metric Key
-   * @minLength 1
+   * @default "energy:calories_kcal_per_day"
    */
-  metric_key: string;
-  /** Metric Kind */
-  metric_kind:
-    | "daily_average"
-    | "period_total"
-    | "occurrence_days"
-    | "share_percent"
-    | "diversity_count"
-    | "calorie_share";
-  persistence: AnalysisPersistenceV1;
-  previous: PeriodMetricEvidenceV1;
-  target: AnalysisMetricTargetV1 | null;
+  metric_key?: "energy:calories_kcal_per_day";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
   /**
    * Unit
-   * @minLength 1
+   * @default "kcal/day"
    */
-  unit: string;
+  unit?: "kcal/day";
+}
+
+/** AnalysisMetricGroupDairyFortifiedServingsPerDayV2 */
+export interface AnalysisMetricGroupDairyFortifiedServingsPerDayV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "group:dairy_fortified_servings_per_day"
+   */
+  metric_key?: "group:dairy_fortified_servings_per_day";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "servings/day"
+   */
+  unit?: "servings/day";
+}
+
+/** AnalysisMetricGroupFruitVegetableGPerDayV2 */
+export interface AnalysisMetricGroupFruitVegetableGPerDayV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "group:fruit_vegetable_g_per_day"
+   */
+  metric_key?: "group:fruit_vegetable_g_per_day";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "g/day"
+   */
+  unit?: "g/day";
+}
+
+/** AnalysisMetricGroupLegumesServingsPerPeriodV2 */
+export interface AnalysisMetricGroupLegumesServingsPerPeriodV2 {
+  /**
+   * Aggregation
+   * @default "sum_period"
+   */
+  aggregation?: "sum_period";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "group:legumes_servings_per_period"
+   */
+  metric_key?: "group:legumes_servings_per_period";
+  /**
+   * Metric Kind
+   * @default "period_total"
+   */
+  metric_kind?: "period_total";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "servings/7d"
+   */
+  unit?: "servings/7d";
+}
+
+/** AnalysisMetricGroupNutsSeedsServingsPerPeriodV2 */
+export interface AnalysisMetricGroupNutsSeedsServingsPerPeriodV2 {
+  /**
+   * Aggregation
+   * @default "sum_period"
+   */
+  aggregation?: "sum_period";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "group:nuts_seeds_servings_per_period"
+   */
+  metric_key?: "group:nuts_seeds_servings_per_period";
+  /**
+   * Metric Kind
+   * @default "period_total"
+   */
+  metric_kind?: "period_total";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "servings/7d"
+   */
+  unit?: "servings/7d";
+}
+
+/** AnalysisMetricGroupOmega3SeafoodServingsPerPeriodV2 */
+export interface AnalysisMetricGroupOmega3SeafoodServingsPerPeriodV2 {
+  /**
+   * Aggregation
+   * @default "sum_period"
+   */
+  aggregation?: "sum_period";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "group:omega3_seafood_servings_per_period"
+   */
+  metric_key?: "group:omega3_seafood_servings_per_period";
+  /**
+   * Metric Kind
+   * @default "period_total"
+   */
+  metric_kind?: "period_total";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "servings/7d"
+   */
+  unit?: "servings/7d";
+}
+
+/** AnalysisMetricGroupProcessedMeatOccurrenceDaysV2 */
+export interface AnalysisMetricGroupProcessedMeatOccurrenceDaysV2 {
+  /**
+   * Aggregation
+   * @default "distinct_positive_dates"
+   */
+  aggregation?: "distinct_positive_dates";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimize"
+   */
+  direction?: "minimize";
+  /**
+   * Metric Key
+   * @default "group:processed_meat_occurrence_days"
+   */
+  metric_key?: "group:processed_meat_occurrence_days";
+  /**
+   * Metric Kind
+   * @default "occurrence_days"
+   */
+  metric_kind?: "occurrence_days";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "days/7d"
+   */
+  unit?: "days/7d";
+}
+
+/** AnalysisMetricGroupRedMeatGPerPeriodV2 */
+export interface AnalysisMetricGroupRedMeatGPerPeriodV2 {
+  /**
+   * Aggregation
+   * @default "sum_period"
+   */
+  aggregation?: "sum_period";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "maximum"
+   */
+  direction?: "maximum";
+  /**
+   * Metric Key
+   * @default "group:red_meat_g_per_period"
+   */
+  metric_key?: "group:red_meat_g_per_period";
+  /**
+   * Metric Kind
+   * @default "period_total"
+   */
+  metric_kind?: "period_total";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "g/7d"
+   */
+  unit?: "g/7d";
+}
+
+/** AnalysisMetricGroupSeafoodServingsPerPeriodV2 */
+export interface AnalysisMetricGroupSeafoodServingsPerPeriodV2 {
+  /**
+   * Aggregation
+   * @default "sum_period"
+   */
+  aggregation?: "sum_period";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "group:seafood_servings_per_period"
+   */
+  metric_key?: "group:seafood_servings_per_period";
+  /**
+   * Metric Kind
+   * @default "period_total"
+   */
+  metric_kind?: "period_total";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "servings/7d"
+   */
+  unit?: "servings/7d";
+}
+
+/** AnalysisMetricGroupSugarSweetenedBeverageOccurrenceDaysV2 */
+export interface AnalysisMetricGroupSugarSweetenedBeverageOccurrenceDaysV2 {
+  /**
+   * Aggregation
+   * @default "distinct_positive_dates"
+   */
+  aggregation?: "distinct_positive_dates";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimize"
+   */
+  direction?: "minimize";
+  /**
+   * Metric Key
+   * @default "group:sugar_sweetened_beverage_occurrence_days"
+   */
+  metric_key?: "group:sugar_sweetened_beverage_occurrence_days";
+  /**
+   * Metric Kind
+   * @default "occurrence_days"
+   */
+  metric_kind?: "occurrence_days";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "days/7d"
+   */
+  unit?: "days/7d";
+}
+
+/** AnalysisMetricGroupSweetsOccurrenceDaysV2 */
+export interface AnalysisMetricGroupSweetsOccurrenceDaysV2 {
+  /**
+   * Aggregation
+   * @default "distinct_positive_dates"
+   */
+  aggregation?: "distinct_positive_dates";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimize"
+   */
+  direction?: "minimize";
+  /**
+   * Metric Key
+   * @default "group:sweets_occurrence_days"
+   */
+  metric_key?: "group:sweets_occurrence_days";
+  /**
+   * Metric Kind
+   * @default "occurrence_days"
+   */
+  metric_kind?: "occurrence_days";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "days/7d"
+   */
+  unit?: "days/7d";
+}
+
+/** AnalysisMetricGroupWholeGrainSharePercentV2 */
+export interface AnalysisMetricGroupWholeGrainSharePercentV2 {
+  /**
+   * Aggregation
+   * @default "ratio_percent"
+   */
+  aggregation?: "ratio_percent";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "group:whole_grain_share_percent"
+   */
+  metric_key?: "group:whole_grain_share_percent";
+  /**
+   * Metric Kind
+   * @default "share_percent"
+   */
+  metric_kind?: "share_percent";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "percent"
+   */
+  unit?: "percent";
+}
+
+/** AnalysisMetricMacroCarbGPerDayV2 */
+export interface AnalysisMetricMacroCarbGPerDayV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "range"
+   */
+  direction?: "range";
+  /**
+   * Metric Key
+   * @default "macro:carb_g_per_day"
+   */
+  metric_key?: "macro:carb_g_per_day";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "g/day"
+   */
+  unit?: "g/day";
+}
+
+/** AnalysisMetricMacroFatGPerDayV2 */
+export interface AnalysisMetricMacroFatGPerDayV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "range"
+   */
+  direction?: "range";
+  /**
+   * Metric Key
+   * @default "macro:fat_g_per_day"
+   */
+  metric_key?: "macro:fat_g_per_day";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "g/day"
+   */
+  unit?: "g/day";
+}
+
+/** AnalysisMetricMacroProteinGPerDayV2 */
+export interface AnalysisMetricMacroProteinGPerDayV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "macro:protein_g_per_day"
+   */
+  metric_key?: "macro:protein_g_per_day";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "g/day"
+   */
+  unit?: "g/day";
+}
+
+/** AnalysisMetricNutrientAddedSugarGV2 */
+export interface AnalysisMetricNutrientAddedSugarGV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "maximum"
+   */
+  direction?: "maximum";
+  /**
+   * Metric Key
+   * @default "nutrient:added_sugar_g"
+   */
+  metric_key?: "nutrient:added_sugar_g";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "g/day"
+   */
+  unit?: "g/day";
+}
+
+/** AnalysisMetricNutrientCalciumMgV2 */
+export interface AnalysisMetricNutrientCalciumMgV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "nutrient:calcium_mg"
+   */
+  metric_key?: "nutrient:calcium_mg";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "mg/day"
+   */
+  unit?: "mg/day";
+}
+
+/** AnalysisMetricNutrientCholesterolMgV2 */
+export interface AnalysisMetricNutrientCholesterolMgV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "monitor_only"
+   */
+  direction?: "monitor_only";
+  /**
+   * Metric Key
+   * @default "nutrient:cholesterol_mg"
+   */
+  metric_key?: "nutrient:cholesterol_mg";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "mg/day"
+   */
+  unit?: "mg/day";
+}
+
+/** AnalysisMetricNutrientFiberGV2 */
+export interface AnalysisMetricNutrientFiberGV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "nutrient:fiber_g"
+   */
+  metric_key?: "nutrient:fiber_g";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "g/day"
+   */
+  unit?: "g/day";
+}
+
+/** AnalysisMetricNutrientFolateDfeMcgV2 */
+export interface AnalysisMetricNutrientFolateDfeMcgV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "nutrient:folate_dfe_mcg"
+   */
+  metric_key?: "nutrient:folate_dfe_mcg";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "mcg/day"
+   */
+  unit?: "mcg/day";
+}
+
+/** AnalysisMetricNutrientIodineMcgV2 */
+export interface AnalysisMetricNutrientIodineMcgV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "nutrient:iodine_mcg"
+   */
+  metric_key?: "nutrient:iodine_mcg";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "mcg/day"
+   */
+  unit?: "mcg/day";
+}
+
+/** AnalysisMetricNutrientIronMgV2 */
+export interface AnalysisMetricNutrientIronMgV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "nutrient:iron_mg"
+   */
+  metric_key?: "nutrient:iron_mg";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "mg/day"
+   */
+  unit?: "mg/day";
+}
+
+/** AnalysisMetricNutrientMagnesiumMgV2 */
+export interface AnalysisMetricNutrientMagnesiumMgV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "nutrient:magnesium_mg"
+   */
+  metric_key?: "nutrient:magnesium_mg";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "mg/day"
+   */
+  unit?: "mg/day";
+}
+
+/** AnalysisMetricNutrientPotassiumMgV2 */
+export interface AnalysisMetricNutrientPotassiumMgV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "nutrient:potassium_mg"
+   */
+  metric_key?: "nutrient:potassium_mg";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "mg/day"
+   */
+  unit?: "mg/day";
+}
+
+/** AnalysisMetricNutrientSaturatedFatGV2 */
+export interface AnalysisMetricNutrientSaturatedFatGV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "maximum"
+   */
+  direction?: "maximum";
+  /**
+   * Metric Key
+   * @default "nutrient:saturated_fat_g"
+   */
+  metric_key?: "nutrient:saturated_fat_g";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "g/day"
+   */
+  unit?: "g/day";
+}
+
+/** AnalysisMetricNutrientSeleniumMcgV2 */
+export interface AnalysisMetricNutrientSeleniumMcgV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "nutrient:selenium_mcg"
+   */
+  metric_key?: "nutrient:selenium_mcg";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "mcg/day"
+   */
+  unit?: "mcg/day";
+}
+
+/** AnalysisMetricNutrientSodiumMgV2 */
+export interface AnalysisMetricNutrientSodiumMgV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "maximum"
+   */
+  direction?: "maximum";
+  /**
+   * Metric Key
+   * @default "nutrient:sodium_mg"
+   */
+  metric_key?: "nutrient:sodium_mg";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "mg/day"
+   */
+  unit?: "mg/day";
+}
+
+/** AnalysisMetricNutrientTransFatGV2 */
+export interface AnalysisMetricNutrientTransFatGV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "maximum"
+   */
+  direction?: "maximum";
+  /**
+   * Metric Key
+   * @default "nutrient:trans_fat_g"
+   */
+  metric_key?: "nutrient:trans_fat_g";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "g/day"
+   */
+  unit?: "g/day";
+}
+
+/** AnalysisMetricNutrientVitaminARaeMcgV2 */
+export interface AnalysisMetricNutrientVitaminARaeMcgV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "nutrient:vitamin_a_rae_mcg"
+   */
+  metric_key?: "nutrient:vitamin_a_rae_mcg";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "mcg/day"
+   */
+  unit?: "mcg/day";
+}
+
+/** AnalysisMetricNutrientVitaminB12McgV2 */
+export interface AnalysisMetricNutrientVitaminB12McgV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "nutrient:vitamin_b12_mcg"
+   */
+  metric_key?: "nutrient:vitamin_b12_mcg";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "mcg/day"
+   */
+  unit?: "mcg/day";
+}
+
+/** AnalysisMetricNutrientZincMgV2 */
+export interface AnalysisMetricNutrientZincMgV2 {
+  /**
+   * Aggregation
+   * @default "average_numeric_days"
+   */
+  aggregation?: "average_numeric_days";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "minimum"
+   */
+  direction?: "minimum";
+  /**
+   * Metric Key
+   * @default "nutrient:zinc_mg"
+   */
+  metric_key?: "nutrient:zinc_mg";
+  /**
+   * Metric Kind
+   * @default "daily_average"
+   */
+  metric_kind?: "daily_average";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "mg/day"
+   */
+  unit?: "mg/day";
+}
+
+/** AnalysisMetricProteinSourceDiversityCountV2 */
+export interface AnalysisMetricProteinSourceDiversityCountV2 {
+  /**
+   * Aggregation
+   * @default "distinct_source_count"
+   */
+  aggregation?: "distinct_source_count";
+  comparison: AnalysisComparisonV2;
+  contributors: AnalysisContributorsV2;
+  current: PeriodMetricEvidenceV2;
+  /**
+   * Direction
+   * @default "monitor_only"
+   */
+  direction?: "monitor_only";
+  /**
+   * Metric Key
+   * @default "protein:source_diversity_count"
+   */
+  metric_key?: "protein:source_diversity_count";
+  /**
+   * Metric Kind
+   * @default "diversity_count"
+   */
+  metric_kind?: "diversity_count";
+  persistence: AnalysisPersistenceV2;
+  previous: PeriodMetricEvidenceV2;
+  target: AnalysisMetricTargetV2 | null;
+  /**
+   * Unit
+   * @default "sources/7d"
+   */
+  unit?: "sources/7d";
 }
 
 /** AnalysisMetricTargetV1 */
@@ -413,8 +1496,22 @@ export interface AnalysisMetricTargetV1 {
   value?: number | null;
 }
 
-/** AnalysisPersistenceV1 */
-export interface AnalysisPersistenceV1 {
+/** AnalysisMetricTargetV2 */
+export interface AnalysisMetricTargetV2 {
+  /** Lower */
+  lower?: number | null;
+  /** Source Plan Ids */
+  source_plan_ids: string[];
+  /** Type */
+  type: "minimum" | "maximum" | "range";
+  /** Upper */
+  upper?: number | null;
+  /** Value */
+  value?: number | null;
+}
+
+/** AnalysisPersistenceV2 */
+export interface AnalysisPersistenceV2 {
   /**
    * Kind
    * @default "same_direction_two_period"
@@ -435,42 +1532,37 @@ export interface AnalysisPersistenceV1 {
     | "missing_previous";
 }
 
-/** AnalysisSourceVersionBundleV1 */
-export interface AnalysisSourceVersionBundleV1 {
+/** AnalysisSourceVersionBundleV2 */
+export interface AnalysisSourceVersionBundleV2 {
   /** Analysis Rules Version */
-  analysis_rules_version: string;
+  analysis_rules_version: "w3-analysis-2.0.0";
   /** Calculation Engine Version */
-  calculation_engine_version: string;
+  calculation_engine_version: "2.0.0";
   /**
    * Content Hash
    * @pattern ^[0-9a-f]{64}$
    */
   content_hash: string;
   /** Food Group Rules Version */
-  food_group_rules_version: string;
-  /** Nova Rules Version */
-  nova_rules_version: string;
+  food_group_rules_version: "1.0.0";
   /** Nutrition Registry Version */
-  nutrition_registry_version: string;
+  nutrition_registry_version: "3.0.0";
   /**
    * Rules Manifest Hash
    * @pattern ^[0-9a-f]{64}$
    */
   rules_manifest_hash: string;
   /** Snapshot Schema Versions */
-  snapshot_schema_versions: number[];
+  snapshot_schema_versions: any;
   /**
    * Source Input Hash
    * @pattern ^[0-9a-f]{64}$
    */
   source_input_hash: string;
   /** Source Reliability Rules Version */
-  source_reliability_rules_version: string;
-  /**
-   * Status Evidence Version
-   * @min 1
-   */
-  status_evidence_version: number;
+  source_reliability_rules_version: "1.0.0";
+  /** Status Evidence Version */
+  status_evidence_version: 1;
 }
 
 /** AnalysisStaleReasonCountsV1 */
@@ -678,6 +1770,7 @@ export interface BehaviorGoalHistoryItemV1 {
     | "resume"
     | "end"
     | "completed"
+    | "archive"
     | "evidence_reopened"
     | "progress_updated"
     | "historical_evidence_changed"
@@ -1421,7 +2514,7 @@ export interface FoodListResponse {
   /** Categories */
   categories: string[];
   /** Items */
-  items: FoodResponse[];
+  items: FoodResponseV3[];
   /** Page */
   page: number;
   /** Page Size */
@@ -1470,8 +2563,11 @@ export interface FoodPickerResponse {
   recent_items: FoodPickerItem[];
 }
 
-/** FoodResponse */
-export interface FoodResponse {
+/**
+ * FoodResponseV3
+ * Active NOVA-free Food response contract.
+ */
+export interface FoodResponseV3 {
   /** Vitamin B12 Mcg */
   vitamin_b12_mcg?: number | null;
   /** Added Sugar G */
@@ -1548,7 +2644,6 @@ export interface FoodResponse {
   net_carbs_g: number;
   /** Notes */
   notes?: string | null;
-  nova: NovaResponse;
   nutrition_basis: NutritionBasis;
   nutrition_source: NutritionSourceResponse;
   /** Potassium Mg */
@@ -1678,25 +2773,6 @@ export type MealType =
   | "snack"
   | "unspecified";
 
-/** NovaClassification */
-export type NovaClassification = "1" | "2" | "3" | "4" | "unknown";
-
-/** NovaInput */
-export interface NovaInput {
-  classification: NovaClassification;
-}
-
-/** NovaResponse */
-export interface NovaResponse {
-  classification: NovaClassification;
-  review_status: NovaReviewStatus;
-  /** Rules Version */
-  rules_version: string;
-}
-
-/** NovaReviewStatus */
-export type NovaReviewStatus = "unreviewed" | "reviewed";
-
 /** NutritionAnalysisMonitoringResponseV1 */
 export interface NutritionAnalysisMonitoringResponseV1 {
   complete_day_band_counts: AnalysisCompleteDayBandCountsV1;
@@ -1719,10 +2795,10 @@ export interface NutritionAnalysisMonitoringResponseV1 {
 /** NutritionBasis */
 export type NutritionBasis = "per_100g" | "per_100ml";
 
-/** NutritionPatternAnalysisHistoryItemV1 */
-export interface NutritionPatternAnalysisHistoryItemV1 {
+/** NutritionPatternAnalysisHistoryItemV2 */
+export interface NutritionPatternAnalysisHistoryItemV2 {
   /** Analysis Rules Version */
-  analysis_rules_version: string;
+  analysis_rules_version: "w3-analysis-2.0.0";
   /**
    * As Of Diary Date
    * @format date
@@ -1734,7 +2810,10 @@ export interface NutritionPatternAnalysisHistoryItemV1 {
    * @max 7
    */
   complete_day_count: number;
-  /** Etag */
+  /**
+   * Etag
+   * @pattern ^"analysis-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-r[1-9][0-9]*"$
+   */
   etag: string;
   /**
    * Finalized At
@@ -1786,16 +2865,16 @@ export interface NutritionPatternAnalysisHistoryItemV1 {
   source_analysis_revision: number;
 }
 
-/** NutritionPatternAnalysisHistoryPageV1 */
-export interface NutritionPatternAnalysisHistoryPageV1 {
+/** NutritionPatternAnalysisHistoryPageV2 */
+export interface NutritionPatternAnalysisHistoryPageV2 {
   /** Items */
-  items: NutritionPatternAnalysisHistoryItemV1[];
+  items: NutritionPatternAnalysisHistoryItemV2[];
   /** Next Cursor */
   next_cursor: string | null;
 }
 
-/** NutritionPatternAnalysisResponseV1 */
-export interface NutritionPatternAnalysisResponseV1 {
+/** NutritionPatternAnalysisResponseV2 */
+export interface NutritionPatternAnalysisResponseV2 {
   /**
    * As Of Diary Date
    * @format date
@@ -1807,7 +2886,10 @@ export interface NutritionPatternAnalysisResponseV1 {
    * @max 7
    */
   complete_day_count: number;
-  /** Etag */
+  /**
+   * Etag
+   * @pattern ^"analysis-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-r[1-9][0-9]*"$
+   */
   etag: string;
   /**
    * Finalized At
@@ -1821,8 +2903,45 @@ export interface NutritionPatternAnalysisResponseV1 {
   generated_at: string;
   /** Lifecycle Status */
   lifecycle_status: "current" | "stale" | "superseded";
-  /** Metric Summaries */
-  metric_summaries: AnalysisMetricFactV1[];
+  /**
+   * Metric Summaries
+   * @maxItems 32
+   * @minItems 32
+   */
+  metric_summaries: [
+    AnalysisMetricEnergyCaloriesKcalPerDayV2,
+    AnalysisMetricGroupDairyFortifiedServingsPerDayV2,
+    AnalysisMetricGroupFruitVegetableGPerDayV2,
+    AnalysisMetricGroupLegumesServingsPerPeriodV2,
+    AnalysisMetricGroupNutsSeedsServingsPerPeriodV2,
+    AnalysisMetricGroupOmega3SeafoodServingsPerPeriodV2,
+    AnalysisMetricGroupProcessedMeatOccurrenceDaysV2,
+    AnalysisMetricGroupRedMeatGPerPeriodV2,
+    AnalysisMetricGroupSeafoodServingsPerPeriodV2,
+    AnalysisMetricGroupSugarSweetenedBeverageOccurrenceDaysV2,
+    AnalysisMetricGroupSweetsOccurrenceDaysV2,
+    AnalysisMetricGroupWholeGrainSharePercentV2,
+    AnalysisMetricMacroCarbGPerDayV2,
+    AnalysisMetricMacroFatGPerDayV2,
+    AnalysisMetricMacroProteinGPerDayV2,
+    AnalysisMetricNutrientAddedSugarGV2,
+    AnalysisMetricNutrientCalciumMgV2,
+    AnalysisMetricNutrientCholesterolMgV2,
+    AnalysisMetricNutrientFiberGV2,
+    AnalysisMetricNutrientFolateDfeMcgV2,
+    AnalysisMetricNutrientIodineMcgV2,
+    AnalysisMetricNutrientIronMgV2,
+    AnalysisMetricNutrientMagnesiumMgV2,
+    AnalysisMetricNutrientPotassiumMgV2,
+    AnalysisMetricNutrientSaturatedFatGV2,
+    AnalysisMetricNutrientSeleniumMcgV2,
+    AnalysisMetricNutrientSodiumMgV2,
+    AnalysisMetricNutrientTransFatGV2,
+    AnalysisMetricNutrientVitaminARaeMcgV2,
+    AnalysisMetricNutrientVitaminB12McgV2,
+    AnalysisMetricNutrientZincMgV2,
+    AnalysisMetricProteinSourceDiversityCountV2,
+  ];
   /**
    * Period End
    * @format date
@@ -1849,7 +2968,7 @@ export interface NutritionPatternAnalysisResponseV1 {
    * @format date
    */
   previous_period_start: string;
-  priority_input: WeeklyPriorityAnalysisInputV1;
+  priority_input: WeeklyPriorityAnalysisInputV2;
   /**
    * Source Analysis Id
    * @format uuid
@@ -1860,7 +2979,7 @@ export interface NutritionPatternAnalysisResponseV1 {
    * @min 1
    */
   source_analysis_revision: number;
-  source_versions: AnalysisSourceVersionBundleV1;
+  source_versions: AnalysisSourceVersionBundleV2;
   /** Stale Reasons */
   stale_reasons: (
     | "day_reopened"
@@ -1878,11 +2997,11 @@ export interface NutritionRegistryResponse {
   /** Analysis Rules Status */
   analysis_rules_status: "active";
   /** Analysis Rules Version */
-  analysis_rules_version: "w3-analysis-1.1.0";
+  analysis_rules_version: "w3-analysis-2.0.0";
   /** Baked Good Type Definitions */
   baked_good_type_definitions: RegistryLabelDefinition[];
   /** Calculation Engine Version */
-  calculation_engine_version: string;
+  calculation_engine_version: "2.0.0";
   /** Calculation Policy */
   calculation_policy: Record<string, any>;
   /** Food Categories */
@@ -1892,7 +3011,7 @@ export interface NutritionRegistryResponse {
   /** Food Group Definitions */
   food_group_definitions: RegistryFoodGroupDefinition[];
   /** Food Group Rules Version */
-  food_group_rules_version: string;
+  food_group_rules_version: "1.0.0";
   /** Food Groups */
   food_groups: Record<string, any>[];
   /** Grain Starch Type Definitions */
@@ -1903,23 +3022,20 @@ export interface NutritionRegistryResponse {
   ingredient_source_definitions: RegistryIngredientSourceDefinition[];
   /** Ingredient Source Types */
   ingredient_source_types: IngredientsSourceType[];
-  nova: RegistryNovaDefinition;
-  /** Nova Rules Version */
-  nova_rules_version: string;
   /** Nutrients */
   nutrients: RegistryNutrientDefinition[];
   /** Nutrition Registry Version */
-  nutrition_registry_version: string;
+  nutrition_registry_version: "3.0.0";
   /** Registry Schema Version */
-  registry_schema_version: 2;
+  registry_schema_version: 3;
   /** Reliability Levels */
   reliability_levels: RegistryLabelDefinition[];
   /** Rules Manifest Hash */
   rules_manifest_hash: string;
   /** Snapshot Schema Version */
-  snapshot_schema_version: 3;
+  snapshot_schema_version: 4;
   /** Source Reliability Rules Version */
-  source_reliability_rules_version: string;
+  source_reliability_rules_version: "1.0.0";
   /** Source Types */
   source_types: RegistrySourceTypeDefinition[];
   /** Target Types */
@@ -2149,8 +3265,27 @@ export interface OpaqueEvidenceRefV1 {
   source_version: string;
 }
 
-/** PeriodMetricEvidenceV1 */
-export interface PeriodMetricEvidenceV1 {
+/** OpaqueEvidenceRefV2 */
+export interface OpaqueEvidenceRefV2 {
+  /**
+   * Diary Date
+   * @format date
+   */
+  diary_date: string;
+  /**
+   * Source Ref
+   * @format uuid
+   */
+  source_ref: string;
+  /**
+   * Source Version
+   * @minLength 1
+   */
+  source_version: string;
+}
+
+/** PeriodMetricEvidenceV2 */
+export interface PeriodMetricEvidenceV2 {
   /** Amount Qualifier */
   amount_qualifier: "exact" | "at_least" | "unavailable";
   /**
@@ -2164,7 +3299,7 @@ export interface PeriodMetricEvidenceV1 {
   /** Coverage Percent */
   coverage_percent?: number | null;
   /** Evidence Refs */
-  evidence_refs: OpaqueEvidenceRefV1[];
+  evidence_refs: OpaqueEvidenceRefV2[];
   /**
    * Known Entry Count
    * @min 0
@@ -2503,18 +3638,6 @@ export interface RegistryLabelDefinition {
   label_ar: string;
 }
 
-/** RegistryNovaDefinition */
-export interface RegistryNovaDefinition {
-  /** Automated Suggestions */
-  automated_suggestions: false;
-  /** Classifications */
-  classifications: (number | "unknown")[];
-  /** Labels Ar */
-  labels_ar: Record<string, string>;
-  /** Review Statuses */
-  review_statuses: ("unreviewed" | "reviewed")[];
-}
-
 /** RegistryNutrientDefinition */
 export interface RegistryNutrientDefinition {
   /** Completeness Participation */
@@ -2620,6 +3743,50 @@ export interface TargetPlanActivationResponse {
 
 /** TargetPlanAnalysisRefV1 */
 export interface TargetPlanAnalysisRefV1 {
+  /**
+   * Calculation Document Schema Version
+   * @min 1
+   */
+  calculation_document_schema_version: number;
+  /**
+   * Calculation Engine Version
+   * @minLength 1
+   */
+  calculation_engine_version: string;
+  /**
+   * Effective From
+   * @format date
+   */
+  effective_from: string;
+  /** Effective To */
+  effective_to: string | null;
+  /**
+   * Id
+   * @format uuid
+   */
+  id: string;
+  /**
+   * Nutrition Registry Version
+   * @minLength 1
+   */
+  nutrition_registry_version: string;
+  /** Safety Outcome */
+  safety_outcome:
+    | "normal"
+    | "specialist_review_required"
+    | "very_low_energy_blocked";
+  /**
+   * Target Document Hash
+   * @pattern ^[0-9a-f]{64}$
+   */
+  target_document_hash: string;
+}
+
+/**
+ * TargetPlanAnalysisRefV2
+ * Pinned Target Plan provenance; compatibility is evaluated, not rewritten.
+ */
+export interface TargetPlanAnalysisRefV2 {
   /**
    * Calculation Document Schema Version
    * @min 1
@@ -2857,13 +4024,10 @@ export interface WeekSummary {
   weekly_totals: NutritionTotals;
 }
 
-/** WeeklyPriorityAnalysisInputV1 */
-export interface WeeklyPriorityAnalysisInputV1 {
-  /**
-   * Analysis Rules Version
-   * @minLength 1
-   */
-  analysis_rules_version: string;
+/** WeeklyPriorityAnalysisInputV2 */
+export interface WeeklyPriorityAnalysisInputV2 {
+  /** Analysis Rules Version */
+  analysis_rules_version: "w3-analysis-2.0.0";
   /**
    * As Of Diary Date
    * @format date
@@ -2876,12 +4040,9 @@ export interface WeeklyPriorityAnalysisInputV1 {
    * @maxItems 7
    * @minItems 7
    */
-  days: AnalysisDayFactV1[];
-  /**
-   * Food Group Rules Version
-   * @minLength 1
-   */
-  food_group_rules_version: string;
+  days: AnalysisDayFactV2[];
+  /** Food Group Rules Version */
+  food_group_rules_version: "1.0.0";
   /**
    * Generated At
    * @format date-time
@@ -2889,21 +4050,50 @@ export interface WeeklyPriorityAnalysisInputV1 {
   generated_at: string;
   /**
    * Interface Version
-   * @default 1
+   * @default 2
    */
-  interface_version?: 1;
-  /** Metric Facts */
-  metric_facts: AnalysisMetricFactV1[];
+  interface_version?: 2;
   /**
-   * Nova Rules Version
-   * @minLength 1
+   * Metric Facts
+   * @maxItems 32
+   * @minItems 32
    */
-  nova_rules_version: string;
-  /**
-   * Nutrition Registry Version
-   * @minLength 1
-   */
-  nutrition_registry_version: string;
+  metric_facts: [
+    AnalysisMetricEnergyCaloriesKcalPerDayV2,
+    AnalysisMetricGroupDairyFortifiedServingsPerDayV2,
+    AnalysisMetricGroupFruitVegetableGPerDayV2,
+    AnalysisMetricGroupLegumesServingsPerPeriodV2,
+    AnalysisMetricGroupNutsSeedsServingsPerPeriodV2,
+    AnalysisMetricGroupOmega3SeafoodServingsPerPeriodV2,
+    AnalysisMetricGroupProcessedMeatOccurrenceDaysV2,
+    AnalysisMetricGroupRedMeatGPerPeriodV2,
+    AnalysisMetricGroupSeafoodServingsPerPeriodV2,
+    AnalysisMetricGroupSugarSweetenedBeverageOccurrenceDaysV2,
+    AnalysisMetricGroupSweetsOccurrenceDaysV2,
+    AnalysisMetricGroupWholeGrainSharePercentV2,
+    AnalysisMetricMacroCarbGPerDayV2,
+    AnalysisMetricMacroFatGPerDayV2,
+    AnalysisMetricMacroProteinGPerDayV2,
+    AnalysisMetricNutrientAddedSugarGV2,
+    AnalysisMetricNutrientCalciumMgV2,
+    AnalysisMetricNutrientCholesterolMgV2,
+    AnalysisMetricNutrientFiberGV2,
+    AnalysisMetricNutrientFolateDfeMcgV2,
+    AnalysisMetricNutrientIodineMcgV2,
+    AnalysisMetricNutrientIronMgV2,
+    AnalysisMetricNutrientMagnesiumMgV2,
+    AnalysisMetricNutrientPotassiumMgV2,
+    AnalysisMetricNutrientSaturatedFatGV2,
+    AnalysisMetricNutrientSeleniumMcgV2,
+    AnalysisMetricNutrientSodiumMgV2,
+    AnalysisMetricNutrientTransFatGV2,
+    AnalysisMetricNutrientVitaminARaeMcgV2,
+    AnalysisMetricNutrientVitaminB12McgV2,
+    AnalysisMetricNutrientZincMgV2,
+    AnalysisMetricProteinSourceDiversityCountV2,
+  ];
+  /** Nutrition Registry Version */
+  nutrition_registry_version: "3.0.0";
   /**
    * Period End
    * @format date
@@ -2919,7 +4109,7 @@ export interface WeeklyPriorityAnalysisInputV1 {
    * @maxItems 7
    * @minItems 7
    */
-  previous_period: AnalysisDayFactV1[];
+  previous_period: AnalysisDayFactV2[];
   /**
    * Previous Period End
    * @format date
@@ -2946,13 +4136,12 @@ export interface WeeklyPriorityAnalysisInputV1 {
     | "stale_evidence"
     | "unsupported_analysis_rules"
     | "unsupported_food_group_rules"
-    | "unsupported_nova_rules"
     | "unsupported_registry"
     | "unsupported_snapshot_schema"
     | "very_low_energy_blocked"
   )[];
   /** Snapshot Schema Versions */
-  snapshot_schema_versions: number[];
+  snapshot_schema_versions: any;
   /**
    * Source Analysis Id
    * @format uuid
@@ -2964,7 +4153,7 @@ export interface WeeklyPriorityAnalysisInputV1 {
    */
   source_analysis_revision: number;
   /** Target Plan Refs */
-  target_plan_refs: TargetPlanAnalysisRefV1[];
+  target_plan_refs: TargetPlanAnalysisRefV2[];
 }
 
 /** WeeklyPriorityExcludedV1 */
@@ -3140,7 +4329,7 @@ export namespace Admin {
     export type RequestQuery = {};
     export type RequestBody = never;
     export type RequestHeaders = {};
-    export type ResponseBody = FoodResponse;
+    export type ResponseBody = FoodResponseV3;
   }
 
   /**
@@ -3238,7 +4427,7 @@ export namespace Admin {
     export type RequestQuery = {};
     export type RequestBody = never;
     export type RequestHeaders = {};
-    export type ResponseBody = FoodResponse;
+    export type ResponseBody = FoodResponseV3;
   }
 
   /**
@@ -3301,7 +4490,7 @@ export namespace Admin {
     export type RequestQuery = {};
     export type RequestBody = never;
     export type RequestHeaders = {};
-    export type ResponseBody = FoodResponse;
+    export type ResponseBody = FoodResponseV3;
   }
 
   /**
@@ -3753,7 +4942,6 @@ export namespace Foods {
       name: string;
       /** Notes */
       notes?: string | null;
-      nova?: NovaInput | null;
       nutrition_basis: NutritionBasis;
       nutrition_source?: NutritionSourceInput;
       /** Potassium Mg */
@@ -3795,7 +4983,7 @@ export namespace Foods {
       zinc_mg?: number | null;
     };
     export type RequestHeaders = {};
-    export type ResponseBody = FoodResponse;
+    export type ResponseBody = FoodResponseV3;
   }
 
   /**
@@ -3862,7 +5050,6 @@ export namespace Foods {
       name?: string | null;
       /** Notes */
       notes?: string | null;
-      nova?: NovaInput | null;
       nutrition_basis?: NutritionBasis | null;
       nutrition_source?: NutritionSourceInput | null;
       /** Potassium Mg */
@@ -3896,7 +5083,7 @@ export namespace Foods {
       zinc_mg?: number | null;
     };
     export type RequestHeaders = {};
-    export type ResponseBody = FoodResponse;
+    export type ResponseBody = FoodResponseV3;
   }
 
   /**
@@ -3918,7 +5105,7 @@ export namespace Foods {
     export type RequestQuery = {};
     export type RequestBody = never;
     export type RequestHeaders = {};
-    export type ResponseBody = FoodResponse;
+    export type ResponseBody = FoodResponseV3;
   }
 
   /**
@@ -3986,7 +5173,7 @@ export namespace Foods {
     };
     export type RequestBody = never;
     export type RequestHeaders = {};
-    export type ResponseBody = FoodResponse[] | FoodListResponse;
+    export type ResponseBody = FoodResponseV3[] | FoodListResponse;
   }
 
   /**
@@ -4104,38 +5291,38 @@ export namespace Progress {
   /**
    * No description
    * @tags nutrition-analysis
-   * @name CurrentProgressNutritionAnalysisCurrentGet
-   * @summary Current
-   * @request GET:/progress/nutrition-analysis/current
+   * @name CurrentV2ProgressNutritionAnalysisV2CurrentGet
+   * @summary Current V2
+   * @request GET:/progress/nutrition-analysis/v2/current
    * @secure
    */
-  export namespace CurrentProgressNutritionAnalysisCurrentGet {
+  export namespace CurrentV2ProgressNutritionAnalysisV2CurrentGet {
     export type RequestParams = {};
     export type RequestQuery = {};
     export type RequestBody = never;
     export type RequestHeaders = {};
-    export type ResponseBody = NutritionPatternAnalysisResponseV1;
+    export type ResponseBody = NutritionPatternAnalysisResponseV2;
   }
 
   /**
    * No description
    * @tags nutrition-analysis
-   * @name EvaluateProgressNutritionAnalysisEvaluatePost
-   * @summary Evaluate
-   * @request POST:/progress/nutrition-analysis/evaluate
+   * @name EvaluateV2ProgressNutritionAnalysisV2EvaluatePost
+   * @summary Evaluate V2
+   * @request POST:/progress/nutrition-analysis/v2/evaluate
    * @secure
    */
-  export namespace EvaluateProgressNutritionAnalysisEvaluatePost {
+  export namespace EvaluateV2ProgressNutritionAnalysisV2EvaluatePost {
     export type RequestParams = {};
     export type RequestQuery = {};
-    export type RequestBody = AnalysisEvaluateCommandV1;
+    export type RequestBody = AnalysisEvaluateCommandV2;
     export type RequestHeaders = {
       /** Idempotency-Key */
       "Idempotency-Key": string;
       /** If-Match */
       "If-Match": string;
     };
-    export type ResponseBody = NutritionPatternAnalysisResponseV1;
+    export type ResponseBody = NutritionPatternAnalysisResponseV2;
   }
 
   /**
@@ -4199,12 +5386,12 @@ export namespace Progress {
   /**
    * No description
    * @tags nutrition-analysis
-   * @name HistoryProgressNutritionAnalysisHistoryGet
-   * @summary History
-   * @request GET:/progress/nutrition-analysis/history
+   * @name HistoryV2ProgressNutritionAnalysisV2HistoryGet
+   * @summary History V2
+   * @request GET:/progress/nutrition-analysis/v2/history
    * @secure
    */
-  export namespace HistoryProgressNutritionAnalysisHistoryGet {
+  export namespace HistoryV2ProgressNutritionAnalysisV2HistoryGet {
     export type RequestParams = {};
     export type RequestQuery = {
       /** Cursor */
@@ -4219,7 +5406,7 @@ export namespace Progress {
     };
     export type RequestBody = never;
     export type RequestHeaders = {};
-    export type ResponseBody = NutritionPatternAnalysisHistoryPageV1;
+    export type ResponseBody = NutritionPatternAnalysisHistoryPageV2;
   }
 
   /**
@@ -4250,12 +5437,12 @@ export namespace Progress {
   /**
    * No description
    * @tags nutrition-analysis
-   * @name RevisionProgressNutritionAnalysisAnalysisIdRevisionsRevisionGet
-   * @summary Revision
-   * @request GET:/progress/nutrition-analysis/{analysis_id}/revisions/{revision}
+   * @name RevisionV2ProgressNutritionAnalysisV2AnalysisIdRevisionsRevisionGet
+   * @summary Revision V2
+   * @request GET:/progress/nutrition-analysis/v2/{analysis_id}/revisions/{revision}
    * @secure
    */
-  export namespace RevisionProgressNutritionAnalysisAnalysisIdRevisionsRevisionGet {
+  export namespace RevisionV2ProgressNutritionAnalysisV2AnalysisIdRevisionsRevisionGet {
     export type RequestParams = {
       /**
        * Analysis Id
@@ -4268,7 +5455,7 @@ export namespace Progress {
     export type RequestQuery = {};
     export type RequestBody = never;
     export type RequestHeaders = {};
-    export type ResponseBody = NutritionPatternAnalysisResponseV1;
+    export type ResponseBody = NutritionPatternAnalysisResponseV2;
   }
 }
 

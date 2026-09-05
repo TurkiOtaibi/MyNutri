@@ -22,7 +22,6 @@ from app.models import (
     Food,
     FoodAnalyticalTrait,
     FoodGroupContribution,
-    NovaReviewStatus,
     Principal,
     FoodStatus,
     utcnow,
@@ -279,11 +278,6 @@ def _food_input_data(session: Session, principal: PrincipalContext, food: Food) 
         "source_name": food.ingredients_source_name,
         "source_reference": food.ingredients_source_reference,
     }
-    data["nova"] = (
-        {"classification": food.nova_classification}
-        if _enum_value(food.nova_review_status) == NovaReviewStatus.reviewed.value
-        else None
-    )
     data["group_contributions"] = [
         {
             "group_key": item.group_key,
@@ -328,9 +322,7 @@ def _build_food_response(
                 "type": food.nutrition_source_type,
                 "name": food.nutrition_source_name,
                 "reference": food.nutrition_source_reference,
-                "reliability": SOURCE_RELIABILITY_MAP[
-                    _enum_value(food.nutrition_source_type)
-                ],
+                "reliability": SOURCE_RELIABILITY_MAP[_enum_value(food.nutrition_source_type)],
                 "reliability_rules_version": VERSIONS.source_reliability_rules_version,
             },
             ingredients={
@@ -338,11 +330,6 @@ def _build_food_response(
                 "source_type": food.ingredients_source_type,
                 "source_name": food.ingredients_source_name,
                 "source_reference": food.ingredients_source_reference,
-            },
-            nova={
-                "classification": food.nova_classification,
-                "review_status": food.nova_review_status,
-                "rules_version": VERSIONS.nova_rules_version,
             },
             group_contributions=[
                 {
@@ -463,14 +450,10 @@ def _food_namespace_lock(session: Session, *, shared: bool) -> None:
     )
 
 
-def _lock_food_namespace(
-    session: Session, principal: PrincipalContext
-) -> None:
+def _lock_food_namespace(session: Session, principal: PrincipalContext) -> None:
     """Lock the actor before serializing Food writers and locking Food rows."""
     session.exec(
-        select(Principal)
-        .where(Principal.id == principal.principal_id)
-        .with_for_update()
+        select(Principal).where(Principal.id == principal.principal_id).with_for_update()
     ).one()
     _food_namespace_lock(session, shared=False)
 
@@ -495,7 +478,6 @@ def _validated_update_data(
     for key in (
         "nutrition_source",
         "ingredients",
-        "nova",
         "group_contributions",
         "analytical_traits",
     ):
@@ -514,7 +496,6 @@ def _persistence_data(payload: FoodCreate) -> dict[str, Any]:
             "id",
             "nutrition_source",
             "ingredients",
-            "nova",
             "group_contributions",
             "analytical_traits",
         }
@@ -546,10 +527,8 @@ def _persistence_data(payload: FoodCreate) -> dict[str, Any]:
         ingredients_source_type=payload.ingredients.source_type,
         ingredients_source_name=payload.ingredients.source_name,
         ingredients_source_reference=payload.ingredients.source_reference,
-        nova_classification=(payload.nova.classification if payload.nova else "unknown"),
-        nova_review_status=(
-            NovaReviewStatus.reviewed if payload.nova else NovaReviewStatus.unreviewed
-        ),
+        nova_classification=None,
+        nova_review_status=None,
     )
     return data
 
@@ -839,9 +818,7 @@ def update_food_response(
         raise
 
 
-def _archive_food_uncommitted(
-    session: Session, principal: PrincipalContext, food_id: UUID
-) -> Food:
+def _archive_food_uncommitted(session: Session, principal: PrincipalContext, food_id: UUID) -> Food:
     _lock_food_namespace(session, principal)
     food = get_food_for_update(session, principal, food_id, include_archived=True)
     _archive_locked_food(principal, food)
@@ -875,9 +852,7 @@ def archive_food_response(
         raise
 
 
-def _archive_locked_food(
-    principal: PrincipalContext, food: Food
-) -> None:
+def _archive_locked_food(principal: PrincipalContext, food: Food) -> None:
     """Mutate a Food whose exclusive row lock is held; never commit here."""
     if _enum_value(food.status) == FoodStatus.archived.value:
         return
@@ -888,9 +863,7 @@ def _archive_locked_food(
     food.updated_at = utcnow()
 
 
-def _restore_food_uncommitted(
-    session: Session, principal: PrincipalContext, food_id: UUID
-) -> Food:
+def _restore_food_uncommitted(session: Session, principal: PrincipalContext, food_id: UUID) -> Food:
     _lock_food_namespace(session, principal)
     food = get_food_for_update(session, principal, food_id, include_archived=True)
     if _enum_value(food.status) == FoodStatus.active.value:

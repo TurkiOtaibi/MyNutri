@@ -52,15 +52,13 @@ def test_registry_exposes_exact_version_bundle_and_authoritative_metadata(
     assert body["rules_manifest_hash"] == rules_manifest_hash()
     assert len(body["nutrients"]) == 16
     assert len(body["target_types"]) == 7
-    assert body["analysis_rules_version"] == "w3-analysis-1.1.0"
+    assert body["analysis_rules_version"] == "w3-analysis-2.0.0"
     assert body["analysis_rules_status"] == "active"
     assert body["weekly_priority_rules_version"] == "w3-priority-1.1.0"
     assert body["weekly_priority_copy_version"] == "w3-priority-ar-1.1.0"
     assert len(body["weekly_priority_rules"]) == 23
     actions = [
-        action
-        for rule in body["weekly_priority_rules"]
-        for action in rule["actions"].values()
+        action for rule in body["weekly_priority_rules"] for action in rule["actions"].values()
     ]
     assert len(actions) == 28
     assert sum(action["goal_trackability"] == "trackable" for action in actions) == 9
@@ -76,8 +74,8 @@ def test_registry_exposes_exact_version_bundle_and_authoritative_metadata(
     assert {item["key"] for item in body["analysis_metrics"]} >= {
         "energy:calories_kcal_per_day",
         "group:fruit_vegetable_g_per_day",
-        "nova:nova4_calorie_share_percent",
     }
+    assert not any(item["key"].startswith("nova:") for item in body["analysis_metrics"])
     assert body["calculation_policy"]["goal_policy"]["maximum_deficit_kcal"] == 750
     assert body["calculation_policy"]["calendar_timezone"] == "Asia/Riyadh"
     assert body["source_types"][-2] == {
@@ -91,18 +89,8 @@ def test_registry_exposes_exact_version_bundle_and_authoritative_metadata(
     assert "refined_grains" not in body["food_categories"]
     assert len(body["food_group_definitions"]) == 17
     assert len(body["traits"]) == 11
-    assert body["nova"] == {
-        "classifications": [1, 2, 3, 4, "unknown"],
-        "labels_ar": {
-            "1": "NOVA 1",
-            "2": "NOVA 2",
-            "3": "NOVA 3",
-            "4": "NOVA 4",
-            "unknown": "غير معروف",
-        },
-        "review_statuses": ["unreviewed", "reviewed"],
-        "automated_suggestions": False,
-    }
+    assert "nova" not in body
+    assert "nova_rules_version" not in body
     assert response.headers["cache-control"] == "private, max-age=300, must-revalidate"
 
 
@@ -157,7 +145,7 @@ def test_profile_preview_exposes_calculation_provenance(client: TestClient) -> N
     assert "وزنك الحالي" in body["protein_calculation"]["explanation_ar"]
     assert body["carb_clamped"] is False
     assert body["calculation_engine_version"] == "2.0.0"
-    assert body["nutrition_registry_version"] == "2.0.0"
+    assert body["nutrition_registry_version"] == "3.0.0"
     assert len(body["additional_targets"]) == 16
 
 

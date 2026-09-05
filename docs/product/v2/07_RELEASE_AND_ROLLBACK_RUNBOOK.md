@@ -1,5 +1,20 @@
 # V2 Release and Rollback Runbook
 
+## NOVA Retirement reader floor
+
+Before approving NOVA Retirement activation, verify the sole Alembic head is
+`8a91c4e7d2f6`, the active release reads SnapshotV4 and PLAN 032 V2, the
+Frontend calls only the four `/progress/nutrition-analysis/v2/*` operations,
+and all PLAN 033 offer/display/reminder gates remain off. Then execute the
+exclusive-lock activation transaction documented in the data migration and
+cutover plan and verify exactly one generation row changed.
+
+Once `NOVA_RETIRED` is committed or any governed V4/V2/Registry-3/null-NOVA row
+exists, the migration downgrade refuses. Operational rollback may target only a
+release that reads SnapshotV4 and PLAN 032 V2, keeps NOVA absent from active
+contracts, and fails incompatible V3/V1 writes closed. A database restore is not
+a feature rollback. Do not delete physical Food NOVA columns in Phase 1.
+
 ## Pre-release Gates
 
 - One Alembic head and zero model drift.

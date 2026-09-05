@@ -2,7 +2,8 @@ import { expect, expectNoHorizontalOverflow, test, uniqueName, validFood } from 
 
 test("Wave 1 Food API preserves exact values and derives source reliability", async ({ foodsApi }) => {
   const food = await foodsApi.create({
-    name: uniqueName("Quality-contract"),
+    name: `NOVA: Protein Bar ${uniqueName("Quality-contract")}`,
+    brand: "Nova Foods",
     food_category_key: "dairy_fortified_alternatives",
     food_kind: "composite",
     selenium_mcg: 0,
@@ -20,7 +21,6 @@ test("Wave 1 Food API preserves exact values and derives source reliability", as
       source_name: "البطاقة",
       source_reference: null
     },
-    nova: { classification: "unknown" },
     group_contributions: [
       {
         group_key: "dairy_fortified_alternatives",
@@ -36,7 +36,9 @@ test("Wave 1 Food API preserves exact values and derives source reliability", as
   expect(food.iodine_mcg).toBeNull();
   expect(food.folate_dfe_mcg).toBe(425.125);
   expect(food.nutrition_source).toMatchObject({ type: "multiple_sources", reliability: "mixed" });
-  expect(food.nova).toMatchObject({ classification: "unknown", review_status: "reviewed" });
+  expect(food.name).toContain("NOVA: Protein Bar");
+  expect(food.brand).toBe("Nova Foods");
+  expect(food).not.toHaveProperty("nova");
   expect(food.group_contributions).toHaveLength(1);
   expect(food.analytical_traits).toEqual(["sweetened"]);
 });

@@ -26,7 +26,7 @@ from app.models import (
     NutritionAnalysisRevisionEvent,
     Principal,
 )
-from app.schemas import AnalysisEvaluateCommandV1
+from app.schemas import AnalysisEvaluateCommandV2
 from app.services import pattern_analysis
 from app.services.day_logging_status import command_day_status
 from app.services.pattern_analysis import (
@@ -46,14 +46,19 @@ def _database_url() -> str:
     if not url:
         pytest.skip("TEST_DATABASE_URL is required for PLAN 032 PostgreSQL concurrency tests.")
     parsed = make_url(url)
-    if parsed.get_backend_name() != "postgresql" or not (parsed.database or "").startswith("mynutri_test_"):
-        pytest.fail("PLAN 032 concurrency tests require a disposable mynutri_test_ PostgreSQL database.")
+    if parsed.get_backend_name() != "postgresql" or not (parsed.database or "").startswith(
+        "mynutri_test_"
+    ):
+        pytest.fail(
+            "PLAN 032 concurrency tests require a disposable mynutri_test_ PostgreSQL database."
+        )
     return url
 
 
 def _prepare(url: str) -> None:
     engine = create_engine(url)
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("DROP SCHEMA IF EXISTS nova_retirement CASCADE"))
         connection.execute(text("DROP SCHEMA public CASCADE"))
         connection.execute(text("CREATE SCHEMA public"))
     engine.dispose()
@@ -89,7 +94,9 @@ def test_evaluation_declares_frozen_principal_series_day_lock_order() -> None:
     source = inspect.getsource(pattern_analysis.evaluate_analysis)
     assert source.index("select(Principal)") < source.index("select(NutritionAnalysis)")
     source_builder = inspect.getsource(pattern_analysis._build_source)
-    assert source_builder.index("select(DiaryDayStatus)") < source_builder.index("select(DiaryEntry)")
+    assert source_builder.index("select(DiaryDayStatus)") < source_builder.index(
+        "select(DiaryEntry)"
+    )
 
 
 @pytest.mark.migration
@@ -107,7 +114,7 @@ def test_two_same_date_evaluations_serialize_revision_creation() -> None:
                     _, status, _ = evaluate_analysis(
                         session,
                         PRINCIPAL,
-                        AnalysisEvaluateCommandV1(expected_current_revision=None),
+                        AnalysisEvaluateCommandV2(expected_current_revision=None),
                         key,
                         '"analysis-none"',
                     )
@@ -140,7 +147,7 @@ def test_concurrent_identical_command_has_one_revision_and_exact_replay() -> Non
                 response, status, replayed = evaluate_analysis(
                     session,
                     PRINCIPAL,
-                    AnalysisEvaluateCommandV1(expected_current_revision=None),
+                    AnalysisEvaluateCommandV2(expected_current_revision=None),
                     "same-command",
                     '"analysis-none"',
                 )
@@ -150,7 +157,10 @@ def test_concurrent_identical_command_has_one_revision_and_exact_replay() -> Non
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         outcomes = list(executor.map(lambda _: worker(), range(2)))
-    assert sorted((status, replayed) for status, replayed, _ in outcomes) == [(201, False), (201, True)]
+    assert sorted((status, replayed) for status, replayed, _ in outcomes) == [
+        (201, False),
+        (201, True),
+    ]
     assert len({content_hash for _, _, content_hash in outcomes}) == 1
     engine = create_engine(url)
     with Session(engine) as session:
@@ -168,7 +178,7 @@ def test_reopen_and_evaluation_serialize_without_losing_stale_event() -> None:
         first, _, _ = evaluate_analysis(
             session,
             PRINCIPAL,
-            AnalysisEvaluateCommandV1(expected_current_revision=None),
+            AnalysisEvaluateCommandV2(expected_current_revision=None),
             "initial",
             '"analysis-none"',
         )
@@ -182,9 +192,7 @@ def test_reopen_and_evaluation_serialize_without_losing_stale_event() -> None:
         try:
             with Session(worker_engine) as session:
                 session.exec(
-                    select(Principal)
-                    .where(Principal.id == PRINCIPAL_ID)
-                    .with_for_update()
+                    select(Principal).where(Principal.id == PRINCIPAL_ID).with_for_update()
                 ).one()
                 owner_locked.set()
                 assert evaluation_attempted.wait(timeout=10)
@@ -223,7 +231,7 @@ def test_reopen_and_evaluation_serialize_without_losing_stale_event() -> None:
                     _, status, _ = evaluate_analysis(
                         session,
                         PRINCIPAL,
-                        AnalysisEvaluateCommandV1(expected_current_revision=1),
+                        AnalysisEvaluateCommandV2(expected_current_revision=1),
                         "racing-evaluation",
                         first.etag,
                     )
@@ -256,7 +264,7 @@ def test_two_historical_refresh_workers_create_one_revision() -> None:
         first, _, _ = evaluate_analysis(
             session,
             PRINCIPAL,
-            AnalysisEvaluateCommandV1(expected_current_revision=None),
+            AnalysisEvaluateCommandV2(expected_current_revision=None),
             "historical-initial",
             '"analysis-none"',
         )
@@ -283,9 +291,7 @@ def test_two_historical_refresh_workers_create_one_revision() -> None:
             with Session(worker_engine) as session:
                 barrier.wait()
                 session.exec(
-                    select(Principal)
-                    .where(Principal.id == PRINCIPAL_ID)
-                    .with_for_update()
+                    select(Principal).where(Principal.id == PRINCIPAL_ID).with_for_update()
                 ).one()
                 revision, created = refresh_historical_analysis(
                     session, PRINCIPAL, first.source_analysis_id, event_id

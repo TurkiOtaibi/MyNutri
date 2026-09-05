@@ -460,7 +460,9 @@ def test_production_orchestration_consumes_persisted_plan032_and_persists_result
     SQLModel.metadata.create_all(engine)
     principal_id, analysis_id, revision_id = uuid4(), uuid4(), uuid4()
     document = _persisted_producer_document(principal_id, analysis_id)
-    canonical = json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    hash_document = dict(document)
+    hash_document.pop("generated_at", None)
+    canonical = json.dumps(hash_document, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     with Session(engine) as session:
         session.add(Principal(id=principal_id))
         series = NutritionAnalysis(

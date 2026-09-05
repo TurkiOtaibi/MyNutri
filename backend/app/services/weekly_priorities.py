@@ -11,7 +11,7 @@ from typing import Any, Literal
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, case, exists, func, or_, tuple_
+from sqlalchemy import and_, case, exists, func, or_, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -42,6 +42,7 @@ from app.nutrition_rules.weekly_priority import (
     WEEKLY_PRIORITY_RULES_VERSION,
     action_day_qualifies,
     action_trackability,
+    apply_goal_event,
     select as select_priority,
     validate_producer,
 )
@@ -62,6 +63,7 @@ from app.schemas import (
 )
 from app.services.pattern_analysis import (
     PatternAnalysisError,
+    contract_generation_state,
     current_analysis,
     refresh_historical_analysis,
 )
@@ -713,8 +715,26 @@ def evaluate_recommendation(
     session.exec(
         select(Principal).where(Principal.id == principal.principal_id).with_for_update()
     ).one()
+    v2_series_exists = session.exec(
+        select(NutritionAnalysis.id).where(
+            NutritionAnalysis.principal_id == principal.principal_id,
+            NutritionAnalysis.interface_version == 2,
+        )
+    ).first()
+    if contract_generation_state(session) == "NOVA_RETIRED" or v2_series_exists is not None:
+        raise WeeklyPriorityError(
+            "WEEKLY_PRIORITY_INACTIVE_FOR_ANALYSIS_V2",
+            409,
+            "التوصيات الأسبوعية غير مفعلة لهذا الإصدار من التحليل.",
+        )
     analysis = current_analysis(session, principal)
     source = analysis.priority_input
+    if source.interface_version != 1:
+        raise WeeklyPriorityError(
+            "WEEKLY_PRIORITY_INACTIVE_FOR_ANALYSIS_V2",
+            409,
+            "التوصيات الأسبوعية غير مفعلة لهذا الإصدار من التحليل.",
+        )
     existing = session.exec(
         select(WeeklyPriorityRecommendation).where(
             WeeklyPriorityRecommendation.principal_id == principal.principal_id,
@@ -1269,6 +1289,83 @@ def goal_history(
         ],
         next_cursor=_encode_cursor(rows[limit - 1]) if len(rows) > limit else None,
     )
+
+
+def archive_terminal_goal(
+    session: Session,
+    principal: PrincipalContext,
+    goal_id: UUID,
+    *,
+    expected_version: int,
+) -> BehaviorGoalResponseV1:
+    """Retain only the frozen PLAN 033 terminal-to-archive operation."""
+    goal = session.exec(
+        select(BehaviorGoal).where(
+            BehaviorGoal.id == goal_id,
+            BehaviorGoal.principal_id == principal.principal_id,
+        )
+    ).first()
+    if goal is None:
+        raise WeeklyPriorityError("RESOURCE_NOT_FOUND", 404, "تعذر العثور على السجل المطلوب.")
+    transition = apply_goal_event(
+        {"state": goal.state, "version": goal.version},
+        {"type": "archive", "expected_version": expected_version},
+    )
+    if transition["result"] == "stale_version_conflict":
+        raise WeeklyPriorityError(
+            "GOAL_VERSION_CONFLICT", 409, "تغيّر الهدف. حدّث الصفحة ثم حاول مجددًا."
+        )
+    if transition["result"] != "archived":
+        raise WeeklyPriorityError("GOAL_STATE_CONFLICT", 409, "لا يمكن أرشفة هذه الحالة.")
+    recommendation = session.exec(
+        select(WeeklyPriorityRecommendation).where(
+            WeeklyPriorityRecommendation.id == goal.recommendation_id,
+            WeeklyPriorityRecommendation.principal_id == principal.principal_id,
+        )
+    ).one()
+    previous_state = goal.state
+    now = utcnow()
+    result = session.exec(
+        update(BehaviorGoal)
+        .where(
+            BehaviorGoal.id == goal.id,
+            BehaviorGoal.principal_id == principal.principal_id,
+            BehaviorGoal.state == previous_state,
+            BehaviorGoal.version == expected_version,
+        )
+        .values(
+            state="archived",
+            version=expected_version + 1,
+            archived_at=now,
+            updated_at=now,
+        )
+    )
+    if result.rowcount != 1:
+        session.rollback()
+        raise WeeklyPriorityError(
+            "GOAL_VERSION_CONFLICT", 409, "تغيّر الهدف. حدّث الصفحة ثم حاول مجددًا."
+        )
+    session.expire(goal)
+    session.refresh(goal)
+    session.add(
+        BehaviorGoalHistory(
+            goal_id=goal.id,
+            principal_id=principal.principal_id,
+            root_goal_id=goal.root_goal_id,
+            previous_goal_id=goal.previous_goal_id,
+            sequence_number=goal.sequence_number,
+            goal_version=goal.version,
+            event_type="archive",
+            from_state=previous_state,
+            to_state="archived",
+            actor_type="system",
+            terms_progress_snapshot=_goal_snapshot(goal, recommendation),
+            occurred_at=now,
+        )
+    )
+    session.commit()
+    session.refresh(goal)
+    return _goal_response(goal)
 
 
 def _command_hash(principal_id: UUID, goal_id: UUID, command: BehaviorGoalCommandV1) -> str:
@@ -1925,17 +2022,14 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
             .join(
                 NutritionAnalysisRevisionEvent,
                 and_(
-                    NutritionAnalysisRevisionEvent.revision_id
-                    == NutritionAnalysisRevision.id,
+                    NutritionAnalysisRevisionEvent.revision_id == NutritionAnalysisRevision.id,
                     NutritionAnalysisRevisionEvent.principal_id == BehaviorGoal.principal_id,
                 ),
             )
             .where(
                 WeeklyPriorityRecommendation.id == BehaviorGoal.recommendation_id,
                 WeeklyPriorityRecommendation.principal_id == BehaviorGoal.principal_id,
-                NutritionAnalysisRevisionEvent.event_type.in_(
-                    _PRODUCER_INVALIDATION_EVENTS
-                ),
+                NutritionAnalysisRevisionEvent.event_type.in_(_PRODUCER_INVALIDATION_EVENTS),
                 or_(
                     BehaviorGoal.last_progress_attempt_event_id.is_(None),
                     NutritionAnalysisRevisionEvent.occurred_at
@@ -2102,9 +2196,7 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
         if goal.recommendation_id in recommendation_by_id
     ]
     if event_recommendations:
-        source_keys = {
-            (row.source_analysis_id, row.principal_id) for row in event_recommendations
-        }
+        source_keys = {(row.source_analysis_id, row.principal_id) for row in event_recommendations}
         ranked_events = (
             select(
                 NutritionAnalysisRevisionEvent.id.label("event_id"),
@@ -2133,9 +2225,7 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
                     NutritionAnalysisRevision.analysis_id,
                     NutritionAnalysisRevisionEvent.principal_id,
                 ).in_(source_keys),
-                NutritionAnalysisRevisionEvent.event_type.in_(
-                    _PRODUCER_INVALIDATION_EVENTS
-                ),
+                NutritionAnalysisRevisionEvent.event_type.in_(_PRODUCER_INVALIDATION_EVENTS),
             )
             .subquery()
         )
@@ -2167,9 +2257,7 @@ def process_due_goals(session: Session, *, limit: int = 100) -> dict[str, int]:
             recommendation = recommendation_by_id.get(goal.recommendation_id)
             if recommendation is None:
                 continue
-            event = latest_by_source.get(
-                (recommendation.source_analysis_id, goal.principal_id)
-            )
+            event = latest_by_source.get((recommendation.source_analysis_id, goal.principal_id))
             if event is None:
                 continue
             event_cursor = (event.occurred_at, event.id)

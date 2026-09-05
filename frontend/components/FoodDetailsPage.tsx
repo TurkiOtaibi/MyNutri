@@ -119,7 +119,7 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
   }
 
   const food = foodQuery.data;
-  const registryCompatible = registryQuery.data?.registry_schema_version === 2;
+  const registryCompatible = registryQuery.data?.registry_schema_version === 3;
   const registry = registryCompatible ? registryQuery.data : undefined;
   const servingNutrition = calculateServingNutrition(food);
   const basisNutrition = perBasisNutrition(food);
@@ -239,7 +239,6 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
           <MetadataRow label="موثوقية المصدر" value={reliabilityLabel ?? "غير معروفة"} />
           {food.nutrition_source.reference ? <MetadataRow label="مرجع المصدر" value={food.nutrition_source.reference} multiline autoDirection /> : null}
           {food.ingredients.text ? <MetadataRow label="المكونات" value={food.ingredients.text} multiline autoDirection /> : null}
-          <MetadataRow label="تصنيف NOVA" value={`${food.nova.classification === "unknown" ? "غير معروف" : `NOVA ${food.nova.classification}`} · ${food.nova.review_status === "reviewed" ? "مراجع" : "غير مراجع"}`} />
           <MetadataRow label="حالة بيانات المجموعات" value={`${food.group_data_status} · ${food.group_data_completeness}`} />
           <MetadataRow label="مساهمات المجموعات" value={food.group_contributions.length ? food.group_contributions.map((item) => `${groupLabels.get(item.group_key) ?? item.group_key}: ${item.amount_per_100_basis}`).join("، ") : "لا توجد مساهمات مسجلة"} multiline />
           <MetadataRow label="السمات التحليلية" value={food.analytical_traits.length ? food.analytical_traits.map((item) => traitLabels.get(item) ?? item).join("، ") : "لا توجد سمات مسجلة"} multiline />

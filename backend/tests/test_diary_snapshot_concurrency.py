@@ -65,6 +65,7 @@ def postgres_food() -> tuple[Engine, UUID]:
     url = _database_url()
     engine = create_engine(url)
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("DROP SCHEMA IF EXISTS nova_retirement CASCADE"))
         connection.execute(text("DROP SCHEMA public CASCADE"))
         connection.execute(text("CREATE SCHEMA public"))
     _run_alembic(url, "upgrade", "head")
@@ -234,14 +235,14 @@ def test_update_race_logger_first_is_old_then_new(postgres_food, monkeypatch) ->
     engine, food_id = postgres_food
     locked = Event()
     release = Event()
-    original = diary_service._create_snapshot_v3_from_locked_food
+    original = diary_service._create_snapshot_v4_from_locked_food
 
     def paused_builder(session, food):
         locked.set()
         assert release.wait(10)
         return original(session, food)
 
-    monkeypatch.setattr(diary_service, "_create_snapshot_v3_from_locked_food", paused_builder)
+    monkeypatch.setattr(diary_service, "_create_snapshot_v4_from_locked_food", paused_builder)
     with ThreadPoolExecutor(max_workers=2) as executor:
         logged = executor.submit(_log, engine, food_id, "logger-first")
         assert locked.wait(10)
@@ -252,7 +253,7 @@ def test_update_race_logger_first_is_old_then_new(postgres_food, monkeypatch) ->
         written.result(timeout=15)
 
     _assert_snapshot(_entry_snapshot(engine, first_id), "old")
-    monkeypatch.setattr(diary_service, "_create_snapshot_v3_from_locked_food", original)
+    monkeypatch.setattr(diary_service, "_create_snapshot_v4_from_locked_food", original)
     _assert_snapshot(_entry_snapshot(engine, _log(engine, food_id, "later-log")), "new")
 
 
@@ -286,14 +287,14 @@ def test_archive_race_logger_first_logs_then_archives(postgres_food, monkeypatch
     engine, food_id = postgres_food
     locked = Event()
     release = Event()
-    original = diary_service._create_snapshot_v3_from_locked_food
+    original = diary_service._create_snapshot_v4_from_locked_food
 
     def paused_builder(session, food):
         locked.set()
         assert release.wait(10)
         return original(session, food)
 
-    monkeypatch.setattr(diary_service, "_create_snapshot_v3_from_locked_food", paused_builder)
+    monkeypatch.setattr(diary_service, "_create_snapshot_v4_from_locked_food", paused_builder)
     with ThreadPoolExecutor(max_workers=2) as executor:
         logged = executor.submit(_log, engine, food_id, "archive-log-first")
         assert locked.wait(10)
@@ -339,14 +340,14 @@ def test_delete_race_logger_first_archives_used_food(postgres_food, monkeypatch)
     engine, food_id = postgres_food
     locked = Event()
     release = Event()
-    original = diary_service._create_snapshot_v3_from_locked_food
+    original = diary_service._create_snapshot_v4_from_locked_food
 
     def paused_builder(session, food):
         locked.set()
         assert release.wait(10)
         return original(session, food)
 
-    monkeypatch.setattr(diary_service, "_create_snapshot_v3_from_locked_food", paused_builder)
+    monkeypatch.setattr(diary_service, "_create_snapshot_v4_from_locked_food", paused_builder)
     with ThreadPoolExecutor(max_workers=2) as executor:
         logged = executor.submit(_log, engine, food_id, "delete-log-first")
         assert locked.wait(10)
@@ -369,9 +370,7 @@ def test_delete_race_delete_first_prevents_logging_missing_food(postgres_food, m
     original = food_service.get_food_for_update
 
     def paused_loader(session, principal, target_id, *, include_archived=False):
-        food = original(
-            session, principal, target_id, include_archived=include_archived
-        )
+        food = original(session, principal, target_id, include_archived=include_archived)
         locked.set()
         assert release.wait(10)
         return food
@@ -398,16 +397,14 @@ def test_two_same_owner_diary_writers_serialize_before_food_snapshot(
     engine, food_id = postgres_food
     locked = Event()
     release = Event()
-    original = diary_service._create_snapshot_v3_from_locked_food
+    original = diary_service._create_snapshot_v4_from_locked_food
 
     def paused_builder(session, food):
         locked.set()
         assert release.wait(10)
         return original(session, food)
 
-    monkeypatch.setattr(
-        diary_service, "_create_snapshot_v3_from_locked_food", paused_builder
-    )
+    monkeypatch.setattr(diary_service, "_create_snapshot_v4_from_locked_food", paused_builder)
     with ThreadPoolExecutor(max_workers=2) as executor:
         first = executor.submit(_log, engine, food_id, "writer-one")
         assert locked.wait(10)
@@ -424,9 +421,7 @@ def test_two_same_owner_diary_writers_serialize_before_food_snapshot(
         original(session, food)
         raise RuntimeError("induced failure after snapshot serialization")
 
-    monkeypatch.setattr(
-        diary_service, "_create_snapshot_v3_from_locked_food", fail_after_snapshot
-    )
+    monkeypatch.setattr(diary_service, "_create_snapshot_v4_from_locked_food", fail_after_snapshot)
     with pytest.raises(RuntimeError, match="induced failure"):
         _log(engine, food_id, "rollback-after-snapshot")
     with Session(engine) as session:

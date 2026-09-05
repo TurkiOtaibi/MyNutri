@@ -56,6 +56,7 @@ def _prepare() -> str:
     url = _url()
     engine = create_engine(url)
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("DROP SCHEMA IF EXISTS nova_retirement CASCADE"))
         connection.execute(text("DROP SCHEMA public CASCADE"))
         connection.execute(text("CREATE SCHEMA public"))
     engine.dispose()
@@ -103,7 +104,9 @@ def _seed_goal(url: str, state: str = "offered") -> UUID:
         }
     )
     metric["current"].update({"value": 1, "status": "above_target"})
-    canonical = json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    hash_document = dict(document)
+    hash_document.pop("generated_at", None)
+    canonical = json.dumps(hash_document, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     with Session(engine) as session:
         session.add(Principal(id=PRINCIPAL_ID))
         session.commit()
@@ -505,7 +508,7 @@ def test_concurrent_due_workers_record_one_rejected_revision_attempt() -> None:
 
 
 @pytest.mark.migration
-def test_concurrent_due_workers_refresh_one_stale_historical_series_once() -> None:
+def test_concurrent_due_workers_do_not_advance_v1_series_after_nova_cutover() -> None:
     url = _prepare()
     goal_id = _seed_goal(url)
     engine = create_engine(url)
@@ -538,16 +541,25 @@ def test_concurrent_due_workers_refresh_one_stale_historical_series_once() -> No
         session.add(event)
         session.commit()
         event_id = event.id
+        session.execute(text("SELECT pg_advisory_xact_lock(nova_retirement.generation_lock_key())"))
+        changed = session.execute(
+            text(
+                "UPDATE nova_retirement.contract_generation SET generation = 2, "
+                "state = 'NOVA_RETIRED', activated_at = clock_timestamp() "
+                "WHERE singleton = true AND generation = 1"
+            )
+        )
+        assert changed.rowcount == 1
+        session.commit()
     engine.dispose()
 
     barrier = Barrier(2)
     with ThreadPoolExecutor(max_workers=2) as executor:
         outcomes = list(executor.map(lambda _: _run_due(url, barrier), range(2)))
     assert sum(item["processed"] for item in outcomes) <= 2, outcomes
-    assert sum(item["recomputed"] for item in outcomes) == 1, outcomes
+    assert sum(item["recomputed"] for item in outcomes) == 0, outcomes
     assert all(
-        item["processed"] == 0 or PRINCIPAL_ID in item["locked_principal_ids"]
-        for item in outcomes
+        item["processed"] == 0 or PRINCIPAL_ID in item["locked_principal_ids"] for item in outcomes
     ), outcomes
 
     engine = create_engine(url)
@@ -559,18 +571,17 @@ def test_concurrent_due_workers_refresh_one_stale_historical_series_once() -> No
             select(BehaviorGoalHistory).where(BehaviorGoalHistory.goal_id == goal_id)
         ).all()
         assert goal is not None and goal.last_progress_attempt_event_id == event_id
-        assert goal.last_progress_analysis_revision == 2
-        assert series.current_revision_number == 2
-        assert len(revisions) == 2
-        assert len(history) == 1
-        assert history[0].event_type in {
-            "evidence_reopened",
-            "historical_evidence_changed",
-        }
+        assert goal.last_progress_analysis_revision == 1
+        assert series.current_revision_number == 1
+        assert len(revisions) == 1
+        assert history == []
         assert process_due_goals(session, limit=10)["recomputed"] == 0
-        assert len(
-            session.exec(
-                select(BehaviorGoalHistory).where(BehaviorGoalHistory.goal_id == goal_id)
-            ).all()
-        ) == 1
+        assert (
+            len(
+                session.exec(
+                    select(BehaviorGoalHistory).where(BehaviorGoalHistory.goal_id == goal_id)
+                ).all()
+            )
+            == 0
+        )
     engine.dispose()

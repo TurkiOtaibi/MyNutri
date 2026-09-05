@@ -1,11 +1,21 @@
 from datetime import date, datetime, timedelta
 from contextvars import ContextVar, Token
 from enum import Enum
+import hashlib
+import json
 import math
 from typing import Annotated, Any, ClassVar, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    create_model,
+    field_validator,
+    model_validator,
+)
 
 from app.models import (
     ActivityLevel,
@@ -32,6 +42,7 @@ from app.models import (
 )
 
 from app.nutrition_rules.calculation import age_on
+from app.nutrition_rules.analysis import METRIC_REGISTRY_V2
 from app.nutrition_rules.registry import FOOD_CATEGORIES, FOOD_GROUPS, SOURCE_RELIABILITY, TRAITS
 from app.services.food_validation_errors import (
     ABOVE_MAX_MESSAGE,
@@ -102,14 +113,13 @@ class RegistryNovaDefinition(BaseModel):
 
 
 class NutritionRegistryResponse(BaseModel):
-    nutrition_registry_version: str
-    calculation_engine_version: str
-    food_group_rules_version: str
-    source_reliability_rules_version: str
-    nova_rules_version: str
-    registry_schema_version: Literal[2]
-    snapshot_schema_version: Literal[3]
-    analysis_rules_version: Literal["w3-analysis-1.1.0"]
+    nutrition_registry_version: Literal["3.0.0"]
+    calculation_engine_version: Literal["2.0.0"]
+    food_group_rules_version: Literal["1.0.0"]
+    source_reliability_rules_version: Literal["1.0.0"]
+    registry_schema_version: Literal[3]
+    snapshot_schema_version: Literal[4]
+    analysis_rules_version: Literal["w3-analysis-2.0.0"]
     analysis_rules_status: Literal["active"]
     weekly_priority_rules_version: Literal["w3-priority-1.1.0"]
     weekly_priority_copy_version: Literal["w3-priority-ar-1.1.0"]
@@ -129,7 +139,6 @@ class NutritionRegistryResponse(BaseModel):
     ingredient_source_types: list[IngredientsSourceType]
     ingredient_source_definitions: list[RegistryIngredientSourceDefinition]
     reliability_levels: list[RegistryLabelDefinition]
-    nova: RegistryNovaDefinition
     analysis_metrics: list[dict[str, str]]
     weekly_priority_rules: list[dict[str, Any]]
 
@@ -553,7 +562,6 @@ class FoodBase(BaseModel):
     data_source: str | None = None
     nutrition_source: NutritionSourceInput = Field(default_factory=NutritionSourceInput)
     ingredients: IngredientsInput = Field(default_factory=IngredientsInput)
-    nova: NovaInput | None = None
     group_contributions: list[FoodGroupContributionInput] = Field(default_factory=list)
     analytical_traits: list[str] = Field(default_factory=list)
 
@@ -717,7 +725,6 @@ class FoodUpdate(BaseModel):
     data_source: str | None = None
     nutrition_source: NutritionSourceInput | None = None
     ingredients: IngredientsInput | None = None
-    nova: NovaInput | None = None
     group_contributions: list[FoodGroupContributionInput] | None = None
     analytical_traits: list[str] | None = None
 
@@ -814,7 +821,6 @@ class FoodResponse(FoodBase):
     group_data_completeness: GroupDataCompleteness
     taxonomy_review_required: bool
     nutrition_source: NutritionSourceResponse
-    nova: NovaResponse
     group_contributions: list[FoodGroupContributionResponse]
     analytical_traits: list[str]
     legacy_nutrition: LegacyNutritionResponse
@@ -824,6 +830,18 @@ class FoodResponse(FoodBase):
     archived_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class FoodCreateV3(FoodCreate):
+    """Active NOVA-free Food create contract."""
+
+
+class FoodUpdateV3(FoodUpdate):
+    """Active NOVA-free Food update contract."""
+
+
+class FoodResponseV3(FoodResponse):
+    """Active NOVA-free Food response contract."""
 
 
 class FoodPickerItem(BaseModel):
@@ -854,7 +872,7 @@ FoodSort = Literal["name", "recent", "calories", "protein"]
 
 
 class FoodListResponse(BaseModel):
-    items: list[FoodResponse]
+    items: list[FoodResponseV3]
     total: int
     page: int
     page_size: int
@@ -1374,9 +1392,15 @@ class WeeklyPriorityAnalysisInputV1(_AnalysisClosedModel):
             raise ValueError("current days must be sorted and unique")
         if previous_dates != sorted(set(previous_dates)):
             raise ValueError("previous days must be sorted and unique")
-        if any(right - left != timedelta(days=1) for left, right in zip(current_dates, current_dates[1:])):
+        if any(
+            right - left != timedelta(days=1)
+            for left, right in zip(current_dates, current_dates[1:])
+        ):
             raise ValueError("current days must be consecutive")
-        if any(right - left != timedelta(days=1) for left, right in zip(previous_dates, previous_dates[1:])):
+        if any(
+            right - left != timedelta(days=1)
+            for left, right in zip(previous_dates, previous_dates[1:])
+        ):
             raise ValueError("previous days must be consecutive")
         if [item.metric_key for item in self.metric_facts] != sorted(
             {item.metric_key for item in self.metric_facts}
@@ -1397,9 +1421,198 @@ class WeeklyPriorityAnalysisInputV1(_AnalysisClosedModel):
             raise ValueError("previous period must contain seven days")
         if self.previous_period_end + timedelta(days=1) != self.period_start:
             raise ValueError("periods must be contiguous")
-        if current_dates != [
-            self.period_start + timedelta(days=offset) for offset in range(7)
+        if current_dates != [self.period_start + timedelta(days=offset) for offset in range(7)]:
+            raise ValueError("current days must align to the declared period")
+        if previous_dates != [
+            self.previous_period_start + timedelta(days=offset) for offset in range(7)
         ]:
+            raise ValueError("previous days must align to the declared period")
+        if self.as_of_diary_date != self.period_end:
+            raise ValueError("as-of Diary date must equal current period end")
+        if any(
+            fact.total_entry_count != day.entry_count
+            for day in (*self.days, *self.previous_period)
+            if day.logging_status == "complete"
+            for fact in day.metric_values
+        ):
+            raise ValueError("day metric total entries must match the day entry count")
+        return self
+
+
+AnalysisSafetyFlagV2 = Literal[
+    "incompatible_target",
+    "incompatible_source_versions",
+    "invalid_day_evidence",
+    "missing_target",
+    "non_finite_source_fact",
+    "profile_specialist_review_required",
+    "stale_evidence",
+    "unsupported_analysis_rules",
+    "unsupported_food_group_rules",
+    "unsupported_registry",
+    "unsupported_snapshot_schema",
+    "very_low_energy_blocked",
+]
+
+
+class TargetPlanAnalysisRefV2(TargetPlanAnalysisRefV1):
+    """Pinned Target Plan provenance; compatibility is evaluated, not rewritten."""
+
+
+class OpaqueEvidenceRefV2(OpaqueEvidenceRefV1):
+    pass
+
+
+class AnalysisContributorV2(AnalysisContributorV1):
+    pass
+
+
+class AnalysisDayMetricValueV2(AnalysisDayMetricValueV1):
+    pass
+
+
+class AnalysisDayFactV2(AnalysisDayFactV1):
+    snapshot_schema_versions: list[int]
+    metric_values: list[AnalysisDayMetricValueV2]
+
+    @model_validator(mode="after")
+    def validate_v2_snapshot_versions(self):
+        if any(version not in {3, 4} for version in self.snapshot_schema_versions):
+            raise ValueError("V2 analysis days support SnapshotV3/V4 only")
+        return self
+
+
+class AnalysisMetricTargetV2(AnalysisMetricTargetV1):
+    pass
+
+
+class PeriodMetricEvidenceV2(PeriodMetricEvidenceV1):
+    evidence_refs: list[OpaqueEvidenceRefV2]
+
+
+class AnalysisComparisonV2(AnalysisComparisonV1):
+    pass
+
+
+class AnalysisPersistenceV2(AnalysisPersistenceV1):
+    pass
+
+
+class AnalysisContributorsV2(AnalysisContributorsV1):
+    current: list[AnalysisContributorV2] = Field(max_length=5)
+    previous: list[AnalysisContributorV2] = Field(max_length=5)
+
+
+class AnalysisMetricFactV2(AnalysisMetricFactV1):
+    target: AnalysisMetricTargetV2 | None
+    current: PeriodMetricEvidenceV2
+    previous: PeriodMetricEvidenceV2
+    comparison: AnalysisComparisonV2
+    persistence: AnalysisPersistenceV2
+    contributors: AnalysisContributorsV2
+
+
+def _v2_metric_kind(metric_key: str) -> tuple[str, str]:
+    if metric_key.startswith(("energy:", "macro:", "nutrient:")) or metric_key in {
+        "group:fruit_vegetable_g_per_day",
+        "group:dairy_fortified_servings_per_day",
+    }:
+        return "daily_average", "average_numeric_days"
+    if metric_key.endswith("_occurrence_days"):
+        return "occurrence_days", "distinct_positive_dates"
+    if metric_key == "group:whole_grain_share_percent":
+        return "share_percent", "ratio_percent"
+    if metric_key == "protein:source_diversity_count":
+        return "diversity_count", "distinct_source_count"
+    return "period_total", "sum_period"
+
+
+def _v2_metric_schema(metric_key: str) -> type[AnalysisMetricFactV2]:
+    unit, direction = METRIC_REGISTRY_V2[metric_key]
+    kind, aggregation = _v2_metric_kind(metric_key)
+    safe_name = "".join(part.title() for part in metric_key.replace(":", "_").split("_"))
+    return create_model(
+        f"AnalysisMetric{safe_name}V2",
+        __base__=AnalysisMetricFactV2,
+        metric_key=(Literal[metric_key], metric_key),
+        metric_kind=(Literal[kind], kind),
+        unit=(Literal[unit], unit),
+        aggregation=(Literal[aggregation], aggregation),
+        direction=(Literal[direction], direction),
+    )
+
+
+V2_METRIC_KEYS = tuple(sorted(METRIC_REGISTRY_V2))
+V2_METRIC_FACT_TYPES = tuple(_v2_metric_schema(key) for key in V2_METRIC_KEYS)
+CanonicalMetricFactsV2 = tuple[V2_METRIC_FACT_TYPES]  # type: ignore[valid-type]
+
+
+class WeeklyPriorityAnalysisInputV2(_AnalysisClosedModel):
+    interface_version: Literal[2] = 2
+    principal_ref: UUID
+    source_analysis_id: UUID
+    source_analysis_revision: int = Field(ge=1)
+    generated_at: datetime
+    as_of_diary_date: date
+    calendar_timezone: Literal["Asia/Riyadh"]
+    period_start: date
+    period_end: date
+    previous_period_start: date
+    previous_period_end: date
+    analysis_rules_version: Literal["w3-analysis-2.0.0"]
+    nutrition_registry_version: Literal["3.0.0"]
+    food_group_rules_version: Literal["1.0.0"]
+    snapshot_schema_versions: list[int] = Field(
+        json_schema_extra={"oneOf": [{"const": [3]}, {"const": [4]}, {"const": [3, 4]}]}
+    )
+    target_plan_refs: list[TargetPlanAnalysisRefV2]
+    days: list[AnalysisDayFactV2] = Field(min_length=7, max_length=7)
+    previous_period: list[AnalysisDayFactV2] = Field(min_length=7, max_length=7)
+    metric_facts: CanonicalMetricFactsV2 = Field(  # type: ignore[valid-type]
+        json_schema_extra={"items": False}
+    )
+    safety_flags: list[AnalysisSafetyFlagV2]
+
+    @model_validator(mode="after")
+    def validate_projection(self):
+        if self.snapshot_schema_versions not in ([3], [4], [3, 4]):
+            raise ValueError("snapshot schema versions must be [3], [4], or [3,4]")
+        if self.safety_flags != sorted(set(self.safety_flags)):
+            raise ValueError("safety flags must be sorted and unique")
+        current_dates = [item.date for item in self.days]
+        previous_dates = [item.date for item in self.previous_period]
+        if current_dates != sorted(set(current_dates)):
+            raise ValueError("current days must be sorted and unique")
+        if previous_dates != sorted(set(previous_dates)):
+            raise ValueError("previous days must be sorted and unique")
+        if any(
+            right - left != timedelta(days=1)
+            for left, right in zip(current_dates, current_dates[1:])
+        ):
+            raise ValueError("current days must be consecutive")
+        if any(
+            right - left != timedelta(days=1)
+            for left, right in zip(previous_dates, previous_dates[1:])
+        ):
+            raise ValueError("previous days must be consecutive")
+        if tuple(item.metric_key for item in self.metric_facts) != V2_METRIC_KEYS:
+            raise ValueError("metric facts must be the canonical 32-metric set")
+        if (
+            any(
+                metric.current.status == "target_incompatible"
+                or metric.previous.status == "target_incompatible"
+                for metric in self.metric_facts
+            )
+            and "incompatible_target" not in self.safety_flags
+        ):
+            raise ValueError("incompatible target fact requires safety flag")
+        if self.period_end - self.period_start != timedelta(days=6):
+            raise ValueError("current period must contain seven days")
+        if self.previous_period_end - self.previous_period_start != timedelta(days=6):
+            raise ValueError("previous period must contain seven days")
+        if self.previous_period_end + timedelta(days=1) != self.period_start:
+            raise ValueError("periods must be contiguous")
+        if current_dates != [self.period_start + timedelta(days=offset) for offset in range(7)]:
             raise ValueError("current days must align to the declared period")
         if previous_dates != [
             self.previous_period_start + timedelta(days=offset) for offset in range(7)
@@ -1752,6 +1965,7 @@ class BehaviorGoalHistoryItemV1(_AnalysisClosedModel):
         "resume",
         "end",
         "completed",
+        "archive",
         "evidence_reopened",
         "progress_updated",
         "historical_evidence_changed",
@@ -1764,6 +1978,14 @@ class BehaviorGoalHistoryItemV1(_AnalysisClosedModel):
     occurred_at: datetime
     reason: str | None
     snapshot: BehaviorGoalHistorySnapshotV1
+
+    @model_validator(mode="after")
+    def validate_retained_archive(self):
+        if self.event_type == "archive" and (
+            self.from_state not in {"rejected", "completed", "ended"} or self.to_state != "archived"
+        ):
+            raise ValueError("archive is valid only from a retained terminal state")
+        return self
 
 
 class BehaviorGoalHistoryPageV1(_AnalysisClosedModel):
@@ -1797,9 +2019,9 @@ class BehaviorGoalDeferCommandV1(_BehaviorGoalCommandBase):
 
 
 class _BehaviorGoalReasonCommandV1(_BehaviorGoalCommandBase):
-    reason: Literal[
-        "not_relevant", "too_difficult", "prefer_other", "pause_tracking", "other"
-    ] | None = None
+    reason: (
+        Literal["not_relevant", "too_difficult", "prefer_other", "pause_tracking", "other"] | None
+    ) = None
     note: str | None = Field(default=None, max_length=280)
 
     @model_validator(mode="after")
@@ -1845,9 +2067,7 @@ class BehaviorGoalRepeatCommandV1(_BehaviorGoalCommandBase):
 
 
 def _validate_command_day_mask(mask: list[int] | None) -> None:
-    if mask is not None and (
-        mask != sorted(set(mask)) or any(day < 0 or day > 6 for day in mask)
-    ):
+    if mask is not None and (mask != sorted(set(mask)) or any(day < 0 or day > 6 for day in mask)):
         raise ValueError("scheduled day mask must contain unique weekdays 0..6")
 
 
@@ -1866,15 +2086,17 @@ BehaviorGoalCommandPayloadV1 = Annotated[
 
 
 class BehaviorGoalCommandV1(RootModel[BehaviorGoalCommandPayloadV1]):
-    _OPTIONAL_EVENT_FIELDS: ClassVar[frozenset[str]] = frozenset({
-        "weekly_target_count",
-        "scheduled_day_mask",
-        "reminder_preference",
-        "note",
-        "reason",
-        "change_reason",
-        "repeat_mode",
-    })
+    _OPTIONAL_EVENT_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "weekly_target_count",
+            "scheduled_day_mask",
+            "reminder_preference",
+            "note",
+            "reason",
+            "change_reason",
+            "repeat_mode",
+        }
+    )
 
     def __init__(self, root: Any = None, **data: Any):
         super().__init__(root=root if root is not None else data)
@@ -1965,6 +2187,122 @@ class NutritionPatternAnalysisHistoryItemV1(_AnalysisClosedModel):
 
 class NutritionPatternAnalysisHistoryPageV1(_AnalysisClosedModel):
     items: list[NutritionPatternAnalysisHistoryItemV1]
+    next_cursor: str | None
+
+
+class AnalysisEvaluateCommandV2(_AnalysisClosedModel):
+    expected_current_revision: int | None = Field(default=None, ge=1)
+
+
+class AnalysisSourceVersionBundleV2(_AnalysisClosedModel):
+    analysis_rules_version: Literal["w3-analysis-2.0.0"]
+    nutrition_registry_version: Literal["3.0.0"]
+    calculation_engine_version: Literal["2.0.0"]
+    food_group_rules_version: Literal["1.0.0"]
+    source_reliability_rules_version: Literal["1.0.0"]
+    snapshot_schema_versions: list[int] = Field(
+        json_schema_extra={"oneOf": [{"const": [3]}, {"const": [4]}, {"const": [3, 4]}]}
+    )
+    status_evidence_version: Literal[1]
+    rules_manifest_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_input_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator("snapshot_schema_versions")
+    @classmethod
+    def validate_snapshot_schema_versions(cls, value: list[int]) -> list[int]:
+        if value not in ([3], [4], [3, 4]):
+            raise ValueError("snapshot schema versions must be [3], [4], or [3,4]")
+        return value
+
+
+class NutritionPatternAnalysisResponseV2(_AnalysisClosedModel):
+    source_analysis_id: UUID
+    source_analysis_revision: int = Field(ge=1)
+    lifecycle_status: Literal["current", "stale", "superseded"]
+    stale_reasons: list[AnalysisStaleReason]
+    as_of_diary_date: date
+    period_start: date
+    period_end: date
+    previous_period_start: date
+    previous_period_end: date
+    complete_day_count: int = Field(ge=0, le=7)
+    previous_complete_day_count: int = Field(ge=0, le=7)
+    metric_summaries: CanonicalMetricFactsV2 = Field(  # type: ignore[valid-type]
+        json_schema_extra={"items": False}
+    )
+    source_versions: AnalysisSourceVersionBundleV2
+    priority_input: WeeklyPriorityAnalysisInputV2
+    generated_at: datetime
+    finalized_at: datetime
+    etag: str = Field(
+        pattern=r'^"analysis-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-r[1-9][0-9]*"$'
+    )
+
+    @model_validator(mode="after")
+    def bind_response_contract(self):
+        expected_etag = f'"analysis-{self.source_analysis_id}-r{self.source_analysis_revision}"'
+        if self.etag != expected_etag:
+            raise ValueError("ETag does not identify this analysis revision")
+        if tuple(self.metric_summaries) != tuple(self.priority_input.metric_facts):
+            raise ValueError("metric summaries must equal priority input facts")
+        if self.priority_input.source_analysis_id != self.source_analysis_id:
+            raise ValueError("priority input analysis ID mismatch")
+        if self.priority_input.source_analysis_revision != self.source_analysis_revision:
+            raise ValueError("priority input revision mismatch")
+        if (
+            self.source_versions.analysis_rules_version
+            != self.priority_input.analysis_rules_version
+            or self.source_versions.nutrition_registry_version
+            != self.priority_input.nutrition_registry_version
+            or self.source_versions.food_group_rules_version
+            != self.priority_input.food_group_rules_version
+            or self.source_versions.snapshot_schema_versions
+            != self.priority_input.snapshot_schema_versions
+        ):
+            raise ValueError("nested source versions do not match the priority input")
+        content_payload = self.priority_input.model_dump(mode="json")
+        content_payload.pop("generated_at", None)
+        content_hash = hashlib.sha256(
+            json.dumps(
+                content_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        if self.source_versions.content_hash != content_hash:
+            raise ValueError("content hash does not bind the priority input")
+        return self
+
+
+class NutritionPatternAnalysisHistoryItemV2(_AnalysisClosedModel):
+    source_analysis_id: UUID
+    source_analysis_revision: int = Field(ge=1)
+    lifecycle_status: Literal["current", "stale", "superseded"]
+    as_of_diary_date: date
+    period_start: date
+    period_end: date
+    previous_period_start: date
+    previous_period_end: date
+    analysis_rules_version: Literal["w3-analysis-2.0.0"]
+    complete_day_count: int = Field(ge=0, le=7)
+    previous_complete_day_count: int = Field(ge=0, le=7)
+    generated_at: datetime
+    finalized_at: datetime
+    etag: str = Field(
+        pattern=r'^"analysis-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-r[1-9][0-9]*"$'
+    )
+
+    @model_validator(mode="after")
+    def bind_history_etag(self):
+        if self.etag != f'"analysis-{self.source_analysis_id}-r{self.source_analysis_revision}"':
+            raise ValueError("ETag does not identify this analysis revision")
+        return self
+
+
+class NutritionPatternAnalysisHistoryPageV2(_AnalysisClosedModel):
+    items: list[NutritionPatternAnalysisHistoryItemV2]
     next_cursor: str | None
 
 

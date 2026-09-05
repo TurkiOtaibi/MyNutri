@@ -120,12 +120,12 @@ def test_v2_captures_one_unit_and_quantity_never_mutates_snapshot(snapshot_sessi
             quantity=3,
             meal_type=MealType.breakfast,
         ),
-        snapshot_v3_writer_enabled=True,
+        snapshot_v4_writer_enabled=True,
     )
     original = deepcopy(entry.nutrition_snapshot)
     response = to_entry_response(entry)
 
-    assert entry.snapshot_schema_version == 3
+    assert entry.snapshot_schema_version == 4
     assert entry.target_provenance == TargetProvenance.no_target_source
     assert entry.target_plan_id is None
     assert original["nutrition"]["fiber_g"] == 2.5
@@ -137,7 +137,8 @@ def test_v2_captures_one_unit_and_quantity_never_mutates_snapshot(snapshot_sessi
     assert original["food_groups"]["contributions"][0]["amount_per_captured_unit"] == 40
     assert original["food_groups"]["traits"] == ["processed"]
     assert original["source"]["reliability"] == "high"
-    assert original["nova"]["classification"] == "3"
+    assert "nova" not in original
+    assert "nova_rules_version" not in original["versions"]
     assert response.totals.fiber_g == 7.5
     assert response.totals.trans_fat_g == 0
     assert response.totals.sodium_mg is None
@@ -182,8 +183,8 @@ def test_snapshot_readers_reject_unknown_or_malformed_data() -> None:
         principal_id=PRINCIPAL_ID,
         entry_date=date(2026, 7, 16),
         quantity=1,
-        nutrition_snapshot={"schema_version": 4},
-        snapshot_schema_version=4,
+        nutrition_snapshot={"schema_version": 5},
+        snapshot_schema_version=5,
     )
     with pytest.raises(HTTPException) as unsupported_error:
         to_entry_response(unsupported)
@@ -209,13 +210,9 @@ def test_plan009_snapshot_numeric_registry_is_exhaustive() -> None:
             if field.annotation is float or float in get_args(field.annotation)
         }
 
-    assert set(SNAPSHOT_NUTRITION_NUMERIC_FIELDS) == direct_float_fields(
-        SnapshotNutrition
-    )
+    assert set(SNAPSHOT_NUTRITION_NUMERIC_FIELDS) == direct_float_fields(SnapshotNutrition)
     assert set(SNAPSHOT_UNIT_NUMERIC_FIELDS) == direct_float_fields(SnapshotUnit)
-    assert set(SNAPSHOT_GROUP_NUMERIC_FIELDS) == direct_float_fields(
-        SnapshotGroupContribution
-    )
+    assert set(SNAPSHOT_GROUP_NUMERIC_FIELDS) == direct_float_fields(SnapshotGroupContribution)
     assert SNAPSHOT_NUTRITION_NUMERIC_FIELDS == (
         "calories",
         "protein_g",
@@ -241,7 +238,7 @@ def test_plan009_snapshot_readers_fail_closed_on_non_finite_values(
             quantity=1,
             meal_type=MealType.breakfast,
         ),
-        snapshot_v3_writer_enabled=True,
+        snapshot_v4_writer_enabled=True,
     )
     document = deepcopy(entry.nutrition_snapshot)
     document["nutrition"]["calories"] = constant

@@ -156,7 +156,6 @@ export const emptyFoodForm: FoodFormValues = {
   data_source: null,
   nutrition_source: { type: "unknown", name: null, reference: null },
   ingredients: { text: null, source_type: null, source_name: null, source_reference: null },
-  nova: null,
   group_contributions: [],
   analytical_traits: []
 };
@@ -220,7 +219,6 @@ export function foodToForm(food: FoodResponse): FoodFormValues {
       name: food.nutrition_source.name,
       reference: food.nutrition_source.reference
     },
-    nova: food.nova.review_status === "reviewed" ? { classification: food.nova.classification } : null,
     group_contributions: food.group_contributions.map(({ food_group_rules_version: _, ...item }) => item)
   };
 }

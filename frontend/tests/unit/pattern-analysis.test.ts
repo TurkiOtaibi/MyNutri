@@ -47,7 +47,7 @@ const metric = (overrides: Partial<PatternAnalysisMetric> = {}): PatternAnalysis
   persistence: { kind: "same_direction_two_period", qualifies: true, reason: "qualified" },
   contributors: { current: [], previous: [] },
   ...overrides
-});
+} as unknown as PatternAnalysisMetric);
 
 const analysis = (overrides: Partial<PatternAnalysisResponse> = {}): PatternAnalysisResponse => ({
   source_analysis_id: "00000000-0000-0000-0000-000000000321",
@@ -86,9 +86,9 @@ describe("PLAN 032 progress domain", () => {
   });
 
   it("sorts visible facts and excludes unavailable values", () => {
-    const unavailable = metric({ metric_key: "a", current: { ...metric().current, value: null, value_state: "unknown" } });
-    const later = metric({ metric_key: "z" });
-    expect(visibleMetrics(analysis({ metric_summaries: [later, unavailable, metric()] })).map((item) => item.metric_key)).toEqual(["nutrient:fiber_g", "z"]);
+    const unavailable = metric({ metric_key: "energy:calories_kcal_per_day", current: { ...metric().current, value: null, value_state: "unknown" } });
+    const later = metric({ metric_key: "nutrient:sodium_mg" });
+    expect(visibleMetrics(analysis({ metric_summaries: [later, unavailable, metric()] })).map((item) => item.metric_key)).toEqual(["nutrient:fiber_g", "nutrient:sodium_mg"]);
   });
 
   it("reuses the same idempotency command until the attempt is resolved", () => {

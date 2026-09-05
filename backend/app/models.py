@@ -674,13 +674,13 @@ class Food(SQLModel, table=True):
     )
     ingredients_source_name: str | None = Field(default=None, sa_column=Column(Text()))
     ingredients_source_reference: str | None = Field(default=None, sa_column=Column(Text()))
-    nova_classification: NovaClassification = Field(
-        default=NovaClassification.unknown,
-        sa_column=Column(Text(), nullable=False, server_default=NovaClassification.unknown.value),
+    nova_classification: NovaClassification | None = Field(
+        default=None,
+        sa_column=Column(Text(), nullable=True),
     )
-    nova_review_status: NovaReviewStatus = Field(
-        default=NovaReviewStatus.unreviewed,
-        sa_column=Column(Text(), nullable=False, server_default=NovaReviewStatus.unreviewed.value),
+    nova_review_status: NovaReviewStatus | None = Field(
+        default=None,
+        sa_column=Column(Text(), nullable=True),
     )
     created_at: datetime = Field(
         default_factory=utcnow,
@@ -901,7 +901,7 @@ class DiaryEntry(SQLModel, table=True):
             name="ck_diary_entry_target_binding",
         ),
         CheckConstraint(
-            "snapshot_schema_version IS NULL OR snapshot_schema_version IN (2,3)",
+            "snapshot_schema_version IS NULL OR snapshot_schema_version IN (2,3,4)",
             name="ck_diary_entry_snapshot_version",
         ),
         CheckConstraint(
@@ -987,7 +987,7 @@ class NutritionAnalysis(SQLModel, table=True):
             name="uq_nutrition_analysis_principal_date_interface",
         ),
         CheckConstraint("calendar_timezone = 'Asia/Riyadh'", name="ck_nutrition_analysis_timezone"),
-        CheckConstraint("interface_version = 1", name="ck_nutrition_analysis_interface"),
+        CheckConstraint("interface_version IN (1,2)", name="ck_nutrition_analysis_interface"),
         CheckConstraint(
             "(current_revision_id IS NULL AND current_revision_number IS NULL) OR "
             "(current_revision_id IS NOT NULL AND current_revision_number >= 1)",
@@ -1129,7 +1129,7 @@ class NutritionAnalysisEvidenceRef(SQLModel, table=True):
         ),
         CheckConstraint("day_version >= 0", name="ck_nutrition_analysis_evidence_day_version"),
         CheckConstraint(
-            "snapshot_schema_version IN (2,3)",
+            "snapshot_schema_version IN (2,3,4)",
             name="ck_nutrition_analysis_evidence_snapshot_version",
         ),
         CheckConstraint(
@@ -1655,12 +1655,8 @@ class BehaviorGoal(SQLModel, table=True):
             "last_progress_attempt_event_id",
             "window_end",
             "id",
-            postgresql_where=sa_text(
-                "state = 'completed' AND reviewed_at IS NOT NULL"
-            ),
-            sqlite_where=sa_text(
-                "state = 'completed' AND reviewed_at IS NOT NULL"
-            ),
+            postgresql_where=sa_text("state = 'completed' AND reviewed_at IS NOT NULL"),
+            sqlite_where=sa_text("state = 'completed' AND reviewed_at IS NOT NULL"),
         ),
     )
 
@@ -1780,7 +1776,7 @@ class BehaviorGoalHistory(SQLModel, table=True):
         CheckConstraint("actor_type IN ('owner','system')", name="ck_behavior_goal_history_actor"),
         CheckConstraint(
             "event_type IN ('offered','accept','edit','defer','reject','change','changed',"
-            "'pause','resume','end','completed','evidence_reopened','progress_updated',"
+            "'pause','resume','end','completed','archive','evidence_reopened','progress_updated',"
             "'historical_evidence_changed','finalized_completed','finalized_incomplete',"
             "'repeated_from_previous_window')",
             name="ck_behavior_goal_history_event",

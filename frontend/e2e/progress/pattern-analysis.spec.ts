@@ -46,12 +46,11 @@ function analysisResponse(lifecycle: "current" | "stale" = "current") {
     previous_complete_day_count: 5,
     metric_summaries: [metric],
     source_versions: {
-      analysis_rules_version: "w3-analysis-1.1.0",
-      nutrition_registry_version: "2.0.0",
+      analysis_rules_version: "w3-analysis-2.0.0",
+      nutrition_registry_version: "3.0.0",
       calculation_engine_version: "2.0.0",
       food_group_rules_version: "1.0.0",
       source_reliability_rules_version: "1.0.0",
-      nova_rules_version: "1.0.0",
       snapshot_schema_versions: [3],
       status_evidence_version: 1,
       rules_manifest_hash: "a".repeat(64),
@@ -59,7 +58,7 @@ function analysisResponse(lifecycle: "current" | "stale" = "current") {
       content_hash: "c".repeat(64)
     },
     priority_input: {
-      interface_version: 1,
+      interface_version: 2,
       principal_ref: "00000000-0000-4000-8000-000000000001",
       source_analysis_id: id,
       source_analysis_revision: 1,
@@ -70,10 +69,9 @@ function analysisResponse(lifecycle: "current" | "stale" = "current") {
       period_end: "2026-08-17",
       previous_period_start: "2026-08-04",
       previous_period_end: "2026-08-10",
-      analysis_rules_version: "w3-analysis-1.1.0",
-      nutrition_registry_version: "2.0.0",
+      analysis_rules_version: "w3-analysis-2.0.0",
+      nutrition_registry_version: "3.0.0",
       food_group_rules_version: "1.0.0",
-      nova_rules_version: "1.0.0",
       snapshot_schema_versions: [3],
       target_plan_refs: [],
       days: [],
@@ -88,12 +86,12 @@ function analysisResponse(lifecycle: "current" | "stale" = "current") {
 }
 
 async function routeEmptyAnalysis(page: Page) {
-  await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/current", (route) => route.fulfill({
+  await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/v2/current", (route) => route.fulfill({
     status: 404,
     contentType: "application/json",
-    json: { error: { code: "ANALYSIS_NOT_FOUND", message_ar: "لا يوجد تحليل محفوظ بعد.", details: {}, request_id: "request-032" } }
+    json: { error: { code: "NOVA_RETIREMENT_V2_ANALYSIS_NOT_FOUND", message_ar: "لا يوجد تحليل محفوظ بعد.", details: {}, request_id: "request-032" } }
   }));
-  await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/history", (route) => route.fulfill({
+  await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/v2/history", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
     json: { items: [], next_cursor: null }
@@ -105,7 +103,7 @@ test.describe("@plan032 nutrition pattern analysis", () => {
     await routeEmptyAnalysis(page);
     let requestHeaders: Record<string, string> = {};
     let requestBody = "";
-    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/evaluate", async (route) => {
+    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/v2/evaluate", async (route) => {
       requestHeaders = route.request().headers();
       requestBody = route.request().postData() ?? "";
       await route.fulfill({ status: 201, contentType: "application/json", json: analysisResponse() });
@@ -124,7 +122,7 @@ test.describe("@plan032 nutrition pattern analysis", () => {
   test("@p0 ambiguous retry preserves the exact idempotency command", async ({ page }) => {
     await routeEmptyAnalysis(page);
     const requests: Array<{ key: string; match: string; body: string | null }> = [];
-    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/evaluate", async (route) => {
+    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/v2/evaluate", async (route) => {
       requests.push({
         key: route.request().headers()["idempotency-key"],
         match: route.request().headers()["if-match"],
@@ -145,8 +143,8 @@ test.describe("@plan032 nutrition pattern analysis", () => {
   });
 
   test("stale state, RTL, accessibility, reduced motion, and mobile widths remain explicit", async ({ page }) => {
-    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/current", (route) => route.fulfill({ status: 200, contentType: "application/json", json: analysisResponse("stale") }));
-    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/history", (route) => route.fulfill({ status: 200, contentType: "application/json", json: { items: [], next_cursor: null } }));
+    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/v2/current", (route) => route.fulfill({ status: 200, contentType: "application/json", json: analysisResponse("stale") }));
+    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/v2/history", (route) => route.fulfill({ status: 200, contentType: "application/json", json: { items: [], next_cursor: null } }));
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/progress");
     await expect(page.getByText("تغيرت بعض البيانات منذ هذه النسخة")).toBeVisible();
@@ -163,9 +161,9 @@ test.describe("@plan032 nutrition pattern analysis", () => {
   });
 
   test("history loading is distinct from a successful empty history", async ({ page }) => {
-    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/current", (route) => route.fulfill({ status: 200, contentType: "application/json", json: analysisResponse() }));
+    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/v2/current", (route) => route.fulfill({ status: 200, contentType: "application/json", json: analysisResponse() }));
     let releaseHistory: (() => void) | undefined;
-    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/history", async (route) => {
+    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/v2/history", async (route) => {
       await new Promise<void>((resolve) => { releaseHistory = resolve; });
       await route.fulfill({ status: 200, contentType: "application/json", json: { items: [], next_cursor: null } });
     });
@@ -178,9 +176,9 @@ test.describe("@plan032 nutrition pattern analysis", () => {
   });
 
   test("history failure preserves current analysis and exposes accessible retry", async ({ page }) => {
-    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/current", (route) => route.fulfill({ status: 200, contentType: "application/json", json: analysisResponse() }));
+    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/v2/current", (route) => route.fulfill({ status: 200, contentType: "application/json", json: analysisResponse() }));
     let historyRequests = 0;
-    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/history", (route) => {
+    await page.route((url) => url.origin === API_ORIGIN && url.pathname === "/progress/nutrition-analysis/v2/history", (route) => {
       historyRequests += 1;
       return route.fulfill(historyRequests === 1
         ? { status: 500, contentType: "application/json", json: { error: { code: "INTERNAL_ERROR", message_ar: "تعذر إكمال الطلب.", details: {}, request_id: "history-failure" } } }

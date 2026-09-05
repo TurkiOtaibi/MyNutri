@@ -11,12 +11,15 @@ from app.models import FoodStatus
 from app.db.session import get_session
 from app.schemas import (
     FoodCreate,
+    FoodCreateV3,
     FoodDeleteResponse,
     FoodListResponse,
     FoodPickerResponse,
     FoodResponse,
+    FoodResponseV3,
     FoodSort,
     FoodUpdate,
+    FoodUpdateV3,
 )
 from app.services.food import (
     archive_food_response,
@@ -36,7 +39,7 @@ from app.services.food_validation_errors import validate_food_payload
 router = APIRouter(prefix="/foods", tags=["foods"])
 
 
-@router.get("", response_model=list[FoodResponse] | FoodListResponse)
+@router.get("", response_model=list[FoodResponseV3] | FoodListResponse)
 def read_foods(
     q: str | None = None,
     search: str | None = None,
@@ -71,9 +74,9 @@ def read_foods(
     )
 
 
-@router.post("", response_model=FoodResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=FoodResponseV3, status_code=status.HTTP_201_CREATED)
 def add_food(
-    payload: Annotated[SkipValidation[FoodCreate], Body()],
+    payload: Annotated[SkipValidation[FoodCreateV3], Body()],
     principal: PrincipalContext = Depends(require_admin),
     session: Session = Depends(get_session),
 ) -> FoodResponse:
@@ -113,7 +116,7 @@ def read_food_picker(
         )
 
 
-@router.get("/{food_id}", response_model=FoodResponse)
+@router.get("/{food_id}", response_model=FoodResponseV3)
 def read_food(
     food_id: UUID,
     principal: PrincipalContext = Depends(get_principal_context),
@@ -122,10 +125,10 @@ def read_food(
     return to_food_response(session, principal, get_food(session, principal, food_id))
 
 
-@router.put("/{food_id}", response_model=FoodResponse)
+@router.put("/{food_id}", response_model=FoodResponseV3)
 def edit_food(
     food_id: UUID,
-    payload: Annotated[SkipValidation[FoodUpdate], Body()],
+    payload: Annotated[SkipValidation[FoodUpdateV3], Body()],
     principal: PrincipalContext = Depends(require_admin),
     session: Session = Depends(get_session),
 ) -> FoodResponse:
@@ -178,7 +181,7 @@ def read_admin_foods(
     )
 
 
-@admin_router.get("/{food_id}", response_model=FoodResponse)
+@admin_router.get("/{food_id}", response_model=FoodResponseV3)
 def read_admin_food(
     food_id: UUID,
     principal: PrincipalContext = Depends(require_admin),
@@ -199,7 +202,7 @@ def delete_admin_food(
     return FoodDeleteResponse(disposition="deleted" if deleted else "archived")
 
 
-@admin_router.post("/{food_id}/archive", response_model=FoodResponse)
+@admin_router.post("/{food_id}/archive", response_model=FoodResponseV3)
 def archive_admin_food(
     food_id: UUID,
     principal: PrincipalContext = Depends(require_admin),
@@ -208,7 +211,7 @@ def archive_admin_food(
     return archive_food_response(session, principal, food_id)
 
 
-@admin_router.post("/{food_id}/restore", response_model=FoodResponse)
+@admin_router.post("/{food_id}/restore", response_model=FoodResponseV3)
 def restore_admin_food(
     food_id: UUID,
     principal: PrincipalContext = Depends(require_admin),
