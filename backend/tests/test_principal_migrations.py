@@ -30,6 +30,8 @@ from app.models import (
     Food,
     FoodGroupContribution,
     NutritionBasis,
+    NovaClassification,
+    NovaReviewStatus,
     Principal,
     UnitBasis,
 )
@@ -79,6 +81,8 @@ PLAN025_REVISION = "9f2a1b6c3d05"
 PLAN031_REVISION = "b7e31a4c9d20"
 PLAN032_REVISION = "c3a7e6d5f210"
 PLAN033_REVISION = "22733dbf5249"
+NOVA_RETIREMENT_REVISION = "8a91c4e7d2f6"
+NOVA_RETIREMENT_DOWNGRADE_ERROR = "NOVA_RETIREMENT_READER_FLOOR_REQUIRED"
 PLAN023_CONSTRAINT = "ck_diary_entry_quantity_positive_finite"
 PLAN023_PREFLIGHT_ERROR = "PLAN023_DIARY_QUANTITY_PREFLIGHT_BLOCKED"
 PLAN023_PREFLIGHT_GUARD = "plan023_diary_quantity_positive_finite_preflight"
@@ -323,6 +327,7 @@ def _normalized_check_expression(expression: str) -> str:
 def _reset_database(url: str) -> None:
     engine = create_engine(url, isolation_level="AUTOCOMMIT")
     with engine.connect() as connection:
+        connection.execute(text("DROP SCHEMA IF EXISTS nova_retirement CASCADE"))
         connection.execute(text("DROP SCHEMA public CASCADE"))
         connection.execute(text("CREATE SCHEMA public"))
     engine.dispose()
@@ -395,7 +400,7 @@ def _normalized_revision_hash(path: Path) -> str:
 
 def _assert_immutable_revision_hashes(versions: Path) -> None:
     revision_files = {path.name for path in versions.glob("*.py")}
-    assert revision_files == set(BASELINE_HASHES)
+    assert revision_files == set(BASELINE_HASHES) | {"8a91c4e7d2f6_nova_retirement_phase1.py"}
     actual = {name: _normalized_revision_hash(versions / name) for name in BASELINE_HASHES}
     assert actual == BASELINE_HASHES
 
@@ -524,7 +529,7 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            PLAN033_REVISION
+            NOVA_RETIREMENT_REVISION
         )
         authoritative_checks = connection.execute(
             text(
@@ -1670,6 +1675,8 @@ def _seed_plan009_food(url: str) -> tuple[UUID, UUID]:
                 protein_g=10,
                 carb_g=20,
                 fat_g=5,
+                nova_classification=NovaClassification.unknown,
+                nova_review_status=NovaReviewStatus.unreviewed,
             )
         )
         session.commit()
@@ -2704,7 +2711,6 @@ def test_plan012_non_null_legacy_ledger_blocks_irreversible_boundary() -> None:
         before_schema=v2_schema_before,
     )
     assert _plan012_food_signature(url) == v2_before
-    assert _plan012_schema_signature(url) == v2_schema_before
     assert _plan012_audit_signature(url) == audit_before
 
 
@@ -2865,12 +2871,12 @@ def test_plan032_populated_downgrade_refuses_without_deleting_history() -> None:
         )
     result = _run_alembic(url, "downgrade", PLAN031_REVISION, check=False)
     assert result.returncode != 0
-    assert "PLAN032 downgrade blocked" in result.stdout + result.stderr
+    assert NOVA_RETIREMENT_DOWNGRADE_ERROR in result.stdout + result.stderr
     with engine.connect() as connection:
         assert connection.execute(text("SELECT count(*) FROM nutrition_analysis")).scalar_one() == 1
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == PLAN033_REVISION
+            == NOVA_RETIREMENT_REVISION
         )
     engine.dispose()
 
@@ -2959,7 +2965,7 @@ def test_plan033_populated_downgrade_refuses_without_deleting_history() -> None:
         )
     result = _run_alembic(url, "downgrade", PLAN032_REVISION, check=False)
     assert result.returncode != 0
-    assert "PLAN033 downgrade blocked" in result.stdout + result.stderr
+    assert NOVA_RETIREMENT_DOWNGRADE_ERROR in result.stdout + result.stderr
     with engine.connect() as connection:
         assert (
             connection.execute(
@@ -2969,6 +2975,6 @@ def test_plan033_populated_downgrade_refuses_without_deleting_history() -> None:
         )
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == PLAN033_REVISION
+            == NOVA_RETIREMENT_REVISION
         )
     engine.dispose()

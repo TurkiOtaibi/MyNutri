@@ -40,6 +40,7 @@ def _database_url() -> str:
 def _prepare_database(url: str) -> None:
     engine = create_engine(url)
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("DROP SCHEMA IF EXISTS nova_retirement CASCADE"))
         connection.execute(text("DROP SCHEMA public CASCADE"))
         connection.execute(text("CREATE SCHEMA public"))
     engine.dispose()

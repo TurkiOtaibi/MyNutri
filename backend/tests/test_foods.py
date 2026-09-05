@@ -154,9 +154,7 @@ def capture_application_selects(session: Session):
     engine = session.get_bind()
     statements: list[str] = []
 
-    def capture_cursor(
-        _conn, _cursor, statement, _parameters, _context, _executemany
-    ) -> None:
+    def capture_cursor(_conn, _cursor, statement, _parameters, _context, _executemany) -> None:
         normalized = " ".join(statement.split()).lower()
         if normalized.startswith("select "):
             statements.append(normalized)
@@ -187,7 +185,9 @@ def client_for_session(session: Session):
 
 def child_selects(statements: list[str]) -> list[str]:
     child_tables = ("food_group_contribution", "food_analytical_trait")
-    return [statement for statement in statements if any(table in statement for table in child_tables)]
+    return [
+        statement for statement in statements if any(table in statement for table in child_tables)
+    ]
 
 
 def create_plan013_representative_foods(session: Session) -> list[Food]:
@@ -264,7 +264,10 @@ def create_plan014_entry(
         food_id=food.id if food else None,
         quantity=1,
         meal_type="snack",
-        nutrition_snapshot={"food_id": str(food.id) if food else None, "name": food.name if food else "Deleted"},
+        nutrition_snapshot={
+            "food_id": str(food.id) if food else None,
+            "name": food.name if food else "Deleted",
+        },
         created_at=created_at,
     )
     session.add(entry)
@@ -278,16 +281,12 @@ def test_plan014_picker_route_contract_limits_cursor_and_precedence(api_client: 
     assert default.status_code == 200
     assert default.json() == {"items": [], "recent_items": [], "next_cursor": None}
     assert (
-        api_client.get(
-            "/foods/picker", params={"limit": 30}, headers=auth_headers()
-        ).status_code
+        api_client.get("/foods/picker", params={"limit": 30}, headers=auth_headers()).status_code
         == 200
     )
 
     for limit in (0, 31):
-        invalid = api_client.get(
-            "/foods/picker", params={"limit": limit}, headers=auth_headers()
-        )
+        invalid = api_client.get("/foods/picker", params={"limit": limit}, headers=auth_headers())
         assert invalid.status_code == 422
 
     for cursor in ("not-a-cursor", "e30", "eyJuYW1lIjoxLCJpZCI6ImJhZCJ9"):
@@ -317,17 +316,13 @@ def test_plan014_picker_max_page_is_bounded_and_has_opaque_continuation() -> Non
 def test_plan014_picker_closed_dto_search_and_stable_casefold_pagination() -> None:
     with session_fixture() as session:
         first = create_plan014_food(session, "ALPHA", brand="First Brand")
-        second = create_plan014_food(
-            session, "alpha", brand="Second Brand", unit_amount=171
-        )
+        second = create_plan014_food(session, "alpha", brand="Second Brand", unit_amount=171)
         create_plan014_food(session, "Beta", brand="Needle Brand")
         archived = create_plan014_food(session, "Archived Needle")
         archive_food_response(session, TEST_PRINCIPAL, archived.id)
 
         page_one = list_food_picker(session, TEST_PRINCIPAL, limit=1)
-        page_two = list_food_picker(
-            session, TEST_PRINCIPAL, limit=1, cursor=page_one.next_cursor
-        )
+        page_two = list_food_picker(session, TEST_PRINCIPAL, limit=1, cursor=page_one.next_cursor)
         expected_alpha_ids = sorted((first.id, second.id))
         assert [page_one.items[0].id, page_two.items[0].id] == expected_alpha_ids
         assert page_one.next_cursor is not None
@@ -363,9 +358,7 @@ def test_plan014_picker_cursor_uses_database_normalized_sort_key() -> None:
         second = create_plan014_food(session, "Ömega")
 
         page_one = list_food_picker(session, TEST_PRINCIPAL, limit=1)
-        page_two = list_food_picker(
-            session, TEST_PRINCIPAL, limit=1, cursor=page_one.next_cursor
-        )
+        page_two = list_food_picker(session, TEST_PRINCIPAL, limit=1, cursor=page_one.next_cursor)
 
         assert page_one.items[0].id == first.id
         assert page_two.items[0].id == second.id
@@ -479,9 +472,7 @@ def test_plan013_batch_responses_preserve_single_item_semantics() -> None:
 
 
 @pytest.mark.parametrize(("size", "expected_child_selects"), [(0, 0), (1, 2), (20, 2), (100, 2)])
-def test_plan013_batch_response_child_query_budget(
-    size: int, expected_child_selects: int
-) -> None:
+def test_plan013_batch_response_child_query_budget(size: int, expected_child_selects: int) -> None:
     with session_fixture() as session:
         foods = [
             create_food(
@@ -509,9 +500,7 @@ def test_plan013_category_metadata_is_distinct_status_scoped_and_empty_safe() ->
             create_food(
                 session,
                 TEST_PRINCIPAL,
-                FoodCreate.model_validate(
-                    food_payload(name=name, food_category_key="sweets")
-                ),
+                FoodCreate.model_validate(food_payload(name=name, food_category_key="sweets")),
             )
         archived = create_food(
             session,
@@ -640,12 +629,8 @@ def test_plan014_postgresql_recent_window_has_deterministic_tie_order(
     first = create_plan014_food(plan014_postgresql_session, "Postgres tie first")
     second = create_plan014_food(plan014_postgresql_session, "Postgres tie second")
     created_at = datetime(2026, 7, 30, tzinfo=timezone.utc)
-    first_entry = create_plan014_entry(
-        plan014_postgresql_session, first, created_at=created_at
-    )
-    second_entry = create_plan014_entry(
-        plan014_postgresql_session, second, created_at=created_at
-    )
+    first_entry = create_plan014_entry(plan014_postgresql_session, first, created_at=created_at)
+    second_entry = create_plan014_entry(plan014_postgresql_session, second, created_at=created_at)
 
     result = list_food_picker(plan014_postgresql_session, TEST_PRINCIPAL)
 
@@ -931,21 +916,15 @@ def test_food_page_combines_search_and_category_filters() -> None:
         create_food(
             session,
             TEST_PRINCIPAL,
-            FoodCreate.model_validate(
-                food_payload(name="Other Oats", food_category_key="sweets")
-            ),
+            FoodCreate.model_validate(food_payload(name="Other Oats", food_category_key="sweets")),
         )
         create_food(
             session,
             TEST_PRINCIPAL,
-            FoodCreate.model_validate(
-                food_payload(name="Plain Oats", food_category_key="other")
-            ),
+            FoodCreate.model_validate(food_payload(name="Plain Oats", food_category_key="other")),
         )
 
-        grains = list_foods_page(
-            session, TEST_PRINCIPAL, search="oats", category="grains_starches"
-        )
+        grains = list_foods_page(session, TEST_PRINCIPAL, search="oats", category="grains_starches")
         assert [food.name for food in grains.items] == ["Arabic Oats"]
         assert grains.total == 1
         assert grains.categories == ["grains_starches", "other", "sweets"]
@@ -1080,7 +1059,7 @@ def test_wave1_new_food_requires_controlled_classification_and_source(
     assert error_by_field(response)[missing_field]["code"] == "required"
 
 
-def test_wave1_source_reliability_and_nova_are_backend_controlled(
+def test_nova_is_rejected_while_source_reliability_remains_backend_controlled(
     api_client: TestClient,
 ) -> None:
     payload = food_json(name="Controlled source")
@@ -1101,15 +1080,16 @@ def test_wave1_source_reliability_and_nova_are_backend_controlled(
 
     response = api_client.post("/foods", json=payload, headers=auth_headers())
 
-    assert response.status_code == 201
-    body = response.json()
+    assert response.status_code == 422
+    assert error_by_field(response)["nova"]["code"] == "invalid"
+
+    payload.pop("nova")
+    accepted = api_client.post("/foods", json=payload, headers=auth_headers())
+    assert accepted.status_code == 201
+    body = accepted.json()
     assert body["nutrition_source"]["reliability"] == "mixed"
     assert body["nutrition_source"]["reliability_rules_version"] == "1.0.0"
-    assert body["nova"] == {
-        "classification": "unknown",
-        "review_status": "reviewed",
-        "rules_version": "1.0.0",
-    }
+    assert "nova" not in body
 
     payload["nutrition_source"]["reliability"] = "high"
     rejected = api_client.post("/foods", json=payload, headers=auth_headers())
@@ -1363,9 +1343,7 @@ def test_plan009_numeric_registry_matches_schema_and_database_models() -> None:
         }
 
     food_numeric_columns = {
-        column.name
-        for column in Food.__table__.columns
-        if isinstance(column.type, Numeric)
+        column.name for column in Food.__table__.columns if isinstance(column.type, Numeric)
     }
     group_numeric_columns = {
         column.name
@@ -1376,9 +1354,7 @@ def test_plan009_numeric_registry_matches_schema_and_database_models() -> None:
     assert set(FOOD_NUMERIC_COLUMNS) == food_numeric_columns
     assert set(FOOD_GROUP_NUMERIC_COLUMNS) == group_numeric_columns
     assert set(FOOD_GROUP_NUMERIC_FIELDS) == group_numeric_columns
-    assert set(FOOD_GROUP_NUMERIC_FIELDS) == direct_float_fields(
-        FoodGroupContributionInput
-    )
+    assert set(FOOD_GROUP_NUMERIC_FIELDS) == direct_float_fields(FoodGroupContributionInput)
     assert set(FOOD_NUMERIC_FIELDS) == direct_float_fields(FoodCreate)
     assert set(FOOD_NUMERIC_FIELDS) == direct_float_fields(FoodUpdate)
     assert set(FOOD_NUMERIC_FIELDS) | set(
@@ -1530,6 +1506,7 @@ def test_plan009_numeric_boundaries_are_enforced(
 
 def test_plan009_create_response_failure_rolls_back_parent_and_children(monkeypatch) -> None:
     with session_fixture() as session:
+
         def fail_response(*_args, **_kwargs):
             raise RuntimeError("injected response validation failure")
 

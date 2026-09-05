@@ -1,16 +1,15 @@
 {
   "version_bundle": {
-    "nutrition_registry_version": "2.0.0",
+    "nutrition_registry_version": "3.0.0",
     "calculation_engine_version": "2.0.0",
     "food_group_rules_version": "1.0.0",
     "source_reliability_rules_version": "1.0.0",
-    "nova_rules_version": "1.0.0",
-    "registry_schema_version": 2,
-    "snapshot_schema_version": 3,
-    "analysis_rules_version": "w3-analysis-1.1.0",
+    "registry_schema_version": 3,
+    "snapshot_schema_version": 4,
+    "analysis_rules_version": "w3-analysis-2.0.0",
     "analysis_rules_status": "active",
     "weekly_priority_rules_version": "w3-priority-1.1.0",
     "weekly_priority_copy_version": "w3-priority-ar-1.1.0"
   },
-  "sha256": "51d84f4ae48a9bf424e5b8b43fd9c71e3085500ff2a3052af7ccf0fc27f7daf9"
+  "sha256": "0ee33adf273e2526a3106209d43fb742544a70d7ae6ce5d8b919580c0d4753a9"
 }

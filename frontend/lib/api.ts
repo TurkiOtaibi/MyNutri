@@ -382,11 +382,11 @@ export async function getCurrentPatternAnalysis(
 ): Promise<PatternAnalysisResponse | null> {
   try {
     return await apiFetch<PatternAnalysisResponse>(
-      "/progress/nutrition-analysis/current",
+      "/progress/nutrition-analysis/v2/current",
       authorizedInit(accessToken, signal)
     );
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404 && error.code === "ANALYSIS_NOT_FOUND") {
+    if (error instanceof ApiError && error.status === 404 && error.code === "NOVA_RETIREMENT_V2_ANALYSIS_NOT_FOUND") {
       return null;
     }
     throw error;
@@ -402,7 +402,7 @@ export function listPatternAnalysisHistory(
   const params = new URLSearchParams({ limit: String(limit) });
   if (cursor) params.set("cursor", cursor);
   return apiFetch<PatternAnalysisHistory>(
-    `/progress/nutrition-analysis/history?${params.toString()}`,
+    `/progress/nutrition-analysis/v2/history?${params.toString()}`,
     authorizedInit(accessToken, signal)
   );
 }
@@ -415,7 +415,7 @@ export function evaluatePatternAnalysis(
   signal?: AbortSignal
 ): Promise<PatternAnalysisResponse> {
   return apiFetch<PatternAnalysisResponse>(
-    "/progress/nutrition-analysis/evaluate",
+    "/progress/nutrition-analysis/v2/evaluate",
     authorizedInit(accessToken, signal, {
       method: "POST",
       headers: {

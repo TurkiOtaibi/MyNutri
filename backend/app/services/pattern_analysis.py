@@ -11,7 +11,7 @@ import re
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlmodel import Session, select
 
@@ -30,9 +30,9 @@ from app.models import (
     utcnow,
 )
 from app.nutrition_rules.analysis import (
-    ANALYSIS_RULES_VERSION,
+    ANALYSIS_RULES_VERSION_V2,
     DAILY_METRICS,
-    METRIC_REGISTRY,
+    METRIC_REGISTRY_V2,
     analysis_windows,
     compare_descriptive_metric,
     compare_target_metric,
@@ -53,22 +53,27 @@ from app.schemas import (
     AnalysisContributorsV1,
     AnalysisDayFactV1,
     AnalysisDayMetricValueV1,
-    AnalysisEvaluateCommandV1,
+    AnalysisEvaluateCommandV2,
     AnalysisMetricFactV1,
     AnalysisMetricTargetV1,
     AnalysisPersistenceV1,
     AnalysisSourceVersionBundleV1,
+    AnalysisSourceVersionBundleV2,
     NutritionAnalysisMonitoringResponseV1,
     NutritionPatternAnalysisHistoryItemV1,
+    NutritionPatternAnalysisHistoryItemV2,
     NutritionPatternAnalysisHistoryPageV1,
+    NutritionPatternAnalysisHistoryPageV2,
     NutritionPatternAnalysisResponseV1,
+    NutritionPatternAnalysisResponseV2,
     OpaqueEvidenceRefV1,
     PeriodMetricEvidenceV1,
     TargetPlanAnalysisRefV1,
     WeeklyPriorityAnalysisInputV1,
+    WeeklyPriorityAnalysisInputV2,
 )
 from app.services.diary import totals_for_entry
-from app.services.snapshot import read_snapshot_v2, read_snapshot_v3
+from app.services.snapshot import read_snapshot_v3, read_snapshot_v4
 from app.services.target_plans import project_week_target_context, target_for_date
 
 
@@ -91,6 +96,23 @@ class PatternAnalysisError(RuntimeError):
         self.message_ar = message_ar
 
 
+def contract_generation_state(session: Session) -> str:
+    """Read the additive generation boundary; pre-migration/test stores are legacy."""
+    bind = session.get_bind()
+    if bind.dialect.name != "postgresql":
+        return "LEGACY_COMPAT"
+    relation = session.execute(
+        text("SELECT pg_catalog.to_regclass('nova_retirement.contract_generation')")
+    ).scalar_one()
+    if relation is None:
+        return "LEGACY_COMPAT"
+    return str(
+        session.execute(
+            text("SELECT state FROM nova_retirement.contract_generation WHERE singleton = true")
+        ).scalar_one()
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class _EntryFact:
     entry: DiaryEntry
@@ -102,7 +124,7 @@ class _EntryFact:
     nova_calories: float | None
     registry_version: str
     group_version: str
-    nova_version: str
+    nova_version: str | None
     source_version: str
 
 
@@ -134,10 +156,10 @@ def _key_digest(principal_id: UUID, key: str) -> str:
     return hmac.new(principal_id.bytes, key.encode(), hashlib.sha256).hexdigest()
 
 
-def _command_hash(principal_id: UUID, command: AnalysisEvaluateCommandV1) -> str:
+def _command_hash(principal_id: UUID, command: AnalysisEvaluateCommandV2) -> str:
     return _hash(
         {
-            "operation": "nutrition_analysis.evaluate",
+            "operation": "nutrition_analysis.v2.evaluate",
             "principal_id": str(principal_id),
             **command.model_dump(mode="json"),
         }
@@ -179,38 +201,31 @@ def _encode_cursor(item: NutritionAnalysisRevision) -> str:
 
 
 def _parse_snapshot(entry: DiaryEntry) -> _EntryFact:
-    if entry.snapshot_schema_version not in {2, 3}:
+    if entry.snapshot_schema_version not in {3, 4}:
         raise PatternAnalysisError(
             "UNSUPPORTED_HISTORICAL_VERSION", 422, "تعذر فتح هذه النسخة بإصدارها الأصلي"
         )
     snapshot = (
-        read_snapshot_v2(entry.nutrition_snapshot)
-        if entry.snapshot_schema_version == 2
-        else read_snapshot_v3(entry.nutrition_snapshot)
+        read_snapshot_v3(entry.nutrition_snapshot)
+        if entry.snapshot_schema_version == 3
+        else read_snapshot_v4(entry.nutrition_snapshot)
     )
     totals = totals_for_entry(entry).model_dump()
     groups = {
         item.group_key: round6(item.amount_per_captured_unit * float(entry.quantity))
         for item in snapshot.food_groups.contributions
     }
-    calories = totals.get("calories")
-    nova = (
-        snapshot.nova.classification
-        if snapshot.nova.review_status == "reviewed"
-        and snapshot.nova.classification in {"1", "2", "3", "4"}
-        else None
-    )
     return _EntryFact(
         entry=entry,
         nutrition={key: (None if value is None else float(value)) for key, value in totals.items()},
         groups=groups,
         group_known=snapshot.food_groups.status in {"known", "estimated"},
         traits=frozenset(snapshot.food_groups.traits),
-        nova=nova,
-        nova_calories=None if nova is None or calories is None else float(calories),
-        registry_version=snapshot.versions.nutrition_registry_version,
+        nova=None,
+        nova_calories=None,
+        registry_version="3.0.0",
         group_version=snapshot.versions.food_group_rules_version,
-        nova_version=snapshot.versions.nova_rules_version,
+        nova_version=None,
         source_version=f"snapshot-{entry.snapshot_schema_version}",
     )
 
@@ -257,9 +272,9 @@ def _entry_metric_value(fact: _EntryFact, metric_key: str) -> float | None:
             (
                 item.subtype_key
                 for item in (
-                    read_snapshot_v2(fact.entry.nutrition_snapshot)
-                    if fact.entry.snapshot_schema_version == 2
-                    else read_snapshot_v3(fact.entry.nutrition_snapshot)
+                    read_snapshot_v3(fact.entry.nutrition_snapshot)
+                    if fact.entry.snapshot_schema_version == 3
+                    else read_snapshot_v4(fact.entry.nutrition_snapshot)
                 ).food_groups.contributions
                 if item.group_key == "dairy_fortified_alternatives"
             ),
@@ -341,7 +356,7 @@ def _day_fact(
     eligible = logging_status == "complete"
     metrics: list[AnalysisDayMetricValueV1] = []
     if eligible:
-        for key, (unit, _) in sorted(METRIC_REGISTRY.items()):
+        for key, (unit, _) in sorted(METRIC_REGISTRY_V2.items()):
             value, known, total = _day_metric_value(entries, key)
             metrics.append(
                 AnalysisDayMetricValueV1(
@@ -947,19 +962,20 @@ def _build_source(
     previous_days, current_days = day_facts[:7], day_facts[7:]
     facts = [fact for values in entry_map.values() for fact in values]
     versions = {
-        "analysis_rules_version": ANALYSIS_RULES_VERSION,
-        "nutrition_registry_versions": sorted({fact.registry_version for fact in facts}),
+        "analysis_rules_version": ANALYSIS_RULES_VERSION_V2,
+        "nutrition_registry_versions": ["3.0.0"],
         "calculation_engine_version": VERSIONS.calculation_engine_version,
-        "food_group_rules_versions": sorted({fact.group_version for fact in facts}),
+        "food_group_rules_versions": sorted({fact.group_version for fact in facts})
+        or [VERSIONS.food_group_rules_version],
         "source_reliability_rules_version": VERSIONS.source_reliability_rules_version,
-        "nova_rules_versions": sorted({fact.nova_version for fact in facts}),
         "snapshot_schema_versions": sorted(
             {
                 fact.entry.snapshot_schema_version
                 for fact in facts
                 if fact.entry.snapshot_schema_version
             }
-        ),
+        )
+        or [4],
         "status_evidence_version": 1,
         "rules_manifest_hash": rules_manifest_hash(),
     }
@@ -968,7 +984,6 @@ def _build_source(
         for key in (
             "nutrition_registry_versions",
             "food_group_rules_versions",
-            "nova_rules_versions",
         )
     ):
         raise PatternAnalysisError(
@@ -1024,7 +1039,7 @@ def _build_document(
     if "specialist_review_required" in target_safety:
         safety.add("profile_specialist_review_required")
     metric_facts: list[AnalysisMetricFactV1] = []
-    for key, (unit, direction) in sorted(METRIC_REGISTRY.items()):
+    for key, (unit, direction) in sorted(METRIC_REGISTRY_V2.items()):
         numeric_dates = [
             day.date
             for day in current_days + previous_days
@@ -1073,15 +1088,11 @@ def _build_document(
             )
         )
     versions = source["versions"]
-    registry_version = (
-        versions["nutrition_registry_versions"] or [VERSIONS.nutrition_registry_version]
-    )[0]
     group_version = (versions["food_group_rules_versions"] or [VERSIONS.food_group_rules_version])[
         0
     ]
-    nova_version = (versions["nova_rules_versions"] or [VERSIONS.nova_rules_version])[0]
     snapshot_versions = versions["snapshot_schema_versions"]
-    priority = WeeklyPriorityAnalysisInputV1(
+    priority = WeeklyPriorityAnalysisInputV2(
         principal_ref=principal.principal_id,
         source_analysis_id=series.id,
         source_analysis_revision=revision_number,
@@ -1092,15 +1103,14 @@ def _build_document(
         period_end=current_days[-1].date,
         previous_period_start=previous_days[0].date,
         previous_period_end=previous_days[-1].date,
-        analysis_rules_version=ANALYSIS_RULES_VERSION,
-        nutrition_registry_version=registry_version,
+        analysis_rules_version=ANALYSIS_RULES_VERSION_V2,
+        nutrition_registry_version="3.0.0",
         food_group_rules_version=group_version,
-        nova_rules_version=nova_version,
         snapshot_schema_versions=snapshot_versions,
-        target_plan_refs=_target_refs(targets),
-        days=current_days,
-        previous_period=previous_days,
-        metric_facts=metric_facts,
+        target_plan_refs=[item.model_dump(mode="json") for item in _target_refs(targets)],
+        days=[item.model_dump(mode="json") for item in current_days],
+        previous_period=[item.model_dump(mode="json") for item in previous_days],
+        metric_facts=[item.model_dump(mode="json") for item in metric_facts],
         safety_flags=sorted(safety),
     )
     return priority.model_dump(mode="json")
@@ -1128,7 +1138,7 @@ def _persist_analysis_revision(
     if (
         current_revision
         and current_revision.source_input_hash == source_hash
-        and current_revision.analysis_rules_version == ANALYSIS_RULES_VERSION
+        and current_revision.analysis_rules_version == ANALYSIS_RULES_VERSION_V2
     ):
         return current_revision, False
 
@@ -1155,14 +1165,12 @@ def _persist_analysis_revision(
         period_end=current_days[-1].date,
         previous_period_start=previous_days[0].date,
         previous_period_end=previous_days[-1].date,
-        analysis_rules_version=ANALYSIS_RULES_VERSION,
+        analysis_rules_version=ANALYSIS_RULES_VERSION_V2,
         source_versions=source["versions"],
         source_input_hash=source_hash,
         content_hash=_content_hash(document),
         complete_day_count=complete_current,
-        previous_complete_day_count=sum(
-            day.logging_status == "complete" for day in previous_days
-        ),
+        previous_complete_day_count=sum(day.logging_status == "complete" for day in previous_days),
         result_status="available" if complete_current >= 4 else "insufficient",
         result_reason=None if complete_current >= 4 else "insufficient_complete_days",
         analysis_document=document,
@@ -1177,7 +1185,7 @@ def _persist_analysis_revision(
             if day.logging_status != "complete":
                 continue
             for fact in entry_map[day.date]:
-                for metric_key, (unit, _) in sorted(METRIC_REGISTRY.items()):
+                for metric_key, (unit, _) in sorted(METRIC_REGISTRY_V2.items()):
                     value = _entry_metric_value(fact, metric_key)
                     session.add(
                         NutritionAnalysisEvidenceRef(
@@ -1228,11 +1236,7 @@ def refresh_historical_analysis(
     analysis_id: UUID,
     invalidation_event_id: UUID,
 ) -> tuple[NutritionAnalysisRevision, bool]:
-    """Refresh an existing historical series from producer-owned raw sources.
-
-    The caller owns the surrounding transaction and Principal lock. The series
-    date, rather than today's Diary date, is the immutable window authority.
-    """
+    """Refresh a V2 series while keeping historical V1 series immutable."""
     event = session.exec(
         select(NutritionAnalysisRevisionEvent)
         .join(
@@ -1256,7 +1260,7 @@ def refresh_historical_analysis(
         .where(
             NutritionAnalysis.id == analysis_id,
             NutritionAnalysis.principal_id == principal.principal_id,
-            NutritionAnalysis.interface_version == 1,
+            NutritionAnalysis.interface_version == 2,
         )
         .with_for_update()
     ).first()
@@ -1311,7 +1315,86 @@ def _lifecycle(events: list[NutritionAnalysisRevisionEvent]) -> tuple[str, list[
 
 def _response(
     session: Session, series: NutritionAnalysis, revision: NutritionAnalysisRevision
+) -> NutritionPatternAnalysisResponseV2:
+    if series.interface_version != 2:
+        raise PatternAnalysisError(
+            "NOVA_RETIREMENT_LEGACY_ANALYSIS_INTERNAL_ONLY",
+            409,
+            "هذا التحليل التاريخي متاح للقراءة فقط.",
+        )
+    if _content_hash(revision.analysis_document) != revision.content_hash:
+        raise PatternAnalysisError(
+            "UNSUPPORTED_HISTORICAL_VERSION", 422, "تعذر فتح هذه النسخة بإصدارها الأصلي"
+        )
+    events = _events(session, revision.id, revision.principal_id)
+    lifecycle, stale_reasons = _lifecycle(events)
+    priority = WeeklyPriorityAnalysisInputV2.model_validate(revision.analysis_document)
+    versions = revision.source_versions
+    expected_version_keys = {
+        "analysis_rules_version",
+        "nutrition_registry_versions",
+        "calculation_engine_version",
+        "food_group_rules_versions",
+        "source_reliability_rules_version",
+        "snapshot_schema_versions",
+        "status_evidence_version",
+        "rules_manifest_hash",
+    }
+    if (
+        set(versions) != expected_version_keys
+        or versions.get("analysis_rules_version") != ANALYSIS_RULES_VERSION_V2
+        or versions.get("nutrition_registry_versions") != ["3.0.0"]
+        or versions.get("calculation_engine_version") != "2.0.0"
+        or versions.get("food_group_rules_versions") != ["1.0.0"]
+        or versions.get("source_reliability_rules_version") != "1.0.0"
+        or versions.get("snapshot_schema_versions") != priority.snapshot_schema_versions
+        or versions.get("status_evidence_version") != 1
+    ):
+        raise PatternAnalysisError(
+            "UNSUPPORTED_HISTORICAL_VERSION", 422, "تعذر فتح هذه النسخة بإصدارها الأصلي"
+        )
+    source_versions = AnalysisSourceVersionBundleV2(
+        analysis_rules_version=revision.analysis_rules_version,
+        nutrition_registry_version=priority.nutrition_registry_version,
+        calculation_engine_version=versions["calculation_engine_version"],
+        food_group_rules_version=priority.food_group_rules_version,
+        source_reliability_rules_version=versions["source_reliability_rules_version"],
+        snapshot_schema_versions=priority.snapshot_schema_versions,
+        status_evidence_version=versions["status_evidence_version"],
+        rules_manifest_hash=versions["rules_manifest_hash"],
+        source_input_hash=revision.source_input_hash,
+        content_hash=revision.content_hash,
+    )
+    return NutritionPatternAnalysisResponseV2(
+        source_analysis_id=series.id,
+        source_analysis_revision=revision.revision,
+        lifecycle_status=lifecycle,
+        stale_reasons=stale_reasons,
+        as_of_diary_date=series.as_of_diary_date,
+        period_start=revision.period_start,
+        period_end=revision.period_end,
+        previous_period_start=revision.previous_period_start,
+        previous_period_end=revision.previous_period_end,
+        complete_day_count=revision.complete_day_count,
+        previous_complete_day_count=revision.previous_complete_day_count,
+        metric_summaries=[item.model_dump(mode="json") for item in priority.metric_facts],
+        source_versions=source_versions,
+        priority_input=priority,
+        generated_at=revision.generated_at,
+        finalized_at=revision.finalized_at,
+        etag=_etag(series.id, revision.revision),
+    )
+
+
+def _historical_response_v1(
+    session: Session, series: NutritionAnalysis, revision: NutritionAnalysisRevision
 ) -> NutritionPatternAnalysisResponseV1:
+    if series.interface_version != 1:
+        raise PatternAnalysisError("RESOURCE_NOT_FOUND", 404, "تعذر العثور على المورد.")
+    if _content_hash(revision.analysis_document) != revision.content_hash:
+        raise PatternAnalysisError(
+            "UNSUPPORTED_HISTORICAL_VERSION", 422, "تعذر فتح هذه النسخة بإصدارها الأصلي"
+        )
     events = _events(session, revision.id, revision.principal_id)
     lifecycle, stale_reasons = _lifecycle(events)
     priority = WeeklyPriorityAnalysisInputV1.model_validate(revision.analysis_document)
@@ -1351,13 +1434,18 @@ def _response(
 
 
 def _series_current(
-    session: Session, principal_id: UUID, *, lock: bool = False
+    session: Session,
+    principal_id: UUID,
+    *,
+    interface_version: int,
+    lock: bool = False,
 ) -> tuple[NutritionAnalysis, NutritionAnalysisRevision] | None:
     statement = (
         select(NutritionAnalysis)
         .where(
             NutritionAnalysis.principal_id == principal_id,
             NutritionAnalysis.current_revision_id.is_not(None),
+            NutritionAnalysis.interface_version == interface_version,
         )
         .order_by(NutritionAnalysis.as_of_diary_date.desc(), NutritionAnalysis.id.desc())
     )
@@ -1373,15 +1461,27 @@ def _series_current(
 def current_analysis(
     session: Session, principal: PrincipalContext
 ) -> NutritionPatternAnalysisResponseV1:
-    current = _series_current(session, principal.principal_id)
+    """Frozen internal V1 reader retained for historical PLAN 033 decoding."""
+    current = _series_current(session, principal.principal_id, interface_version=1)
     if current is None:
         raise PatternAnalysisError("ANALYSIS_NOT_FOUND", 404, "لا يوجد تحليل محفوظ بعد.")
+    return _historical_response_v1(session, *current)
+
+
+def current_analysis_v2(
+    session: Session, principal: PrincipalContext
+) -> NutritionPatternAnalysisResponseV2:
+    current = _series_current(session, principal.principal_id, interface_version=2)
+    if current is None:
+        raise PatternAnalysisError(
+            "NOVA_RETIREMENT_V2_ANALYSIS_NOT_FOUND", 404, "لا يوجد تحليل محفوظ بعد."
+        )
     return _response(session, *current)
 
 
 def exact_revision(
     session: Session, principal: PrincipalContext, analysis_id: UUID, revision_number: int
-) -> NutritionPatternAnalysisResponseV1:
+) -> NutritionPatternAnalysisResponseV2:
     series = session.exec(
         select(NutritionAnalysis).where(
             NutritionAnalysis.id == analysis_id,
@@ -1397,6 +1497,12 @@ def exact_revision(
     ).first()
     if series is None or revision is None:
         raise PatternAnalysisError("RESOURCE_NOT_FOUND", 404, "تعذر العثور على المورد.")
+    if series.interface_version != 2:
+        raise PatternAnalysisError(
+            "NOVA_RETIREMENT_LEGACY_ANALYSIS_INTERNAL_ONLY",
+            409,
+            "هذا التحليل التاريخي متاح للقراءة فقط.",
+        )
     if _content_hash(revision.analysis_document) != revision.content_hash:
         raise PatternAnalysisError(
             "UNSUPPORTED_HISTORICAL_VERSION", 422, "تعذر فتح هذه النسخة بإصدارها الأصلي"
@@ -1404,12 +1510,25 @@ def exact_revision(
     return _response(session, series, revision)
 
 
-def analysis_history(
-    session: Session, principal: PrincipalContext, limit: int, cursor: str | None
-) -> NutritionPatternAnalysisHistoryPageV1:
+def _analysis_history(
+    session: Session,
+    principal: PrincipalContext,
+    limit: int,
+    cursor: str | None,
+    *,
+    version: int,
+) -> tuple[list[NutritionAnalysisRevision], list[NutritionAnalysisRevision]]:
     statement = select(NutritionAnalysisRevision).where(
         NutritionAnalysisRevision.principal_id == principal.principal_id
     )
+    if version == 2:
+        statement = statement.where(
+            NutritionAnalysisRevision.analysis_rules_version == ANALYSIS_RULES_VERSION_V2
+        )
+    else:
+        statement = statement.where(
+            NutritionAnalysisRevision.analysis_rules_version != ANALYSIS_RULES_VERSION_V2
+        )
     if cursor:
         period_end, analysis_id, revision = _decode_cursor(cursor)
         statement = statement.where(
@@ -1436,6 +1555,18 @@ def analysis_history(
         ).all()
     )
     page_rows = rows[:limit]
+    return rows, page_rows
+
+
+def _history_projection(
+    session: Session,
+    principal: PrincipalContext,
+    rows: list[NutritionAnalysisRevision],
+    page_rows: list[NutritionAnalysisRevision],
+    limit: int,
+    *,
+    version: int,
+) -> NutritionPatternAnalysisHistoryPageV1 | NutritionPatternAnalysisHistoryPageV2:
     analysis_ids = {row.analysis_id for row in page_rows}
     revision_ids = {row.id for row in page_rows}
     series_by_id = (
@@ -1465,12 +1596,17 @@ def analysis_history(
             )
         ).all():
             events_by_revision[event.revision_id].append(event)
-    items = []
+    item_type = (
+        NutritionPatternAnalysisHistoryItemV2
+        if version == 2
+        else NutritionPatternAnalysisHistoryItemV1
+    )
+    items: list[Any] = []
     for row in page_rows:
         series = series_by_id[row.analysis_id]
         lifecycle, _ = _lifecycle(events_by_revision[row.id])
         items.append(
-            NutritionPatternAnalysisHistoryItemV1(
+            item_type(
                 source_analysis_id=row.analysis_id,
                 source_analysis_revision=row.revision,
                 lifecycle_status=lifecycle,
@@ -1487,18 +1623,39 @@ def analysis_history(
                 etag=_etag(row.analysis_id, row.revision),
             )
         )
-    return NutritionPatternAnalysisHistoryPageV1(
-        items=items, next_cursor=_encode_cursor(rows[limit - 1]) if len(rows) > limit else None
+    page_type = (
+        NutritionPatternAnalysisHistoryPageV2
+        if version == 2
+        else NutritionPatternAnalysisHistoryPageV1
     )
+    return page_type(
+        items=items,
+        next_cursor=_encode_cursor(rows[limit - 1]) if len(rows) > limit else None,
+    )
+
+
+def analysis_history(
+    session: Session, principal: PrincipalContext, limit: int, cursor: str | None
+) -> NutritionPatternAnalysisHistoryPageV1:
+    """Frozen internal V1 reader retained for historical evidence."""
+    rows, page_rows = _analysis_history(session, principal, limit, cursor, version=1)
+    return _history_projection(session, principal, rows, page_rows, limit, version=1)  # type: ignore[return-value]
+
+
+def analysis_history_v2(
+    session: Session, principal: PrincipalContext, limit: int, cursor: str | None
+) -> NutritionPatternAnalysisHistoryPageV2:
+    rows, page_rows = _analysis_history(session, principal, limit, cursor, version=2)
+    return _history_projection(session, principal, rows, page_rows, limit, version=2)  # type: ignore[return-value]
 
 
 def evaluate_analysis(
     session: Session,
     principal: PrincipalContext,
-    command: AnalysisEvaluateCommandV1,
+    command: AnalysisEvaluateCommandV2,
     idempotency_key: str,
     if_match: str,
-) -> tuple[NutritionPatternAnalysisResponseV1, int, bool]:
+) -> tuple[NutritionPatternAnalysisResponseV2, int, bool]:
     if not _KEY_RE.fullmatch(idempotency_key):
         raise PatternAnalysisError(
             "INVALID_IDEMPOTENCY_KEY", 400, "تعذر التحقق من الطلب. أعد المحاولة."
@@ -1508,7 +1665,7 @@ def evaluate_analysis(
     replay = session.exec(
         select(NutritionAnalysisCommandIdempotency).where(
             NutritionAnalysisCommandIdempotency.principal_id == principal.principal_id,
-            NutritionAnalysisCommandIdempotency.operation == "nutrition_analysis.evaluate",
+            NutritionAnalysisCommandIdempotency.operation == "nutrition_analysis.v2.evaluate",
             NutritionAnalysisCommandIdempotency.key_digest == digest,
         )
     ).first()
@@ -1518,7 +1675,7 @@ def evaluate_analysis(
                 "IDEMPOTENCY_KEY_REUSED", 409, "تعارض الطلب مع محاولة سابقة."
             )
         return (
-            NutritionPatternAnalysisResponseV1.model_validate(replay.response_document),
+            NutritionPatternAnalysisResponseV2.model_validate(replay.response_document),
             replay.response_status,
             True,
         )
@@ -1531,7 +1688,7 @@ def evaluate_analysis(
         replay = session.exec(
             select(NutritionAnalysisCommandIdempotency).where(
                 NutritionAnalysisCommandIdempotency.principal_id == principal.principal_id,
-                NutritionAnalysisCommandIdempotency.operation == "nutrition_analysis.evaluate",
+                NutritionAnalysisCommandIdempotency.operation == "nutrition_analysis.v2.evaluate",
                 NutritionAnalysisCommandIdempotency.key_digest == digest,
             )
         ).first()
@@ -1540,7 +1697,7 @@ def evaluate_analysis(
                 raise PatternAnalysisError(
                     "IDEMPOTENCY_KEY_REUSED", 409, "تعارض الطلب مع محاولة سابقة."
                 )
-            response = NutritionPatternAnalysisResponseV1.model_validate(replay.response_document)
+            response = NutritionPatternAnalysisResponseV2.model_validate(replay.response_document)
             session.rollback()
             return response, replay.response_status, True
         if replay:
@@ -1551,7 +1708,7 @@ def evaluate_analysis(
             .where(
                 NutritionAnalysis.principal_id == principal.principal_id,
                 NutritionAnalysis.as_of_diary_date == as_of,
-                NutritionAnalysis.interface_version == 1,
+                NutritionAnalysis.interface_version == 2,
             )
             .with_for_update()
         ).first()
@@ -1560,7 +1717,7 @@ def evaluate_analysis(
                 principal_id=principal.principal_id,
                 as_of_diary_date=as_of,
                 calendar_timezone="Asia/Riyadh",
-                interface_version=1,
+                interface_version=2,
             )
             session.add(series)
             session.flush()
@@ -1605,7 +1762,7 @@ def evaluate_analysis(
         session.add(
             NutritionAnalysisCommandIdempotency(
                 principal_id=principal.principal_id,
-                operation="nutrition_analysis.evaluate",
+                operation="nutrition_analysis.v2.evaluate",
                 key_digest=digest,
                 command_hash=command_hash,
                 captured_date=as_of,

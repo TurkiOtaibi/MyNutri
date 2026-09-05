@@ -251,6 +251,24 @@ class SnapshotV3(_ClosedModel):
     versions: SnapshotVersionsV3
 
 
+class SnapshotVersionsV4(_ClosedModel):
+    nutrition_registry_version: Literal["3.0.0"]
+    food_group_rules_version: Literal["1.0.0"]
+    source_reliability_rules_version: Literal["1.0.0"]
+    snapshot_schema_version: Literal[4]
+
+
+class SnapshotV4(_ClosedModel):
+    schema_version: Literal[4]
+    food: SnapshotFoodV3
+    captured_unit: SnapshotUnit
+    nutrition: SnapshotNutrition
+    completeness: SnapshotCompleteness
+    food_groups: SnapshotFoodGroups
+    source: SnapshotSource
+    versions: SnapshotVersionsV4
+
+
 def _scaled(value: Any, factor: float) -> float | None:
     if value is None:
         return None
@@ -265,6 +283,11 @@ def _create_snapshot_v3_from_locked_food(session: Session, food: Food) -> dict[s
     protocol's synchronization point for the child queries below.
     """
     return _serialize_snapshot_v3(session, food)
+
+
+def _create_snapshot_v4_from_locked_food(session: Session, food: Food) -> dict[str, Any]:
+    """Serialize the active NOVA-free snapshot while the Food row lock is held."""
+    return _serialize_snapshot_v4(session, food)
 
 
 def _serialize_snapshot_v3(session: Session, food: Food) -> dict[str, Any]:
@@ -353,25 +376,116 @@ def _serialize_snapshot_v3(session: Session, food: Food) -> dict[str, Any]:
         nova={
             "classification": _value(food.nova_classification),
             "review_status": _value(food.nova_review_status),
-            "nova_rules_version": VERSIONS.nova_rules_version,
+            "nova_rules_version": "1.0.0",
+        },
+        versions={
+            "nutrition_registry_version": "2.0.0",
+            "food_group_rules_version": "1.0.0",
+            "source_reliability_rules_version": "1.0.0",
+            "nova_rules_version": "1.0.0",
+            "snapshot_schema_version": 3,
+        },
+    )
+    return document.model_dump(mode="json")
+
+
+def _serialize_snapshot_v4(session: Session, food: Food) -> dict[str, Any]:
+    """Serialize SnapshotV4 without reading or emitting retired NOVA fields."""
+    factor = float(food.unit_amount) / 100
+    nutrition = {
+        "calories": _scaled(food.calories, factor),
+        "protein_g": _scaled(food.protein_g, factor),
+        "carb_g": _scaled(food.carb_g, factor),
+        "fat_g": _scaled(food.fat_g, factor),
+        **{field: _scaled(getattr(food, field), factor) for field in WAVE1_NUTRIENTS},
+    }
+    known = sum(nutrition[field] is not None for field in WAVE1_NUTRIENTS)
+    completeness_state = "complete" if known == 16 else "all_unknown" if known == 0 else "partial"
+    contributions = session.exec(
+        select(FoodGroupContribution)
+        .where(FoodGroupContribution.food_id == food.id)
+        .order_by(FoodGroupContribution.group_key)
+    ).all()
+    traits = session.exec(
+        select(FoodAnalyticalTrait)
+        .where(FoodAnalyticalTrait.food_id == food.id)
+        .order_by(FoodAnalyticalTrait.trait_key)
+    ).all()
+    source_type = _value(food.nutrition_source_type)
+    group_status = (
+        "unknown"
+        if not contributions
+        else "estimated"
+        if any(_value(item.data_status) == "estimated" for item in contributions)
+        else "known"
+    )
+    group_completeness = (
+        "unknown"
+        if not contributions
+        else "complete"
+        if sum(float(item.amount_per_100_basis) for item in contributions) >= 100
+        else "partial"
+    )
+    document = SnapshotV4(
+        schema_version=4,
+        food={
+            "food_id": str(food.id),
+            "name": food.name,
+            "brand": food.brand,
+            "food_category_key": food.food_category_key,
+            "grain_type": _value(food.grain_type),
+            "baked_good_type": _value(food.baked_good_type),
+            "grain_starch_type": _value(food.grain_starch_type),
+            "food_kind": _value(food.food_kind),
+        },
+        captured_unit={
+            "nutrition_basis": _value(food.nutrition_basis),
+            "default_unit_type": _value(food.default_unit_type),
+            "unit_amount": float(food.unit_amount),
+            "unit_basis": _value(food.unit_basis),
+        },
+        nutrition=nutrition,
+        completeness={
+            "known_nutrient_count": known,
+            "total_nutrient_count": 16,
+            "state": completeness_state,
+        },
+        food_groups={
+            "status": group_status,
+            "completeness": group_completeness,
+            "contributions": [
+                {
+                    "group_key": item.group_key,
+                    "subtype_key": item.subtype_key,
+                    "amount_per_captured_unit": _scaled(item.amount_per_100_basis, factor),
+                    "data_status": _value(item.data_status),
+                }
+                for item in contributions
+            ],
+            "traits": [item.trait_key for item in traits],
+            "food_group_rules_version": VERSIONS.food_group_rules_version,
+        },
+        source={
+            "type": source_type,
+            "name": food.nutrition_source_name,
+            "reference": food.nutrition_source_reference,
+            "reliability": SOURCE_RELIABILITY_MAP[source_type],
+            "source_reliability_rules_version": VERSIONS.source_reliability_rules_version,
         },
         versions={
             "nutrition_registry_version": VERSIONS.nutrition_registry_version,
             "food_group_rules_version": VERSIONS.food_group_rules_version,
             "source_reliability_rules_version": VERSIONS.source_reliability_rules_version,
-            "nova_rules_version": VERSIONS.nova_rules_version,
             "snapshot_schema_version": VERSIONS.snapshot_schema_version,
         },
     )
     return document.model_dump(mode="json")
 
 
-def create_snapshot_v2(
-    session: Session, principal: Any, food: Food
-) -> dict[str, Any]:
+def create_snapshot_v2(session: Session, principal: Any, food: Food) -> dict[str, Any]:
     """Build the released V2 shape for compatibility fixtures only.
 
-    Runtime writers use V3. This helper remains so historical fixtures can
+    Runtime writers use V4. This helper remains so historical fixtures can
     continue proving that the immutable V2 reader is supported.
     """
     # Compatibility fixture construction is not a runtime snapshot writer.
@@ -422,6 +536,13 @@ def read_snapshot_v3(document: dict[str, Any]) -> SnapshotV3:
         raise _integrity_error("INVALID_DIARY_SNAPSHOT_DATA") from error
 
 
+def read_snapshot_v4(document: dict[str, Any]) -> SnapshotV4:
+    try:
+        return SnapshotV4.model_validate(document)
+    except ValidationError as error:
+        raise _integrity_error("INVALID_DIARY_SNAPSHOT_DATA") from error
+
+
 def read_snapshot_v1(document: dict[str, Any]) -> NutritionSnapshot:
     if "schema_version" in document:
         raise _integrity_error("UNSUPPORTED_DIARY_SNAPSHOT_VERSION")
@@ -437,9 +558,15 @@ def read_snapshot_v1(document: dict[str, Any]) -> NutritionSnapshot:
 def normalized_snapshot(document: dict[str, Any], schema_version: int | None) -> NutritionSnapshot:
     if schema_version is None:
         return read_snapshot_v1(document)
-    if schema_version not in {2, 3}:
+    if schema_version not in {2, 3, 4}:
         raise _integrity_error("UNSUPPORTED_DIARY_SNAPSHOT_VERSION")
-    snapshot = read_snapshot_v2(document) if schema_version == 2 else read_snapshot_v3(document)
+    snapshot = (
+        read_snapshot_v2(document)
+        if schema_version == 2
+        else read_snapshot_v3(document)
+        if schema_version == 3
+        else read_snapshot_v4(document)
+    )
     nutrition = snapshot.nutrition.model_dump()
     category = (
         snapshot.food.primary_category_key
@@ -485,6 +612,8 @@ def totals_from_versioned(
         if schema_version == 2
         else read_snapshot_v3(document)
         if schema_version == 3
+        else read_snapshot_v4(document)
+        if schema_version == 4
         else None
     )
     if snapshot is None:

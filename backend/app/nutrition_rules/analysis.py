@@ -13,6 +13,7 @@ from decimal import Decimal, ROUND_HALF_EVEN
 from typing import Any, Final
 
 ANALYSIS_RULES_VERSION: Final = "w3-analysis-1.1.0"
+ANALYSIS_RULES_VERSION_V2: Final = "w3-analysis-2.0.0"
 CALENDAR_TIMEZONE: Final = "Asia/Riyadh"
 MIN_COMPLETE_DAYS: Final = 4
 LIMITED_COVERAGE_PERCENT: Final = Decimal("50")
@@ -62,6 +63,9 @@ PATTERN_METRICS: Final[dict[str, tuple[str, str]]] = {
 }
 
 METRIC_REGISTRY: Final = {**DAILY_METRICS, **PATTERN_METRICS}
+METRIC_REGISTRY_V2: Final = {
+    key: value for key, value in METRIC_REGISTRY.items() if not key.startswith("nova:")
+}
 
 
 def decimal_value(value: Any) -> Decimal:

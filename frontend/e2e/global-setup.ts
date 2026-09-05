@@ -59,7 +59,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
         unit_basis: "g", calories: 200, protein_g: 10, carb_g: 25, fat_g: 7,
         nutrition_source: { type: "unknown", name: null, reference: null },
         ingredients: { text: null, source_type: null, source_name: null, source_reference: null },
-        nova: null, group_contributions: [], analytical_traits: []
+        group_contributions: [], analytical_traits: []
       })
     }), "Food seed create");
   }

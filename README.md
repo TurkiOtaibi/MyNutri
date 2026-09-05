@@ -48,7 +48,7 @@ Backend variable names:
 - `SUPABASE_SERVICE_ROLE_KEY` for explicitly authorized server-side administrative tools only
 - `ALLOWED_ORIGINS`
 - `CALENDAR_TIMEZONE`
-- `SNAPSHOT_V3_WRITER_ENABLED`
+- `SNAPSHOT_V4_WRITER_ENABLED`
 
 Frontend public variable names:
 

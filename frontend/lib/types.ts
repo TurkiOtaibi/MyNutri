@@ -19,7 +19,6 @@ export type GroupDataCompleteness = OpenApi.GroupDataCompleteness;
 export type NutritionSourceType = OpenApi.NutritionSourceType;
 export type IngredientsSourceType = OpenApi.IngredientsSourceType;
 export type SourceReliability = OpenApi.RegistrySourceTypeDefinition["reliability"];
-export type NovaClassification = OpenApi.NovaClassification;
 export type FoodStatus = OpenApi.FoodStatus;
 export type GrainType = OpenApi.GrainType;
 export type BakedGoodType = OpenApi.BakedGoodType;
@@ -70,7 +69,7 @@ export type FoodInput = Omit<
   DeepRequired<OpenApi.Foods.AddFoodFoodsPost.RequestBody>,
   "id"
 >;
-export type FoodResponse = DeepRequired<OpenApi.FoodResponse>;
+export type FoodResponse = DeepRequired<OpenApi.FoodResponseV3>;
 export type FoodPickerItem = OpenApi.FoodPickerItem;
 export type FoodPickerResponse = OpenApi.FoodPickerResponse;
 export type FoodSort = "name" | "recent" | "calories" | "protein";
@@ -102,11 +101,10 @@ export type AdminDiaryPage = DeepRequired<OpenApi.AdminDiaryPage>;
 export type AdminDiaryItem = DeepRequired<OpenApi.AdminDiaryItem>;
 export type DiaryLoggingStatus = OpenApi.DiaryLoggingStatus;
 export type DiaryDayStatusResponse = DeepRequired<OpenApi.DiaryDayStatusResponse>;
-export type PatternAnalysisResponse = DeepRequired<OpenApi.NutritionPatternAnalysisResponseV1>;
-export type PatternAnalysisHistory = DeepRequired<OpenApi.NutritionPatternAnalysisHistoryPageV1>;
-export type PatternAnalysisHistoryItem = DeepRequired<OpenApi.NutritionPatternAnalysisHistoryItemV1>;
-export type PatternAnalysisMetric = DeepRequired<OpenApi.AnalysisMetricFactV1>;
-export type WeeklyPriorityAnalysisInputV1 = DeepRequired<OpenApi.WeeklyPriorityAnalysisInputV1>;
+export type PatternAnalysisResponse = DeepRequired<OpenApi.NutritionPatternAnalysisResponseV2>;
+export type PatternAnalysisHistory = DeepRequired<OpenApi.NutritionPatternAnalysisHistoryPageV2>;
+export type PatternAnalysisHistoryItem = DeepRequired<OpenApi.NutritionPatternAnalysisHistoryItemV2>;
+export type PatternAnalysisMetric = PatternAnalysisResponse["metric_summaries"][number];
 export type WeeklyPriorityResult = DeepRequired<OpenApi.WeeklyPriorityResultV1>;
 export type WeeklyPriority = DeepRequired<OpenApi.PriorityV1>;
 export type BehaviorGoal = DeepRequired<OpenApi.BehaviorGoalResponseV1>;

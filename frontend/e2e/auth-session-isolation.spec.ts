@@ -46,12 +46,7 @@ function sessionPatternAnalysis(marker: string, principalRef: string) {
   const analysisId = "00000000-0000-4000-8000-000000000032";
   const evidence = { value: 1, value_state: "known", amount_qualifier: "exact", complete_day_count: 4, numeric_day_count: 4, known_entry_count: 4, total_entry_count: 4, coverage_percent: 100, confidence: "strong", status: "observed", evidence_refs: [] };
   const metric = { metric_key: marker, metric_kind: "diversity_count", unit: "sources/7d", aggregation: "distinct_source_count", direction: "monitor_only", target: null, current: evidence, previous: evidence, comparison: { status: "no_material_change", reason: "comparable", difference: 0, normalized_adverse_delta: null }, persistence: { kind: "same_direction_two_period", qualifies: false, reason: "current_not_qualifying" }, contributors: { current: [], previous: [] } };
-  return { source_analysis_id: analysisId, source_analysis_revision: 1, lifecycle_status: "current", stale_reasons: [], as_of_diary_date: "2026-08-17", period_start: "2026-08-11", period_end: "2026-08-17", previous_period_start: "2026-08-04", previous_period_end: "2026-08-10", complete_day_count: 4, previous_complete_day_count: 4, metric_summaries: [metric], source_versions: { analysis_rules_version: "w3-analysis-1.1.0", nutrition_registry_version: "2.0.0", calculation_engine_version: "2.0.0", food_group_rules_version: "1.0.0", source_reliability_rules_version: "1.0.0", nova_rules_version: "1.0.0", snapshot_schema_versions: [3], status_evidence_version: 1, rules_manifest_hash: "a".repeat(64), source_input_hash: "b".repeat(64), content_hash: "c".repeat(64) }, priority_input: { interface_version: 1, principal_ref: principalRef, source_analysis_id: analysisId, source_analysis_revision: 1, generated_at: "2026-08-17T09:00:00Z", as_of_diary_date: "2026-08-17", calendar_timezone: "Asia/Riyadh", period_start: "2026-08-11", period_end: "2026-08-17", previous_period_start: "2026-08-04", previous_period_end: "2026-08-10", analysis_rules_version: "w3-analysis-1.1.0", nutrition_registry_version: "2.0.0", food_group_rules_version: "1.0.0", nova_rules_version: "1.0.0", snapshot_schema_versions: [3], target_plan_refs: [], days: [], previous_period: [], metric_facts: [metric], safety_flags: [] }, generated_at: "2026-08-17T09:00:00Z", finalized_at: "2026-08-17T09:00:00Z", etag: `"analysis-${analysisId}-r1"` };
-}
-
-function sessionWeeklyPriority(marker: string, suffix: string) {
-  const recommendationId = `00000000-0000-4000-8000-${suffix}`;
-  return { schema_version: 1, recommendation_id: recommendationId, source_analysis_id: "00000000-0000-4000-8000-000000000032", source_analysis_revision: 1, period_start: "2026-08-11", period_end: "2026-08-17", generated_at: "2026-08-17T09:00:00Z", expires_at: "2026-08-19T12:00:00Z", status: "selected", rules_version: "w3-priority-1.1.0", copy_version: "w3-priority-ar-1.1.0", analysis_rules_version: "w3-analysis-1.1.0", nutrition_registry_version: "2.0.0", food_group_rules_version: "1.0.0", nova_rules_version: "1.0.0", snapshot_schema_versions: [3], target_plan_refs: [], main: { rule_key: "sodium_overage", rank: "main", category: "limit", title_ar: marker, reason_ar: "دليل أسبوعي محفوظ.", confidence: "strong", coverage_percent: 100, complete_day_count: 4, action_key: "replace_high_sodium_choice", action_ar: "استبدل خيارًا مرتفع الصوديوم بخيار أقل صوديومًا هذا الأسبوع.", action_mode: "replace", goal_trackability: "informational_only", goal_unavailable_reason: "action_not_observable", goal_unavailable_copy_ar: "هذه الأولوية إرشادية حاليًا؛ لا يمكن تتبع تنفيذ هذه الخطوة تلقائيًا من بيانات اليوميات.", rules_version: "w3-priority-1.1.0", copy_version: "w3-priority-ar-1.1.0", facts_used: [], evidence_refs: [], conflict_decisions: [] }, secondary: null, excluded_alternatives: [], none_reason: null, etag: `"weekly-priority-${recommendationId}"` };
+  return { source_analysis_id: analysisId, source_analysis_revision: 1, lifecycle_status: "current", stale_reasons: [], as_of_diary_date: "2026-08-17", period_start: "2026-08-11", period_end: "2026-08-17", previous_period_start: "2026-08-04", previous_period_end: "2026-08-10", complete_day_count: 4, previous_complete_day_count: 4, metric_summaries: [metric], source_versions: { analysis_rules_version: "w3-analysis-2.0.0", nutrition_registry_version: "3.0.0", calculation_engine_version: "2.0.0", food_group_rules_version: "1.0.0", source_reliability_rules_version: "1.0.0", snapshot_schema_versions: [4], status_evidence_version: 1, rules_manifest_hash: "a".repeat(64), source_input_hash: "b".repeat(64), content_hash: "c".repeat(64) }, priority_input: { interface_version: 2, principal_ref: principalRef, source_analysis_id: analysisId, source_analysis_revision: 1, generated_at: "2026-08-17T09:00:00Z", as_of_diary_date: "2026-08-17", calendar_timezone: "Asia/Riyadh", period_start: "2026-08-11", period_end: "2026-08-17", previous_period_start: "2026-08-04", previous_period_end: "2026-08-10", analysis_rules_version: "w3-analysis-2.0.0", nutrition_registry_version: "3.0.0", food_group_rules_version: "1.0.0", snapshot_schema_versions: [4], target_plan_refs: [], days: [], previous_period: [], metric_facts: [metric], safety_flags: [] }, generated_at: "2026-08-17T09:00:00Z", finalized_at: "2026-08-17T09:00:00Z", etag: `"analysis-${analysisId}-r1"` };
 }
 
 async function authoritativeDiaryDate(accessToken: string): Promise<string> {
@@ -365,7 +360,6 @@ test("same browser context isolates cached profile and diary data across A to B 
       fat_g: 7,
       nutrition_source: { type: "unknown", name: null, reference: null },
       ingredients: { text: null, source_type: null, source_name: null, source_reference: null },
-      nova: null,
       group_contributions: [],
       analytical_traits: []
     }
@@ -477,16 +471,14 @@ test("same browser context isolates nutrition analysis across account rotation",
   const subjectB = tokenSubject(tokenB);
   const markerA = `analysis-marker-a-${suffix}`;
   const markerB = `analysis-marker-b-${suffix}`;
-  const priorityA = `priority-marker-a-${suffix}`;
-  const priorityB = `priority-marker-b-${suffix}`;
   const context = await browser.newContext({ storageState: undefined });
   const page = await context.newPage();
-  await page.route(`${API_URL}/progress/nutrition-analysis/history*`, (route) => route.fulfill({
+  await page.route(`${API_URL}/progress/nutrition-analysis/v2/history*`, (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
     body: JSON.stringify({ items: [], next_cursor: null })
   }));
-  await page.route(`${API_URL}/progress/nutrition-analysis/current`, (route) => {
+  await page.route(`${API_URL}/progress/nutrition-analysis/v2/current`, (route) => {
     const authorization = route.request().headers().authorization ?? "";
     const requestSubject = tokenSubject(authorization.replace(/^Bearer /, ""));
     const isB = requestSubject === subjectB;
@@ -497,33 +489,14 @@ test("same browser context isolates nutrition analysis across account rotation",
       body: JSON.stringify(sessionPatternAnalysis(isB ? markerB : isA ? markerA : "unexpected-subject", isB ? "00000000-0000-4000-8000-000000000002" : "00000000-0000-4000-8000-000000000001"))
     });
   });
-  await page.route(`${API_URL}/progress/weekly-priorities/current`, (route) => {
-    const authorization = route.request().headers().authorization ?? "";
-    const requestSubject = tokenSubject(authorization.replace(/^Bearer /, ""));
-    const isB = requestSubject === subjectB;
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(sessionWeeklyPriority(isB ? priorityB : priorityA, isB ? "000000000002" : "000000000001"))
-    });
-  });
-  await page.route(`${API_URL}/progress/behavior-goals/current`, (route) => route.fulfill({
-    status: 200, contentType: "application/json", body: JSON.stringify({ recommendation: null, goal: null })
-  }));
-  await page.route(`${API_URL}/progress/behavior-goals/history*`, (route) => route.fulfill({
-    status: 200, contentType: "application/json", body: JSON.stringify({ items: [], next_cursor: null })
-  }));
   try {
     await signIn(page, emailA, PASSWORD, "/progress");
     await expect(page.getByText(markerA, { exact: true })).toBeVisible();
-    await expect(page.getByText(priorityA, { exact: true })).toBeVisible();
     await page.locator(".nav-signout").click();
     await page.waitForURL(/\/auth\/login/);
     await submitLogin(page, emailB, PASSWORD, "/progress");
     await expect(page.getByText(markerB, { exact: true })).toBeVisible();
-    await expect(page.getByText(priorityB, { exact: true })).toBeVisible();
     await expect(page.getByText(markerA, { exact: true })).toHaveCount(0);
-    await expect(page.getByText(priorityA, { exact: true })).toHaveCount(0);
   } finally {
     await context.close();
   }

@@ -21,7 +21,7 @@ from app.schemas import (
 )
 from app.services.food import get_active_food_for_logging, lock_food_namespace_for_logging
 from app.services.snapshot import (
-    _create_snapshot_v3_from_locked_food,
+    _create_snapshot_v4_from_locked_food,
     normalized_snapshot,
     totals_from_versioned,
 )
@@ -146,7 +146,7 @@ def totals_for_entry(entry: DiaryEntry) -> NutritionTotals:
     if entry.snapshot_schema_version is None:
         normalized_snapshot(entry.nutrition_snapshot, None)
         return totals_from_snapshot(entry.nutrition_snapshot, float(entry.quantity))
-    if entry.snapshot_schema_version in {2, 3}:
+    if entry.snapshot_schema_version in {2, 3, 4}:
         return totals_from_versioned(
             entry.nutrition_snapshot,
             entry.snapshot_schema_version,
@@ -206,7 +206,13 @@ def _decode_admin_diary_cursor(cursor: str) -> tuple[date, datetime, UUID]:
         ):
             raise ValueError("non-canonical cursor")
         return entry_date, created_at, entry_id
-    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as error:
+    except (
+        binascii.Error,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+    ) as error:
         raise AdminDiaryCursorError("invalid cursor") from error
 
 
@@ -285,7 +291,7 @@ def create_entry(
     principal: PrincipalContext,
     payload: DiaryEntryCreate,
     *,
-    snapshot_v3_writer_enabled: bool = True,
+    snapshot_v4_writer_enabled: bool = True,
     expected_day_version: int | None = None,
     calendar_authority: DiaryCalendarAuthority | None = None,
 ) -> DiaryEntry:
@@ -335,10 +341,10 @@ def create_entry(
         "meal_type": payload.meal_type,
         "target_plan_id": binding.plan.id if binding.plan else None,
         "target_provenance": binding.provenance,
-        "snapshot_schema_version": 3 if snapshot_v3_writer_enabled else None,
+        "snapshot_schema_version": 4 if snapshot_v4_writer_enabled else None,
         "nutrition_snapshot": (
-            _create_snapshot_v3_from_locked_food(session, food)
-            if snapshot_v3_writer_enabled
+            _create_snapshot_v4_from_locked_food(session, food)
+            if snapshot_v4_writer_enabled
             else make_snapshot(food, payload.quantity)
         ),
     }
@@ -378,9 +384,7 @@ def update_entry(
     entry = get_entry(session, principal, entry_id)
     authority = calendar_authority or diary_calendar_authority()
     lock_owner(session, principal)
-    day = lock_day_for_entry(
-        session, principal, entry.entry_date, expected_day_version, authority
-    )
+    day = lock_day_for_entry(session, principal, entry.entry_date, expected_day_version, authority)
     entry = session.exec(
         select(DiaryEntry)
         .where(
@@ -424,9 +428,7 @@ def delete_entry(
     entry = get_entry(session, principal, entry_id)
     authority = calendar_authority or diary_calendar_authority()
     lock_owner(session, principal)
-    day = lock_day_for_entry(
-        session, principal, entry.entry_date, expected_day_version, authority
-    )
+    day = lock_day_for_entry(session, principal, entry.entry_date, expected_day_version, authority)
     entry = session.exec(
         select(DiaryEntry)
         .where(
@@ -437,9 +439,7 @@ def delete_entry(
     ).one()
     diary_date = entry.entry_date
     current_count = (
-        day.entry_count
-        if day
-        else entry_count_for_day(session, principal.principal_id, diary_date)
+        day.entry_count if day else entry_count_for_day(session, principal.principal_id, diary_date)
     )
     remaining = max(current_count - 1, 0)
     session.delete(entry)

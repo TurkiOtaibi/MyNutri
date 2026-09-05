@@ -80,7 +80,7 @@ export function ProfilePage() {
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined
   });
-  const registryReady = registryQuery.data?.registry_schema_version === 2;
+  const registryReady = registryQuery.data?.registry_schema_version === 3;
   const dirty = savedDraft != null && normalizeDraft(draft) !== normalizeDraft(savedDraft);
   const activationOwnsAuthority = ["reconciling", "recovery", "committed"].includes(activationPhase.kind);
 

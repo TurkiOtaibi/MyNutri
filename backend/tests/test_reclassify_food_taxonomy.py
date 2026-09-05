@@ -561,6 +561,7 @@ def plan022_postgres() -> tuple[Engine, list[UUID]]:
     url = _postgres_url()
     database_engine = create_engine(url)
     with database_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("DROP SCHEMA IF EXISTS nova_retirement CASCADE"))
         connection.execute(text("DROP SCHEMA public CASCADE"))
         connection.execute(text("CREATE SCHEMA public"))
     _run_alembic(url)

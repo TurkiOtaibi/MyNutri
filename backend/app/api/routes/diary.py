@@ -48,9 +48,7 @@ def _expected_version(if_match: str | None) -> int | None:
     return int(value[4:])
 
 
-def _command_expected_version(
-    payload: DiaryDayStatusCommand, if_match: str | None
-) -> int:
+def _command_expected_version(payload: DiaryDayStatusCommand, if_match: str | None) -> int:
     header_version = _expected_version(if_match)
     if header_version is not None and header_version != payload.expected_version:
         raise HTTPException(
@@ -100,7 +98,7 @@ def _add_entry(
         session,
         principal,
         validated_payload,
-        snapshot_v3_writer_enabled=settings.snapshot_v3_writer_enabled,
+        snapshot_v4_writer_enabled=settings.snapshot_v4_writer_enabled,
         expected_day_version=_expected_version(if_match),
         calendar_authority=authority,
     )
@@ -122,7 +120,10 @@ def add_entry(
 
 
 @router.post(
-    "", response_model=DiaryEntryResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False
+    "",
+    response_model=DiaryEntryResponse,
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
 )
 def add_entry_legacy(
     payload: Annotated[SkipValidation[DiaryEntryCreate], Body()],

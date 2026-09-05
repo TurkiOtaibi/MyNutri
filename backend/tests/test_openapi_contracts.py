@@ -16,7 +16,7 @@ from app.schemas import (
     BehaviorGoalCommandV1,
     DiaryDayStatusCommand,
     NutritionRegistryResponse,
-    WeeklyPriorityAnalysisInputV1,
+    WeeklyPriorityAnalysisInputV2,
 )
 
 
@@ -71,7 +71,7 @@ def test_registry_openapi_is_typed_without_changing_runtime_payload() -> None:
     validated = NutritionRegistryResponse.model_validate(runtime_payload)
     assert validated.rules_manifest_hash == runtime_payload["rules_manifest_hash"]
     assert [item.model_dump() for item in validated.nutrients] == runtime_payload["nutrients"]
-    assert validated.nova.model_dump(mode="json") == runtime_payload["nova"]
+    assert "nova" not in validated.model_dump(mode="json")
 
 
 def test_day_logging_status_openapi_is_structured_and_admin_is_read_only() -> None:
@@ -133,18 +133,18 @@ def test_pattern_analysis_openapi_is_closed_versioned_and_owner_only() -> None:
     schema = app.openapi()
     paths = schema["paths"]
     for path, methods in {
-        "/progress/nutrition-analysis/current": {"get"},
-        "/progress/nutrition-analysis/history": {"get"},
-        "/progress/nutrition-analysis/{analysis_id}/revisions/{revision}": {"get"},
-        "/progress/nutrition-analysis/evaluate": {"post"},
+        "/progress/nutrition-analysis/v2/current": {"get"},
+        "/progress/nutrition-analysis/v2/history": {"get"},
+        "/progress/nutrition-analysis/v2/{analysis_id}/revisions/{revision}": {"get"},
+        "/progress/nutrition-analysis/v2/evaluate": {"post"},
         "/admin/nutrition-analysis/monitoring": {"get"},
     }.items():
         assert set(paths[path]) == methods
-    evaluate = paths["/progress/nutrition-analysis/evaluate"]["post"]
+    evaluate = paths["/progress/nutrition-analysis/v2/evaluate"]["post"]
     headers = {item["name"]: item for item in evaluate["parameters"] if item["in"] == "header"}
     assert headers["If-Match"]["required"] is True
     assert headers["Idempotency-Key"]["required"] is True
-    priority = schema["components"]["schemas"]["WeeklyPriorityAnalysisInputV1"]
+    priority = schema["components"]["schemas"]["WeeklyPriorityAnalysisInputV2"]
     assert priority["additionalProperties"] is False
     assert set(priority["required"]) >= {
         "principal_ref",
@@ -155,8 +155,8 @@ def test_pattern_analysis_openapi_is_closed_versioned_and_owner_only() -> None:
         "metric_facts",
         "safety_flags",
     }
-    assert WeeklyPriorityAnalysisInputV1.model_config["extra"] == "forbid"
-    target = schema["components"]["schemas"]["AnalysisMetricTargetV1"]
+    assert WeeklyPriorityAnalysisInputV2.model_config["extra"] == "forbid"
+    target = schema["components"]["schemas"]["AnalysisMetricTargetV2"]
     for field in ("value", "lower", "upper"):
         numeric = next(
             item for item in target["properties"][field]["anyOf"] if item.get("type") == "number"
@@ -192,7 +192,8 @@ def test_weekly_priority_and_goal_openapi_is_closed_owner_only_and_bounded() -> 
     headers = {item["name"]: item for item in command_route["parameters"] if item["in"] == "header"}
     assert headers["Idempotency-Key"]["required"] is True
     history_limit = next(
-        item for item in paths["/progress/behavior-goals/history"]["get"]["parameters"]
+        item
+        for item in paths["/progress/behavior-goals/history"]["get"]["parameters"]
         if item["name"] == "limit"
     )
     assert history_limit["schema"]["maximum"] == 100
@@ -226,9 +227,7 @@ def test_weekly_priority_and_goal_openapi_is_closed_owner_only_and_bounded() -> 
         "$ref": "#/components/schemas/BehaviorGoalHistorySnapshotV1"
     }
     error_codes = set(
-        schema["components"]["schemas"]["Plan033ErrorDetailV1"]["properties"]["code"][
-            "enum"
-        ]
+        schema["components"]["schemas"]["Plan033ErrorDetailV1"]["properties"]["code"]["enum"]
     )
     assert {
         "PRIORITY_SOURCE_STALE",

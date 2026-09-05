@@ -90,12 +90,11 @@ export type FoodPayload = {
   data_source: string | null;
   nutrition_source: { type: string; name: string | null; reference: string | null };
   ingredients: { text: string | null; source_type: string | null; source_name: string | null; source_reference: string | null };
-  nova: { classification: "1" | "2" | "3" | "4" | "unknown" } | null;
   group_contributions: Array<{ group_key: string; subtype_key?: string | null; amount_per_100_basis: number; data_status: "known" | "estimated" }>;
   analytical_traits: string[];
 };
 
-export type FoodRecord = Omit<FoodPayload, "nutrition_source" | "nova" | "group_contributions"> & {
+export type FoodRecord = Omit<FoodPayload, "nutrition_source" | "group_contributions"> & {
   id: string;
   net_carbs_g: number;
   created_at: string;
@@ -105,7 +104,6 @@ export type FoodRecord = Omit<FoodPayload, "nutrition_source" | "nova" | "group_
   group_data_status: "known" | "estimated" | "unknown";
   group_data_completeness: "complete" | "partial" | "unknown";
   nutrition_source: FoodPayload["nutrition_source"] & { reliability: string; reliability_rules_version: string };
-  nova: { classification: "1" | "2" | "3" | "4" | "unknown"; review_status: "unreviewed" | "reviewed"; rules_version: string };
   group_contributions: Array<FoodPayload["group_contributions"][number] & { food_group_rules_version: string }>;
 };
 
@@ -162,7 +160,6 @@ export function validFood(overrides: Partial<FoodPayload> = {}): FoodPayload {
     data_source: null,
     nutrition_source: { type: "unknown", name: null, reference: null },
     ingredients: { text: null, source_type: null, source_name: null, source_reference: null },
-    nova: null,
     group_contributions: [],
     analytical_traits: [],
     ...overrides

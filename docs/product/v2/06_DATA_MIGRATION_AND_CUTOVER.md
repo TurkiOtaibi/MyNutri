@@ -1,5 +1,24 @@
 # V2 Data Migration and Cutover
 
+## NOVA Retirement Phase 1
+
+NOVA Retirement adds the single successor revision `8a91c4e7d2f6` after
+`22733dbf5249`. The revision keeps the physical Food NOVA columns, makes them
+nullable with no default, installs the durable `LEGACY_COMPAT` generation row,
+and guards only the Food, Snapshot, PLAN 032, Target Plan, and inactive PLAN 033
+row shapes changed by the retirement.
+
+Deploy V4/V2-capable readers before activation. The activation transaction must
+take `pg_advisory_xact_lock(nova_retirement.generation_lock_key())`, update the
+singleton from generation 1/`LEGACY_COMPAT` to generation 2/`NOVA_RETIRED`, set
+`activated_at`, and verify exactly one affected row. No external call belongs in
+that transaction. After commit, new Diary captures are SnapshotV4, new PLAN 032
+series are interface 2, active Food writes contain no NOVA values, and new PLAN
+033 V1 state creation is rejected. Existing V1–V3 history is not rewritten.
+
+Physical Food NOVA-column deletion is a separate Phase-2 change and requires
+independently approved backup/restore readiness.
+
 ## Sequence
 
 1. Back up and rehearse against a disposable clone.

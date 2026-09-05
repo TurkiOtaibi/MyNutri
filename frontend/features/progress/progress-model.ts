@@ -130,8 +130,7 @@ export const metricLabels: Record<string, string> = {
   "group:whole_grain_share_percent": "نسبة الحبوب الكاملة",
   "group:nuts_seeds_servings_per_period": "المكسرات والبذور",
   "group:seafood_servings_per_period": "المأكولات البحرية",
-  "group:processed_meat_occurrence_days": "أيام تناول اللحوم المصنعة",
-  "nova:nova4_calorie_share_percent": "نسبة طاقة NOVA 4"
+  "group:processed_meat_occurrence_days": "أيام تناول اللحوم المصنعة"
 };
 
 export type AnalysisDisplayState =
