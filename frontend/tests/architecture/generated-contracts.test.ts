@@ -34,20 +34,20 @@ describe("generated OpenAPI contracts", () => {
       "DiaryEntryResponse",
       "FoodResponseV3",
       "AdminUserDetail",
-      "AnalysisEvaluateCommandV2",
-      "AnalysisSourceVersionBundleV2",
-      "WeeklyPriorityAnalysisInputV2",
-      "NutritionPatternAnalysisResponseV2",
-      "NutritionPatternAnalysisHistoryItemV2",
-      "NutritionPatternAnalysisHistoryPageV2",
-      "WeeklyPriorityResultV1",
-      "BehaviorGoalCommandV1",
-      "BehaviorGoalResponseV1",
       "export namespace Diary",
       "export namespace Foods",
-      "export namespace Progress",
     ]) {
       expect(source).toContain(contract);
+    }
+    for (const retiredContract of [
+      "NutritionPatternAnalysisResponseV2",
+      "WeeklyPriorityResultV1",
+      "BehaviorGoalResponseV1",
+      "export namespace Progress",
+      "nutrition_snapshot",
+      "snapshot_schema_version",
+    ]) {
+      expect(source).not.toContain(retiredContract);
     }
     expect(source).not.toMatch(/class (?:Api|HttpClient)|\bfetch\(|\baxios\b|request</);
     expect(source).not.toMatch(/[A-Z]:\\|\/home\/|\/Users\//);

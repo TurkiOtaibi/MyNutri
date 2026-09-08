@@ -20,29 +20,23 @@ from app.main import app
 from app.models import (
     DefaultUnitType,
     DiaryEntry,
-    FoodAnalyticalTrait,
     Food,
-    FOOD_GROUP_NUMERIC_COLUMNS,
     FOOD_NUMERIC_COLUMNS,
-    FoodGroupContribution,
-    FoodStatus,
     NutritionBasis,
     Principal,
     PrincipalRole,
     UnitBasis,
 )
 from app.schemas import (
-    FOOD_GROUP_NUMERIC_FIELDS,
     FOOD_NUMERIC_FIELDS,
     FOOD_RESPONSE_DERIVED_NUMERIC_FIELDS,
     OPTIONAL_NUTRIENT_MAX,
     FoodCreate,
-    FoodGroupContributionInput,
     FoodPickerItem,
     FoodResponse,
     FoodUpdate,
 )
-from app.services.diary import make_snapshot, to_entry_response
+from app.services.diary import to_entry_response
 from app.services.food import (
     archive_food_response,
     create_food,
@@ -92,8 +86,8 @@ def food_payload(**overrides):
     payload = {
         "name": "Greek Yogurt",
         "brand": "Local",
-        "food_category_key": "other",
-        "food_kind": "simple",
+        "primary_category": "other",
+        "subcategory": "other",
         "nutrition_basis": NutritionBasis.per_100g,
         "default_unit_type": DefaultUnitType.serving,
         "unit_amount": 170,
@@ -105,7 +99,7 @@ def food_payload(**overrides):
         "fiber_g": 1,
         "sugar_g": 4,
         "added_sugar_g": 0,
-        "nutrition_source": {"type": "unknown"},
+        "nutrition_data_source": "estimated",
     }
     payload.update(overrides)
     return payload
@@ -183,19 +177,12 @@ def client_for_session(session: Session):
         client.close()
 
 
-def child_selects(statements: list[str]) -> list[str]:
-    child_tables = ("food_group_contribution", "food_analytical_trait")
-    return [
-        statement for statement in statements if any(table in statement for table in child_tables)
-    ]
-
-
 def create_plan013_representative_foods(session: Session) -> list[Food]:
     zero = create_food(
         session,
         TEST_PRINCIPAL,
         FoodCreate.model_validate(
-            food_payload(name="Alpha Zero", food_category_key="other", sugar_g=None)
+            food_payload(name="Alpha Zero", primary_category="other", sugar_g=None)
         ),
     )
     multiple = create_food(
@@ -204,20 +191,8 @@ def create_plan013_representative_foods(session: Session) -> list[Food]:
         FoodCreate.model_validate(
             food_payload(
                 name="Beta Multiple",
-                food_category_key="other",
-                group_contributions=[
-                    {
-                        "group_key": "vegetables",
-                        "amount_per_100_basis": 40,
-                        "data_status": "estimated",
-                    },
-                    {
-                        "group_key": "fruits",
-                        "amount_per_100_basis": 60,
-                        "data_status": "known",
-                    },
-                ],
-                analytical_traits=["salted", "processed"],
+                primary_category="vegetables",
+                subcategory="other",
             )
         ),
     )
@@ -227,15 +202,8 @@ def create_plan013_representative_foods(session: Session) -> list[Food]:
         FoodCreate.model_validate(
             food_payload(
                 name="Gamma Archived",
-                food_category_key="sweets",
-                group_contributions=[
-                    {
-                        "group_key": "fruits",
-                        "amount_per_100_basis": 25,
-                        "data_status": "known",
-                    }
-                ],
-                analytical_traits=["sweetened"],
+                primary_category="sweets_and_sugars",
+                subcategory="other",
             )
         ),
     )
@@ -253,7 +221,7 @@ def create_plan014_food(session: Session, name: str, **overrides) -> Food:
 
 def create_plan014_entry(
     session: Session,
-    food: Food | None,
+    food: Food,
     *,
     principal_id: UUID = TEST_PRINCIPAL_ID,
     created_at: datetime,
@@ -261,13 +229,12 @@ def create_plan014_entry(
     entry = DiaryEntry(
         principal_id=principal_id,
         entry_date=created_at.date(),
-        food_id=food.id if food else None,
+        food_id=food.id,
         quantity=1,
+        recorded_unit_type=food.default_unit_type,
+        recorded_unit_amount=food.unit_amount,
+        recorded_unit_basis=food.unit_basis,
         meal_type="snack",
-        nutrition_snapshot={
-            "food_id": str(food.id) if food else None,
-            "name": food.name if food else "Deleted",
-        },
         created_at=created_at,
     )
     session.add(entry)
@@ -339,9 +306,12 @@ def test_plan014_picker_closed_dto_search_and_stable_casefold_pagination() -> No
         assert set(name_match.items[0].model_dump()) == expected_fields
         assert not expected_fields.intersection(
             {
-                "status",
+                "archived_at",
                 "food_category_key",
+                "primary_category",
+                "subcategory",
                 "nutrition_source",
+                "nutrition_data_source",
                 "ingredients",
                 "group_contributions",
                 "analytical_traits",
@@ -385,8 +355,6 @@ def test_plan014_picker_recents_are_latest_unique_owner_scoped_and_active_only()
         )
         create_plan014_entry(session, archived, created_at=base + timedelta(minutes=3))
         archive_food_response(session, TEST_PRINCIPAL, archived.id)
-        create_plan014_entry(session, None, created_at=base + timedelta(minutes=5))
-
         result = list_food_picker(session, TEST_PRINCIPAL)
 
         assert [item.id for item in result.recent_items] == [older.id, newest.id]
@@ -404,8 +372,10 @@ def assert_plan014_picker_query_budget(session: Session, history_size: int) -> N
                 entry_date=base.date(),
                 food_id=food.id,
                 quantity=1,
+                recorded_unit_type=food.default_unit_type,
+                recorded_unit_amount=food.unit_amount,
+                recorded_unit_basis=food.unit_basis,
                 meal_type="snack",
-                nutrition_snapshot={"food_id": str(food.id), "name": food.name},
                 created_at=base + timedelta(microseconds=index),
             )
             for index in range(history_size)
@@ -437,7 +407,7 @@ def test_plan013_batch_responses_preserve_single_item_semantics() -> None:
         foods = create_plan013_representative_foods(session)
 
         public_foods = list_foods(session, TEST_PRINCIPAL)
-        admin_foods = list_foods_page(session, TEST_PRINCIPAL, status=None).items
+        admin_foods = list_foods_page(session, TEST_PRINCIPAL, archived=None).items
         expected = [
             to_food_response(session, TEST_PRINCIPAL, food).model_dump(mode="json")
             for food in foods
@@ -457,22 +427,15 @@ def test_plan013_batch_responses_preserve_single_item_semantics() -> None:
             "Gamma Archived",
         ]
         assert responses[0].sugar_g is None
-        assert responses[0].group_data_status == "unknown"
-        assert responses[0].group_data_completeness == "unknown"
-        assert [item.group_key for item in responses[1].group_contributions] == [
-            "fruits",
-            "vegetables",
-        ]
-        assert responses[1].analytical_traits == ["processed", "salted"]
-        assert responses[1].group_data_status == "estimated"
-        assert responses[1].group_data_completeness == "complete"
-        assert responses[2].status == FoodStatus.archived
+        assert responses[1].primary_category == "vegetables"
+        assert responses[1].subcategory == "other"
+        assert responses[2].archived_at is not None
         assert [response.model_dump(mode="json") for response in responses] == expected
-        assert len(child_selects(statements)) == 2
+        assert statements == []
 
 
-@pytest.mark.parametrize(("size", "expected_child_selects"), [(0, 0), (1, 2), (20, 2), (100, 2)])
-def test_plan013_batch_response_child_query_budget(size: int, expected_child_selects: int) -> None:
+@pytest.mark.parametrize("size", [0, 1, 20, 100])
+def test_plan013_batch_response_query_budget(size: int) -> None:
     with session_fixture() as session:
         foods = [
             create_food(
@@ -482,12 +445,13 @@ def test_plan013_batch_response_child_query_budget(size: int, expected_child_sel
             )
             for index in range(size)
         ]
+        foods = list(session.exec(select(Food).order_by(Food.name)).all())
 
         with capture_application_selects(session) as statements:
             responses = to_food_responses(session, TEST_PRINCIPAL, foods)
 
         assert len(responses) == size
-        assert len(child_selects(statements)) == expected_child_selects
+        assert statements == []
 
 
 def test_plan013_category_metadata_is_distinct_status_scoped_and_empty_safe() -> None:
@@ -500,27 +464,33 @@ def test_plan013_category_metadata_is_distinct_status_scoped_and_empty_safe() ->
             create_food(
                 session,
                 TEST_PRINCIPAL,
-                FoodCreate.model_validate(food_payload(name=name, food_category_key="sweets")),
+                FoodCreate.model_validate(
+                    food_payload(
+                        name=name,
+                        primary_category="sweets_and_sugars",
+                        subcategory="other",
+                    )
+                ),
             )
         archived = create_food(
             session,
             TEST_PRINCIPAL,
             FoodCreate.model_validate(
-                food_payload(name="Gamma Archived Category", food_category_key="other")
+                food_payload(name="Gamma Archived Category", primary_category="other")
             ),
         )
         archive_food_response(session, TEST_PRINCIPAL, archived.id)
 
         with capture_application_selects(session) as statements:
             active = list_foods_page(session, TEST_PRINCIPAL)
-        all_statuses = list_foods_page(session, TEST_PRINCIPAL, status=None)
+        all_foods = list_foods_page(session, TEST_PRINCIPAL, archived=None)
 
-        assert active.categories == ["sweets"]
+        assert active.categories == ["sweets_and_sugars"]
         assert active.uncategorized_count == 0
-        assert all_statuses.categories == ["other", "sweets"]
-        assert all_statuses.uncategorized_count == 0
+        assert all_foods.categories == ["other", "sweets_and_sugars"]
+        assert all_foods.uncategorized_count == 0
         assert any(
-            statement.startswith("select distinct food.food_category_key")
+            statement.startswith("select distinct food.primary_category")
             for statement in statements
         )
 
@@ -534,14 +504,14 @@ def assert_plan013_list_route_query_budgets(session: Session, size: int) -> None
         )
 
     routes = {
-        "legacy": ("/foods", 1 if size == 0 else 3),
+        "legacy": ("/foods", 1),
         "public_page": (
             "/foods?page=1&page_size=100",
-            3 if size == 0 else 5,
+            3,
         ),
         "admin_page": (
             "/admin/foods?page=1&page_size=100",
-            3 if size == 0 else 5,
+            3,
         ),
     }
     with client_for_session(session) as client:
@@ -553,7 +523,6 @@ def assert_plan013_list_route_query_budgets(session: Session, size: int) -> None
             body = response.json()
             items = body if route_name == "legacy" else body["items"]
             assert len(items) == size, route_name
-            assert len(child_selects(statements)) == (0 if size == 0 else 2)
             assert len(statements) == expected_total_selects, route_name
 
 
@@ -648,19 +617,7 @@ def test_plan013_detail_endpoint_keeps_single_item_response_path() -> None:
         food = create_food(
             session,
             TEST_PRINCIPAL,
-            FoodCreate.model_validate(
-                food_payload(
-                    name="Detail Regression",
-                    group_contributions=[
-                        {
-                            "group_key": "fruits",
-                            "amount_per_100_basis": 100,
-                            "data_status": "known",
-                        }
-                    ],
-                    analytical_traits=["sweetened"],
-                )
-            ),
+            FoodCreate.model_validate(food_payload(name="Detail Regression")),
         )
 
         with client_for_session(session) as client:
@@ -668,10 +625,9 @@ def test_plan013_detail_endpoint_keeps_single_item_response_path() -> None:
                 response = client.get(f"/foods/{food.id}", headers=auth_headers())
 
         assert response.status_code == 200
-        assert response.json()["group_contributions"][0]["group_key"] == "fruits"
-        assert response.json()["analytical_traits"] == ["sweetened"]
-        assert len(child_selects(statements)) == 2
-        assert len(statements) == 3
+        assert response.json()["primary_category"] == "other"
+        assert response.json()["subcategory"] == "other"
+        assert len(statements) == 1
 
 
 def test_create_food_blocks_normalized_duplicate() -> None:
@@ -737,7 +693,6 @@ def test_food_api_returns_arabic_name_and_unit_amount_errors(api_client: TestCli
         ("name", 120),
         ("brand", 80),
         ("notes", 500),
-        ("data_source", 120),
     ],
 )
 def test_food_api_enforces_text_max_lengths(
@@ -879,7 +834,7 @@ def test_deleted_food_does_not_block_duplicate_recreation() -> None:
 def test_food_list_pagination_preserves_legacy_array_response(api_client: TestClient) -> None:
     first = api_client.post(
         "/foods",
-        json=food_json(name="Legacy Food", food_category_key="other"),
+        json=food_json(name="Legacy Food", primary_category="other"),
         headers=auth_headers(),
     )
     assert first.status_code == 201
@@ -907,27 +862,34 @@ def test_food_page_combines_search_and_category_filters() -> None:
             FoodCreate.model_validate(
                 food_payload(
                     name="Arabic Oats",
-                    food_category_key="grains_starches",
-                    grain_starch_type="oats",
-                    grain_type="whole",
+                    primary_category="grains_and_starches",
+                    subcategory="oats",
                 )
             ),
         )
         create_food(
             session,
             TEST_PRINCIPAL,
-            FoodCreate.model_validate(food_payload(name="Other Oats", food_category_key="sweets")),
+            FoodCreate.model_validate(
+                food_payload(
+                    name="Other Oats",
+                    primary_category="sweets_and_sugars",
+                    subcategory="other",
+                )
+            ),
         )
         create_food(
             session,
             TEST_PRINCIPAL,
-            FoodCreate.model_validate(food_payload(name="Plain Oats", food_category_key="other")),
+            FoodCreate.model_validate(food_payload(name="Plain Oats", primary_category="other")),
         )
 
-        grains = list_foods_page(session, TEST_PRINCIPAL, search="oats", category="grains_starches")
+        grains = list_foods_page(
+            session, TEST_PRINCIPAL, search="oats", category="grains_and_starches"
+        )
         assert [food.name for food in grains.items] == ["Arabic Oats"]
         assert grains.total == 1
-        assert grains.categories == ["grains_starches", "other", "sweets"]
+        assert grains.categories == ["grains_and_starches", "other", "sweets_and_sugars"]
         assert grains.uncategorized_count == 0
 
 
@@ -996,26 +958,38 @@ def test_optional_nutrient_max_ranges() -> None:
         FoodCreate.model_validate(food_payload(sodium_mg=50001))
 
 
-def test_diary_snapshot_survives_food_hard_delete() -> None:
+def test_referenced_food_is_archived_and_remains_current_diary_truth() -> None:
     with session_fixture() as session:
-        food = create_food(session, TEST_PRINCIPAL, FoodCreate.model_validate(food_payload()))
+        food = create_food(
+            session,
+            TEST_PRINCIPAL,
+            FoodCreate.model_validate(food_payload(calories=130, unit_amount=100)),
+        )
         entry = DiaryEntry(
             principal_id=TEST_PRINCIPAL_ID,
             entry_date=date(2026, 7, 9),
             food_id=food.id,
-            quantity=1,
-            nutrition_snapshot=make_snapshot(food, 1),
+            quantity=2,
+            recorded_unit_type=food.default_unit_type,
+            recorded_unit_amount=food.unit_amount,
+            recorded_unit_basis=food.unit_basis,
         )
         session.add(entry)
         session.commit()
         session.refresh(entry)
 
-        delete_food(session, TEST_PRINCIPAL, food.id)
-        response = to_entry_response(entry)
+        disposition = delete_food(session, TEST_PRINCIPAL, food.id)
+        food.calories = 140
+        session.add(food)
+        session.commit()
+        response = to_entry_response(entry, food)
 
-        assert response.nutrition_snapshot.name == "Greek Yogurt"
-        assert response.nutrition_snapshot.nutrition_basis == NutritionBasis.per_100g
-        assert response.totals.calories == 204
+        assert disposition is False
+        assert food.archived_at is not None
+        assert response.food.name == "Greek Yogurt"
+        assert response.quantity == 2
+        assert response.recorded_unit_amount == 100
+        assert response.totals.calories == 280
 
 
 def test_wave1_food_contract_preserves_exact_null_zero_and_legacy_values(
@@ -1046,7 +1020,9 @@ def test_wave1_food_contract_preserves_exact_null_zero_and_legacy_values(
     }
 
 
-@pytest.mark.parametrize("missing_field", ("food_category_key", "food_kind", "nutrition_source"))
+@pytest.mark.parametrize(
+    "missing_field", ("primary_category", "subcategory", "nutrition_data_source")
+)
 def test_wave1_new_food_requires_controlled_classification_and_source(
     api_client: TestClient, missing_field: str
 ) -> None:
@@ -1059,42 +1035,26 @@ def test_wave1_new_food_requires_controlled_classification_and_source(
     assert error_by_field(response)[missing_field]["code"] == "required"
 
 
-def test_nova_is_rejected_while_source_reliability_remains_backend_controlled(
+def test_retired_food_fields_are_rejected_and_simplified_source_is_accepted(
     api_client: TestClient,
 ) -> None:
     payload = food_json(name="Controlled source")
-    payload.update(
-        nutrition_source={
-            "type": "multiple_sources",
-            "name": "Label and database",
-            "reference": "REF-1",
-        },
-        ingredients={
-            "text": "شوفان، حليب",
-            "source_type": "official_product_label",
-            "source_name": "Product label",
-            "source_reference": None,
-        },
-        nova={"classification": "unknown"},
-    )
+    payload.update(nutrition_data_source="official", ingredients="شوفان، حليب")
+    payload["nutrition_source"] = {"type": "multiple_sources"}
 
     response = api_client.post("/foods", json=payload, headers=auth_headers())
 
     assert response.status_code == 422
-    assert error_by_field(response)["nova"]["code"] == "invalid"
+    assert error_by_field(response)["nutrition_source"]["code"] == "invalid"
 
-    payload.pop("nova")
+    payload.pop("nutrition_source")
     accepted = api_client.post("/foods", json=payload, headers=auth_headers())
     assert accepted.status_code == 201
     body = accepted.json()
-    assert body["nutrition_source"]["reliability"] == "mixed"
-    assert body["nutrition_source"]["reliability_rules_version"] == "1.0.0"
+    assert body["nutrition_data_source"] == "official"
+    assert body["ingredients"] == "شوفان، حليب"
+    assert "nutrition_source" not in body
     assert "nova" not in body
-
-    payload["nutrition_source"]["reliability"] = "high"
-    rejected = api_client.post("/foods", json=payload, headers=auth_headers())
-    assert rejected.status_code == 422
-    assert error_by_field(rejected)["reliability"]["code"] == "invalid"
 
 
 def test_wave1_food_update_rejects_client_authoritative_reliability(
@@ -1118,213 +1078,40 @@ def test_wave1_food_update_rejects_client_authoritative_reliability(
 
 
 @pytest.mark.parametrize(
-    ("overrides", "code"),
+    ("category", "subcategory"),
     [
-        (
-            {
-                "group_contributions": [
-                    {
-                        "group_key": "fruits",
-                        "amount_per_100_basis": 60,
-                        "data_status": "known",
-                    },
-                    {
-                        "group_key": "fruits",
-                        "amount_per_100_basis": 40,
-                        "data_status": "known",
-                    },
-                ],
-            },
-            "duplicate_food_group",
-        ),
-        (
-            {
-                "group_contributions": [
-                    {
-                        "group_key": "fruits",
-                        "amount_per_100_basis": 60,
-                        "data_status": "known",
-                    },
-                    {
-                        "group_key": "vegetables",
-                        "amount_per_100_basis": 41,
-                        "data_status": "known",
-                    },
-                ],
-            },
-            "food_group_total_exceeded",
-        ),
-        (
-            {
-                "group_contributions": [
-                    {
-                        "group_key": "dairy_fortified_alternatives",
-                        "amount_per_100_basis": 100,
-                        "data_status": "known",
-                    }
-                ],
-            },
-            "invalid_food_group_subtype",
-        ),
+        ("bakery", "bread"),
+        ("grains_and_starches", "rice"),
+        ("fish_and_seafood", "shrimp"),
+        ("other", "other"),
     ],
 )
-def test_wave1_group_contract_returns_stable_validation_codes(
-    api_client: TestClient, overrides: dict, code: str
+def test_food_taxonomy_accepts_only_approved_primary_subcategory_pairs(
+    api_client: TestClient, category: str, subcategory: str
 ) -> None:
-    response = api_client.post(
-        "/foods",
-        json=food_json(name=f"Invalid {code}", **overrides),
-        headers=auth_headers(),
-    )
-
-    assert response.status_code == 422
-    assert response.json()["detail"][0]["code"] == code
-
-
-def test_wave1_food_update_atomically_replaces_groups_and_traits(
-    api_client: TestClient,
-) -> None:
-    payload = food_json(
-        name="Composite food",
-        food_category_key="mixed_dish",
-        food_kind="composite",
-        group_contributions=[
-            {
-                "group_key": "whole_grains",
-                "amount_per_100_basis": 40,
-                "data_status": "estimated",
-            }
-        ],
-        analytical_traits=["sweetened"],
-    )
-    created = api_client.post("/foods", json=payload, headers=auth_headers())
-    assert created.status_code == 201
-
-    replaced = api_client.put(
-        f"/foods/{created.json()['id']}",
-        json={
-            "group_contributions": [
-                {
-                    "group_key": "refined_grains",
-                    "amount_per_100_basis": 75,
-                    "data_status": "known",
-                }
-            ],
-            "analytical_traits": ["processed", "salted"],
-        },
-        headers=auth_headers(),
-    )
-
-    assert replaced.status_code == 200
-    assert [item["group_key"] for item in replaced.json()["group_contributions"]] == [
-        "refined_grains"
-    ]
-    assert replaced.json()["analytical_traits"] == ["processed", "salted"]
-
-
-def test_wave1_food_hard_delete_cascades_classification_children() -> None:
-    with session_fixture() as session:
-        food = create_food(
-            session,
-            TEST_PRINCIPAL,
-            FoodCreate.model_validate(
-                food_payload(
-                    name="Delete classification",
-                    group_contributions=[
-                        {
-                            "group_key": "seafood",
-                            "amount_per_100_basis": 100,
-                            "data_status": "known",
-                        }
-                    ],
-                    analytical_traits=["omega3_rich_seafood"],
-                )
-            ),
-        )
-        assert session.exec(
-            select(FoodGroupContribution).where(FoodGroupContribution.food_id == food.id)
-        ).one()
-        assert session.exec(
-            select(FoodAnalyticalTrait).where(FoodAnalyticalTrait.food_id == food.id)
-        ).one()
-
-        delete_food(session, TEST_PRINCIPAL, food.id)
-
-        assert (
-            session.exec(
-                select(FoodGroupContribution).where(FoodGroupContribution.food_id == food.id)
-            ).first()
-            is None
-        )
-        assert (
-            session.exec(
-                select(FoodAnalyticalTrait).where(FoodAnalyticalTrait.food_id == food.id)
-            ).first()
-            is None
-        )
-
-
-def test_group_status_and_completeness_are_derived_and_not_client_authoritative(
-    api_client: TestClient,
-) -> None:
-    rejected = api_client.post(
-        "/foods",
-        json=food_json(name="Client status", group_data_status="known"),
-        headers=auth_headers(),
-    )
-    assert rejected.status_code == 422
-
-    created = api_client.post(
-        "/foods",
-        json=food_json(
-            name="Derived status",
-            group_contributions=[
-                {
-                    "group_key": "fruits",
-                    "amount_per_100_basis": 60,
-                    "data_status": "estimated",
-                }
-            ],
-        ),
-        headers=auth_headers(),
-    )
-    assert created.status_code == 201
-    assert created.json()["group_data_status"] == "estimated"
-    assert created.json()["group_data_completeness"] == "partial"
-
-
-@pytest.mark.parametrize(
-    ("category", "details"),
-    [
-        ("baked_goods", {"baked_good_type": "arabic_bread", "grain_type": "whole"}),
-        ("grains_starches", {"grain_starch_type": "rice", "grain_type": "refined"}),
-    ],
-)
-def test_food_taxonomy_v2_requires_structured_category_details(
-    api_client: TestClient, category: str, details: dict
-) -> None:
-    missing = api_client.post(
-        "/foods",
-        json=food_json(name=f"Missing {category}", food_category_key=category),
-        headers=auth_headers(),
-    )
-    assert missing.status_code == 422
-
     valid = api_client.post(
         "/foods",
-        json=food_json(name=f"Valid {category}", food_category_key=category, **details),
+        json=food_json(
+            name=f"Valid {category} {subcategory}",
+            primary_category=category,
+            subcategory=subcategory,
+        ),
         headers=auth_headers(),
     )
     assert valid.status_code == 201, valid.text
-    for key, value in details.items():
-        assert valid.json()[key] == value
+    assert valid.json()["primary_category"] == category
+    assert valid.json()["subcategory"] == subcategory
 
-    unrelated = api_client.post(
+    invalid_pair = api_client.post(
         "/foods",
-        json=food_json(name=f"Unrelated {category}", food_category_key="fruits", **details),
+        json=food_json(
+            name=f"Invalid {category} {subcategory}",
+            primary_category=category,
+            subcategory="__not_approved__",
+        ),
         headers=auth_headers(),
     )
-    assert unrelated.status_code == 422
+    assert invalid_pair.status_code == 422
 
 
 def test_legacy_category_is_not_part_of_v2_food_contract(api_client: TestClient) -> None:
@@ -1345,16 +1132,7 @@ def test_plan009_numeric_registry_matches_schema_and_database_models() -> None:
     food_numeric_columns = {
         column.name for column in Food.__table__.columns if isinstance(column.type, Numeric)
     }
-    group_numeric_columns = {
-        column.name
-        for column in FoodGroupContribution.__table__.columns
-        if isinstance(column.type, Numeric)
-    }
-
     assert set(FOOD_NUMERIC_COLUMNS) == food_numeric_columns
-    assert set(FOOD_GROUP_NUMERIC_COLUMNS) == group_numeric_columns
-    assert set(FOOD_GROUP_NUMERIC_FIELDS) == group_numeric_columns
-    assert set(FOOD_GROUP_NUMERIC_FIELDS) == direct_float_fields(FoodGroupContributionInput)
     assert set(FOOD_NUMERIC_FIELDS) == direct_float_fields(FoodCreate)
     assert set(FOOD_NUMERIC_FIELDS) == direct_float_fields(FoodUpdate)
     assert set(FOOD_NUMERIC_FIELDS) | set(
@@ -1413,36 +1191,6 @@ def test_plan009_partial_update_rejects_non_finite_without_mutation(
     assert stored.json()[field] == before
 
 
-@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
-def test_plan009_nested_group_amount_rejects_non_finite(
-    api_client: TestClient, constant: str
-) -> None:
-    payload = food_json(
-        name=f"Non finite group {constant}",
-        group_contributions=[
-            {
-                "group_key": "fruits",
-                "amount_per_100_basis": 1,
-                "data_status": "known",
-            }
-        ],
-    )
-    raw = json.dumps(payload, separators=(",", ":")).replace(
-        '"amount_per_100_basis":1',
-        f'"amount_per_100_basis":{constant}',
-        1,
-    )
-
-    response = api_client.post(
-        "/foods",
-        content=raw,
-        headers={**auth_headers(), "Content-Type": "application/json"},
-    )
-
-    errors = error_by_field(response)
-    assert errors["amount_per_100_basis"]["field"] == "amount_per_100_basis"
-
-
 def test_plan009_zero_null_and_inclusive_bounds_remain_valid(api_client: TestClient) -> None:
     created = api_client.post(
         "/foods",
@@ -1456,13 +1204,6 @@ def test_plan009_zero_null_and_inclusive_bounds_remain_valid(api_client: TestCli
             fiber_g=0,
             sugar_g=None,
             sodium_mg=50000,
-            group_contributions=[
-                {
-                    "group_key": "fruits",
-                    "amount_per_100_basis": 100,
-                    "data_status": "known",
-                }
-            ],
         ),
         headers=auth_headers(),
     )
@@ -1470,7 +1211,6 @@ def test_plan009_zero_null_and_inclusive_bounds_remain_valid(api_client: TestCli
     assert created.status_code == 201, created.text
     assert created.json()["fiber_g"] == 0
     assert created.json()["sugar_g"] is None
-    assert created.json()["group_contributions"][0]["amount_per_100_basis"] == 100
 
 
 @pytest.mark.parametrize(
@@ -1504,80 +1244,42 @@ def test_plan009_numeric_boundaries_are_enforced(
         FoodCreate.model_validate(food_payload(**(dependencies | {field: maximum + 0.01})))
 
 
-def test_plan009_create_response_failure_rolls_back_parent_and_children(monkeypatch) -> None:
+def test_plan009_create_response_failure_rolls_back_food(monkeypatch) -> None:
     with session_fixture() as session:
 
         def fail_response(*_args, **_kwargs):
             raise RuntimeError("injected response validation failure")
 
         monkeypatch.setattr("app.services.food.to_food_response", fail_response)
-        payload = FoodCreate.model_validate(
-            food_payload(
-                name="Rollback create",
-                group_contributions=[
-                    {
-                        "group_key": "fruits",
-                        "amount_per_100_basis": 100,
-                        "data_status": "known",
-                    }
-                ],
-            )
-        )
+        payload = FoodCreate.model_validate(food_payload(name="Rollback create"))
 
         with pytest.raises(RuntimeError, match="injected response validation failure"):
             create_food_response(session, TEST_PRINCIPAL, payload)
 
         assert session.exec(select(Food).where(Food.name == "Rollback create")).first() is None
-        assert session.exec(select(FoodGroupContribution)).all() == []
 
 
-def test_plan009_update_response_failure_rolls_back_parent_and_children(monkeypatch) -> None:
+def test_plan009_update_response_failure_rolls_back_food(monkeypatch) -> None:
     with session_fixture() as session:
         food = create_food(
             session,
             TEST_PRINCIPAL,
-            FoodCreate.model_validate(
-                food_payload(
-                    name="Rollback update original",
-                    group_contributions=[
-                        {
-                            "group_key": "fruits",
-                            "amount_per_100_basis": 100,
-                            "data_status": "known",
-                        }
-                    ],
-                )
-            ),
+            FoodCreate.model_validate(food_payload(name="Rollback update original")),
         )
 
         def fail_response(*_args, **_kwargs):
             raise RuntimeError("injected response validation failure")
 
         monkeypatch.setattr("app.services.food.to_food_response", fail_response)
-        update = FoodUpdate.model_validate(
-            {
-                "name": "Rollback update changed",
-                "group_contributions": [
-                    {
-                        "group_key": "vegetables",
-                        "amount_per_100_basis": 100,
-                        "data_status": "known",
-                    }
-                ],
-            }
-        )
+        update = FoodUpdate.model_validate({"name": "Rollback update changed"})
 
         with pytest.raises(RuntimeError, match="injected response validation failure"):
             update_food_response(session, TEST_PRINCIPAL, food.id, update)
 
         session.expire_all()
         stored = session.get(Food, food.id)
-        contributions = session.exec(
-            select(FoodGroupContribution).where(FoodGroupContribution.food_id == food.id)
-        ).all()
         assert stored is not None
         assert stored.name == "Rollback update original"
-        assert [item.group_key for item in contributions] == ["fruits"]
 
 
 @pytest.mark.parametrize("constant", [float("nan"), float("inf"), float("-inf")])

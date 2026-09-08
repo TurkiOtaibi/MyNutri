@@ -31,7 +31,15 @@ test.describe("Food creation @foods", () => {
 
   test("[FOOD-TC-038] @p1 form has the approved grouped sections", async ({ page }) => {
     await page.goto("/foods/new");
-    for (const title of ["معلومات الطعام الأساسية", "أساس القيم الغذائية", "القيم الغذائية الأساسية", "الوحدة الافتراضية", "ملاحظات ومصدر البيانات"]) {
+    for (const title of [
+      "معلومات الطعام الأساسية",
+      "أساس القيم الغذائية",
+      "القيم الغذائية الأساسية",
+      "الوحدة الافتراضية",
+      "مصدر البيانات الغذائية",
+      "المكونات",
+      "ملاحظات"
+    ]) {
       await expect(page.getByRole("heading", { name: title })).toBeVisible();
     }
     await expect(page.getByText("القيم الغذائية الإضافية", { exact: true })).toBeVisible();

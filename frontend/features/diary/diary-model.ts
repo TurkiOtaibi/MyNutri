@@ -1,6 +1,6 @@
 import { formatLongArabicDate } from "@/lib/dates";
 import { defaultUnitLabels, formatServingMacro, unitBasisLabels } from "@/lib/food";
-import type { DiaryDayStatusResponse, DiaryEntryResponse, DiaryLoggingStatus, FoodPickerItem, MealType, NutritionSnapshot, NutritionTotals } from "@/lib/types";
+import type { DiaryDayStatusResponse, DiaryEntryResponse, DiaryLoggingStatus, FoodPickerItem, MealType, NutritionTotals } from "@/lib/types";
 
 export const dayLoggingStatusLabels: Record<DiaryLoggingStatus, string> = {
   unregistered: "غير مسجل",
@@ -37,10 +37,6 @@ export function statusCommandDialogCopy(action: "complete" | "reopen", empty: bo
       : "تأكد من اكتمال وجباتك قبل إنهاء تسجيل اليوم.",
     confirmLabel: pending ? "جارٍ الحفظ…" : empty ? "إنهاء اليوم دون وجبات" : "إنهاء تسجيل اليوم"
   };
-}
-
-export function isDayAnalysisEligible(status: DiaryLoggingStatus): boolean {
-  return status === "complete";
 }
 
 export function isFutureDiaryStatus(status: DiaryDayStatusResponse): boolean {
@@ -139,16 +135,7 @@ export function validateQuantity(value: string): string {
 }
 
 export function entryQuantityLabel(entry: DiaryEntryResponse): string {
-  const snapshot = entry.nutrition_snapshot;
-  const unit = snapshot.default_unit_type ? defaultUnitLabels[snapshot.default_unit_type] : "حصة";
-  const basis = snapshot.unit_basis ? unitBasisLabels[snapshot.unit_basis] : "جم";
-  const amount = snapshot.unit_amount ? Number(snapshot.unit_amount) * entry.quantity : null;
-  return amount ? `${formatServingMacro(entry.quantity)} ${unit} · ${formatServingMacro(amount)} ${basis}` : `${formatServingMacro(entry.quantity)} ${snapshotUnitLabel(snapshot)}`;
-}
-
-export function snapshotUnitLabel(snapshot: NutritionSnapshot): string {
-  if (snapshot.default_unit_type && snapshot.unit_amount && snapshot.unit_basis) {
-    return `${defaultUnitLabels[snapshot.default_unit_type]} (${snapshot.unit_amount} ${unitBasisLabels[snapshot.unit_basis]})`;
-  }
-  return snapshot.serving_label ?? "حصة";
+  const unit = entry.recorded_unit_label ?? defaultUnitLabels[entry.recorded_unit_type];
+  const amount = Number(entry.recorded_unit_amount) * entry.quantity;
+  return `${formatServingMacro(entry.quantity)} ${unit} · ${formatServingMacro(amount)} ${unitBasisLabels[entry.recorded_unit_basis]}`;
 }

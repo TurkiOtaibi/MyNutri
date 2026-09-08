@@ -23,7 +23,7 @@ import {
 import type { FoodResponse } from "@/lib/types";
 
 import { FoodDeleteDialog } from "./FoodDeleteDialog";
-import { FoodFormActions, FoodGroupFields, FormSection, NumberField, SelectField, TextAreaField, TextField } from "@/features/foods/food-form-fields";
+import { FoodFormActions, FormSection, NumberField, SelectField, TextAreaField, TextField } from "@/features/foods/food-form-fields";
 import { mapFoodApiError, optionalFields } from "@/features/foods/food-form-model";
 import "@/features/foods/food-form.module.css";
 import { useFoodDelete } from "./useFoodDelete";
@@ -162,19 +162,18 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   }
 
   function updateFoodCategory(value: string) {
+    const definition = registryQuery.data?.food_taxonomy.find((item) => item.key === value);
     setForm((current) => ({
       ...current,
-      food_category_key: value,
-      grain_type: ["baked_goods", "grains_starches"].includes(value) ? current.grain_type ?? "unknown" : null,
-      baked_good_type: value === "baked_goods" ? current.baked_good_type : null,
-      grain_starch_type: value === "grains_starches" ? current.grain_starch_type : null
+      primary_category: value,
+      subcategory: definition?.subcategories.some((item) => item.key === current.subcategory)
+        ? current.subcategory
+        : (definition?.subcategories[0]?.key ?? "other")
     }));
     setErrors((current) => {
       const next = { ...current };
-      delete next.food_category_key;
-      delete next.baked_good_type;
-      delete next.grain_starch_type;
-      delete next.grain_type;
+      delete next.primary_category;
+      delete next.subcategory;
       delete next.form;
       return next;
     });
@@ -182,7 +181,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saveMutation.isPending || !registryQuery.data || registryQuery.data.registry_schema_version !== 3) return;
+    if (saveMutation.isPending || !registryQuery.data || registryQuery.data.registry_schema_version !== 4) return;
     const nextErrors = validateFoodForm(form);
     setErrors(nextErrors);
     if (hasFoodErrors(nextErrors)) {
@@ -237,7 +236,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     );
   }
 
-  if (registryQuery.data.registry_schema_version !== 3) {
+  if (registryQuery.data.registry_schema_version !== 4) {
     return (
       <section className="section-panel">
         <div className="state-note" role="alert">إصدار سجل التغذية غير متوافق. يلزم تحديث التطبيق أو التواصل مع الدعم قبل حفظ الطعام.</div>
@@ -250,8 +249,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   }
 
   const registry = registryQuery.data;
-  const selectedSource = registry.source_types.find((item) => item.type === form.nutrition_source.type);
-  const reliabilityLabel = registry.reliability_levels.find((item) => item.key === selectedSource?.reliability)?.label_ar ?? "غير معروفة";
+  const selectedCategory = registry.food_taxonomy.find((item) => item.key === form.primary_category);
 
   return (
     <>
@@ -294,33 +292,20 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
           <TextField label="اسم الطعام" value={form.name} required maxLength={foodTextMax.name} error={errors.name} onChange={(value) => update("name", value)} />
           <TextField label="العلامة التجارية" value={form.brand ?? ""} maxLength={foodTextMax.brand} error={errors.brand} onChange={(value) => update("brand", value)} />
           <SelectField
-            label="فئة الطعام"
-            value={form.food_category_key}
+            label="التصنيف الرئيسي"
+            value={form.primary_category}
             required
-            error={errors.food_category_key}
+            error={errors.primary_category}
             onChange={updateFoodCategory}
-            options={registry.food_category_definitions.map((item) => [item.key, item.label_ar])}
+            options={registry.food_taxonomy.map((item) => [item.key, item.label_ar])}
           />
-          {form.food_category_key === "baked_goods" ? (
-            <SelectField label="نوع المخبوزات" value={form.baked_good_type ?? ""} placeholder="اختر نوع المخبوزات" required error={errors.baked_good_type} onChange={(value) => update("baked_good_type", value as FoodFormValues["baked_good_type"])} options={registry.baked_good_type_definitions.map((item) => [item.key, item.label_ar])} />
-          ) : null}
-          {form.food_category_key === "grains_starches" ? (
-            <SelectField label="نوع الحبوب أو النشويات" value={form.grain_starch_type ?? ""} placeholder="اختر نوع الحبوب أو النشويات" required error={errors.grain_starch_type} onChange={(value) => update("grain_starch_type", value as FoodFormValues["grain_starch_type"])} options={registry.grain_starch_type_definitions.map((item) => [item.key, item.label_ar])} />
-          ) : null}
-          {["baked_goods", "grains_starches"].includes(form.food_category_key) ? (
-            <SelectField label="نوع الحبوب" value={form.grain_type ?? "unknown"} required error={errors.grain_type} onChange={(value) => update("grain_type", value as FoodFormValues["grain_type"])} options={registry.grain_type_definitions.map((item) => [item.key, item.label_ar])} />
-          ) : null}
           <SelectField
-            label="نوع الطعام"
-            value={form.food_kind}
+            label="التصنيف الفرعي"
+            value={form.subcategory}
             required
-            error={errors.food_kind}
-            onChange={(value) => update("food_kind", value as FoodFormValues["food_kind"])}
-            options={[
-              ["simple", "بسيط"],
-              ["composite", "مركب"],
-              ...(form.food_kind === "unknown" ? [["unknown", "قديم غير مصنف"] as [string, string]] : [])
-            ]}
+            error={errors.subcategory}
+            onChange={(value) => update("subcategory", value)}
+            options={(selectedCategory?.subcategories ?? []).map((item) => [item.key, item.label_ar])}
           />
         </FormSection>
 
@@ -389,38 +374,22 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
         </details>
 
         <FormSection title="مصدر البيانات الغذائية">
-          {errors.nutrition_source ? <div className="field-error" role="alert">{errors.nutrition_source}</div> : null}
           <SelectField
-            label="نوع المصدر"
-            value={form.nutrition_source.type}
+            label="مصدر البيانات الغذائية"
+            value={form.nutrition_data_source}
             required
-            error={errors.nutrition_source}
-            onChange={(value) => setForm((current) => ({ ...current, nutrition_source: { ...current.nutrition_source, type: value as FoodFormValues["nutrition_source"]["type"] } }))}
-            options={registry.source_types.map((item) => [item.type, item.label_ar])}
+            error={errors.nutrition_data_source}
+            onChange={(value) => update("nutrition_data_source", value as FoodFormValues["nutrition_data_source"])}
+            options={registry.nutrition_data_sources.map((item) => [item.key, item.label_ar])}
           />
-          <TextField label="اسم المصدر" value={form.nutrition_source.name ?? ""} required={form.nutrition_source.type !== "unknown"} onChange={(value) => setForm((current) => ({ ...current, nutrition_source: { ...current.nutrition_source, name: value } }))} />
-          <TextField label="مرجع المصدر" value={form.nutrition_source.reference ?? ""} onChange={(value) => setForm((current) => ({ ...current, nutrition_source: { ...current.nutrition_source, reference: value } }))} />
-          <div className="field"><span>موثوقية المصدر</span><div className="input" aria-label="موثوقية المصدر الحالية">{reliabilityLabel}</div></div>
         </FormSection>
 
         <FormSection title="المكونات">
-          {errors.ingredients ? <div className="field-error" role="alert">{errors.ingredients}</div> : null}
-          <TextAreaField label="المكونات" value={form.ingredients.text ?? ""} onChange={(value) => setForm((current) => ({ ...current, ingredients: { ...current.ingredients, text: value } }))} />
-          <SelectField
-            label="نوع مصدر المكونات"
-            value={form.ingredients.source_type ?? ""}
-            onChange={(value) => setForm((current) => ({ ...current, ingredients: { ...current.ingredients, source_type: (value || null) as FoodFormValues["ingredients"]["source_type"] } }))}
-            options={[["", "غير محدد"], ...registry.ingredient_source_definitions.map((item) => [item.type, item.label_ar] as [string, string])]}
-          />
-          <TextField label="اسم مصدر المكونات" value={form.ingredients.source_name ?? ""} onChange={(value) => setForm((current) => ({ ...current, ingredients: { ...current.ingredients, source_name: value } }))} />
-          <TextField label="مرجع مصدر المكونات" value={form.ingredients.source_reference ?? ""} onChange={(value) => setForm((current) => ({ ...current, ingredients: { ...current.ingredients, source_reference: value } }))} />
+          <TextAreaField label="المكونات" value={form.ingredients ?? ""} error={errors.ingredients} onChange={(value) => update("ingredients", value)} />
         </FormSection>
 
-        <FoodGroupFields form={form} setForm={setForm} registry={registry} error={errors.group_contributions ?? errors.analytical_traits} />
-
-        <FormSection title="ملاحظات ومصدر البيانات">
+        <FormSection title="ملاحظات">
           <TextAreaField label="ملاحظات" value={form.notes ?? ""} maxLength={foodTextMax.notes} error={errors.notes} onChange={(value) => update("notes", value)} />
-          <TextField label="مصدر البيانات" value={form.data_source ?? ""} maxLength={foodTextMax.data_source} error={errors.data_source} onChange={(value) => update("data_source", value)} />
         </FormSection>
 
         <FoodFormActions isEdit={isEdit} foodId={foodId} pending={saveMutation.isPending} food={foodQuery.data ?? null} onDelete={setDeleteTarget} />

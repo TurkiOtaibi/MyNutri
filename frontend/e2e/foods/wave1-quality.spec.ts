@@ -1,64 +1,42 @@
 import { expect, expectNoHorizontalOverflow, test, uniqueName, validFood } from "./helpers";
 
-test("Wave 1 Food API preserves exact values and derives source reliability", async ({ foodsApi }) => {
+test("Food API preserves exact nullable nutrients and simplified source metadata", async ({ foodsApi }) => {
   const food = await foodsApi.create({
-    name: `NOVA: Protein Bar ${uniqueName("Quality-contract")}`,
-    brand: "Nova Foods",
-    food_category_key: "dairy_fortified_alternatives",
-    food_kind: "composite",
+    name: uniqueName("Quality-contract"),
+    brand: "Quality Foods",
+    primary_category: "dairy_products",
+    subcategory: "yogurt",
     selenium_mcg: 0,
     iodine_mcg: null,
     folate_dfe_mcg: 425.125,
     vitamin_a_rae_mcg: 700,
-    nutrition_source: {
-      type: "multiple_sources",
-      name: "بطاقة وقاعدة بيانات",
-      reference: null
-    },
-    ingredients: {
-      text: "حليب، سكر",
-      source_type: "official_product_label",
-      source_name: "البطاقة",
-      source_reference: null
-    },
-    group_contributions: [
-      {
-        group_key: "dairy_fortified_alternatives",
-        subtype_key: "yogurt",
-        amount_per_100_basis: 80,
-        data_status: "estimated"
-      }
-    ],
-    analytical_traits: ["sweetened"]
+    nutrition_data_source: "official",
+    ingredients: "حليب، سكر"
   });
 
   expect(food.selenium_mcg).toBe(0);
   expect(food.iodine_mcg).toBeNull();
   expect(food.folate_dfe_mcg).toBe(425.125);
-  expect(food.nutrition_source).toMatchObject({ type: "multiple_sources", reliability: "mixed" });
-  expect(food.name).toContain("NOVA: Protein Bar");
-  expect(food.brand).toBe("Nova Foods");
-  expect(food).not.toHaveProperty("nova");
-  expect(food.group_contributions).toHaveLength(1);
-  expect(food.analytical_traits).toEqual(["sweetened"]);
+  expect(food.nutrition_data_source).toBe("official");
+  expect(food.ingredients).toBe("حليب، سكر");
+  expect(food.primary_category).toBe("dairy_products");
+  expect(food.subcategory).toBe("yogurt");
 });
 
-test("new Food UI consumes Registry controls and saves controlled fields", async ({ page }) => {
+test("new Food UI consumes the approved taxonomy and source registry", async ({ page }) => {
   await page.goto("/foods/new");
   await expect(page.getByLabel("فيتامين A mcg", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("فولات mcg", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel(/RAE/)).toHaveCount(1);
   await expect(page.getByLabel(/DFE/)).toHaveCount(1);
   await page.getByLabel(/اسم الطعام/).fill(uniqueName("Registry-form"));
-  await page.getByLabel(/فئة الطعام/).selectOption("fruits");
-  await page.getByLabel(/نوع الطعام/).selectOption("simple");
+  await page.getByLabel("التصنيف الرئيسي").selectOption("fruits");
+  await page.getByLabel("التصنيف الفرعي").selectOption("berries");
   await page.getByLabel(/السعرات/).fill("80");
   await page.getByLabel(/البروتين g/).fill("1");
   await page.getByLabel(/الكارب g/).fill("18");
   await page.getByLabel(/الدهون g/).fill("0");
-  await page.getByLabel(/نوع المصدر/).selectOption("official_food_database");
-  await page.getByLabel(/اسم المصدر/).fill("قاعدة رسمية");
-  await expect(page.getByText("مرتفعة", { exact: true })).toBeVisible();
+  await page.getByLabel("مصدر البيانات الغذائية").selectOption("official");
   const createResponse = page.waitForResponse(
     (response) => response.url().endsWith("/foods") && response.request().method() === "POST"
   );
@@ -67,31 +45,24 @@ test("new Food UI consumes Registry controls and saves controlled fields", async
 
   await expect(page).toHaveURL(/\/foods\/[0-9a-f-]+$/);
   await expect(page.getByText("الفواكه", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("مرتفعة", { exact: true })).toBeVisible();
+  await expect(page.getByText("التوت", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("رسمي", { exact: true })).toBeVisible();
 });
 
-test("unknown source is explicit and cannot accept client reliability", async ({ foodsApi }) => {
-  const payload = validFood({ name: uniqueName("No-client-reliability") }) as unknown as Record<string, unknown>;
-  payload.nutrition_source = {
-    type: "unknown",
-    name: null,
-    reference: null,
-    reliability: "high"
-  };
+test("retired nutrition-source metadata is rejected", async ({ foodsApi }) => {
+  const payload = validFood({ name: uniqueName("No-retired-source") }) as unknown as Record<string, unknown>;
+  payload.nutrition_source = { type: "unknown", reliability: "high" };
 
   const response = await foodsApi.createRaw(payload);
 
   expect(response.status()).toBe(422);
 });
 
-test("group and trait controls remain usable at 320px in RTL", async ({ page }) => {
+test("two-level taxonomy controls remain usable at 320px in RTL", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 });
   await page.goto("/foods/new");
-  await page.locator("details", { hasText: "التحليل الغذائي المتقدم" }).locator("summary").click();
-  await page.getByRole("button", { name: "إضافة مجموعة غذائية" }).click();
-
-  await expect(page.getByLabel("المجموعة 1")).toBeVisible();
-  await page.getByRole("button", { name: "عرض المزيد" }).click();
-  await expect(page.getByLabel("محلى", { exact: true })).toBeVisible();
+  await page.getByLabel("التصنيف الرئيسي").selectOption("grains_and_starches");
+  await page.getByLabel("التصنيف الفرعي").selectOption("jareesh");
+  await expect(page.getByLabel("التصنيف الفرعي")).toHaveValue("jareesh");
   await expectNoHorizontalOverflow(page);
 });

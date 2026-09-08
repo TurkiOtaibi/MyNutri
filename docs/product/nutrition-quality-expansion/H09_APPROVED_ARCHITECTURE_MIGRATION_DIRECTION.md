@@ -1,5 +1,15 @@
 # H09 Approved Architecture And Migration Direction
 
+> **Authority update — superseded for the simplified Food/current-Diary release.**
+> This file is retained as historical decision evidence. It is not implementation
+> authority for Food taxonomy/provenance, Food nutrition snapshots, NOVA, Food
+> Groups, Food Analytical Traits, Pattern Analysis, or Weekly Priority. Current
+> authority is [V2 Scope and Decisions](../v2/01_V2_SCOPE_AND_DECISIONS.md),
+> [Shared Food Catalog](../v2/04_SHARED_FOOD_CATALOG.md), and
+> [V2 Food Taxonomy](../v2/05_FOOD_TAXONOMY_V2.md). Unaffected Target Plan,
+> authentication, authorization, nutrient-nullability, and Diary-event requirements
+> remain applicable only where they do not conflict with those current authorities.
+
 ## 1. Issue Identity
 
 | Field | Value |

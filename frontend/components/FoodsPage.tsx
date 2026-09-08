@@ -56,7 +56,7 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FoodResponse | null>(null);
   const [note, setNote] = useState("");
-  const [status, setStatus] = useState<"active" | "archived">("active");
+  const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
   const [lifecycleFocusRequest, setLifecycleFocusRequest] = useState(0);
   const statusControlRef = useRef<HTMLSelectElement | null>(null);
   const completedLifecycleFocusRequestRef = useRef(0);
@@ -65,12 +65,12 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
     search?: string;
     category?: string;
     sort?: FoodSort;
-    status?: "active" | "archived";
+    archiveView?: "active" | "archived";
   }) => {
     if (next.search !== undefined) setSearch(next.search);
     if (next.category !== undefined) setCategory(next.category);
     if (next.sort !== undefined) setSort(next.sort);
-    if (next.status !== undefined) setStatus(next.status);
+    if (next.archiveView !== undefined) setArchiveView(next.archiveView);
     setPage(1);
     setMobileItems([]);
     setOpenMenuId(null);
@@ -86,8 +86,15 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
   }, [resetCollection, searchInput, search]);
 
   const foodsQuery = useQuery({
-    queryKey: ["foods", adminMode ? "admin" : "catalog", search, category, sort, page, status],
-    queryFn: () => (adminMode ? listAdminFoodsPage : listFoodsPage)({ search, category, sort, page, pageSize: PAGE_SIZE, status })
+    queryKey: ["foods", adminMode ? "admin" : "catalog", search, category, sort, page, archiveView],
+    queryFn: () => (adminMode ? listAdminFoodsPage : listFoodsPage)({
+      search,
+      category,
+      sort,
+      page,
+      pageSize: PAGE_SIZE,
+      archived: adminMode ? archiveView === "archived" : undefined
+    })
   });
   const registryQuery = useQuery({ queryKey: ["nutrition-registry"], queryFn: getNutritionRegistry });
 
@@ -147,7 +154,7 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
   });
 
   const data = foodsQuery.data;
-  const hasFilters = Boolean(search || category || (adminMode && status !== "active"));
+  const hasFilters = Boolean(search || category || (adminMode && archiveView !== "active"));
   const desktopFoods = data?.items ?? [];
   const canLoadMore = Boolean(data && page < data.total_pages);
   const shownMobileCount = Math.min(mobileItems.length, data?.total ?? mobileItems.length);
@@ -156,20 +163,20 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
       { value: "", label: "الكل" },
       ...knownCategories.map((value) => ({
         value,
-        label: registryQuery.data?.food_category_definitions.find((item) => item.key === value)?.label_ar ?? value
+        label: registryQuery.data?.food_taxonomy.find((item) => item.key === value)?.label_ar ?? value
       })),
       ...(uncategorizedCount > 0 ? [{ value: UNCATEGORIZED, label: "غير مصنف" }] : [])
     ],
     [knownCategories, uncategorizedCount, registryQuery.data]
   );
   const categoryLabels = useMemo(
-    () => new Map(registryQuery.data?.food_category_definitions.map((item) => [item.key, item.label_ar]) ?? []),
+    () => new Map(registryQuery.data?.food_taxonomy.map((item) => [item.key, item.label_ar]) ?? []),
     [registryQuery.data]
   );
 
   function clearFilters() {
     setSearchInput("");
-    resetCollection({ search: "", category: "", status: "active" });
+    resetCollection({ search: "", category: "", archiveView: "active" });
   }
 
   return (
@@ -208,11 +215,11 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
           <div className="foods-controls">
             {adminMode ? (
               <label className="compact-control foods-admin-status-control">
-                <span>الحالة</span>
+                <span>عرض الأرشيف</span>
                 <select
                   ref={statusControlRef}
-                  value={status}
-                  onChange={(event) => resetCollection({ status: event.target.value as "active" | "archived" })}
+                  value={archiveView}
+                  onChange={(event) => resetCollection({ archiveView: event.target.value as "active" | "archived" })}
                 >
                   <option value="active">نشط</option>
                   <option value="archived">مؤرشف</option>
@@ -341,7 +348,7 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
                       onDelete={() => setDeleteTarget(food)}
                       onLifecycleSuccess={completeLifecycleSuccess}
                       adminMode={adminMode}
-                      categoryLabel={categoryLabels.get(food.food_category_key) ?? food.food_category_key}
+                      categoryLabel={categoryLabels.get(food.primary_category) ?? food.primary_category}
                     />
                   ))}
                 </tbody>
@@ -358,7 +365,7 @@ export function FoodsPage({ adminMode = false }: { adminMode?: boolean }) {
                   onDelete={() => setDeleteTarget(food)}
                   onLifecycleSuccess={completeLifecycleSuccess}
                   adminMode={adminMode}
-                  categoryLabel={categoryLabels.get(food.food_category_key) ?? food.food_category_key}
+                  categoryLabel={categoryLabels.get(food.primary_category) ?? food.primary_category}
                 />
               ))}
               {foodsQuery.isPending && page > 1 ? <div className="loading-more" role="status">جاري تحميل المزيد...</div> : null}
@@ -515,8 +522,8 @@ function FoodActionsMenu({
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const firstItemRef = useRef<HTMLAnchorElement | null>(null);
   const errorRef = useRef<HTMLDivElement | null>(null);
-  const statusMutation = useMutation({
-    mutationFn: () => food.status === "archived"
+  const archiveMutation = useMutation({
+    mutationFn: () => food.archived_at
       ? restoreFood(food.id, accessToken, sessionSignal)
       : archiveFood(food.id, accessToken, sessionSignal),
     onSuccess: async () => {
@@ -531,8 +538,8 @@ function FoodActionsMenu({
   }, [open]);
 
   useEffect(() => {
-    if (open && statusMutation.isError) errorRef.current?.focus();
-  }, [open, statusMutation.isError]);
+    if (open && archiveMutation.isError) errorRef.current?.focus();
+  }, [open, archiveMutation.isError]);
 
   useEffect(() => {
     if (!open) return;
@@ -576,11 +583,11 @@ function FoodActionsMenu({
             <button
               type="button"
               role="menuitem"
-              disabled={statusMutation.isPending}
-              onClick={() => statusMutation.mutate()}
+              disabled={archiveMutation.isPending}
+              onClick={() => archiveMutation.mutate()}
             >
               <RotateCcw size={17} aria-hidden="true" />
-              {food.status === "archived" ? "استعادة" : "أرشفة"}
+              {food.archived_at ? "استعادة" : "أرشفة"}
             </button>
             <button
               type="button"
@@ -592,7 +599,7 @@ function FoodActionsMenu({
               حذف
             </button>
           </div>
-          {statusMutation.isError ? (
+          {archiveMutation.isError ? (
             <div
               ref={errorRef}
               className="food-lifecycle-error"
@@ -602,8 +609,8 @@ function FoodActionsMenu({
               <span>{WRITE_ERROR}</span>
               <button
                 type="button"
-                disabled={statusMutation.isPending}
-                onClick={() => statusMutation.mutate()}
+                disabled={archiveMutation.isPending}
+                onClick={() => archiveMutation.mutate()}
               >
                 إعادة المحاولة
               </button>

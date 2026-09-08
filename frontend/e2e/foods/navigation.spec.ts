@@ -35,7 +35,15 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     const food = await foodsApi.create({ name: "E2E Edit Structure" });
     await page.goto(`/foods/${food.id}/edit`);
     await expect(page.getByRole("heading", { name: "تعديل الطعام" })).toBeVisible();
-    for (const heading of ["معلومات الطعام الأساسية", "أساس القيم الغذائية", "القيم الغذائية الأساسية", "الوحدة الافتراضية", "ملاحظات ومصدر البيانات"]) {
+    for (const heading of [
+      "معلومات الطعام الأساسية",
+      "أساس القيم الغذائية",
+      "القيم الغذائية الأساسية",
+      "الوحدة الافتراضية",
+      "مصدر البيانات الغذائية",
+      "المكونات",
+      "ملاحظات"
+    ]) {
       await expect(page.getByRole("heading", { name: heading })).toBeVisible();
     }
     await expect(page.getByLabel(/اسم الطعام/)).toHaveValue(food.name);
@@ -260,11 +268,15 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     expect(createDocumentRequests).toBe(0);
     const input = page.getByLabel(/اسم الطعام/);
     await input.fill("E2E Plan016 Forward draft");
-    const category = page.getByLabel("فئة الطعام");
-    await category.selectOption("baked_goods");
-    await expect(page.getByLabel("نوع المخبوزات")).toBeVisible();
-    await category.selectOption("other");
-    await expect(page.getByLabel("نوع المخبوزات")).toHaveCount(0);
+    const primaryCategory = page.getByLabel(/التصنيف الرئيسي/);
+    const subcategory = page.getByLabel(/التصنيف الفرعي/);
+    await primaryCategory.selectOption("bakery");
+    await expect(subcategory).toHaveValue("other");
+    await expect(subcategory.locator('option[value="bread"]')).toHaveCount(1);
+    await subcategory.selectOption("croissant");
+    await expect(subcategory).toHaveValue("croissant");
+    await primaryCategory.selectOption("other");
+    await expect(subcategory).toHaveValue("other");
     await expect(input).toHaveValue("E2E Plan016 Forward draft");
     await page.evaluate(() => {
       const exposures: string[] = [];

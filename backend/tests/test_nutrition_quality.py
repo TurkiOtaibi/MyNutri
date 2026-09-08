@@ -1,8 +1,10 @@
 from datetime import date
+from uuid import uuid4
 
 from app.models import (
     ActivityLevel,
     DefaultUnitType,
+    DiaryEntry,
     Food,
     Goal,
     NutritionBasis,
@@ -12,7 +14,7 @@ from app.models import (
 from app.nutrition_rules.calculation import resolved_nutrient_targets
 from app.nutrition_rules.registry import NUTRIENTS
 from app.schemas import ProfilePreview, ProfileUpsert
-from app.services.diary import make_snapshot, totals_from_snapshot
+from app.services.diary import totals_for_entry
 from app.services.profile import preview_targets
 
 
@@ -117,9 +119,11 @@ def test_w1_gc_008_through_015_resolved_nutrient_targets() -> None:
     assert female_51["vitamin_a_rae_mcg"] == 700
 
 
-def test_snapshot_preserves_known_zero_unknown_and_scales_known_values() -> None:
+def test_current_food_totals_preserve_known_zero_unknown_and_scale_known_values() -> None:
     food = Food(
         name="Nutrient snapshot",
+        primary_category="other",
+        subcategory="other",
         nutrition_basis=NutritionBasis.per_100g,
         default_unit_type=DefaultUnitType.serving,
         unit_amount=50,
@@ -131,11 +135,18 @@ def test_snapshot_preserves_known_zero_unknown_and_scales_known_values() -> None
         fiber_g=0,
         sodium_mg=None,
         potassium_mg=400,
+        nutrition_data_source="estimated",
     )
-    snapshot = make_snapshot(food, 1)
-    assert snapshot["fiber_g"] == 0
-    assert snapshot["sodium_mg"] is None
-    totals = totals_from_snapshot(snapshot, 2)
+    entry = DiaryEntry(
+        principal_id=uuid4(),
+        entry_date=date(2026, 8, 1),
+        food_id=food.id,
+        quantity=2,
+        recorded_unit_type=DefaultUnitType.serving,
+        recorded_unit_amount=50,
+        recorded_unit_basis=UnitBasis.g,
+    )
+    totals = totals_for_entry(entry, food)
     assert totals.fiber_g == 0
     assert totals.sodium_mg is None
     assert totals.potassium_mg == 400

@@ -117,11 +117,8 @@ export const defaultUnitOptions: DefaultUnitType[] = [
 export const emptyFoodForm: FoodFormValues = {
   name: "",
   brand: null,
-  food_category_key: "other",
-  grain_type: null,
-  baked_good_type: null,
-  grain_starch_type: null,
-  food_kind: "simple",
+  primary_category: "other",
+  subcategory: "other",
   nutrition_basis: "per_100g",
   default_unit_type: "serving",
   unit_amount: 100,
@@ -153,11 +150,8 @@ export const emptyFoodForm: FoodFormValues = {
   vitamin_k_mcg: null,
   iodine_mcg: null,
   notes: null,
-  data_source: null,
-  nutrition_source: { type: "unknown", name: null, reference: null },
-  ingredients: { text: null, source_type: null, source_name: null, source_reference: null },
-  group_contributions: [],
-  analytical_traits: []
+  nutrition_data_source: "estimated",
+  ingredients: null
 };
 
 const REQUIRED_MESSAGE = "هذا الحقل مطلوب.";
@@ -168,8 +162,7 @@ const ABOVE_MAX_MESSAGE = "القيمة أعلى من الحد المسموح.";
 export const foodTextMax = {
   name: 120,
   brand: 80,
-  notes: 500,
-  data_source: 120
+  notes: 500
 } as const satisfies Partial<Record<keyof FoodFormValues, number>>;
 
 const optionalMax: Partial<Record<keyof FoodFormValues, number>> = {
@@ -203,23 +196,13 @@ export function foodToForm(food: FoodResponse): FoodFormValues {
     net_carbs_g: _netCarbs,
     created_at: _createdAt,
     updated_at: _updatedAt,
-    status: _status,
-    group_data_status: _groupStatus,
-    group_data_completeness: _groupCompleteness,
-    taxonomy_review_required: _taxonomyReview,
     archived_at: _archivedAt,
     legacy_nutrition: _legacyNutrition,
     ...editable
   } = food;
   return {
     ...emptyFoodForm,
-    ...editable,
-    nutrition_source: {
-      type: food.nutrition_source.type,
-      name: food.nutrition_source.name,
-      reference: food.nutrition_source.reference
-    },
-    group_contributions: food.group_contributions.map(({ food_group_rules_version: _, ...item }) => item)
+    ...editable
   };
 }
 
@@ -235,18 +218,7 @@ export function normalizeFoodForm(values: FoodFormValues): FoodInput {
     name: values.name.trim().replace(/\s+/g, " "),
     brand: cleanOptionalText(values.brand),
     notes: cleanOptionalText(values.notes),
-    data_source: cleanOptionalText(values.data_source),
-    nutrition_source: {
-      type: values.nutrition_source.type,
-      name: cleanOptionalText(values.nutrition_source.name),
-      reference: cleanOptionalText(values.nutrition_source.reference)
-    },
-    ingredients: {
-      text: cleanOptionalText(values.ingredients.text),
-      source_type: values.ingredients.source_type,
-      source_name: cleanOptionalText(values.ingredients.source_name),
-      source_reference: cleanOptionalText(values.ingredients.source_reference)
-    },
+    ingredients: cleanOptionalText(values.ingredients),
     calories: values.calories ?? 0,
     protein_g: values.protein_g ?? 0,
     carb_g: values.carb_g ?? 0,
@@ -285,46 +257,16 @@ export function validateFoodForm(values: FoodFormValues): FoodFormErrors {
   if (!normalizedName) errors.name = REQUIRED_MESSAGE;
   else if (normalizedName.length > foodTextMax.name) errors.name = ABOVE_MAX_MESSAGE;
 
-  for (const field of ["brand", "notes", "data_source"] as const) {
+  for (const field of ["brand", "notes"] as const) {
     const value = cleanOptionalText(values[field]);
     if (value != null && value.length > foodTextMax[field]) errors[field] = ABOVE_MAX_MESSAGE;
   }
   if (!values.nutrition_basis) errors.nutrition_basis = REQUIRED_MESSAGE;
   if (!values.default_unit_type) errors.default_unit_type = REQUIRED_MESSAGE;
   if (!values.unit_basis) errors.unit_basis = REQUIRED_MESSAGE;
-  if (!values.food_category_key) errors.food_category_key = REQUIRED_MESSAGE;
-  if (values.food_category_key === "baked_goods") {
-    if (!values.baked_good_type) errors.baked_good_type = REQUIRED_MESSAGE;
-    if (!values.grain_type) errors.grain_type = REQUIRED_MESSAGE;
-  } else if (values.food_category_key === "grains_starches") {
-    if (!values.grain_starch_type) errors.grain_starch_type = REQUIRED_MESSAGE;
-    if (!values.grain_type) errors.grain_type = REQUIRED_MESSAGE;
-  }
-  if (!values.food_kind || values.food_kind === "unknown") errors.food_kind = REQUIRED_MESSAGE;
-  if (values.nutrition_source.type !== "unknown" && !cleanOptionalText(values.nutrition_source.name)) {
-    errors.nutrition_source = "اسم مصدر البيانات الغذائية مطلوب لنوع المصدر المحدد.";
-  }
-  if (cleanOptionalText(values.ingredients.text) && !values.ingredients.source_type) {
-    errors.ingredients = "نوع مصدر المكونات مطلوب عند إدخال المكونات.";
-  } else if (
-    values.ingredients.source_type &&
-    values.ingredients.source_type !== "unknown" &&
-    !cleanOptionalText(values.ingredients.source_name)
-  ) {
-    errors.ingredients = "اسم مصدر المكونات مطلوب لنوع المصدر المحدد.";
-  }
-  const groupKeys = values.group_contributions.map((item) => item.group_key);
-  const groupTotal = values.group_contributions.reduce(
-    (total, item) => total + item.amount_per_100_basis,
-    0
-  );
-  if (new Set(groupKeys).size !== groupKeys.length) {
-    errors.group_contributions = "لا يمكن تكرار المجموعة الغذائية للطعام نفسه.";
-  } else if (groupTotal > 100) {
-    errors.group_contributions = "مجموع مساهمات المجموعات الغذائية لا يمكن أن يتجاوز 100.";
-  } else if (values.group_contributions.some((item) => item.amount_per_100_basis <= 0)) {
-    errors.group_contributions = "يجب أن تكون كل مساهمة أكبر من صفر.";
-  }
+  if (!values.primary_category) errors.primary_category = REQUIRED_MESSAGE;
+  if (!values.subcategory) errors.subcategory = REQUIRED_MESSAGE;
+  if (!values.nutrition_data_source) errors.nutrition_data_source = REQUIRED_MESSAGE;
 
   validateNumber(errors, values, "unit_amount", { required: true, min: 1, max: 2000 });
   validateNumber(errors, values, "calories", { required: true, min: 0, max: 3000 });

@@ -119,20 +119,19 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
   }
 
   const food = foodQuery.data;
-  const registryCompatible = registryQuery.data?.registry_schema_version === 3;
+  const registryCompatible = registryQuery.data?.registry_schema_version === 4;
   const registry = registryCompatible ? registryQuery.data : undefined;
   const servingNutrition = calculateServingNutrition(food);
   const basisNutrition = perBasisNutrition(food);
   const displayedNutrition = mode === "serving" ? servingNutrition : basisNutrition;
   const basisLabel = nutritionBasisLabels[food.nutrition_basis];
   const registryNutrients = registry ? definitionsFromRegistry(registry) : null;
-  const categoryLabel = registry?.food_category_definitions.find((item) => item.key === food.food_category_key)?.label_ar;
-  const grainTypeLabel = registry?.grain_type_definitions.find((item) => item.key === food.grain_type)?.label_ar;
-  const bakedGoodLabel = registry?.baked_good_type_definitions.find((item) => item.key === food.baked_good_type)?.label_ar;
-  const grainStarchLabel = registry?.grain_starch_type_definitions.find((item) => item.key === food.grain_starch_type)?.label_ar;
-  const reliabilityLabel = registry?.reliability_levels.find((item) => item.key === food.nutrition_source.reliability)?.label_ar;
-  const groupLabels = new Map(registry?.food_group_definitions.map((item) => [item.key, item.label_ar]) ?? []);
-  const traitLabels = new Map(registry?.traits.map((item) => [item.key, item.label_ar]) ?? []);
+  const category = registry?.food_taxonomy.find((item) => item.key === food.primary_category);
+  const categoryLabel = category?.label_ar;
+  const subcategoryLabel = category?.subcategories.find((item) => item.key === food.subcategory)?.label_ar;
+  const nutritionSourceLabel = registry?.nutrition_data_sources.find(
+    (item) => item.key === food.nutrition_data_source
+  )?.label_ar;
 
   return (
     <>
@@ -143,7 +142,7 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
         <div className="food-detail-identity">
           <h1 className="food-detail-name" dir="auto">{food.name}</h1>
           <p className="food-detail-secondary" dir="auto">
-            {[food.brand, categoryLabel || food.food_category_key].filter(Boolean).join(" · ")}
+            {[food.brand, categoryLabel || food.primary_category].filter(Boolean).join(" · ")}
           </p>
           <span className="serving-badge detail-serving-badge">{defaultServingText(food)}</span>
         </div>
@@ -227,24 +226,15 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
         </div>
         <dl className="metadata-rows">
           {food.brand ? <MetadataRow label="العلامة التجارية" value={food.brand} autoDirection /> : null}
-          <MetadataRow label="فئة الطعام" value={categoryLabel ?? food.food_category_key} />
-          {bakedGoodLabel ? <MetadataRow label="نوع المخبوزات" value={bakedGoodLabel} /> : null}
-          {grainStarchLabel ? <MetadataRow label="نوع الحبوب أو النشويات" value={grainStarchLabel} /> : null}
-          {grainTypeLabel ? <MetadataRow label="نوع الحبوب" value={grainTypeLabel} /> : null}
-          <MetadataRow label="نوع الطعام" value={food.food_kind === "simple" ? "بسيط" : food.food_kind === "composite" ? "مركب" : "قديم غير مراجع"} />
+          <MetadataRow label="التصنيف الرئيسي" value={categoryLabel ?? food.primary_category} />
+          <MetadataRow label="التصنيف الفرعي" value={subcategoryLabel ?? food.subcategory} />
           <MetadataRow label="أساس القيم" value={basisLabel} />
           <MetadataRow label="تعريف الوحدة الافتراضية" value={defaultUnitText(food)} />
           {food.notes ? <MetadataRow label="ملاحظات" value={food.notes} multiline autoDirection /> : null}
-          <MetadataRow label="مصدر البيانات الغذائية" value={food.nutrition_source.name || registry?.source_types.find((item) => item.type === food.nutrition_source.type)?.label_ar || "غير متاح"} multiline autoDirection />
-          <MetadataRow label="موثوقية المصدر" value={reliabilityLabel ?? "غير معروفة"} />
-          {food.nutrition_source.reference ? <MetadataRow label="مرجع المصدر" value={food.nutrition_source.reference} multiline autoDirection /> : null}
-          {food.ingredients.text ? <MetadataRow label="المكونات" value={food.ingredients.text} multiline autoDirection /> : null}
-          <MetadataRow label="حالة بيانات المجموعات" value={`${food.group_data_status} · ${food.group_data_completeness}`} />
-          <MetadataRow label="مساهمات المجموعات" value={food.group_contributions.length ? food.group_contributions.map((item) => `${groupLabels.get(item.group_key) ?? item.group_key}: ${item.amount_per_100_basis}`).join("، ") : "لا توجد مساهمات مسجلة"} multiline />
-          <MetadataRow label="السمات التحليلية" value={food.analytical_traits.length ? food.analytical_traits.map((item) => traitLabels.get(item) ?? item).join("، ") : "لا توجد سمات مسجلة"} multiline />
+          <MetadataRow label="مصدر البيانات الغذائية" value={nutritionSourceLabel ?? food.nutrition_data_source} />
+          {food.ingredients ? <MetadataRow label="المكونات" value={food.ingredients} multiline autoDirection /> : null}
           {food.legacy_nutrition.folate_mcg != null ? <MetadataRow label="فولات قديم" value={`${food.legacy_nutrition.folate_mcg} مكجم · ${food.legacy_nutrition.meaning_ar}`} /> : null}
           {food.legacy_nutrition.vitamin_a_mcg != null ? <MetadataRow label="فيتامين A قديم" value={`${food.legacy_nutrition.vitamin_a_mcg} مكجم · ${food.legacy_nutrition.meaning_ar}`} /> : null}
-          {food.data_source ? <MetadataRow label="مصدر البيانات القديم" value={food.data_source} multiline autoDirection /> : null}
           <MetadataRow label="تاريخ الإنشاء" value={formatDate(food.created_at)} />
           <MetadataRow label="آخر تحديث" value={formatDate(food.updated_at)} />
         </dl>

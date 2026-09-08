@@ -49,27 +49,19 @@ const manifests = {
     "DiaryEntriesSkeleton",
   ],
   "features/diary/diary-model.ts": [
-    "dayLoggingStatusLabels", "isDayAnalysisEligible", "isFutureDiaryStatus", "mealLabels", "standardMeals", "shortWeekdays", "mealAddLabels",
+    "dayLoggingStatusLabels", "isFutureDiaryStatus", "mealLabels", "standardMeals", "shortWeekdays", "mealAddLabels",
     "mealItemCountLabel", "emptyNutritionTotals", "formatDiarySelectedDate",
     "pickerServingNutrition", "multiplyServing", "scaleEntryPreview", "parseQuantity",
-    "validateQuantity", "entryQuantityLabel", "snapshotUnitLabel",
+    "validateQuantity", "entryQuantityLabel",
   ],
   "features/diary/diary-hooks.ts": ["useDebouncedValue", "invalidateDiary"],
   "features/foods/food-form-model.ts": [
-    "optionalFields", "traitGroups", "traitHelp", "relevantTraitKeys",
-    "suggestedGroupKey", "subtypeKeys", "fieldId", "mapFoodApiError",
+    "optionalFields", "fieldId", "mapFoodApiError",
   ],
   "features/foods/food-form-fields.tsx": [
-    "FormSection", "FoodGroupFields", "FoodFormActions", "TextField",
+    "FormSection", "FoodFormActions", "TextField",
     "TextAreaField", "NumberField", "SelectField",
   ],
-  "features/progress/progress-model.ts": [
-    "ANALYSIS_COPY", "metricLabels", "AnalysisDisplayState", "displayState",
-    "visibleMetrics", "metricLabel", "metricStatusText", "formatMetricValue",
-    "AnalysisAttempt", "stableAnalysisAttempt", "PRIORITY_COPY", "goalStateCopy",
-    "goalActionCopy", "GoalCommandAttempt", "stableGoalCommandAttempt", "priorityMessage",
-  ],
-  "features/progress/progress-view.tsx": ["ProgressView"],
 } as const;
 
 function expectTransportBoundary(source: string) {
@@ -83,12 +75,6 @@ function expectTransportBoundary(source: string) {
   expect(source).toContain('apiFetch<DiaryEntryResponse>("/diary/entries"');
   expect(source).toContain('`/diary/days/${diaryDate}/status`');
   expect(source).toContain('`/diary/days/${diaryDate}/${action}`');
-  expect(source).toContain('"/progress/nutrition-analysis/v2/current"');
-  expect(source).toContain('"/progress/nutrition-analysis/v2/evaluate"');
-  expect(source).toContain('"/progress/weekly-priorities/current"');
-  expect(source).toContain('"/progress/behavior-goals/current"');
-  expect(source).toContain('`/progress/behavior-goals/${goalId}/commands`');
-  expect(source).toContain('"If-Match": etag ?? \'"analysis-none"\'');
   expect(source).toContain('headers: { "If-Match": `"day-${dayVersion}"` }');
   expect(source).toContain('throw new ApiError(message, response.status, detail, code)');
 }
@@ -193,7 +179,7 @@ describe("domain boundaries", () => {
   });
 
   it("enforces private feature direction and generated transport ownership", () => {
-    for (const domain of ["profile", "diary", "foods", "progress"]) {
+    for (const domain of ["profile", "diary", "foods"]) {
       for (const path of walk(`features/${domain}`).filter((item) => /\.(?:ts|tsx)$/.test(item))) {
         expect(read(path), path).not.toMatch(new RegExp(`@/features/(?!${domain}/)`));
       }
@@ -201,8 +187,6 @@ describe("domain boundaries", () => {
     expect(read("lib/types.ts")).toContain('from "./generated/openapi"');
     expect(read("lib/api.ts")).toContain('from "./generated/openapi"');
     expect(read("components/AdminUserDetailsPage.tsx")).not.toMatch(/Record<string, unknown>|as unknown as/);
-    expect(read("features/progress/progress-view.tsx")).not.toMatch(/\b(?:useQuery|useMutation|useState|useEffect)\b/);
-    expect(read("components/ProgressPage.tsx")).toMatch(/\buseQuery\b/);
   });
 
   it("moves representative exclusively owned selectors without global duplicates", () => {

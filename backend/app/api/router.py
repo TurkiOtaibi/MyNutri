@@ -7,8 +7,6 @@ from app.api.routes import (
     foods,
     health,
     nutrition,
-    nutrition_analysis,
-    weekly_priorities,
     profile,
     target_plans,
 )
@@ -20,10 +18,6 @@ api_router.include_router(admin.router)
 api_router.include_router(profile.router)
 api_router.include_router(target_plans.router)
 api_router.include_router(nutrition.router)
-api_router.include_router(nutrition_analysis.router)
-api_router.include_router(nutrition_analysis.admin_router)
-api_router.include_router(weekly_priorities.priority_router)
-api_router.include_router(weekly_priorities.goal_router)
 api_router.include_router(foods.router)
 api_router.include_router(foods.admin_router)
 api_router.include_router(diary.router)

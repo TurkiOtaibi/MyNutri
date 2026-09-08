@@ -7,7 +7,6 @@ from pydantic import SkipValidation
 from sqlmodel import Session
 
 from app.core.auth import PrincipalContext, get_principal_context, require_admin
-from app.models import FoodStatus
 from app.db.session import get_session
 from app.schemas import (
     FoodCreate,
@@ -153,7 +152,7 @@ admin_router = APIRouter(prefix="/admin/foods", tags=["admin-foods"])
 def read_admin_foods(
     search: str | None = None,
     category: str | None = None,
-    food_status: FoodStatus | None = Query(default=None, alias="status"),
+    archived: bool | None = Query(default=False),
     sort: FoodSort = "name",
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
@@ -165,7 +164,7 @@ def read_admin_foods(
         principal,
         search=search,
         category=category,
-        status=food_status,
+        archived=archived,
         sort=sort,
         page=page,
         page_size=page_size,

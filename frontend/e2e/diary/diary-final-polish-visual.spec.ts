@@ -241,7 +241,7 @@ test("@diary @visual capture final Diary polish states", async ({ page, request,
   await expect(fatProgress.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "22");
   await captureStableSummary(page, resolve(output, "03-summary-macros-9-1-22-390.png"));
   const comparisonEntries = await foodsApi.listDiary(comparisonDate);
-  const comparisonEntry = comparisonEntries.find((entry) => entry.nutrition_snapshot.name === comparison.name);
+  const comparisonEntry = comparisonEntries.find((entry) => entry.food.name === comparison.name);
   expect(comparisonEntry).toBeDefined();
   await request.delete(`${API_URL}/diary/${comparisonEntry!.id}`, { headers: { Authorization: `Bearer ${API_TOKEN}` } });
 

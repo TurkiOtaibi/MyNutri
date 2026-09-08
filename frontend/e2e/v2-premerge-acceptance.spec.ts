@@ -60,8 +60,8 @@ test("User A, User B, and Admin remain isolated through API and UI", async ({ br
     headers: auth(tokenA),
     data: {
       name: `Forbidden Food ${suffix}`,
-      food_category_key: "other",
-      food_kind: "simple",
+      primary_category: "other",
+      subcategory: "other",
       nutrition_basis: "per_100g",
       default_unit_type: "serving",
       unit_amount: 100,
@@ -70,7 +70,7 @@ test("User A, User B, and Admin remain isolated through API and UI", async ({ br
       protein_g: 1,
       carb_g: 20,
       fat_g: 1,
-      nutrition_source: { type: "unknown" }
+      nutrition_data_source: "estimated"
     }
   })).status()).toBe(403);
 

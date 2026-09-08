@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 
 import { test, expect, expectNoHorizontalOverflow, fillRequiredFoodForm, submitFoodForm, validFood } from "./helpers";
 
-function plan024AccessibleFood(idSuffix: number, name: string, status: "active" | "archived") {
+function plan024AccessibleFood(idSuffix: number, name: string, archived: boolean) {
   return {
     ...validFood({
       name,
@@ -11,10 +11,7 @@ function plan024AccessibleFood(idSuffix: number, name: string, status: "active" 
     }),
     id: `00000000-0000-4000-8000-${String(idSuffix).padStart(12, "0")}`,
     net_carbs_g: 20,
-    status,
-    archived_at: status === "archived" ? "2026-08-04T00:00:00Z" : null,
-    group_data_status: "unknown",
-    group_data_completeness: "unknown",
+    archived_at: archived ? "2026-08-04T00:00:00Z" : null,
     created_at: "2026-08-04T00:00:00Z",
     updated_at: "2026-08-04T00:00:00Z"
   };
@@ -75,15 +72,15 @@ test.describe("Foods mobile, RTL, and accessibility @foods", () => {
     }
   });
 
-  test("[FOOD-TC-145] @plan024 @p0 @mobile @a11y Admin status control is keyboard and touch safe", async ({ page }) => {
+  test("[FOOD-TC-145] @plan024 @p0 @mobile @a11y Admin archive control is keyboard and touch safe", async ({ page }) => {
     test.setTimeout(120_000);
 
     const activeFood = plan024AccessibleFood(
       271,
       `طعام عربي طويل ${"اسم ".repeat(12)}Mixed Latin Food`,
-      "active"
+      false
     );
-    const archivedFood = plan024AccessibleFood(272, "طعام مؤرشف Mixed Archive", "archived");
+    const archivedFood = plan024AccessibleFood(272, "طعام مؤرشف Mixed Archive", true);
     let responseMode: "normal" | "loading" | "error" | "empty" = "normal";
     let releaseLoading: () => void = () => undefined;
     let loadingGate: Promise<void> | null = null;
@@ -101,7 +98,7 @@ test.describe("Foods mobile, RTL, and accessibility @foods", () => {
           body: JSON.stringify(plan024AccessiblePage([]))
         });
       }
-      const food = params.get("status") === "archived" ? archivedFood : activeFood;
+      const food = params.get("archived") === "true" ? archivedFood : activeFood;
       return route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -113,11 +110,11 @@ test.describe("Foods mobile, RTL, and accessibility @foods", () => {
       await page.setViewportSize({ width, height: 844 });
       responseMode = "normal";
       await page.goto("/admin/foods");
-      const status = page.getByLabel("الحالة");
-      await expect(status).toBeVisible();
-      await expect(status).toHaveCount(1);
-      await expect(page.locator(".foods-admin-status-control > span")).toHaveText("الحالة");
-      const box = await status.boundingBox();
+      const archiveControl = page.getByLabel("عرض الأرشيف");
+      await expect(archiveControl).toBeVisible();
+      await expect(archiveControl).toHaveCount(1);
+      await expect(page.locator(".foods-admin-status-control > span")).toHaveText("عرض الأرشيف");
+      const box = await archiveControl.boundingBox();
       expect(box?.height).toBeGreaterThanOrEqual(44);
       expect(box && box.x >= 0 && box.x + box.width <= width).toBe(true);
 
@@ -136,18 +133,18 @@ test.describe("Foods mobile, RTL, and accessibility @foods", () => {
       await expect(activeBrand).toBeVisible();
 
       if (width === 320) {
-        await status.focus();
-        await status.press("End");
-        await expect(status).toHaveValue("archived");
-        await status.press("Home");
-        await expect(status).toHaveValue("active");
+        await archiveControl.focus();
+        await archiveControl.press("End");
+        await expect(archiveControl).toHaveValue("archived");
+        await archiveControl.press("Home");
+        await expect(archiveControl).toHaveValue("active");
       } else {
-        await status.click();
-        await expect(status).toBeFocused();
-        await status.selectOption("archived");
-        await expect(status).toHaveValue("archived");
-        await status.selectOption("active");
-        await expect(status).toHaveValue("active");
+        await archiveControl.click();
+        await expect(archiveControl).toBeFocused();
+        await archiveControl.selectOption("archived");
+        await expect(archiveControl).toHaveValue("archived");
+        await archiveControl.selectOption("active");
+        await expect(archiveControl).toHaveValue("active");
       }
 
       await expectNoHorizontalOverflow(page);
@@ -156,8 +153,8 @@ test.describe("Foods mobile, RTL, and accessibility @foods", () => {
     await page.setViewportSize({ width: 375, height: 844 });
     responseMode = "normal";
     await page.goto("/admin/foods");
-    const status = page.getByLabel("الحالة");
-    await expect(status).toHaveValue("active");
+    const archiveControl = page.getByLabel("عرض الأرشيف");
+    await expect(archiveControl).toHaveValue("active");
     await expect(page.locator(".food-card-title", { hasText: activeFood.name })).toBeVisible();
     await expectPlan024AxePass(page, "375 active menu closed");
 
@@ -166,8 +163,8 @@ test.describe("Foods mobile, RTL, and accessibility @foods", () => {
     await expectPlan024AxePass(page, "375 active menu open");
     await page.keyboard.press("Escape");
 
-    await status.selectOption("archived");
-    await expect(status.locator("option:checked")).toHaveText("مؤرشف");
+    await archiveControl.selectOption("archived");
+    await expect(archiveControl.locator("option:checked")).toHaveText("مؤرشف");
     await expect(page.locator(".food-card-title", { hasText: archivedFood.name })).toBeVisible();
     await expectPlan024AxePass(page, "375 archived menu closed");
     await page.getByRole("button", { name: `إجراءات ${archivedFood.name}` }).click();
@@ -181,7 +178,7 @@ test.describe("Foods mobile, RTL, and accessibility @foods", () => {
     await expect(page.locator(".foods-loading")).toBeVisible();
     await expect(page.locator(".foods-loading")).toHaveAttribute("role", "status");
     await expect(page.getByRole("button", { name: /إجراءات/ })).toHaveCount(0);
-    await expect(page.getByLabel("الحالة")).toBeVisible();
+    await expect(page.getByLabel("عرض الأرشيف")).toBeVisible();
     await expectPlan024AxePass(page, "375 loading");
     responseMode = "normal";
     releaseLoading();
@@ -217,7 +214,7 @@ test.describe("Foods mobile, RTL, and accessibility @foods", () => {
       await expect(page.getByRole("menuitem", { name: "أرشفة" })).toBeVisible();
       await expectPlan024AxePass(page, `${width} active menu open`);
       await page.keyboard.press("Escape");
-      await page.getByLabel("الحالة").selectOption("archived");
+      await page.getByLabel("عرض الأرشيف").selectOption("archived");
       await page.getByRole("button", { name: `إجراءات ${archivedFood.name}` }).click();
       await expect(page.getByRole("menuitem", { name: "استعادة" })).toBeVisible();
       await expectPlan024AxePass(page, `${width} archived menu open`);

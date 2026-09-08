@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
 from app.core.calendar import diary_calendar_authority
-from app.models import DiaryEntry
+from app.models import DiaryEntry, Food
 from app.nutrition_rules.registry import NUTRIENTS, NutrientDefinition
 from app.schemas import (
     DaySummary,
@@ -162,7 +162,7 @@ def aggregate_nutrient(
 
 
 def _summary_integrity_error(entry: DiaryEntry, error: HTTPException) -> HTTPException:
-    cause = error.detail.get("code") if isinstance(error.detail, dict) else "INVALID_DIARY_SNAPSHOT_DATA"
+    cause = error.detail.get("code") if isinstance(error.detail, dict) else "INVALID_DIARY_FOOD_DATA"
     return HTTPException(
         status_code=409,
         detail={
@@ -175,15 +175,15 @@ def _summary_integrity_error(entry: DiaryEntry, error: HTTPException) -> HTTPExc
 
 def _day_summary(
     current: date,
-    entries: list[DiaryEntry],
+    entries: list[tuple[DiaryEntry, Food]],
     target_context: WeekTargetContext,
     status,
 ) -> DaySummary:
     totals = empty_totals()
     entry_totals = []
-    for entry in entries:
+    for entry, food in entries:
         try:
-            resolved = totals_for_entry(entry)
+            resolved = totals_for_entry(entry, food)
         except HTTPException as error:
             raise _summary_integrity_error(entry, error) from error
         entry_totals.append(resolved)
@@ -212,7 +212,6 @@ def _day_summary(
         logging_status=status.logging_status,
         logging_status_version=status.logging_status_version,
         entry_count=status.entry_count,
-        analysis_eligible=status.analysis_eligible,
         completed_at=status.completed_at,
     )
 
@@ -245,7 +244,7 @@ def _weekly_summary(
         )
     )
     entries = session.exec(
-        select(DiaryEntry).where(
+        select(DiaryEntry, Food).join(Food, Food.id == DiaryEntry.food_id).where(
             DiaryEntry.principal_id == principal.principal_id,
             DiaryEntry.entry_date >= week_start,
             DiaryEntry.entry_date <= week_end,
@@ -260,9 +259,9 @@ def _weekly_summary(
 
     days: list[DaySummary] = []
     weekly_totals = empty_totals()
-    entries_by_date: dict[date, list[DiaryEntry]] = {}
-    for entry in entries:
-        entries_by_date.setdefault(entry.entry_date, []).append(entry)
+    entries_by_date: dict[date, list[tuple[DiaryEntry, Food]]] = {}
+    for entry, food in entries:
+        entries_by_date.setdefault(entry.entry_date, []).append((entry, food))
     statuses = {
         item.date: item
         for item in project_status_range(session, principal, week_start, week_end, authority)

@@ -8,7 +8,6 @@ from pydantic import SkipValidation
 from sqlmodel import Session
 
 from app.core.auth import PrincipalContext, get_principal_context
-from app.core.config import Settings, get_settings
 from app.db.session import get_session
 from app.core.calendar import diary_calendar_authority
 from app.schemas import (
@@ -26,6 +25,7 @@ from app.services.diary import (
     create_entry,
     delete_entry,
     get_entry,
+    get_food_for_entry,
     list_entries,
     to_entry_response,
     update_entry,
@@ -68,7 +68,10 @@ def read_entries(
     principal: PrincipalContext = Depends(get_principal_context),
     session: Session = Depends(get_session),
 ) -> list[DiaryEntryResponse]:
-    return [to_entry_response(entry) for entry in list_entries(session, principal, entry_date)]
+    return [
+        to_entry_response(entry, food)
+        for entry, food in list_entries(session, principal, entry_date)
+    ]
 
 
 @router.get("/week", response_model=WeekSummary)
@@ -85,7 +88,6 @@ def _add_entry(
     response: Response,
     if_match: str | None,
     principal: PrincipalContext,
-    settings: Settings,
     session: Session,
 ) -> DiaryEntryResponse:
     authority = diary_calendar_authority()
@@ -98,13 +100,12 @@ def _add_entry(
         session,
         principal,
         validated_payload,
-        snapshot_v4_writer_enabled=settings.snapshot_v4_writer_enabled,
         expected_day_version=_expected_version(if_match),
         calendar_authority=authority,
     )
     day = project_day_status(session, principal, entry.entry_date, authority)
     response.headers["ETag"] = f'"day-{day.logging_status_version}"'
-    return to_entry_response(entry)
+    return to_entry_response(entry, get_food_for_entry(session, entry))
 
 
 @router.post("/entries", response_model=DiaryEntryResponse, status_code=status.HTTP_201_CREATED)
@@ -113,10 +114,9 @@ def add_entry(
     response: Response,
     if_match: str = Header(alias="If-Match"),
     principal: PrincipalContext = Depends(get_principal_context),
-    settings: Settings = Depends(get_settings),
     session: Session = Depends(get_session),
 ) -> DiaryEntryResponse:
-    return _add_entry(payload, response, if_match, principal, settings, session)
+    return _add_entry(payload, response, if_match, principal, session)
 
 
 @router.post(
@@ -129,10 +129,9 @@ def add_entry_legacy(
     payload: Annotated[SkipValidation[DiaryEntryCreate], Body()],
     response: Response,
     principal: PrincipalContext = Depends(get_principal_context),
-    settings: Settings = Depends(get_settings),
     session: Session = Depends(get_session),
 ) -> DiaryEntryResponse:
-    return _add_entry(payload, response, None, principal, settings, session)
+    return _add_entry(payload, response, None, principal, session)
 
 
 @router.get("/entries/{entry_id}", response_model=DiaryEntryResponse)
@@ -142,7 +141,8 @@ def read_entry(
     principal: PrincipalContext = Depends(get_principal_context),
     session: Session = Depends(get_session),
 ) -> DiaryEntryResponse:
-    return to_entry_response(get_entry(session, principal, entry_id))
+    entry = get_entry(session, principal, entry_id)
+    return to_entry_response(entry, get_food_for_entry(session, entry))
 
 
 def _edit_entry(
@@ -164,7 +164,7 @@ def _edit_entry(
     )
     day = project_day_status(session, principal, entry.entry_date, authority)
     response.headers["ETag"] = f'"day-{day.logging_status_version}"'
-    return to_entry_response(entry)
+    return to_entry_response(entry, get_food_for_entry(session, entry))
 
 
 @router.patch("/entries/{entry_id}", response_model=DiaryEntryResponse)

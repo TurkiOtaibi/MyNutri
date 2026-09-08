@@ -114,7 +114,7 @@ export function DayLoggingStatusCard({
         <strong><span aria-hidden="true">{status.logging_status === "complete" ? "✓" : status.logging_status === "partial" ? "◐" : "○"}</span> {dayLoggingStatusLabels[status.logging_status]}</strong>
       </div>
       {stale ? <p role="status">قد تكون الحالة المعروضة قديمة. تعذر تحديثها الآن. <button type="button" onClick={onRetry}>إعادة المحاولة</button></p> : null}
-      {status.logging_status === "partial" ? <p>لن يُعامل هذا اليوم كاستهلاك صفري، ولن يدخل في التحليل حتى تنهي تسجيله.</p> : null}
+      {status.logging_status === "partial" ? <p>لن يُعامل هذا اليوم كاستهلاك صفري حتى تنهي تسجيله.</p> : null}
       {future ? <p>لا يمكن إنهاء تسجيل يوم مستقبلي.</p> : null}
       {status.logging_status === "complete" ? (
         <button type="button" disabled={commandPending || future} onClick={onReopen}>إعادة فتح اليوم</button>
@@ -295,14 +295,14 @@ export function DiaryEntryRow({
   deleting: boolean;
 }) {
   return (
-    <article className={`diary-entry-row ${deleting ? "is-deleting" : ""}`} role="button" tabIndex={deleting ? -1 : 0} aria-label={`تعديل ${entry.nutrition_snapshot.name}`} onClick={(event) => { if (!deleting) onEdit(event); }} onKeyDown={(event) => { if (!deleting && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onEdit(event); } }}>
+    <article className={`diary-entry-row ${deleting ? "is-deleting" : ""}`} role="button" tabIndex={deleting ? -1 : 0} aria-label={`تعديل ${entry.food.name}`} onClick={(event) => { if (!deleting) onEdit(event); }} onKeyDown={(event) => { if (!deleting && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onEdit(event); } }}>
       <div className="diary-entry-copy">
-        <h3 dir="auto">{entry.nutrition_snapshot.name}</h3>
+        <h3 dir="auto">{entry.food.name}</h3>
         <p>{entryQuantityLabel(entry)}</p>
       </div>
       <strong className="diary-entry-calories"><bdi dir="ltr">{Math.round(entry.totals.calories)}</bdi> سعرة</strong>
       <div className="entry-menu-wrap" onClick={(event) => event.stopPropagation()}>
-        <button className="btn icon entry-menu-trigger" type="button" disabled={deleting} onClick={onToggleMenu} aria-label={`خيارات ${entry.nutrition_snapshot.name}`} aria-expanded={menuOpen}>
+        <button className="btn icon entry-menu-trigger" type="button" disabled={deleting} onClick={onToggleMenu} aria-label={`خيارات ${entry.food.name}`} aria-expanded={menuOpen}>
           <MoreVertical size={18} />
         </button>
         {menuOpen ? (
@@ -326,7 +326,7 @@ export function DailyNutritionDetails({ day, registry, registryPending, registry
         <div className="add-sheet-handle" aria-hidden="true" />
         <header><h2 id="daily-nutrition-details-title">التفاصيل الغذائية لليوم</h2><button type="button" onClick={onClose} aria-label="إغلاق التفاصيل الغذائية"><X size={20} /></button></header>
         <div className="daily-nutrition-sheet-content">
-          {registryPending ? <div className="daily-nutrition-empty" role="status">جارٍ تحميل سجل المغذيات</div> : registryFailed || !registry ? <div className="daily-nutrition-empty" role="alert">تعذر تحميل البيانات الغذائية<button className="btn" type="button" onClick={onRetryRegistry}>إعادة المحاولة</button></div> : registry.registry_schema_version !== 3 ? <div className="daily-nutrition-empty" role="alert">إصدار سجل التغذية غير متوافق. لا يمكن عرض تفاصيل مغذيات غير موثوقة.<button className="btn" type="button" onClick={onRetryRegistry}>إعادة المحاولة</button></div> : !day ? <div className="daily-nutrition-empty">تعذر تحميل ملخص المغذيات لهذا اليوم.</div> : empty ? <div className="daily-nutrition-empty">لا توجد أطعمة مسجلة لهذا اليوم</div> : <>
+          {registryPending ? <div className="daily-nutrition-empty" role="status">جارٍ تحميل سجل المغذيات</div> : registryFailed || !registry ? <div className="daily-nutrition-empty" role="alert">تعذر تحميل البيانات الغذائية<button className="btn" type="button" onClick={onRetryRegistry}>إعادة المحاولة</button></div> : registry.registry_schema_version !== 4 ? <div className="daily-nutrition-empty" role="alert">إصدار سجل التغذية غير متوافق. لا يمكن عرض تفاصيل مغذيات غير موثوقة.<button className="btn" type="button" onClick={onRetryRegistry}>إعادة المحاولة</button></div> : !day ? <div className="daily-nutrition-empty">تعذر تحميل ملخص المغذيات لهذا اليوم.</div> : empty ? <div className="daily-nutrition-empty">لا توجد أطعمة مسجلة لهذا اليوم</div> : <>
             <section className="nutrition-coverage-notice" aria-label={`تغطية بيانات المغذيات الإضافية: ${overallCoverage}%`}><strong>تغطية بيانات المغذيات الإضافية: <bdi>{overallCoverage}%</bdi></strong>{overallCoverage !== 100 ? <p>بعض الأطعمة لا تحتوي بيانات كاملة لجميع المغذيات. هذه نسبة توفر البيانات وليست تقييمًا صحيًا، وقد تكون المجاميع المعروضة حدًا أدنى مؤكدًا.</p> : <p>تتوفر بيانات جميع المغذيات المتتبعة للأطعمة المسجلة.</p>}</section>
             <div className="daily-nutrient-list">{day.nutrient_aggregates.map((item) => <DailyNutrientRow key={item.key} aggregate={item} definition={definitions.get(item.key)} />)}</div>
           </>}

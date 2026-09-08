@@ -120,8 +120,7 @@ test.describe("Food field validation @foods @validation", () => {
 
   const optionalTextCases = [
     { id: "FOOD-TC-073", field: "brand", max: 80, values: [null, "نادك", "Acme Foods", "نادك Acme 100%", "Brand & Co."] },
-    { id: "FOOD-TC-149", field: "notes", max: 500, values: ["ملاحظات غذائية", "English notes", "ملاحظات USDA الغذائية"] },
-    { id: "FOOD-TC-150", field: "data_source", max: 120, values: ["وزارة الصحة", "USDA", "USDA وزارة الصحة", "https://example.test/source"] }
+    { id: "FOOD-TC-149", field: "notes", max: 500, values: ["ملاحظات غذائية", "English notes", "ملاحظات USDA الغذائية"] }
   ] as const;
 
   for (const item of optionalTextCases) {
@@ -139,7 +138,7 @@ test.describe("Food field validation @foods @validation", () => {
   }
 
   test("[FOOD-TC-075] @p2 blank optional text is allowed and HTML stays inert", async ({ page, foodsApi }) => {
-    const food = await foodsApi.create({ brand: null, notes: "<b>plain text</b>", data_source: null });
+    const food = await foodsApi.create({ brand: null, notes: "<b>plain text</b>" });
     await page.goto(`/foods/${food.id}`);
     await expect(page.getByText("<b>plain text</b>", { exact: true })).toBeVisible();
     await expect(page.locator(".food-detail-grid b", { hasText: "plain text" })).toHaveCount(0);
@@ -169,9 +168,16 @@ test.describe("Food field validation @foods @validation", () => {
     }
   });
 
-  test("[FOOD-TC-148] @p1 Food Category uses stable V2 keys and rejects legacy category", async ({ foodsApi }) => {
-    const food = await foodsApi.create({ food_category_key: "baked_goods", baked_good_type: "arabic_bread", grain_type: "whole" });
-    expect(food.food_category_key).toBe("baked_goods");
+  test("[FOOD-TC-148] @p1 taxonomy uses approved pairs and rejects legacy category", async ({ foodsApi }) => {
+    const food = await foodsApi.create({ primary_category: "bakery", subcategory: "bread" });
+    expect(food.primary_category).toBe("bakery");
+    expect(food.subcategory).toBe("bread");
+    const mismatched = await foodsApi.createRaw({
+      ...validFood(),
+      primary_category: "bakery",
+      subcategory: "rice"
+    });
+    expect(mismatched.status()).toBe(422);
     const legacy = await foodsApi.createRaw({ ...validFood(), category: "مخبوزات" });
     expect(legacy.status()).toBe(422);
   });

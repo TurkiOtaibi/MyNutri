@@ -30,8 +30,8 @@ test.describe("Duplicate Food handling @foods", () => {
 
   test("[FOOD-TC-103] @p1 brand and Food Category do not change duplicate identity", async ({ foodsApi }) => {
     const name = `E2E-Metadata-Duplicate-${Date.now()}`;
-    await foodsApi.create({ name, brand: "Brand A", food_category_key: "fruits", unit_amount: 40 });
-    const response = await foodsApi.createRaw(validFood({ name, brand: "Brand B", food_category_key: "vegetables", unit_amount: 40 }));
+    await foodsApi.create({ name, brand: "Brand A", primary_category: "fruits", subcategory: "other", unit_amount: 40 });
+    const response = await foodsApi.createRaw(validFood({ name, brand: "Brand B", primary_category: "vegetables", subcategory: "other", unit_amount: 40 }));
     expect(response.status()).toBe(422);
   });
 

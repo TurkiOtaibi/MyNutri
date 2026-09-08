@@ -33,7 +33,7 @@ No application behavior is implemented by these documents.
 8. Future Diary dates cannot be completed, reopened, or mutated.
 9. Past and current dates may be completed or reopened.
 10. Each request captures one Backend `CalendarAuthority`; every date check and response in that request uses that snapshot.
-11. A status transition and the affected Diary entry/snapshot mutation commit atomically or roll back together.
+11. A status transition and the affected Diary-entry mutation commit atomically or roll back together.
 12. Admin access is read-only. No admin route may complete, reopen, or mutate an owner's status.
 13. Incomplete and unregistered dates are missing evidence, never zero-intake evidence.
 14. An explicitly empty completed date is zero-intake evidence and must be distinguishable from missing evidence.
@@ -44,9 +44,9 @@ No application behavior is implemented by these documents.
 | Layer | Existing symbol/path | Baseline fact | Day-status delta |
 | --- | --- | --- | --- |
 | Ownership | `backend/app/models.py::Principal` and `PrincipalContext` | Diary access is Principal-scoped. | Add owner-bound status and history FKs; preserve not-found isolation. |
-| Entries | `backend/app/models.py::DiaryEntry` | Rows bind `principal_id`, `entry_date`, snapshot, target provenance, quantity, meal, and timestamps. | Entry transactions must lock/update the day aggregate. |
-| Entry API | `backend/app/api/routes/diary.py` | Owner GET/list, POST, PATCH, and DELETE exist; future create dates are rejected. | Add version precondition and completed-day conflict without changing snapshot semantics. |
-| Entry service | `backend/app/services/diary.py::{create_entry,update_entry,delete_entry}` | Mutations commit Diary entry and nutrition snapshot together; create supports client UUID replay. | Preserve atomicity and client UUID behavior while adding a day lock/version. |
+| Entries | `backend/app/models.py::DiaryEntry` | Rows bind `principal_id`, `entry_date`, non-null `food_id`, recorded consumption measurement, target provenance, quantity, meal, and timestamps. | Entry transactions must lock/update the day aggregate. |
+| Entry API | `backend/app/api/routes/diary.py` | Owner GET/list, POST, PATCH, and DELETE exist; future create dates are rejected. | Add version precondition and completed-day conflict while preserving Current Food Truth. |
+| Entry service | `backend/app/services/diary.py::{create_entry,update_entry,delete_entry}` | Mutations commit Diary event state; current nutrition is resolved through Food; create supports client UUID replay. | Preserve atomicity and client UUID behavior while adding a day lock/version. |
 | Daily/weekly projection | `backend/app/schemas.py::{DaySummary,WeekSummary}` and `backend/app/services/aggregation.py` | Seven daily summaries expose totals, targets, provenance, coverage, and weekly totals. | Add status/version/entry count/analysis eligibility; do not convert missing days to zeros. |
 | Calendar | `backend/app/core/calendar.py` and `CalendarAuthorityResponse` | `current_diary_date`, `calendar_timezone`, and `next_rollover_at` are server-authoritative. | Capture once per request; browser `new Date()` is never status authority. |
 | Admin | `backend/app/api/routes/admin.py`, `backend/app/services/diary.py::admin_diary_page` | Admin Diary monitoring is bounded, owner-isolated, and GET-only. | Add bounded status projection only; no status write route. |
@@ -54,7 +54,7 @@ No application behavior is implemented by these documents.
 | Frontend orchestration | `frontend/components/DiaryPage.tsx` | Calendar/query/mutation/session orchestration and subject-change cancellation live here. | Keep command orchestration, cache invalidation, calendar snapshot, and focus restoration here. |
 | Frontend feature | `frontend/features/diary/diary-summary.tsx`, `diary-entry-dialogs.tsx`, `diary-hooks.ts`, `diary-model.ts`, `diary.module.css` | Presentation, dialogs, model helpers, invalidation, and styling are isolated. | Put status presentation/copy in this boundary; keep business orchestration in `DiaryPage`. |
 | Transport types | `frontend/lib/generated/openapi.ts`, projected through `frontend/lib/types.ts` | Backend OpenAPI is generated transport authority. | Generate status/command DTOs and map them to UI state; do not hand-author equivalents. |
-| Tests | `backend/tests/test_diary_*`, `test_calendar_authority.py`, `test_admin_monitoring_performance.py`; Frontend Vitest/Playwright/StrictMode suites | Entry snapshot races, aggregation, calendar rollover, Principal isolation, admin GET, accessibility, and session behavior have foundations. | Add state, concurrency, migration, contract, UX, and analysis-consumer tests listed in section 13. |
+| Tests | `backend/tests/test_diary_*`, `test_calendar_authority.py`, `test_admin_monitoring_performance.py`; Frontend Vitest/Playwright/StrictMode suites | Entry races, current-Food aggregation, calendar rollover, Principal isolation, admin GET, accessibility, and session behavior have foundations. | Add state, concurrency, migration, contract, and UX tests listed in section 13. |
 
 There is no current status table, status field, complete/reopen route, status UI, or status implementation test.
 
@@ -124,7 +124,7 @@ All day-affecting mutations use one PostgreSQL transaction and this order:
 4. acquire the existing Food namespace/Food locks when entry creation needs them;
 5. lock affected `diary_entry` rows in stable UUID order;
 6. read/create the Principal-scoped `idempotency_record` for complete/reopen;
-7. write entry snapshot, status, history, and replay response;
+7. write Diary event state, status, history, and replay response;
 8. commit once.
 
 The implementation must reconcile current entry-service lock ordering to this one before adding the aggregate. It must not bolt a day lock after a Food lock and create an inversion.
@@ -242,7 +242,7 @@ Unique `(day_status_id, day_version)` prevents duplicate history. Index `(princi
 | Compatibility | new app projects absent+no entry unregistered | absent+legacy entries partial | assert no historical row is complete |
 | Activation | deploy readers before writers or in one compatible release | same | startup preflight verifies tables/constraints before enabling commands |
 
-The migration never scans entries to infer completion. It does not rewrite `diary_entry` or snapshots. Legacy days receive a row only on their first post-release mutation/command, at which point the transaction counts existing owner/date entries and establishes version `1`.
+The migration never scans entries to infer completion. It does not rewrite existing day-status meaning. Legacy days receive a row only on their first post-release mutation/command, at which point the transaction counts existing owner/date entries and establishes version `1`.
 
 ### 7.3 Rollback and downgrade
 
@@ -378,15 +378,15 @@ The remaining closed response examples are:
 
 The future-date block above is the closed future `422` example. Admin mutation-path `404` and method `405` responses remain framework responses rather than application command envelopes because those routes do not exist. A rollover success has the ordinary success shape and echoes the single captured calendar even if the clock rolls over during lock wait; it never silently mixes calendar snapshots.
 
-## 9. Daily, weekly, and analysis semantics
+## 9. Daily and weekly semantics
 
-- Daily totals retain existing arithmetic. Status adds evidence meaning; it does not rewrite totals.
-- Weekly payloads return all seven dates with status. `weekly_totals` must not be used by analysis as though partial/unregistered days were zeros.
-- Future analysis consumers select only `analysis_eligible=true` days.
-- A complete day with zero entries contributes exact zero intake and counts toward the four-complete-day threshold.
-- A complete non-empty day counts toward the day threshold, while each metric additionally requires sufficient entry nutrient coverage under PD-013/PD-016.
-- Partial and unregistered days contribute neither zero nor a denominator day.
-- Reopening removes the day from analysis immediately; recomputation/versioning of later Analysis Snapshots belongs to Wave 3.
+- Daily and weekly totals use each entry's historical consumed measurement with
+  the current authoritative Food nutrition. Food corrections therefore
+  propagate to earlier dates without changing recorded quantity.
+- Status adds evidence meaning; it does not freeze or cache nutrition totals.
+- Weekly payloads return all seven dates with status.
+- A complete day with zero entries represents exact zero intake.
+- Partial and unregistered days remain missing evidence, not zero-intake days.
 - Logging completion is not a claim that nutrient coverage, goals, or healthy eating are complete.
 
 ## 10. Arabic UX, accessibility, and responsive contract
@@ -446,7 +446,7 @@ The exact copy is frozen through the owner-authorized Product gate recorded in t
 | Three-state projection | absent/empty, legacy entries, persisted states match vectors | unknown persisted value rejected by DB/OpenAPI | unit + Postgres |
 | Empty completion | explicit command produces complete/count 0 | migration never creates it | service + migration + contract |
 | Entry transitions | first/add/edit/delete update partial/version | completed-day writes 409; stale write rolls back | Postgres service + API |
-| Atomic snapshots | entry, snapshot, status, history commit together | injected failure leaves all prior values | Postgres transaction |
+| Atomic entry state | entry, status, and history commit together | injected failure leaves all prior values | Postgres transaction |
 | Concurrency | deterministic two-session schedules | no lost update/deadlock; second writer 409 | Postgres concurrency without sleeps |
 | Idempotency | same key/hash exact replay | same key/different hash conflict; different key stale conflict | API + Postgres |
 | Principal isolation | owner reads/writes own date | cross-owner entry/status returns 404; cache separated | Backend + Playwright sessions |
@@ -455,7 +455,7 @@ The exact copy is frozen through the owner-authorized Product gate recorded in t
 | Migration | fresh/populated upgrade; legacy entries project partial | zero backfilled complete/status rows; invalid predecessor fails | Alembic PostgreSQL |
 | Rollback | old app reads entries with additive tables | downgrade refuses non-empty tables; no data loss | migration rollback gate |
 | OpenAPI | named schemas/enums/examples generated | generic object, missing field, handwritten duplicate fail | contract drift + architecture |
-| Weekly projection | seven statuses and versions | incomplete days not analysis zeros | aggregation + contract |
+| Weekly projection | seven statuses and versions | incomplete days remain distinct from explicit zero intake | aggregation + contract |
 | Analysis eligibility | complete included; empty complete exact zero | partial/unregistered excluded; low metric coverage qualified | future Wave 3 consumer tests |
 | Arabic UX | exact approved copy and success focus | error/retry, stale refresh, cancel, future disabled | Playwright RTL |
 | Accessibility | keyboard, dialog trap, live region, labels | no color-only state, duplicate announcements, focus loss | axe + Playwright + StrictMode |

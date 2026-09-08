@@ -14,7 +14,7 @@ async function openAddAndSelect(page: Page, foodName: string) {
 
 test.describe("@diary quantity and UX refinement", () => {
   test("@p0 stepper appears only after Food selection and selected result is accessible", async ({ page, foodsApi }) => {
-    const food = await foodsApi.create({ name: uniqueName("Stepper Selected"), brand: "علامة الاختبار", food_category_key: "mixed_dish" });
+    const food = await foodsApi.create({ name: uniqueName("Stepper Selected"), brand: "علامة الاختبار", primary_category: "meals", subcategory: "other" });
     await page.goto("/diary");
     await page.getByRole("button", { name: "إضافة طعام إلى فطور" }).click();
     const dialog = page.getByRole("dialog", { name: "إضافة طعام" });
@@ -137,7 +137,7 @@ test.describe("@diary quantity and UX refinement", () => {
     await expect(summary.getByLabel(/الدهون:/)).toBeVisible();
   });
 
-  test("@p0 quantity-only edit reuses stepper and live frozen-snapshot preview", async ({ page, foodsApi }) => {
+  test("@p0 quantity-only edit reuses stepper and live current-Food preview", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Edit Stepper"), default_unit_type: "slice", unit_amount: 30, calories: 200 });
     await foodsApi.createDiary(food.id, localDate(), 1);
     await page.goto("/diary");

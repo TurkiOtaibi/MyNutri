@@ -1,42 +1,54 @@
 # myNutri V2 Scope and Decisions
 
 Status: Implementation authority
-Release: V2 multi-user and shared catalog
-Supersedes: V1 single-user/shared-token assumptions for V2 runtime only
+Release: V2 multi-user, shared Food catalog, simplified Food model
 
 ## Objective
 
-V2 introduces Supabase email/password accounts, `user` and `admin` roles, strict
-Principal isolation, read-only admin monitoring, a global admin-managed Food
-catalog, Food Taxonomy V2, and a simplified advanced-analysis experience.
+V2 uses Supabase email/password accounts, durable Principal ownership, `user`
+and `admin` roles, read-only admin monitoring, and a global admin-managed Food
+catalog. Food taxonomy and provenance are intentionally small and stable.
 
-The frozen Wave 1 documents remain historical evidence. V2 does not rewrite
-Target Plans, Diary Snapshot v1/v2, nutrition calculations, or historical data.
+## Authoritative decisions
 
-## Decisions
+- `Principal.id` is the durable private-resource ownership key.
+- Foods form a global catalog; Food mutation requires `admin`.
+- Food taxonomy has exactly `primary_category` and `subcategory`.
+- Food nutrition provenance is only `nutrition_data_source`, with `official`
+  and `estimated` as its allowed values.
+- Ingredient text is stored in `ingredients`; ingredient provenance is absent.
+- Food status, Food kind, group completeness, NOVA, Food Groups, and Food
+  Analytical Traits are absent.
+- Pattern Analysis and Weekly Priority are absent and have no replacement.
+- Food nutrition is current authoritative truth. Every Diary calculation joins
+  through `food_id` to the current Food nutrition.
+- A Diary entry stores the historical consumed quantity and captured measurement
+  basis. Later Food serving-default edits cannot change what was consumed.
+- Food snapshots and snapshot version machinery are absent.
+- Archived Foods remain resolvable by Diary history. Referenced Foods cannot be
+  hard-deleted; the foreign key uses `RESTRICT`.
+- Target Plans remain immutable, effective-dated historical truth. A later plan
+  does not rewrite the target bound to an earlier Diary date.
+- Required core nutrients remain calories, protein, carbohydrates, and fat.
+  Optional nutrients remain nullable; unknown never means zero.
+- `normalized_name` remains system-generated and is not user-editable.
 
-- `Principal.id` remains the durable ownership key.
-- Supabase `auth.users.id` maps one-to-one to `Principal.auth_user_id`.
-- New accounts are provisioned as `user`; clients cannot assign roles.
-- Only a trusted bootstrap operation may assign `admin`.
-- Private resources remain Principal-scoped.
-- Admin monitoring uses dedicated read-only services and routes.
-- Foods become a global catalog; mutations require `admin`.
-- Existing Food IDs and historical Diary snapshots remain unchanged.
-- Food category metadata moves to Taxonomy V2 and Registry schema 2.
-- V1 category values embedded in historical snapshots remain readable.
-- Production uses Supabase JWT verification and has no browser shared token.
+## Preserved behavior
 
-## Preserved Behavior
+Authentication, authorization, private Principal isolation, Target Plan
+versioning, Arabic-first RTL behavior, responsive behavior, accessibility, PWA
+isolation, audit principals, archival timestamps, measurement/serving fields,
+notes, and nutrient representation fields remain active unless another approved
+decision says otherwise.
 
-Profile calculations, immutable Target Plans, transition snapshots, Diary
-entries, Snapshot readers, nullable nutrition semantics, Registry nutrient
-targets, Arabic RTL, responsive behavior, accessibility, and PWA behavior are
-preserved unless explicitly changed by the V2 scope.
+## Retired concepts
+
+NOVA, Pattern Analysis, Weekly Priority, Food Group Contributions, Food
+Analytical Traits, and Food nutrition snapshots are retired product history.
+Historical Alembic revisions that introduced them remain immutable technical
+history so clean and supported databases can reproduce the migration chain.
 
 ## Deferred
 
-Organizations, extra roles, account management beyond the required auth flows,
-admin mutation of another user's private data, private user Foods, social
-features, payments, clinical modes, AI/OCR/barcodes, and later-wave analysis are
-out of scope.
+Organizations, extra roles, private user Foods, social features, payments,
+clinical modes, AI/OCR/barcodes, and production cleanup are outside this change.

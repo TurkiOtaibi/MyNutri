@@ -3,20 +3,16 @@ from __future__ import annotations
 from typing import get_type_hints
 
 import pytest
-from fastapi import APIRouter, FastAPI, HTTPException
-from fastapi.testclient import TestClient
+from fastapi import HTTPException
 from pydantic import TypeAdapter
 
 from app.api.routes.diary import _command_expected_version, add_entry, edit_entry
 from app.api.routes.foods import add_food, edit_food
-from app.api.routes.weekly_priorities import Plan033Route
 from app.main import app
 from app.nutrition_rules.manifest import registry_response
 from app.schemas import (
-    BehaviorGoalCommandV1,
     DiaryDayStatusCommand,
     NutritionRegistryResponse,
-    WeeklyPriorityAnalysisInputV2,
 )
 
 
@@ -34,7 +30,9 @@ def test_food_and_diary_openapi_bodies_expose_real_contracts() -> None:
 
     assert set(food_create["required"]) >= {
         "name",
-        "food_category_key",
+        "primary_category",
+        "subcategory",
+        "nutrition_data_source",
         "nutrition_basis",
         "default_unit_type",
         "unit_amount",
@@ -44,8 +42,8 @@ def test_food_and_diary_openapi_bodies_expose_real_contracts() -> None:
         "carb_g",
         "fat_g",
     }
-    assert {"name", "calories", "nutrition_source"} <= set(food_create["properties"])
-    assert {"name", "calories", "nutrition_source"} <= set(food_update["properties"])
+    assert {"name", "calories", "nutrition_data_source"} <= set(food_create["properties"])
+    assert {"name", "calories", "nutrition_data_source"} <= set(food_update["properties"])
     assert set(diary_create["required"]) == {"entry_date", "food_id", "quantity"}
     assert diary_create["properties"]["meal_type"]["default"] == "unspecified"
     assert "required" not in diary_update
@@ -92,7 +90,6 @@ def test_day_logging_status_openapi_is_structured_and_admin_is_read_only() -> No
         "logging_status",
         "logging_status_version",
         "entry_count",
-        "analysis_eligible",
         "completed_at",
         "calendar",
     }
@@ -129,126 +126,17 @@ def test_day_command_if_match_must_agree_with_body_version() -> None:
     assert mismatch.value.detail["code"] == "VALIDATION_ERROR"
 
 
-def test_pattern_analysis_openapi_is_closed_versioned_and_owner_only() -> None:
+def test_retired_analysis_priority_and_snapshot_contracts_are_absent() -> None:
     schema = app.openapi()
     paths = schema["paths"]
-    for path, methods in {
-        "/progress/nutrition-analysis/v2/current": {"get"},
-        "/progress/nutrition-analysis/v2/history": {"get"},
-        "/progress/nutrition-analysis/v2/{analysis_id}/revisions/{revision}": {"get"},
-        "/progress/nutrition-analysis/v2/evaluate": {"post"},
-        "/admin/nutrition-analysis/monitoring": {"get"},
-    }.items():
-        assert set(paths[path]) == methods
-    evaluate = paths["/progress/nutrition-analysis/v2/evaluate"]["post"]
-    headers = {item["name"]: item for item in evaluate["parameters"] if item["in"] == "header"}
-    assert headers["If-Match"]["required"] is True
-    assert headers["Idempotency-Key"]["required"] is True
-    priority = schema["components"]["schemas"]["WeeklyPriorityAnalysisInputV2"]
-    assert priority["additionalProperties"] is False
-    assert set(priority["required"]) >= {
-        "principal_ref",
-        "source_analysis_id",
-        "source_analysis_revision",
-        "days",
-        "previous_period",
-        "metric_facts",
-        "safety_flags",
-    }
-    assert WeeklyPriorityAnalysisInputV2.model_config["extra"] == "forbid"
-    target = schema["components"]["schemas"]["AnalysisMetricTargetV2"]
-    for field in ("value", "lower", "upper"):
-        numeric = next(
-            item for item in target["properties"][field]["anyOf"] if item.get("type") == "number"
-        )
-        assert numeric["exclusiveMinimum"] == 0
-    monitoring = schema["components"]["schemas"]["NutritionAnalysisMonitoringResponseV1"]
-    assert monitoring["properties"]["coverage_band_counts"] == {
-        "$ref": "#/components/schemas/AnalysisCoverageBandCountsV1"
-    }
-    assert monitoring["properties"]["stale_reason_counts"] == {
-        "$ref": "#/components/schemas/AnalysisStaleReasonCountsV1"
-    }
-    assert monitoring["properties"]["latency_band_counts"] == {
-        "$ref": "#/components/schemas/AnalysisLatencyBandCountsV1"
-    }
-
-
-def test_weekly_priority_and_goal_openapi_is_closed_owner_only_and_bounded() -> None:
-    schema = app.openapi()
-    paths = schema["paths"]
-    expected = {
-        "/progress/weekly-priorities/current": {"get"},
-        "/progress/behavior-goals/current": {"get"},
-        "/progress/behavior-goals/history": {"get"},
-        "/progress/behavior-goals/{goal_id}/commands": {"post"},
-    }
-    for path, methods in expected.items():
-        assert set(paths[path]) == methods
-        for method in methods:
-            assert paths[path][method]["security"] == [{"BearerAuth": []}]
-    assert not any(path.startswith("/admin/weekly") for path in paths)
-    command_route = paths["/progress/behavior-goals/{goal_id}/commands"]["post"]
-    headers = {item["name"]: item for item in command_route["parameters"] if item["in"] == "header"}
-    assert headers["Idempotency-Key"]["required"] is True
-    history_limit = next(
-        item
-        for item in paths["/progress/behavior-goals/history"]["get"]["parameters"]
-        if item["name"] == "limit"
-    )
-    assert history_limit["schema"]["maximum"] == 100
-    for name in (
-        "WeeklyPriorityResultV1",
-        "PriorityV1",
-        "BehaviorGoalResponseV1",
-        "BehaviorGoalHistoryItemV1",
-        "BehaviorGoalHistorySnapshotV1",
-        "BehaviorGoalCommandResponseV1",
+    assert not any(path.startswith("/progress/") for path in paths)
+    assert "/admin/nutrition-analysis/monitoring" not in paths
+    serialized = str(schema).lower()
+    for retired in (
+        "nutrition_snapshot",
+        "snapshot_schema_version",
+        "weeklypriority",
+        "behaviorgoal",
+        "nutritionanalysis",
     ):
-        assert schema["components"]["schemas"][name]["additionalProperties"] is False
-    command = schema["components"]["schemas"]["BehaviorGoalCommandV1"]
-    assert command["discriminator"]["propertyName"] == "event"
-    assert len(command["oneOf"]) == 9
-    for status in ("400", "404", "409", "422", "500", "503"):
-        assert command_route["responses"][status]["content"]["application/json"]["schema"] == {
-            "$ref": "#/components/schemas/Plan033ErrorResponseV1"
-        }
-    priority = schema["components"]["schemas"]["PriorityV1"]
-    assert set(priority["properties"]["goal_trackability"]["enum"]) == {
-        "trackable",
-        "informational_only",
-    }
-    history_page = schema["components"]["schemas"]["BehaviorGoalHistoryPageV1"]
-    assert history_page["properties"]["items"]["items"] == {
-        "$ref": "#/components/schemas/BehaviorGoalHistoryItemV1"
-    }
-    history_item = schema["components"]["schemas"]["BehaviorGoalHistoryItemV1"]
-    assert history_item["properties"]["snapshot"] == {
-        "$ref": "#/components/schemas/BehaviorGoalHistorySnapshotV1"
-    }
-    error_codes = set(
-        schema["components"]["schemas"]["Plan033ErrorDetailV1"]["properties"]["code"]["enum"]
-    )
-    assert {
-        "PRIORITY_SOURCE_STALE",
-        "PRIORITY_SOURCE_SUPERSEDED",
-        "UNSUPPORTED_PRIORITY_VERSION",
-    } <= error_codes
-
-
-def test_plan033_request_validation_uses_the_stable_error_envelope() -> None:
-    isolated = FastAPI()
-    router = APIRouter(route_class=Plan033Route)
-
-    @router.post("/commands")
-    def command(payload: BehaviorGoalCommandV1):
-        return payload
-
-    isolated.include_router(router)
-    response = TestClient(isolated).post(
-        "/commands", json={"event": "pause", "expected_version": 1, "note": "irrelevant"}
-    )
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
-    assert response.json()["error"]["details"] == {}
-    assert response.json()["error"]["request_id"]
+        assert retired not in serialized

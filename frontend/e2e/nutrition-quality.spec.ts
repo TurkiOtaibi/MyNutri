@@ -34,25 +34,39 @@ test.describe("@nutrition-quality", () => {
     await expect(card.locator(".profile-additional-target-row")).toHaveCount(16);
   });
 
-  test("Diary meal macros and nutritional coverage use frozen snapshot values", async ({ page, foodsApi }) => {
+  test("Diary history uses current Food nutrition and preserves recorded quantity", async ({ page, foodsApi }) => {
     const date = localDate(-340);
-    const food = await foodsApi.create({ name: uniqueName("Nutrition quality"), calories: 156, protein_g: 12.6, carb_g: 1.2, fat_g: 10.6, fiber_g: 0, sodium_mg: null, potassium_mg: 410 });
-    await foodsApi.createDiary(food.id, date, 1, "breakfast");
+    const food = await foodsApi.create({ name: uniqueName("Current food truth"), calories: 130, protein_g: 10, carb_g: 20, fat_g: 5, fiber_g: null, sodium_mg: null });
+    const entry = await foodsApi.createDiary(food.id, date, 2, "breakfast");
+    expect(entry.totals.calories).toBe(260);
+    expect(entry.quantity).toBe(2);
+
+    const corrected = await foodsApi.update(food.id, {
+      calories: 140,
+      protein_g: 12,
+      carb_g: 18,
+      fat_g: 6,
+      fiber_g: 3,
+      sodium_mg: 0,
+      unit_amount: 35
+    });
+    expect(corrected.status()).toBe(200);
     await page.goto("/diary");
     await selectDiaryDate(page, date);
     const breakfast = page.locator("#meal-section-breakfast");
-    await expect(breakfast).toContainText("بروتين 12.6 جم");
-    await expect(breakfast).toContainText("كارب 1.2 جم");
-    await expect(breakfast).toContainText("دهون 10.6 جم");
+    await expect(breakfast).toContainText("280");
+    await expect(breakfast).toContainText("بروتين 24 جم");
+    await expect(breakfast).toContainText("كارب 36 جم");
+    await expect(breakfast).toContainText("دهون 12 جم");
+    await expect(breakfast).toContainText("2 حصة");
     await page.getByRole("button", { name: "عرض التفاصيل الغذائية" }).click();
     const sheet = page.getByRole("dialog", { name: "التفاصيل الغذائية لليوم" });
-    await expect(sheet).toContainText("الألياف");
-    await expect(sheet).toContainText("0 جم");
+    const fiber = sheet.locator(".daily-nutrient-row").filter({ hasText: "الألياف" });
+    await expect(fiber).toContainText("6 جم");
     await expect(sheet).toContainText("تغطية البيانات 100%");
     const sodium = sheet.locator(".daily-nutrient-row").filter({ hasText: "الصوديوم" });
-    await expect(sodium).toContainText("غير متوفر");
-    await expect(sodium).toContainText("تغطية البيانات 0%");
-    await expect(sodium).not.toContainText("على الأقل");
+    await expect(sodium).toContainText("0 ملجم");
+    await expect(sodium).not.toContainText("غير متوفر");
   });
 
   test("Diary partial coverage renders the Backend confirmed minimum without a remaining allowance", async ({ page, foodsApi }) => {
@@ -135,6 +149,7 @@ test.describe("@nutrition-quality", () => {
     await page.goto(`/foods/${food.id}`);
     await expect(page.getByRole("heading", { name: food.name })).toBeVisible();
     await expect(page.getByText("إصدار سجل التغذية غير متوافق", { exact: true })).toBeVisible();
-    await expect(page.getByText("غير متاح", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("region", { name: /اكتمال البيانات الغذائية/ })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "تفاصيل القيم الغذائية" })).toBeVisible();
   });
 });

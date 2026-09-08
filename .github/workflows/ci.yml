@@ -86,7 +86,6 @@ jobs:
         env:
           ENVIRONMENT: production
           SUPABASE_URL: https://ci-fixture.supabase.co
-          WEEKLY_PRIORITY_IDEMPOTENCY_HMAC_SECRET: ci-only-weekly-priority-hmac-secret-0001
           PGPASSWORD: postgres
         run: |
           alembic upgrade head
@@ -311,7 +310,6 @@ jobs:
       SUPABASE_URL: http://127.0.0.1:8765
       SUPABASE_JWT_AUDIENCE: authenticated
       CALENDAR_TIMEZONE: Asia/Riyadh
-      SNAPSHOT_V4_WRITER_ENABLED: "true"
       NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:8765
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: e2e-public-key
