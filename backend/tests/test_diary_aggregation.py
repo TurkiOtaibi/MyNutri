@@ -26,7 +26,7 @@ from app.services.aggregation import (
     weekly_summary,
     weekly_summary_read_only,
 )
-from app.services.diary import totals_for_entry
+from app.services.diary import add_totals, empty_totals, totals_for_entry
 from app.services import target_plans as target_plan_service
 
 
@@ -230,11 +230,21 @@ def test_current_food_truth_preserves_optional_unknown_and_explicit_zero() -> No
     food = _food(fiber_g=None)
     entry = _entry(food, date(2026, 7, 12), quantity=100)
 
-    assert totals_for_entry(entry, food).fiber_g is None
+    unknown = totals_for_entry(entry, food)
+    assert unknown.fiber_g is None
+    assert unknown.net_carbs_g is None
     food.fiber_g = 0
-    assert totals_for_entry(entry, food).fiber_g == 0
+    explicit_zero = totals_for_entry(entry, food)
+    assert explicit_zero.fiber_g == 0
+    assert explicit_zero.net_carbs_g == 15
     food.fiber_g = 7
-    assert totals_for_entry(entry, food).fiber_g == 7
+    known = totals_for_entry(entry, food)
+    assert known.fiber_g == 7
+    assert known.net_carbs_g == 8
+
+    assert empty_totals().net_carbs_g == 0
+    assert add_totals(empty_totals(), unknown).net_carbs_g is None
+    assert add_totals(known, unknown).net_carbs_g is None
 
 
 @contextmanager

@@ -93,8 +93,10 @@ def totals_for_entry(entry: DiaryEntry, food: Food) -> NutritionTotals:
         "protein_g": round(float(food.protein_g) * multiplier, 2),
         "carb_g": round(float(food.carb_g) * multiplier, 2),
         "fat_g": round(float(food.fat_g) * multiplier, 2),
-        "net_carbs_g": round(
-            max(float(food.carb_g) - float(fiber_g or 0), 0) * multiplier, 2
+        "net_carbs_g": (
+            None
+            if fiber_g is None
+            else round(max(float(food.carb_g) - float(fiber_g), 0) * multiplier, 2)
         ),
         "total_sugars_g": None if sugar_g is None else round(float(sugar_g) * multiplier, 2),
         "sugar_g": None if sugar_g is None else round(float(sugar_g) * multiplier, 2),
@@ -428,6 +430,13 @@ def add_totals(left: NutritionTotals, right: NutritionTotals) -> NutritionTotals
     data = left.model_dump()
     other = right.model_dump()
     for key, value in other.items():
+        if key == "net_carbs_g":
+            data[key] = (
+                None
+                if data.get(key) is None or value is None
+                else round(float(data[key]) + float(value), 2)
+            )
+            continue
         if value is None:
             continue
         data[key] = round(float(data.get(key) or 0) + float(value), 2)

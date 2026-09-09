@@ -58,6 +58,7 @@ from app.services.food_validation_errors import (
     FIBER_GT_CARBS_MESSAGE,
     FOOD_NAME_REQUIRED_MESSAGE,
     INVALID_SELECT_MESSAGE,
+    NUTRITION_UNIT_BASIS_MESSAGE,
     OPTIONAL_NUTRIENT_ABOVE_MAX_MESSAGE,
     REQUIRED_MESSAGE,
     SATURATED_TRANS_GT_FAT_MESSAGE,
@@ -674,6 +675,37 @@ def test_food_api_returns_arabic_invalid_enum_and_number_errors(api_client: Test
     assert errors["protein_g"]["msg"] == ABOVE_MAX_MESSAGE
 
 
+def test_food_api_rejects_mismatched_nutrition_and_unit_basis(api_client: TestClient) -> None:
+    response = api_client.post(
+        "/foods",
+        json=food_json(nutrition_basis="per_100ml", unit_basis="g"),
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 422
+    assert error_by_field(response)["unit_basis"] == {
+        "loc": ["body", "unit_basis"],
+        "field": "unit_basis",
+        "code": "nutrition_unit_basis_mismatch",
+        "msg": NUTRITION_UNIT_BASIS_MESSAGE,
+        "type": "value_error",
+    }
+
+    created = api_client.post(
+        "/foods",
+        json=food_json(name="Basis update validation"),
+        headers=auth_headers(),
+    )
+    assert created.status_code == 201
+    updated = api_client.put(
+        f"/foods/{created.json()['id']}",
+        json={"nutrition_basis": "per_100ml"},
+        headers=auth_headers(),
+    )
+    assert updated.status_code == 422
+    assert error_by_field(updated)["unit_basis"]["code"] == "nutrition_unit_basis_mismatch"
+
+
 def test_food_api_returns_arabic_name_and_unit_amount_errors(api_client: TestClient) -> None:
     payload = food_json(name="   ", unit_amount=0)
 
@@ -990,6 +1022,70 @@ def test_referenced_food_is_archived_and_remains_current_diary_truth() -> None:
         assert response.quantity == 2
         assert response.recorded_unit_amount == 100
         assert response.totals.calories == 280
+
+
+def test_referenced_food_rejects_measurement_dimension_change() -> None:
+    with session_fixture() as session:
+        food = create_food(
+            session,
+            TEST_PRINCIPAL,
+            FoodCreate.model_validate(food_payload()),
+        )
+        session.add(
+            DiaryEntry(
+                principal_id=TEST_PRINCIPAL_ID,
+                entry_date=date(2026, 7, 9),
+                food_id=food.id,
+                quantity=1,
+                recorded_unit_type=food.default_unit_type,
+                recorded_unit_amount=food.unit_amount,
+                recorded_unit_basis=food.unit_basis,
+            )
+        )
+        session.commit()
+
+        with pytest.raises(HTTPException) as error:
+            update_food_response(
+                session,
+                TEST_PRINCIPAL,
+                food.id,
+                FoodUpdate(nutrition_basis=NutritionBasis.per_100ml, unit_basis=UnitBasis.ml),
+            )
+
+        assert error.value.status_code == 409
+        assert error.value.detail["code"] == "FOOD_MEASUREMENT_DIMENSION_IN_USE"
+
+
+def test_unreferenced_food_allows_consistent_measurement_dimension_change() -> None:
+    with session_fixture() as session:
+        food = create_food(
+            session,
+            TEST_PRINCIPAL,
+            FoodCreate.model_validate(food_payload()),
+        )
+
+        response = update_food_response(
+            session,
+            TEST_PRINCIPAL,
+            food.id,
+            FoodUpdate(nutrition_basis=NutritionBasis.per_100ml, unit_basis=UnitBasis.ml),
+        )
+
+        assert response.nutrition_basis == NutritionBasis.per_100ml
+        assert response.unit_basis == UnitBasis.ml
+
+
+def test_food_response_preserves_unknown_net_carbs() -> None:
+    with session_fixture() as session:
+        food = create_food(
+            session,
+            TEST_PRINCIPAL,
+            FoodCreate.model_validate(food_payload(fiber_g=None)),
+        )
+
+        assert to_food_response(session, TEST_PRINCIPAL, food).net_carbs_g is None
+        food.fiber_g = 0
+        assert to_food_response(session, TEST_PRINCIPAL, food).net_carbs_g == 7
 
 
 def test_wave1_food_contract_preserves_exact_null_zero_and_legacy_values(

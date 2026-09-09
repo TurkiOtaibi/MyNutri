@@ -27,7 +27,7 @@ export type FoodNutritionValues = {
   folate_dfe_mcg: number | null;
   vitamin_k_mcg: number | null;
   iodine_mcg: number | null;
-  net_carbs_g: number;
+  net_carbs_g: number | null;
 };
 
 export type FoodFormValues = Omit<
@@ -264,6 +264,10 @@ export function validateFoodForm(values: FoodFormValues): FoodFormErrors {
   if (!values.nutrition_basis) errors.nutrition_basis = REQUIRED_MESSAGE;
   if (!values.default_unit_type) errors.default_unit_type = REQUIRED_MESSAGE;
   if (!values.unit_basis) errors.unit_basis = REQUIRED_MESSAGE;
+  const expectedUnitBasis = values.nutrition_basis === "per_100ml" ? "ml" : "g";
+  if (values.nutrition_basis && values.unit_basis && values.unit_basis !== expectedUnitBasis) {
+    errors.unit_basis = "أساس الوحدة يجب أن يطابق أساس القيم الغذائية.";
+  }
   if (!values.primary_category) errors.primary_category = REQUIRED_MESSAGE;
   if (!values.subcategory) errors.subcategory = REQUIRED_MESSAGE;
   if (!values.nutrition_data_source) errors.nutrition_data_source = REQUIRED_MESSAGE;
@@ -358,7 +362,7 @@ export function calculateServingNutrition(food: FoodResponse): FoodNutritionValu
     folate_dfe_mcg: null,
     vitamin_k_mcg: null,
     iodine_mcg: null,
-    net_carbs_g: scale(food.net_carbs_g) ?? 0
+    net_carbs_g: scale(food.net_carbs_g)
   };
 
   for (const field of optionalNutritionFields) result[field] = scale(food[field]);

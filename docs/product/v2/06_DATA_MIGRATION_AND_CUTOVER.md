@@ -41,8 +41,9 @@ recorded unit type, amount, basis, and optional label from the predecessor
 payload before dropping that payload.
 
 Migration stops without schema change when a Diary row has a null/orphan Food
-reference or when its recorded measurement cannot be derived safely. It never
-guesses Food identity or a mass/volume conversion.
+reference, when its recorded measurement cannot be derived safely, or when its
+recorded mass/volume dimension conflicts with the current referenced Food. It
+never guesses Food identity or a mass/volume conversion.
 
 The final Diary-to-Food foreign key is non-null and `ON DELETE RESTRICT`.
 Current Diary totals are calculated from current Food nutrition and the stored

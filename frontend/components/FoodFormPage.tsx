@@ -163,12 +163,13 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
 
   function updateFoodCategory(value: string) {
     const definition = registryQuery.data?.food_taxonomy.find((item) => item.key === value);
+    const fallbackSubcategory = definition?.subcategories.find((item) => item.key === "other")?.key ?? "other";
     setForm((current) => ({
       ...current,
       primary_category: value,
       subcategory: definition?.subcategories.some((item) => item.key === current.subcategory)
         ? current.subcategory
-        : (definition?.subcategories[0]?.key ?? "other")
+        : fallbackSubcategory
     }));
     setErrors((current) => {
       const next = { ...current };
@@ -248,6 +249,21 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     );
   }
 
+  function updateNutritionBasis(value: FoodFormValues["nutrition_basis"]) {
+    setForm((current) => ({
+      ...current,
+      nutrition_basis: value,
+      unit_basis: value === "per_100ml" ? "ml" : "g"
+    }));
+    setErrors((current) => {
+      const next = { ...current };
+      delete next.nutrition_basis;
+      delete next.unit_basis;
+      delete next.form;
+      return next;
+    });
+  }
+
   const registry = registryQuery.data;
   const selectedCategory = registry.food_taxonomy.find((item) => item.key === form.primary_category);
 
@@ -315,7 +331,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
             value={form.nutrition_basis}
             required
             error={errors.nutrition_basis}
-            onChange={(value) => update("nutrition_basis", value as FoodFormValues["nutrition_basis"])}
+            onChange={(value) => updateNutritionBasis(value as FoodFormValues["nutrition_basis"])}
             options={Object.entries(nutritionBasisLabels)}
           />
         </FormSection>

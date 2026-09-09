@@ -36,6 +36,8 @@ is granted, perform read-only counts first for:
 - populated retired analysis/group/trait/priority tables;
 - Diary rows with null or missing Food references;
 - Diary rows whose recorded measurement cannot be derived;
+- Diary rows whose derived recorded mass/volume basis conflicts with the current
+  referenced Food nutrition basis;
 - Food rows whose legacy taxonomy/source cannot follow the approved fallback.
 
 Any non-zero blocking count stops the rollout. Do not delete, rewrite, or infer

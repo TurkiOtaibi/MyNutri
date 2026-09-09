@@ -257,7 +257,7 @@ def _migrate_food() -> None:
             WHEN 'processed_meat' THEN 'meat_and_poultry'
             WHEN 'eggs' THEN 'meat_and_poultry'
             WHEN 'seafood' THEN 'fish_and_seafood'
-            WHEN 'dairy_fortified_alternatives' THEN 'dairy_products'
+            WHEN 'dairy_fortified_alternatives' THEN 'other'
             WHEN 'legumes' THEN 'legumes'
             WHEN 'vegetables' THEN 'vegetables'
             WHEN 'fruits' THEN 'fruits'
@@ -433,6 +433,23 @@ def _migrate_diary() -> None:
                OR recorded_unit_basis NOT IN ('g','ml')
           ) THEN
             RAISE EXCEPTION 'FOOD_SIMPLIFICATION_DIARY_MEASUREMENT_BACKFILL_REQUIRED'
+              USING ERRCODE = 'check_violation';
+          END IF;
+        END $$;
+        """
+    )
+    op.execute(
+        """
+        DO $$ BEGIN
+          IF EXISTS (
+            SELECT 1
+            FROM diary_entry d
+            JOIN food f ON f.id=d.food_id
+            WHERE (f.nutrition_basis::text='per_100g' AND d.recorded_unit_basis<>'g')
+               OR (f.nutrition_basis::text='per_100ml' AND d.recorded_unit_basis<>'ml')
+          ) THEN
+            RAISE EXCEPTION
+              'FOOD_SIMPLIFICATION_DIARY_FOOD_DIMENSION_RECONCILIATION_REQUIRED'
               USING ERRCODE = 'check_violation';
           END IF;
         END $$;

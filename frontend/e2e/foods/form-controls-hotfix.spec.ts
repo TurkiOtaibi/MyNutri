@@ -27,8 +27,16 @@ test.describe("Food two-level taxonomy controls", () => {
     await expect(page.getByLabel("التصنيف الفرعي")).toHaveValue("rice");
 
     await page.getByLabel("التصنيف الرئيسي").selectOption("bakery");
-    await expect(page.getByLabel("التصنيف الفرعي")).toHaveValue("bread");
+    await expect(page.getByLabel("التصنيف الفرعي")).toHaveValue("other");
     await expect(page.getByLabel("التصنيف الفرعي").locator('option[value="rice"]')).toHaveCount(0);
+  });
+
+  test("changing nutrition basis keeps the unit dimension compatible", async ({ page }) => {
+    await page.goto("/foods/new");
+
+    await page.getByLabel("أساس القيم").selectOption("per_100ml");
+
+    await expect(page.getByLabel("أساس الوحدة")).toHaveValue("ml");
   });
 
   for (const width of [320, 390, 430]) {

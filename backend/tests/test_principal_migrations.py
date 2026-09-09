@@ -2968,3 +2968,106 @@ def test_plan033_populated_downgrade_refuses_without_deleting_history(
             == NOVA_RETIREMENT_REVISION
         )
     engine.dispose()
+
+
+@pytest.mark.migration
+def test_food_simplification_rejects_legacy_diary_food_dimension_mismatch_atomically(
+    database_restored_to_current_head: str,
+) -> None:
+    url = database_restored_to_current_head
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "0014_v2_food_taxonomy")
+    principal_id, food_id = _seed_plan009_food(url)
+    _run_alembic(url, "upgrade", NOVA_RETIREMENT_REVISION)
+    entry_id = uuid4()
+    snapshot = {
+        "schema_version": 4,
+        "captured_unit": {
+            "default_unit_type": "serving",
+            "unit_amount": 100,
+            "unit_basis": "g",
+        },
+        "versions": {
+            "nutrition_registry_version": "3.0.0",
+            "snapshot_schema_version": 4,
+        },
+    }
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO diary_entry
+                  (id,principal_id,entry_date,food_id,quantity,meal_type,nutrition_snapshot,
+                   target_plan_id,target_provenance,snapshot_schema_version,created_at)
+                VALUES
+                  (:id,:principal,'2026-09-01',:food,1,'unspecified',CAST(:snapshot AS jsonb),
+                   NULL,'no_target_source',4,:created_at)
+                """
+            ),
+            {
+                "id": entry_id,
+                "principal": principal_id,
+                "food": food_id,
+                "snapshot": json.dumps(snapshot),
+                "created_at": PLAN009_TIMESTAMP,
+            },
+        )
+        connection.execute(
+            text("UPDATE food SET nutrition_basis='per_100ml',unit_basis='ml' WHERE id=:id"),
+            {"id": food_id},
+        )
+
+    result = _run_alembic(url, "upgrade", FOOD_SIMPLIFICATION_REVISION, check=False)
+
+    assert result.returncode != 0
+    assert (
+        "FOOD_SIMPLIFICATION_DIARY_FOOD_DIMENSION_RECONCILIATION_REQUIRED"
+        in result.stdout + result.stderr
+    )
+    inspector = inspect(engine)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            NOVA_RETIREMENT_REVISION
+        )
+        assert (
+            connection.execute(
+                text("SELECT nutrition_snapshot->>'schema_version' FROM diary_entry WHERE id=:id"),
+                {"id": entry_id},
+            ).scalar_one()
+            == "4"
+        )
+    diary_columns = {column["name"] for column in inspector.get_columns("diary_entry")}
+    assert "nutrition_snapshot" in diary_columns
+    assert "recorded_unit_basis" not in diary_columns
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_food_simplification_maps_ambiguous_dairy_primary_to_other(
+    database_restored_to_current_head: str,
+) -> None:
+    url = database_restored_to_current_head
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "0014_v2_food_taxonomy")
+    _, food_id = _seed_plan009_food(url)
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE food SET food_category_key='dairy_fortified_alternatives' WHERE id=:id"
+            ),
+            {"id": food_id},
+        )
+    engine.dispose()
+    _run_alembic(url, "upgrade", FOOD_SIMPLIFICATION_REVISION)
+
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        mapped = connection.execute(
+            text("SELECT primary_category,subcategory FROM food WHERE id=:id"),
+            {"id": food_id},
+        ).one()
+    engine.dispose()
+
+    assert tuple(mapped) == ("other", "other")

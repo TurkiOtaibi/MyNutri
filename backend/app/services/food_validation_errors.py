@@ -25,6 +25,7 @@ TRANS_FAT_GT_FAT_MESSAGE = "الدهون المتحولة لا يمكن أن ت�
 SATURATED_TRANS_GT_FAT_MESSAGE = (
     "مجموع الدهون المشبعة والمتحولة لا يمكن أن يكون أكبر من إجمالي الدهون."
 )
+NUTRITION_UNIT_BASIS_MESSAGE = "أساس الوحدة يجب أن يكون جم للقيم لكل 100 جم، ومل للقيم لكل 100 مل."
 
 REQUIRED_FOOD_FIELDS = {
     "name",
@@ -91,6 +92,7 @@ CUSTOM_MESSAGE_CODES = {
     SATURATED_FAT_GT_FAT_MESSAGE: "saturated_fat_gt_fat",
     TRANS_FAT_GT_FAT_MESSAGE: "trans_fat_gt_fat",
     SATURATED_TRANS_GT_FAT_MESSAGE: "saturated_trans_gt_fat",
+    NUTRITION_UNIT_BASIS_MESSAGE: "nutrition_unit_basis_mismatch",
     DUPLICATE_FOOD_MESSAGE: "duplicate_food",
     "فئة الطعام الرئيسية غير معتمدة.": "invalid_primary_category",
     "الفئة الفرعية غير معتمدة للفئة الرئيسية المحددة.": "invalid_subcategory",
@@ -160,6 +162,10 @@ def _format_error(item: dict[str, Any]) -> dict[str, Any]:
     if field in REQUIRED_FOOD_FIELDS and (error_type == "missing" or raw_input is None):
         return food_error_detail(field, "required", REQUIRED_MESSAGE, error_type)
 
+    custom_code = CUSTOM_MESSAGE_CODES.get(raw_message)
+    if custom_code is not None:
+        return food_error_detail(field, custom_code, raw_message, error_type)
+
     if field in SELECT_FOOD_FIELDS:
         if error_type == "missing":
             return food_error_detail(field, "required", REQUIRED_MESSAGE, error_type)
@@ -178,10 +184,6 @@ def _format_error(item: dict[str, Any]) -> dict[str, Any]:
             return food_error_detail(field, "below_min", BELOW_MIN_MESSAGE, error_type)
         if error_type in {"less_than", "less_than_equal"}:
             return food_error_detail(field, "above_max", ABOVE_MAX_MESSAGE, error_type)
-
-    custom_code = CUSTOM_MESSAGE_CODES.get(raw_message)
-    if custom_code is not None:
-        return food_error_detail(field, custom_code, raw_message, error_type)
 
     if field:
         return food_error_detail(field, "invalid", VALIDATION_MESSAGE, error_type)

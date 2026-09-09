@@ -205,9 +205,10 @@ def list_food_picker(
     )
 
 
-def net_carbs(food: Food) -> float:
-    fiber = float(food.fiber_g or 0)
-    return round(max(float(food.carb_g) - fiber, 0), 2)
+def net_carbs(food: Food) -> float | None:
+    if food.fiber_g is None:
+        return None
+    return round(max(float(food.carb_g) - float(food.fiber_g), 0), 2)
 
 
 def _enum_value(value: Any) -> Any:
@@ -271,6 +272,7 @@ def to_food_responses(
 def to_food_response(session: Session, principal: PrincipalContext, food: Food) -> FoodResponse:
     del session, principal
     return _build_food_response(food)
+
 
 def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip()).casefold()
@@ -571,7 +573,7 @@ def _update_food_uncommitted(
         food = get_food_for_update(session, principal, food_id, include_archived=True)
     validated = _validated_update_data(session, principal, food, payload)
     data = _persistence_data(validated)
-    if validated.unit_basis != food.unit_basis:
+    if validated.nutrition_basis != food.nutrition_basis:
         referenced = session.exec(
             select(DiaryEntry.id).where(DiaryEntry.food_id == food.id).limit(1)
         ).first()

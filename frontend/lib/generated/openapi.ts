@@ -489,7 +489,7 @@ export interface FoodResponseV3 {
   /** Name */
   name: string;
   /** Net Carbs G */
-  net_carbs_g: number;
+  net_carbs_g: number | null;
   /** Notes */
   notes?: string | null;
   nutrition_basis: NutritionBasis;
@@ -643,7 +643,7 @@ export interface NutritionTotals {
    * Net Carbs G
    * @default 0
    */
-  net_carbs_g?: number;
+  net_carbs_g?: number | null;
   /** Potassium Mg */
   potassium_mg?: number | null;
   /**

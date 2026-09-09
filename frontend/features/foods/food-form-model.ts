@@ -29,6 +29,9 @@ export const optionalFields: (keyof FoodFormValues)[] = [
 export function mapFoodApiError(error: unknown): FoodFormErrors {
   if (!(error instanceof ApiError)) return {};
   if (error.status === 404) return { form: "لم يتم العثور على الطعام. حدّث القائمة وحاول مرة أخرى." };
+  if (error.status === 409 && error.code === "FOOD_MEASUREMENT_DIMENSION_IN_USE") {
+    return { form: "لا يمكن تغيير أساس القياس بين الوزن والحجم بعد تسجيل الطعام في اليومية." };
+  }
   if (error.status !== 422 || !Array.isArray(error.detail)) return {};
 
   const next: FoodFormErrors = {};

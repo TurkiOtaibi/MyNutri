@@ -90,7 +90,7 @@ export type FoodPayload = {
 
 export type FoodRecord = FoodPayload & {
   id: string;
-  net_carbs_g: number;
+  net_carbs_g: number | null;
   created_at: string;
   updated_at: string;
   archived_at: string | null;

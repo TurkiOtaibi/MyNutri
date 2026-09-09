@@ -33,6 +33,7 @@ from app.services.food_validation_errors import (
     ADDED_SUGAR_GT_SUGAR_MESSAGE,
     FIBER_GT_CARBS_MESSAGE,
     FOOD_NAME_REQUIRED_MESSAGE,
+    NUTRITION_UNIT_BASIS_MESSAGE,
     OPTIONAL_NUTRIENT_ABOVE_MAX_MESSAGE,
     OPTIONAL_NUTRIENT_NEGATIVE_MESSAGE,
     SATURATED_FAT_GT_FAT_MESSAGE,
@@ -435,6 +436,15 @@ class FoodBase(BaseModel):
     def clean_ingredients(cls, value: str | None) -> str | None:
         return _clean_optional_text(value)
 
+    @field_validator("unit_basis")
+    @classmethod
+    def validate_nutrition_unit_basis(cls, value: UnitBasis, info) -> UnitBasis:
+        nutrition_basis = info.data.get("nutrition_basis")
+        expected = UnitBasis.g if nutrition_basis == NutritionBasis.per_100g else UnitBasis.ml
+        if nutrition_basis is not None and value != expected:
+            raise ValueError(NUTRITION_UNIT_BASIS_MESSAGE)
+        return value
+
     @field_validator(*OPTIONAL_NUTRIENT_MAX.keys())
     @classmethod
     def validate_optional_nutrient(cls, value: float | None, info) -> float | None:
@@ -627,6 +637,7 @@ class FoodUpdate(BaseModel):
             raise ValueError(SATURATED_TRANS_GT_FAT_MESSAGE)
         return value
 
+
 class LegacyNutritionResponse(BaseModel):
     folate_mcg: float | None
     vitamin_a_mcg: float | None
@@ -636,7 +647,7 @@ class LegacyNutritionResponse(BaseModel):
 class FoodResponse(FoodBase):
     id: UUID
     legacy_nutrition: LegacyNutritionResponse
-    net_carbs_g: float
+    net_carbs_g: float | None
     created_at: datetime
     updated_at: datetime
     archived_at: datetime | None
@@ -805,7 +816,7 @@ class NutritionTotals(BaseModel):
     vitamin_k_mcg: float | None = None
     iodine_mcg: float | None = None
     total_sugars_g: float | None = None
-    net_carbs_g: float = 0
+    net_carbs_g: float | None = 0
 
 
 class DiaryEntryCreate(BaseModel):

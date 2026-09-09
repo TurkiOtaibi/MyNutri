@@ -78,6 +78,10 @@ def test_food_simplification_offline_sql_contains_current_truth_contract() -> No
 
     assert "Snapshot V5" not in sql
     assert "snapshot_schema_version = 5" not in sql
+    assert "WHEN 'dairy_fortified_alternatives' THEN 'other'" in sql
+    assert "FOOD_SIMPLIFICATION_DIARY_FOOD_DIMENSION_RECONCILIATION_REQUIRED" in sql
+    assert "f.nutrition_basis::text='per_100g' AND d.recorded_unit_basis<>'g'" in sql
+    assert "f.nutrition_basis::text='per_100ml' AND d.recorded_unit_basis<>'ml'" in sql
 
 
 def test_food_simplification_downgrade_fails_closed_before_sql_generation() -> None:
