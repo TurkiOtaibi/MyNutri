@@ -51,11 +51,8 @@ if (apiHost !== "127.0.0.1" && apiHost !== "localhost") {
 export type FoodPayload = {
   name: string;
   brand: string | null;
-  food_category_key: string;
-  grain_type: "whole" | "refined" | "mixed" | "grain_free" | "unknown" | null;
-  baked_good_type: "arabic_bread" | "toast" | "rolls_wraps" | "burger_bun" | "flatbread" | "pastries" | "cake" | "biscuits_cookies" | "other" | null;
-  grain_starch_type: "rice" | "pasta" | "oats" | "breakfast_cereal" | "bulgur" | "quinoa" | "flour" | "other" | null;
-  food_kind: "simple" | "composite" | "unknown";
+  primary_category: string;
+  subcategory: string;
   nutrition_basis: "per_100g" | "per_100ml";
   default_unit_type: "g" | "ml" | "cup" | "slice" | "piece" | "scoop" | "serving" | "tablespoon" | "teaspoon";
   unit_amount: number;
@@ -87,24 +84,28 @@ export type FoodPayload = {
   vitamin_k_mcg: number | null;
   iodine_mcg: number | null;
   notes: string | null;
-  data_source: string | null;
-  nutrition_source: { type: string; name: string | null; reference: string | null };
-  ingredients: { text: string | null; source_type: string | null; source_name: string | null; source_reference: string | null };
-  group_contributions: Array<{ group_key: string; subtype_key?: string | null; amount_per_100_basis: number; data_status: "known" | "estimated" }>;
-  analytical_traits: string[];
+  nutrition_data_source: "official" | "estimated";
+  ingredients: string | null;
 };
 
-export type FoodRecord = Omit<FoodPayload, "nutrition_source" | "group_contributions"> & {
+export type FoodRecord = FoodPayload & {
   id: string;
-  net_carbs_g: number;
+  net_carbs_g: number | null;
   created_at: string;
   updated_at: string;
-  status: "active" | "archived";
   archived_at: string | null;
-  group_data_status: "known" | "estimated" | "unknown";
-  group_data_completeness: "complete" | "partial" | "unknown";
-  nutrition_source: FoodPayload["nutrition_source"] & { reliability: string; reliability_rules_version: string };
-  group_contributions: Array<FoodPayload["group_contributions"][number] & { food_group_rules_version: string }>;
+};
+
+type DiaryRecord = {
+  id: string;
+  entry_date: string;
+  food: { id: string; name: string; brand: string | null };
+  quantity: number;
+  recorded_unit_type: FoodPayload["default_unit_type"];
+  recorded_unit_amount: number;
+  recorded_unit_basis: FoodPayload["unit_basis"];
+  recorded_unit_label: string | null;
+  totals: { calories: number; protein_g: number; carb_g: number; fat_g: number };
 };
 
 type DiaryDayStatus = {
@@ -121,11 +122,8 @@ export function validFood(overrides: Partial<FoodPayload> = {}): FoodPayload {
   return {
     name: uniqueName("Food"),
     brand: "E2E Brand",
-    food_category_key: "other",
-    grain_type: null,
-    baked_good_type: null,
-    grain_starch_type: null,
-    food_kind: "simple",
+    primary_category: "other",
+    subcategory: "other",
     nutrition_basis: "per_100g",
     default_unit_type: "serving",
     unit_amount: 100,
@@ -157,11 +155,8 @@ export function validFood(overrides: Partial<FoodPayload> = {}): FoodPayload {
     vitamin_k_mcg: null,
     iodine_mcg: null,
     notes: null,
-    data_source: null,
-    nutrition_source: { type: "unknown", name: null, reference: null },
-    ingredients: { text: null, source_type: null, source_name: null, source_reference: null },
-    group_contributions: [],
-    analytical_traits: [],
+    nutrition_data_source: "estimated",
+    ingredients: null,
     ...overrides
   };
 }
@@ -248,7 +243,7 @@ export class FoodsApi {
       data: { food_id: foodId, entry_date: entryDate, quantity, meal_type: mealType }
     });
     expect(response.status(), await response.text()).toBe(201);
-    const entry = (await response.json()) as { id: string; nutrition_snapshot: { name: string }; totals: { calories: number } };
+    const entry = (await response.json()) as DiaryRecord;
     this.diaryIds.set(entry.id, entryDate);
     return entry;
   }
@@ -256,15 +251,15 @@ export class FoodsApi {
   async listDiary(entryDate: string) {
     const response = await this.request.get(`${API_URL}/diary/entries?entry_date=${entryDate}`, { headers: this.headers() });
     expect(response.status()).toBe(200);
-    return response.json() as Promise<Array<{ id: string; nutrition_snapshot: { name: string }; totals: { calories: number } }>>;
+    return response.json() as Promise<DiaryRecord[]>;
   }
 
   async cleanup(): Promise<void> {
     const diaryResponse = await this.request.get(`${API_URL}/diary`, { headers: this.headers() });
     if (diaryResponse.ok()) {
-      const entries = (await diaryResponse.json()) as Array<{ id: string; entry_date: string; nutrition_snapshot?: { name?: string } }>;
+      const entries = (await diaryResponse.json()) as DiaryRecord[];
       for (const entry of entries) {
-        if (entry.nutrition_snapshot?.name?.startsWith("E2E-")) {
+        if (entry.food.name.startsWith("E2E-")) {
           this.diaryIds.set(entry.id, entry.entry_date);
         }
       }
@@ -321,16 +316,8 @@ export async function fillRequiredFoodForm(page: Page, payload: Partial<FoodPayl
   const food = validFood(payload);
   await page.getByLabel(/اسم الطعام/).fill(food.name);
   if (food.brand != null) await page.getByLabel("العلامة التجارية").fill(food.brand);
-  await page.getByLabel(/فئة الطعام/).selectOption(food.food_category_key);
-  if (food.food_category_key === "baked_goods") {
-    await page.getByLabel(/نوع المخبوز/).selectOption(food.baked_good_type ?? "other");
-    await page.getByLabel(/نوع الحبوب/).selectOption(food.grain_type ?? "unknown");
-  }
-  if (food.food_category_key === "grains_starches") {
-    await page.getByLabel(/نوع الحبوب أو النشويات/).selectOption(food.grain_starch_type ?? "other");
-    await page.getByLabel(/نوع الحبوب/).selectOption(food.grain_type ?? "unknown");
-  }
-  await page.getByLabel(/نوع الطعام/).selectOption(food.food_kind);
+  await page.getByLabel("التصنيف الرئيسي").selectOption(food.primary_category);
+  await page.getByLabel("التصنيف الفرعي").selectOption(food.subcategory);
   await page.getByLabel(/أساس القيم/).selectOption(food.nutrition_basis);
   await page.getByLabel(/السعرات/).fill(String(food.calories));
   await page.getByLabel(/البروتين g/).fill(String(food.protein_g));

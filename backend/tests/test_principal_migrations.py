@@ -6,7 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -16,22 +16,26 @@ from uuid import UUID, uuid4
 
 import pytest
 from psycopg.errors import CheckViolation, NumericValueOutOfRange
-from sqlalchemy import CheckConstraint, Numeric, String, create_engine, inspect, text
+from sqlalchemy import (
+    CheckConstraint,
+    Numeric,
+    String,
+    column,
+    create_engine,
+    inspect,
+    table as sql_table,
+    text,
+)
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlmodel import SQLModel, Session
 
 from app.core.auth import PrincipalContext
 from app.models import (
-    FOOD_GROUP_NUMERIC_COLUMNS,
     FOOD_NUMERIC_COLUMNS,
     DefaultUnitType,
     DiaryEntry,
-    Food,
-    FoodGroupContribution,
     NutritionBasis,
-    NovaClassification,
-    NovaReviewStatus,
     Principal,
     UnitBasis,
 )
@@ -83,11 +87,55 @@ PLAN032_REVISION = "c3a7e6d5f210"
 PLAN033_REVISION = "22733dbf5249"
 NOVA_RETIREMENT_REVISION = "8a91c4e7d2f6"
 NOVA_RETIREMENT_DOWNGRADE_ERROR = "NOVA_RETIREMENT_READER_FLOOR_REQUIRED"
+FOOD_SIMPLIFICATION_REVISION = "f47a2c9d6e13"
 PLAN023_CONSTRAINT = "ck_diary_entry_quantity_positive_finite"
 PLAN023_PREFLIGHT_ERROR = "PLAN023_DIARY_QUANTITY_PREFLIGHT_BLOCKED"
 PLAN023_PREFLIGHT_GUARD = "plan023_diary_quantity_positive_finite_preflight"
 PLAN021_DOWNGRADE_ERROR = "PLAN021_TARGET_PLAN_IDEMPOTENCY_DOWNGRADE_BLOCKED"
 PLAN021_DOWNGRADE_GUARD = "plan021_target_plan_idempotency_downgrade_guard"
+HISTORICAL_FOOD_GROUP_NUMERIC_COLUMNS = ("amount_per_100_basis",)
+HISTORICAL_FOOD_TABLE = sql_table(
+    "food",
+    *[
+        column(name)
+        for name in (
+            "id",
+            "created_by_principal_id",
+            "updated_by_principal_id",
+            "name",
+            "normalized_name",
+            "food_category_key",
+            "nutrition_basis",
+            "default_unit_type",
+            "unit_amount",
+            "unit_basis",
+            "calories",
+            "protein_g",
+            "carb_g",
+            "fat_g",
+            "fiber_g",
+            "created_at",
+            "updated_at",
+        )
+    ],
+)
+HISTORICAL_FOOD_GROUP_TABLE = sql_table(
+    "food_group_contribution",
+    *[
+        column(name)
+        for name in (
+            "id",
+            "created_by_principal_id",
+            "food_id",
+            "group_key",
+            "amount_per_100_basis",
+            "data_status",
+            "food_group_rules_version",
+            "created_at",
+            "updated_at",
+        )
+    ],
+)
 AUTHORITATIVE_HISTORICAL_CHECKS = {
     "profile": (
         "ck_profile_cut_intensity",
@@ -100,12 +148,6 @@ AUTHORITATIVE_HISTORICAL_CHECKS = {
         "legacy_target_document->>'source'='legacy_unversioned_transition' AND "
         "jsonb_typeof(legacy_target_document->'captured_profile_inputs')='object' AND "
         "jsonb_typeof(legacy_target_document->'resolved_targets')='object'",
-    ),
-    "diary_entry": (
-        "ck_diary_entry_versioned_shape",
-        "snapshot_schema_version IS NULL OR "
-        "(jsonb_typeof(nutrition_snapshot)='object' AND "
-        "nutrition_snapshot->>'schema_version'=snapshot_schema_version::text)",
     ),
 }
 
@@ -192,12 +234,6 @@ def test_plan033_migration_is_additive_owner_bound_and_fails_closed() -> None:
 
 
 POSTGRESQL_AUTHORITATIVE_CHECK_DEFINITIONS = {
-    "ck_diary_entry_versioned_shape": (
-        "CHECK (snapshot_schema_version IS NULL OR "
-        "jsonb_typeof(nutrition_snapshot) = 'object'::text AND "
-        "(nutrition_snapshot ->> 'schema_version'::text) = "
-        "snapshot_schema_version::text)"
-    ),
     "ck_legacy_transition_document_shape": (
         "CHECK (jsonb_typeof(legacy_target_document) = 'object'::text AND "
         "(legacy_target_document ->> 'schema_version'::text) = '1'::text AND "
@@ -333,6 +369,16 @@ def _reset_database(url: str) -> None:
     engine.dispose()
 
 
+@pytest.fixture
+def database_restored_to_current_head() -> Iterator[str]:
+    url = _database_url()
+    try:
+        yield url
+    finally:
+        _reset_database(url)
+        _run_alembic(url, "upgrade", "head")
+
+
 def _seed_0003(url: str) -> dict[str, UUID]:
     identifiers = {"profile": uuid4(), "food": uuid4(), "diary": uuid4()}
     snapshot = {
@@ -400,7 +446,10 @@ def _normalized_revision_hash(path: Path) -> str:
 
 def _assert_immutable_revision_hashes(versions: Path) -> None:
     revision_files = {path.name for path in versions.glob("*.py")}
-    assert revision_files == set(BASELINE_HASHES) | {"8a91c4e7d2f6_nova_retirement_phase1.py"}
+    assert revision_files == set(BASELINE_HASHES) | {
+        "8a91c4e7d2f6_nova_retirement_phase1.py",
+        "f47a2c9d6e13_retire_food_and_analysis_features.py",
+    }
     actual = {name: _normalized_revision_hash(versions / name) for name in BASELINE_HASHES}
     assert actual == BASELINE_HASHES
 
@@ -460,7 +509,6 @@ def test_authoritative_historical_checks_are_in_metadata_and_sqlite_safe() -> No
         "ck_legacy_transition_document_shape"
         not in sqlite_checks["legacy_target_transition_snapshots"]
     )
-    assert "ck_diary_entry_versioned_shape" not in sqlite_checks["diary_entry"]
 
     profile_insert = text(
         """
@@ -520,7 +568,7 @@ def test_authoritative_historical_checks_are_in_metadata_and_sqlite_safe() -> No
 
 
 @pytest.mark.migration
-def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None:
+def test_fresh_postgresql_upgrade_has_one_head_and_simplified_food_contract() -> None:
     url = _database_url()
     _reset_database(url)
     _run_alembic(url, "upgrade", "head")
@@ -529,15 +577,14 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            NOVA_RETIREMENT_REVISION
+            FOOD_SIMPLIFICATION_REVISION
         )
         authoritative_checks = connection.execute(
             text(
                 "SELECT conname, pg_get_constraintdef(oid, true) "
                 "FROM pg_constraint "
                 "WHERE conname IN "
-                "('ck_diary_entry_versioned_shape', "
-                "'ck_legacy_transition_document_shape', "
+                "('ck_legacy_transition_document_shape', "
                 "'ck_profile_cut_intensity') "
                 "ORDER BY conname"
             )
@@ -562,21 +609,71 @@ def test_fresh_postgresql_upgrade_has_one_head_and_wave1_food_contract() -> None
     food_columns = {column["name"]: column for column in inspector.get_columns("food")}
     assert "principal_id" not in food_columns
     assert food_columns["created_by_principal_id"]["nullable"] is False
-    assert "category" not in food_columns
-    assert food_columns["food_category_key"]["nullable"] is False
+    for retired_field in (
+        "category",
+        "food_category_key",
+        "grain_type",
+        "baked_good_type",
+        "grain_starch_type",
+        "taxonomy_review_required",
+        "status",
+        "food_kind",
+        "group_data_status",
+        "group_data_completeness",
+        "nutrition_source_type",
+        "nutrition_source_name",
+        "nutrition_source_reference",
+        "ingredients_text",
+        "ingredients_source_type",
+        "ingredients_source_name",
+        "ingredients_source_reference",
+        "nova_classification",
+        "nova_review_status",
+    ):
+        assert retired_field not in food_columns
+    assert food_columns["primary_category"]["nullable"] is False
+    assert food_columns["subcategory"]["nullable"] is False
+    assert food_columns["nutrition_data_source"]["nullable"] is False
+    assert food_columns["ingredients"]["nullable"] is True
     for field in ("selenium_mcg", "iodine_mcg", "folate_dfe_mcg", "vitamin_a_rae_mcg"):
         assert food_columns[field]["nullable"] is True
         assert str(food_columns[field]["type"]) == "NUMERIC(10, 3)"
-    assert {"food_group_contribution", "food_analytical_trait"}.issubset(
-        inspector.get_table_names()
-    )
+    retired_tables = {
+        "food_group_contribution",
+        "food_analytical_trait",
+        "nutrition_analysis",
+        "nutrition_analysis_revision",
+        "nutrition_analysis_evidence_ref",
+        "nutrition_analysis_revision_event",
+        "nutrition_analysis_command_idempotency",
+        "weekly_priority_recommendation",
+        "weekly_priority_evaluation",
+        "weekly_priority_evidence_ref",
+        "behavior_goal",
+        "behavior_goal_history",
+        "behavior_goal_command_idempotency",
+        "behavior_goal_reminder_delivery",
+    }
+    assert retired_tables.isdisjoint(inspector.get_table_names())
     assert {"legacy_target_transition_snapshots", "target_plan", "idempotency_record"}.issubset(
         inspector.get_table_names()
     )
     diary_columns = {column["name"]: column for column in inspector.get_columns("diary_entry")}
     assert diary_columns["target_plan_id"]["nullable"] is True
-    assert diary_columns["snapshot_schema_version"]["nullable"] is True
     assert diary_columns["target_provenance"]["nullable"] is False
+    assert diary_columns["food_id"]["nullable"] is False
+    for field in ("recorded_unit_type", "recorded_unit_amount", "recorded_unit_basis"):
+        assert diary_columns[field]["nullable"] is False
+    assert diary_columns["recorded_unit_label"]["nullable"] is True
+    assert "nutrition_snapshot" not in diary_columns
+    assert "snapshot_schema_version" not in diary_columns
+    diary_food_foreign_keys = [
+        foreign_key
+        for foreign_key in inspector.get_foreign_keys("diary_entry")
+        if foreign_key["referred_table"] == "food"
+    ]
+    assert len(diary_food_foreign_keys) == 1
+    assert diary_food_foreign_keys[0]["options"].get("ondelete") == "RESTRICT"
     engine.dispose()
 
     check_result = _run_alembic(url, "check")
@@ -598,7 +695,7 @@ def test_plan033_tables_deny_supabase_data_api_roles_and_preserve_backend_owner(
             if exists is None:
                 connection.execute(text(f'CREATE ROLE "{role}" NOLOGIN'))
     engine.dispose()
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", PLAN033_REVISION)
     tables = (
         "weekly_priority_recommendation",
         "weekly_priority_evaluation",
@@ -752,31 +849,14 @@ def _plan021_activate(
     *,
     replace_pending: bool = False,
 ) -> tuple[str, bool]:
-    stale_call_count = 0
-
-    def isolate_post_plan021_stale_side_effect(*_args, **_kwargs) -> int:
-        nonlocal stale_call_count
-        stale_call_count += 1
-        return 0
-
     with Session(engine) as session:
-        # These fixtures intentionally exercise the service against the
-        # historical PLAN 021 schema, before PLAN 032's stale-event tables
-        # exist. Isolate only that later side effect while retaining the full
-        # Target Plan transaction and migration assertions.
-        with pytest.MonkeyPatch.context() as monkeypatch:
-            monkeypatch.setattr(
-                "app.services.pattern_analysis.append_stale_events_for_date",
-                isolate_post_plan021_stale_side_effect,
-            )
-            response, replayed = activate_plan(
-                session,
-                PrincipalContext(principal_id=DEPLOYMENT_PRINCIPAL),
-                request,
-                key,
-                replace_pending=replace_pending,
-            )
-        assert stale_call_count == (0 if replayed else 1)
+        response, replayed = activate_plan(
+            session,
+            PrincipalContext(principal_id=DEPLOYMENT_PRINCIPAL),
+            request,
+            key,
+            replace_pending=replace_pending,
+        )
         return str(response.plan.id), replayed
 
 
@@ -1119,11 +1199,6 @@ def test_populated_backfill_fails_closed_then_reconciles_without_history_change(
     _run_alembic(url, "upgrade", "0003_diary_meal_type")
     identifiers = _seed_0003(url)
     engine = create_engine(url)
-    with engine.connect() as connection:
-        snapshot_before = connection.execute(
-            text("SELECT nutrition_snapshot::text FROM diary_entry WHERE id = :id"),
-            {"id": identifiers["diary"]},
-        ).scalar_one()
     _run_alembic(url, "upgrade", "0004_principal_expand")
 
     absent = _run_alembic(url, "upgrade", "head", check=False)
@@ -1153,26 +1228,27 @@ def test_populated_backfill_fails_closed_then_reconciles_without_history_change(
                 ).scalar_one()
                 == 1
             )
-        snapshot_after = connection.execute(
-            text("SELECT nutrition_snapshot::text FROM diary_entry WHERE id = :id"),
-            {"id": identifiers["diary"]},
-        ).scalar_one()
-        assert snapshot_after == snapshot_before
         migrated_diary = connection.execute(
             text(
-                "SELECT target_plan_id, target_provenance, snapshot_schema_version "
+                "SELECT target_plan_id, target_provenance, food_id, recorded_unit_type, "
+                "recorded_unit_amount, recorded_unit_basis, recorded_unit_label "
                 "FROM diary_entry WHERE id = :id"
             ),
             {"id": identifiers["diary"]},
         ).one()
-        assert tuple(migrated_diary) == (None, "legacy_unversioned", None)
+        assert tuple(migrated_diary) == (
+            None,
+            "legacy_unversioned",
+            identifiers["food"],
+            "serving",
+            Decimal("100.0000"),
+            "g",
+            None,
+        )
         migrated_food = connection.execute(
             text(
                 """
-                SELECT food_category_key, grain_type, taxonomy_review_required,
-                       food_kind, group_data_status,
-                       group_data_completeness, nutrition_source_type,
-                       ingredients_text, nova_classification, nova_review_status,
+                SELECT primary_category, subcategory, nutrition_data_source, ingredients,
                        selenium_mcg, iodine_mcg, folate_dfe_mcg, vitamin_a_rae_mcg
                   FROM food WHERE id = :id
                 """
@@ -1181,27 +1257,22 @@ def test_populated_backfill_fails_closed_then_reconciles_without_history_change(
         ).one()
         assert tuple(migrated_food) == (
             "other",
+            "other",
+            "estimated",
             None,
-            True,
-            "unknown",
-            "unknown",
-            "unknown",
-            "unknown",
-            None,
-            "unknown",
-            "unreviewed",
             None,
             None,
             None,
             None,
         )
-        assert (
-            connection.execute(text("SELECT count(*) FROM food_group_contribution")).scalar_one()
-            == 0
-        )
-        assert (
-            connection.execute(text("SELECT count(*) FROM food_analytical_trait")).scalar_one() == 0
-        )
+        current_tables = set(inspect(connection).get_table_names())
+        assert "food_group_contribution" not in current_tables
+        assert "food_analytical_trait" not in current_tables
+        current_diary_columns = {
+            column["name"] for column in inspect(connection).get_columns("diary_entry")
+        }
+        assert "nutrition_snapshot" not in current_diary_columns
+        assert "snapshot_schema_version" not in current_diary_columns
 
         other_principal = uuid4()
         connection.execute(
@@ -1354,99 +1425,6 @@ def test_ambiguous_principal_backfill_is_rejected() -> None:
         connection.execute(text("DELETE FROM principal WHERE id = :id"), {"id": other_principal})
     cleanup_engine.dispose()
     _run_alembic(url, "upgrade", "head")
-
-
-@pytest.mark.migration
-def test_food_group_total_is_enforced_under_concurrent_transactions() -> None:
-    url = _database_url()
-    _reset_database(url)
-    _run_alembic(url, "upgrade", "0004_principal_expand")
-    engine = create_engine(url)
-    food_id = uuid4()
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                "INSERT INTO principal (id, status, created_at, updated_at) "
-                "VALUES (:id, 'active', now(), now())"
-            ),
-            {"id": DEPLOYMENT_PRINCIPAL},
-        )
-    _run_alembic(url, "upgrade", "head")
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                """
-                INSERT INTO food
-                  (id, created_by_principal_id, name, normalized_name, food_category_key,
-                   nutrition_basis, default_unit_type,
-                   unit_amount, unit_basis, calories, protein_g, carb_g, fat_g,
-                   group_data_status, group_data_completeness, created_at, updated_at)
-                VALUES
-                  (:id, :principal, 'Concurrent contributions', 'concurrent contributions',
-                   'other', 'per_100g',
-                   'serving', 100, 'g', 100, 10, 20, 5, 'known', 'partial', now(), now())
-                """
-            ),
-            {"id": food_id, "principal": DEPLOYMENT_PRINCIPAL},
-        )
-
-    barrier = Barrier(2)
-
-    def insert_contribution(group_key: str, amount: int) -> bool:
-        connection = engine.connect()
-        transaction = connection.begin()
-        try:
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO food_group_contribution
-                      (id, created_by_principal_id, food_id, group_key, amount_per_100_basis,
-                       data_status, food_group_rules_version, created_at, updated_at)
-                    VALUES
-                      (:id, :principal, :food, :group_key, :amount, 'known',
-                       '1.0.0', now(), now())
-                    """
-                ),
-                {
-                    "id": uuid4(),
-                    "principal": DEPLOYMENT_PRINCIPAL,
-                    "food": food_id,
-                    "group_key": group_key,
-                    "amount": amount,
-                },
-            )
-            barrier.wait(timeout=10)
-            transaction.commit()
-            return True
-        except IntegrityError:
-            transaction.rollback()
-            return False
-        finally:
-            connection.close()
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        results = list(
-            executor.map(
-                lambda item: insert_contribution(*item),
-                (("fruits", 60), ("vegetables", 50)),
-            )
-        )
-
-    assert sorted(results) == [False, True]
-    with engine.connect() as connection:
-        assert (
-            connection.execute(
-                text(
-                    "SELECT sum(amount_per_100_basis) "
-                    "FROM food_group_contribution WHERE food_id = :food"
-                ),
-                {"food": food_id},
-            ).scalar_one()
-            <= 100
-        )
-    with engine.begin() as connection:
-        connection.execute(text("DELETE FROM food WHERE id = :food"), {"food": food_id})
-    engine.dispose()
 
 
 @pytest.mark.migration
@@ -1660,10 +1638,10 @@ def _seed_plan009_food(url: str) -> tuple[UUID, UUID]:
     with Session(engine) as session:
         session.add(Principal(id=principal_id))
         session.flush()
-        session.add(
-            Food(
+        session.execute(
+            HISTORICAL_FOOD_TABLE.insert().values(
                 id=food_id,
-                principal_id=principal_id,
+                created_by_principal_id=principal_id,
                 name="Plan 009 migration fixture",
                 normalized_name="plan 009 migration fixture",
                 food_category_key="other",
@@ -1675,8 +1653,8 @@ def _seed_plan009_food(url: str) -> tuple[UUID, UUID]:
                 protein_g=10,
                 carb_g=20,
                 fat_g=5,
-                nova_classification=NovaClassification.unknown,
-                nova_review_status=NovaReviewStatus.unreviewed,
+                created_at=PLAN009_TIMESTAMP,
+                updated_at=PLAN009_TIMESTAMP,
             )
         )
         session.commit()
@@ -1689,15 +1667,22 @@ def _seed_plan023_diary_entry(url: str) -> tuple[UUID, UUID, UUID]:
     entry_id = uuid4()
     engine = create_engine(url)
     with Session(engine) as session:
-        session.add(
-            DiaryEntry(
-                id=entry_id,
-                principal_id=principal_id,
-                entry_date=date(2026, 8, 4),
-                food_id=food_id,
-                quantity=1,
-                nutrition_snapshot={"schema_version": 3},
-            )
+        session.execute(
+            text(
+                "INSERT INTO diary_entry "
+                "(id,principal_id,entry_date,food_id,quantity,meal_type,nutrition_snapshot,"
+                "target_plan_id,target_provenance,snapshot_schema_version,created_at) "
+                "VALUES (:id,:principal_id,:entry_date,:food_id,1,'unspecified',"
+                "CAST(:snapshot AS jsonb),NULL,'no_target_source',NULL,:created_at)"
+            ),
+            {
+                "id": entry_id,
+                "principal_id": principal_id,
+                "entry_date": date(2026, 8, 4),
+                "food_id": food_id,
+                "snapshot": json.dumps({"schema_version": 3}),
+                "created_at": PLAN009_TIMESTAMP,
+            },
         )
         session.commit()
     engine.dispose()
@@ -1931,12 +1916,13 @@ def test_plan023_postgresql_direct_writes_enforce_positive_finite_quantity() -> 
                 {"new_id": inserted_id, "source_id": entry_id, "quantity": expected},
             )
 
-        with Session(engine) as session:
-            stored = session.get(DiaryEntry, inserted_id)
-            assert stored is not None
-            assert isinstance(stored.quantity, Decimal)
-            assert stored.quantity == expected
         with engine.connect() as connection:
+            stored = connection.execute(
+                text("SELECT quantity FROM diary_entry WHERE id = :id"),
+                {"id": inserted_id},
+            ).scalar_one()
+            assert isinstance(stored, Decimal)
+            assert stored == expected
             assert connection.execute(
                 text("SELECT quantity::text FROM diary_entry WHERE id = :id"),
                 {"id": inserted_id},
@@ -2037,7 +2023,7 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
         "ck_food_numeric_values_finite": ("food", set(FOOD_NUMERIC_COLUMNS)),
         "ck_food_group_contribution_amount_finite": (
             "food_group_contribution",
-            set(FOOD_GROUP_NUMERIC_COLUMNS),
+            set(HISTORICAL_FOOD_GROUP_NUMERIC_COLUMNS),
         ),
     }
     for constraint_name, (table_name, expected_columns) in expected_constraint_metadata.items():
@@ -2075,7 +2061,7 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
             values[field] = Decimal(special)
             with pytest.raises(DBAPIError) as rejected:
                 with engine.begin() as connection:
-                    connection.execute(Food.__table__.insert().values(**values))
+                    connection.execute(HISTORICAL_FOOD_TABLE.insert().values(**values))
             _assert_plan009_special_value_failure(
                 rejected.value, special, "ck_food_numeric_values_finite"
             )
@@ -2117,15 +2103,17 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
 
     contribution_id = uuid4()
     with Session(engine) as session:
-        session.add(
-            FoodGroupContribution(
+        session.execute(
+            HISTORICAL_FOOD_GROUP_TABLE.insert().values(
                 id=contribution_id,
-                principal_id=principal_id,
+                created_by_principal_id=principal_id,
                 food_id=food_id,
                 group_key="fruits",
                 amount_per_100_basis=100,
                 data_status="known",
                 food_group_rules_version="1.0.0",
+                created_at=PLAN009_TIMESTAMP,
+                updated_at=PLAN009_TIMESTAMP,
             )
         )
         session.commit()
@@ -2133,7 +2121,7 @@ def test_plan009_postgresql_constraints_reject_special_values_and_preserve_data(
         with pytest.raises(DBAPIError) as rejected:
             with engine.begin() as connection:
                 connection.execute(
-                    FoodGroupContribution.__table__.insert().values(
+                    HISTORICAL_FOOD_GROUP_TABLE.insert().values(
                         id=uuid4(),
                         created_by_principal_id=principal_id,
                         food_id=food_id,
@@ -2616,9 +2604,9 @@ def _assert_plan012_guard_failure(
     assert _plan012_schema_signature(url) == before_schema
 
     # The historical assertions above must run at the frozen Plan 012 boundary.
-    # Restore the shared disposable database only after that proof is complete so
-    # the repository-level model-drift gate starts from the current schema.
-    _run_alembic(url, "upgrade", "head")
+    # Restore only to the preserved historical boundary. The callers still verify
+    # the frozen Plan 012 schema after this helper returns.
+    _run_alembic(url, "upgrade", NOVA_RETIREMENT_REVISION)
 
 
 @pytest.mark.migration
@@ -2835,21 +2823,21 @@ def test_plan012_snapshot_v3_baseline_condition_blocks_at_historical_boundary() 
 def test_plan032_empty_downgrade_and_reupgrade_are_reversible() -> None:
     url = _database_url()
     _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", NOVA_RETIREMENT_REVISION)
     _run_alembic(url, "downgrade", PLAN031_REVISION)
     engine = create_engine(url)
     try:
         assert "nutrition_analysis" not in inspect(engine).get_table_names()
     finally:
         engine.dispose()
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", NOVA_RETIREMENT_REVISION)
 
 
 @pytest.mark.migration
 def test_plan032_populated_downgrade_refuses_without_deleting_history() -> None:
     url = _database_url()
     _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", NOVA_RETIREMENT_REVISION)
     principal_id = uuid4()
     analysis_id = uuid4()
     engine = create_engine(url)
@@ -2885,7 +2873,7 @@ def test_plan032_populated_downgrade_refuses_without_deleting_history() -> None:
 def test_plan033_empty_downgrade_and_reupgrade_are_reversible() -> None:
     url = _database_url()
     _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", NOVA_RETIREMENT_REVISION)
     _run_alembic(url, "downgrade", PLAN032_REVISION)
     engine = create_engine(url)
     try:
@@ -2894,14 +2882,16 @@ def test_plan033_empty_downgrade_and_reupgrade_are_reversible() -> None:
         assert "behavior_goal" not in tables
     finally:
         engine.dispose()
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", NOVA_RETIREMENT_REVISION)
 
 
 @pytest.mark.migration
-def test_plan033_populated_downgrade_refuses_without_deleting_history() -> None:
-    url = _database_url()
+def test_plan033_populated_downgrade_refuses_without_deleting_history(
+    database_restored_to_current_head: str,
+) -> None:
+    url = database_restored_to_current_head
     _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", NOVA_RETIREMENT_REVISION)
     principal_id, analysis_id, revision_id, recommendation_id = (
         uuid4(),
         uuid4(),
@@ -2978,3 +2968,106 @@ def test_plan033_populated_downgrade_refuses_without_deleting_history() -> None:
             == NOVA_RETIREMENT_REVISION
         )
     engine.dispose()
+
+
+@pytest.mark.migration
+def test_food_simplification_rejects_legacy_diary_food_dimension_mismatch_atomically(
+    database_restored_to_current_head: str,
+) -> None:
+    url = database_restored_to_current_head
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "0014_v2_food_taxonomy")
+    principal_id, food_id = _seed_plan009_food(url)
+    _run_alembic(url, "upgrade", NOVA_RETIREMENT_REVISION)
+    entry_id = uuid4()
+    snapshot = {
+        "schema_version": 4,
+        "captured_unit": {
+            "default_unit_type": "serving",
+            "unit_amount": 100,
+            "unit_basis": "g",
+        },
+        "versions": {
+            "nutrition_registry_version": "3.0.0",
+            "snapshot_schema_version": 4,
+        },
+    }
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO diary_entry
+                  (id,principal_id,entry_date,food_id,quantity,meal_type,nutrition_snapshot,
+                   target_plan_id,target_provenance,snapshot_schema_version,created_at)
+                VALUES
+                  (:id,:principal,'2026-09-01',:food,1,'unspecified',CAST(:snapshot AS jsonb),
+                   NULL,'no_target_source',4,:created_at)
+                """
+            ),
+            {
+                "id": entry_id,
+                "principal": principal_id,
+                "food": food_id,
+                "snapshot": json.dumps(snapshot),
+                "created_at": PLAN009_TIMESTAMP,
+            },
+        )
+        connection.execute(
+            text("UPDATE food SET nutrition_basis='per_100ml',unit_basis='ml' WHERE id=:id"),
+            {"id": food_id},
+        )
+
+    result = _run_alembic(url, "upgrade", FOOD_SIMPLIFICATION_REVISION, check=False)
+
+    assert result.returncode != 0
+    assert (
+        "FOOD_SIMPLIFICATION_DIARY_FOOD_DIMENSION_RECONCILIATION_REQUIRED"
+        in result.stdout + result.stderr
+    )
+    inspector = inspect(engine)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            NOVA_RETIREMENT_REVISION
+        )
+        assert (
+            connection.execute(
+                text("SELECT nutrition_snapshot->>'schema_version' FROM diary_entry WHERE id=:id"),
+                {"id": entry_id},
+            ).scalar_one()
+            == "4"
+        )
+    diary_columns = {column["name"] for column in inspector.get_columns("diary_entry")}
+    assert "nutrition_snapshot" in diary_columns
+    assert "recorded_unit_basis" not in diary_columns
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_food_simplification_maps_ambiguous_dairy_primary_to_other(
+    database_restored_to_current_head: str,
+) -> None:
+    url = database_restored_to_current_head
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "0014_v2_food_taxonomy")
+    _, food_id = _seed_plan009_food(url)
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE food SET food_category_key='dairy_fortified_alternatives' WHERE id=:id"
+            ),
+            {"id": food_id},
+        )
+    engine.dispose()
+    _run_alembic(url, "upgrade", FOOD_SIMPLIFICATION_REVISION)
+
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        mapped = connection.execute(
+            text("SELECT primary_category,subcategory FROM food WHERE id=:id"),
+            {"id": food_id},
+        ).one()
+    engine.dispose()
+
+    assert tuple(mapped) == ("other", "other")

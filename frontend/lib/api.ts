@@ -1,9 +1,5 @@
 import type {
   AdminDiaryPage,
-  BehaviorGoalCommand,
-  BehaviorGoalCommandResponse,
-  BehaviorGoalCurrent,
-  BehaviorGoalHistory,
   DiaryEntryInput,
   DiaryEntryResponse,
   DiaryDayStatusResponse,
@@ -16,12 +12,9 @@ import type {
   ProfileInput,
   ProfileResponse,
   NutritionRegistryResponse,
-  PatternAnalysisHistory,
-  PatternAnalysisResponse,
   TargetResponse,
   TargetPlanActivationResponse,
   TargetPlanHistoryResponse,
-  WeeklyPriorityResult,
   WeekSummary
 } from "./types";
 import type {
@@ -212,7 +205,7 @@ export interface FoodListOptions {
   sort?: FoodSort;
   page?: number;
   pageSize?: number;
-  status?: "active" | "archived";
+  archived?: boolean;
 }
 
 export async function listAdminFoodsPage(options: FoodListOptions = {}): Promise<FoodListResponse> {
@@ -223,7 +216,7 @@ export async function listAdminFoodsPage(options: FoodListOptions = {}): Promise
   });
   if (options.search?.trim()) params.set("search", options.search.trim());
   if (options.category) params.set("category", options.category);
-  if (options.status) params.set("status", options.status);
+  if (options.archived !== undefined) params.set("archived", String(options.archived));
   return apiFetch<FoodListResponse>(`/admin/foods?${params.toString()}`);
 }
 
@@ -241,7 +234,7 @@ export async function listFoodsPage(options: FoodListOptions = {}): Promise<Food
   const page = options.page ?? 1;
   const pageSize = options.pageSize ?? 20;
   const start = (page - 1) * pageSize;
-  const categories = [...new Set(result.map((food) => food.food_category_key))].sort();
+  const categories = [...new Set(result.map((food) => food.primary_category))].sort();
   return {
     items: result.slice(start, start + pageSize),
     total: result.length,
@@ -374,116 +367,4 @@ export function setDiaryDayStatus(
 
 export function getWeekSummary(start: string): Promise<WeekSummary> {
   return apiFetch<WeekSummary>(`/diary/week?start=${encodeURIComponent(start)}`);
-}
-
-export async function getCurrentPatternAnalysis(
-  accessToken: string | null | undefined,
-  signal?: AbortSignal
-): Promise<PatternAnalysisResponse | null> {
-  try {
-    return await apiFetch<PatternAnalysisResponse>(
-      "/progress/nutrition-analysis/v2/current",
-      authorizedInit(accessToken, signal)
-    );
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404 && error.code === "NOVA_RETIREMENT_V2_ANALYSIS_NOT_FOUND") {
-      return null;
-    }
-    throw error;
-  }
-}
-
-export function listPatternAnalysisHistory(
-  accessToken: string | null | undefined,
-  cursor?: string | null,
-  limit = 20,
-  signal?: AbortSignal
-): Promise<PatternAnalysisHistory> {
-  const params = new URLSearchParams({ limit: String(limit) });
-  if (cursor) params.set("cursor", cursor);
-  return apiFetch<PatternAnalysisHistory>(
-    `/progress/nutrition-analysis/v2/history?${params.toString()}`,
-    authorizedInit(accessToken, signal)
-  );
-}
-
-export function evaluatePatternAnalysis(
-  expectedRevision: number | null,
-  etag: string | null,
-  idempotencyKey: string,
-  accessToken: string | null | undefined,
-  signal?: AbortSignal
-): Promise<PatternAnalysisResponse> {
-  return apiFetch<PatternAnalysisResponse>(
-    "/progress/nutrition-analysis/v2/evaluate",
-    authorizedInit(accessToken, signal, {
-      method: "POST",
-      headers: {
-        "Idempotency-Key": idempotencyKey,
-        "If-Match": etag ?? '"analysis-none"'
-      },
-      body: JSON.stringify({ expected_current_revision: expectedRevision })
-    })
-  );
-}
-
-export async function getCurrentWeeklyPriority(
-  accessToken: string | null | undefined,
-  signal?: AbortSignal
-): Promise<WeeklyPriorityResult | null> {
-  try {
-    return await apiFetch<WeeklyPriorityResult>(
-      "/progress/weekly-priorities/current",
-      authorizedInit(accessToken, signal)
-    );
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 503 && error.code === "PRIORITY_EVIDENCE_UNAVAILABLE") {
-      return null;
-    }
-    throw error;
-  }
-}
-
-export function getCurrentBehaviorGoal(
-  accessToken: string | null | undefined,
-  signal?: AbortSignal
-): Promise<BehaviorGoalCurrent> {
-  return apiFetch<BehaviorGoalCurrent>(
-    "/progress/behavior-goals/current",
-    authorizedInit(accessToken, signal)
-  );
-}
-
-export function listBehaviorGoalHistory(
-  accessToken: string | null | undefined,
-  cursor?: string | null,
-  limit = 20,
-  signal?: AbortSignal
-): Promise<BehaviorGoalHistory> {
-  const params = new URLSearchParams({ limit: String(limit) });
-  if (cursor) params.set("cursor", cursor);
-  return apiFetch<BehaviorGoalHistory>(
-    `/progress/behavior-goals/history?${params.toString()}`,
-    authorizedInit(accessToken, signal)
-  );
-}
-
-export function commandBehaviorGoal(
-  goalId: string,
-  command: BehaviorGoalCommand,
-  idempotencyKey: string,
-  accessToken: string | null | undefined,
-  signal?: AbortSignal
-): Promise<BehaviorGoalCommandResponse & { idempotent_replayed: boolean }> {
-  return apiFetchWithResponse<BehaviorGoalCommandResponse>(
-    `/progress/behavior-goals/${goalId}/commands`,
-    authorizedInit(accessToken, signal, {
-      method: "POST",
-      headers: { "Idempotency-Key": idempotencyKey },
-      body: JSON.stringify(command)
-    })
-  ).then(({ body, response }) => ({
-    ...body,
-    idempotent_replayed: response.headers.get("Idempotent-Replayed") === "true"
-  }));
 }

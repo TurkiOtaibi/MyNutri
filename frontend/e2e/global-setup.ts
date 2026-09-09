@@ -54,12 +54,10 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     await ensureSuccessful(await fetch(`${API_URL}/foods`, {
       method: "POST", headers,
       body: JSON.stringify({
-        name: "V2 E2E baseline", brand: null, food_category_key: "other", food_kind: "simple",
+        name: "V2 E2E baseline", brand: null, primary_category: "other", subcategory: "other",
         nutrition_basis: "per_100g", default_unit_type: "serving", unit_amount: 100,
         unit_basis: "g", calories: 200, protein_g: 10, carb_g: 25, fat_g: 7,
-        nutrition_source: { type: "unknown", name: null, reference: null },
-        ingredients: { text: null, source_type: null, source_name: null, source_reference: null },
-        group_contributions: [], analytical_traits: []
+        nutrition_data_source: "estimated", ingredients: null
       })
     }), "Food seed create");
   }

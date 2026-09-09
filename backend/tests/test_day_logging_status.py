@@ -15,9 +15,6 @@ from app.models import (
     DiaryDayStatusEvent,
     DiaryDayStatusValue,
     DiaryEntry,
-    NutritionAnalysis,
-    NutritionAnalysisRevision,
-    NutritionAnalysisRevisionEvent,
     Principal,
     utcnow,
 )
@@ -70,79 +67,14 @@ def test_empty_complete_replay_and_reopen_are_versioned(day_session) -> None:
     assert completed == replay
     assert not replayed and replayed_again
     assert completed.logging_status == "complete"
-    assert completed.analysis_eligible is True
     assert completed.logging_status_version == 1
 
     reopened, _ = command_day_status(
         session, principal, target, "reopen", 1, "reopen-empty", authority
     )
     assert reopened.logging_status == "partial"
-    assert reopened.analysis_eligible is False
     assert reopened.entry_count == 0
     assert reopened.logging_status_version == 2
-
-
-def test_day_commands_emit_idempotent_analysis_invalidation_versions(day_session) -> None:
-    session, principal = day_session
-    authority = _authority()
-    target = date(2026, 8, 15)
-    series = NutritionAnalysis(
-        principal_id=principal.principal_id,
-        as_of_diary_date=target,
-        calendar_timezone="Asia/Riyadh",
-    )
-    session.add(series)
-    session.commit()
-    revision = NutritionAnalysisRevision(
-        analysis_id=series.id,
-        principal_id=principal.principal_id,
-        revision=1,
-        period_start=date(2026, 8, 9),
-        period_end=target,
-        previous_period_start=date(2026, 8, 2),
-        previous_period_end=date(2026, 8, 8),
-        analysis_rules_version="w3-analysis-1.1.0",
-        source_versions={},
-        source_input_hash="1" * 64,
-        content_hash="2" * 64,
-        complete_day_count=4,
-        previous_complete_day_count=0,
-        result_status="available",
-        analysis_document={},
-    )
-    session.add(revision)
-    session.commit()
-    series.current_revision_id = revision.id
-    series.current_revision_number = 1
-    session.add(series)
-    session.commit()
-
-    complete, replayed = command_day_status(
-        session, principal, target, "complete", 0, "version-complete", authority
-    )
-    replay, replayed_again = command_day_status(
-        session, principal, target, "complete", 0, "version-complete", authority
-    )
-    assert complete == replay and not replayed and replayed_again
-    command_day_status(
-        session, principal, target, "reopen", 1, "version-reopen", authority
-    )
-    command_day_status(
-        session, principal, target, "complete", 2, "version-recomplete", authority
-    )
-
-    events = session.exec(
-        select(NutritionAnalysisRevisionEvent)
-        .where(NutritionAnalysisRevisionEvent.revision_id == revision.id)
-        .order_by(NutritionAnalysisRevisionEvent.source_day_version)
-    ).all()
-    assert [
-        (event.event_type, event.reason, event.source_day_version) for event in events
-    ] == [
-        ("day_version_changed", "day_completed", 1),
-        ("day_reopened", "completed_day_reopened", 2),
-        ("day_version_changed", "day_completed", 3),
-    ]
 
 
 def test_future_stale_and_key_reuse_fail_closed(day_session) -> None:
@@ -221,9 +153,11 @@ def _assert_vector_matches_persisted_services(vector: dict) -> None:
                 DiaryEntry(
                     principal_id=principal.principal_id,
                     entry_date=diary_date,
+                    food_id=uuid4(),
                     quantity=1,
-                    snapshot_schema_version=2,
-                    nutrition_snapshot={"schema_version": 2},
+                    recorded_unit_type="serving",
+                    recorded_unit_amount=100,
+                    recorded_unit_basis="g",
                 )
             )
         if initial["record"]:
@@ -282,9 +216,11 @@ def _apply_persisted_event(
                     id=uuid4(),
                     principal_id=principal.principal_id,
                     entry_date=diary_date,
+                    food_id=uuid4(),
                     quantity=1,
-                    snapshot_schema_version=2,
-                    nutrition_snapshot={"schema_version": 2},
+                    recorded_unit_type="serving",
+                    recorded_unit_amount=100,
+                    recorded_unit_basis="g",
                 )
                 session.add(entry)
                 session.flush()

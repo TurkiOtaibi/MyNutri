@@ -211,294 +211,31 @@ TARGET_TYPES: tuple[str, ...] = (
     "minimize",
 )
 
-FOOD_CATEGORIES: tuple[str, ...] = (
-    "vegetables",
-    "fruits",
-    "legumes",
-    "grains_starches",
-    "baked_goods",
-    "nuts_seeds",
-    "seafood",
-    "dairy_fortified_alternatives",
-    "eggs",
-    "poultry",
-    "red_meat",
-    "processed_meat",
-    "added_oils_fats",
-    "sweets",
-    "sugar_sweetened_beverages",
-    "unsweetened_beverages",
-    "herbs_spices",
-    "mixed_dish",
-    "other",
+FOOD_TAXONOMY: tuple[dict[str, Any], ...] = (
+    {"key": "grains_and_starches", "label_ar": "الحبوب والنشويات", "subcategories": (("rice", "الأرز"), ("oats", "الشوفان"), ("pasta", "المعكرونة"), ("bulgur", "البرغل"), ("jareesh", "الجريش"), ("wheat", "القمح"), ("barley", "الشعير"), ("corn", "الذرة"), ("potatoes", "البطاطس"), ("sweet_potatoes", "البطاطا الحلوة"), ("other", "أخرى"))},
+    {"key": "bakery", "label_ar": "المخبوزات", "subcategories": (("bread", "الخبز"), ("toast", "التوست"), ("samoli", "الصامولي"), ("croissant", "الكرواسون"), ("pastries", "المعجنات"), ("tortilla_and_wraps", "التورتيلا واللفائف"), ("biscuits_and_crackers", "البسكويت والمقرمشات"), ("other", "أخرى"))},
+    {"key": "meat_and_poultry", "label_ar": "اللحوم والدواجن", "subcategories": (("chicken", "الدجاج"), ("turkey", "الديك الرومي"), ("beef", "اللحم البقري"), ("lamb", "لحم الغنم"), ("camel", "لحم الإبل"), ("eggs", "البيض"), ("processed_meat", "اللحوم المصنعة"), ("other", "أخرى"))},
+    {"key": "fish_and_seafood", "label_ar": "الأسماك والمأكولات البحرية", "subcategories": (("fish", "الأسماك"), ("tuna", "التونة"), ("shrimp", "الروبيان"), ("crustaceans", "القشريات"), ("mollusks", "الرخويات"), ("other", "أخرى"))},
+    {"key": "dairy_products", "label_ar": "الألبان ومنتجاتها", "subcategories": (("milk", "الحليب"), ("laban", "اللبن"), ("yogurt", "الزبادي"), ("labneh", "اللبنة"), ("cheese", "الأجبان"), ("cream_and_qishta", "القشطة والكريمة"), ("other", "منتجات ألبان أخرى"))},
+    {"key": "legumes", "label_ar": "البقوليات", "subcategories": (("lentils", "العدس"), ("chickpeas", "الحمص"), ("beans", "الفاصوليا"), ("fava_beans", "الفول"), ("peas", "البازلاء"), ("cowpeas", "اللوبيا"), ("lupin", "الترمس"), ("other", "أخرى"))},
+    {"key": "vegetables", "label_ar": "الخضروات", "subcategories": (("leafy_vegetables", "الخضروات الورقية"), ("cruciferous_vegetables", "الخضروات الصليبية"), ("root_vegetables", "الخضروات الجذرية"), ("tomatoes", "الطماطم"), ("cucumber", "الخيار"), ("peppers", "الفلفل"), ("onion_and_garlic", "البصل والثوم"), ("zucchini_and_squash", "الكوسا والقرع"), ("eggplant", "الباذنجان"), ("mushrooms", "الفطر"), ("other", "خضروات أخرى"))},
+    {"key": "fruits", "label_ar": "الفواكه", "subcategories": (("citrus", "الحمضيات"), ("apples_and_pears", "التفاح والكمثرى"), ("bananas", "الموز"), ("grapes", "العنب"), ("berries", "التوت"), ("stone_fruits", "الفواكه ذات النواة"), ("tropical_fruits", "الفواكه الاستوائية"), ("watermelon_and_melon", "البطيخ والشمام"), ("dates", "التمر"), ("pomegranate", "الرمان"), ("figs", "التين"), ("dried_fruits", "الفواكه المجففة"), ("other", "فواكه أخرى"))},
+    {"key": "nuts_and_seeds", "label_ar": "المكسرات والبذور", "subcategories": (("almonds", "اللوز"), ("walnuts", "الجوز"), ("cashews", "الكاجو"), ("pistachios", "الفستق"), ("hazelnuts", "البندق"), ("peanuts", "الفول السوداني"), ("sesame_seeds", "بذور السمسم"), ("chia_seeds", "بذور الشيا"), ("flax_seeds", "بذور الكتان"), ("sunflower_seeds", "بذور دوار الشمس"), ("pumpkin_seeds", "بذور اليقطين"), ("other", "مكسرات وبذور أخرى"))},
+    {"key": "fats_and_oils", "label_ar": "الدهون والزيوت", "subcategories": (("olive_oil", "زيت الزيتون"), ("vegetable_oils", "الزيوت النباتية"), ("coconut_oil", "زيت جوز الهند"), ("butter", "الزبدة"), ("ghee", "السمن"), ("margarine", "السمن النباتي"), ("other", "دهون وزيوت أخرى"))},
+    {"key": "sweets_and_sugars", "label_ar": "الحلويات والسكريات", "subcategories": (("cake", "الكيك"), ("chocolate", "الشوكولاتة"), ("sweet_biscuits", "البسكويت الحلو"), ("middle_eastern_sweets", "الحلويات الشرقية"), ("western_desserts", "الحلويات الغربية"), ("ice_cream_and_frozen_desserts", "الآيس كريم والحلويات المجمدة"), ("candy", "الحلوى والسكاكر"), ("sugar_and_sweeteners", "السكر والمحليات"), ("jam_and_sweet_spreads", "المربى والدهن الحلو"), ("other", "حلويات وسكريات أخرى"))},
+    {"key": "beverages", "label_ar": "المشروبات", "subcategories": (("water", "الماء"), ("coffee", "القهوة"), ("tea", "الشاي"), ("juices", "العصائر"), ("carbonated_drinks", "المشروبات الغازية"), ("energy_drinks", "مشروبات الطاقة"), ("sports_drinks", "المشروبات الرياضية"), ("plant_based_drinks", "المشروبات النباتية"), ("shakes_and_smoothies", "المشروبات المخفوقة"), ("other", "مشروبات أخرى"))},
+    {"key": "meals", "label_ar": "الوجبات", "subcategories": (("rice_dishes", "أطباق الأرز"), ("pasta_dishes", "أطباق المعكرونة"), ("burgers_and_sandwiches", "البرغر والسندويتشات"), ("shawarma", "الشاورما"), ("pizza", "البيتزا"), ("salads", "السلطات"), ("soups", "الشوربات"), ("main_dishes", "الأطباق الرئيسية"), ("breakfast_meals", "وجبات الإفطار"), ("other", "وجبات أخرى"))},
+    {"key": "sauces_spices_and_additions", "label_ar": "الصلصات والتوابل والإضافات", "subcategories": (("sauces", "الصلصات"), ("mayonnaise", "المايونيز"), ("dressings", "التتبيلات"), ("tahini", "الطحينة"), ("spices_and_seasonings", "التوابل والبهارات"), ("herbs", "الأعشاب"), ("salt", "الملح"), ("vinegar", "الخل"), ("additions", "الإضافات"), ("other", "أخرى"))},
+    {"key": "other", "label_ar": "أخرى", "subcategories": (("other", "أخرى"),)},
 )
 
-FOOD_CATEGORY_LABELS_AR: dict[str, str] = dict(
-    zip(
-        FOOD_CATEGORIES,
-        (
-            "الخضروات",
-            "الفواكه",
-            "البقوليات",
-            "الحبوب والنشويات",
-            "المخبوزات",
-            "المكسرات والبذور",
-            "المأكولات البحرية",
-            "الألبان والبدائل المدعمة",
-            "البيض",
-            "الدواجن",
-            "اللحوم الحمراء",
-            "اللحوم المصنعة",
-            "الزيوت والدهون المضافة",
-            "الحلويات",
-            "المشروبات المحلاة بالسكر",
-            "المشروبات غير المحلاة",
-            "الأعشاب والتوابل",
-            "الأطباق المركبة",
-            "أخرى",
-        ),
-        strict=True,
-    )
-)
-
-FOOD_GROUPS: tuple[dict[str, Any], ...] = (
-    {
-        "key": "vegetables",
-        "mutually_exclusive": True,
-        "serving": {"amount": 80, "unit": "g"},
-        "combined_target": {"fruit_and_vegetables_g_per_day": 400},
-        "excludes_traits": ["starchy_root"],
-    },
-    {
-        "key": "fruits",
-        "mutually_exclusive": True,
-        "servings": {
-            "whole_fresh": {"amount": 80, "unit": "g"},
-            "dried_fruit": {"amount": 30, "unit": "g"},
-            "fruit_liquid_100_percent": {"amount": 150, "unit": "ml", "daily_cap": 1},
-        },
-        "combined_target": {"fruit_and_vegetables_g_per_day": 400},
-    },
-    {
-        "key": "legumes",
-        "mutually_exclusive": True,
-        "serving": {"amount": 80, "unit": "g"},
-        "target": {"minimum_servings": 3, "period": "week"},
-    },
-    {
-        "key": "whole_grains",
-        "mutually_exclusive": True,
-        "basis": "per_100g",
-        "share_target": {"minimum_percent_of_known_grains": 50},
-    },
-    {
-        "key": "refined_grains",
-        "mutually_exclusive": True,
-        "basis": "per_100g",
-        "share_denominator": "known_whole_plus_refined",
-    },
-    {
-        "key": "nuts_seeds",
-        "mutually_exclusive": True,
-        "serving": {"amount": 30, "unit": "g"},
-        "target": {"minimum_servings": 5, "period": "week"},
-        "includes": ["peanuts"],
-        "excludes": ["extracted_oils"],
-    },
-    {
-        "key": "seafood",
-        "mutually_exclusive": True,
-        "serving": {"amount": 100, "unit": "g"},
-        "target": {"minimum_servings": 2, "period": "week", "omega3_rich_minimum_servings": 1},
-    },
-    {
-        "key": "dairy_fortified_alternatives",
-        "mutually_exclusive": True,
-        "target": {"servings": 2, "period": "day"},
-        "subtypes": {
-            "milk_laban_kefir": {"amount": 250, "unit": "ml"},
-            "yogurt": {"amount": 200, "unit": "g"},
-            "hard_cheese": {"amount": 30, "unit": "g"},
-            "cottage_ricotta": {"amount": 120, "unit": "g"},
-            "fortified_plant_alternative": {
-                "amount": 250,
-                "unit": "ml",
-                "requires_trait": "calcium_fortified",
-                "minimum_calcium_mg_per_100ml": 100,
-            },
-        },
-        "excludes": ["butter", "ghee", "cream", "ice_cream"],
-    },
-    {
-        "key": "eggs",
-        "mutually_exclusive": True,
-        "target_type": "monitor_only",
-        "reference_serving": {"amount": 50, "unit": "g"},
-        "subtypes": ["whole_egg", "egg_white", "mixed_egg_product"],
-    },
-    {
-        "key": "poultry",
-        "mutually_exclusive": True,
-        "target_type": "monitor_only",
-        "reference_serving": {"amount": 100, "unit": "g"},
-        "processed_classification": "processed_meat",
-    },
-    {
-        "key": "red_meat",
-        "mutually_exclusive": True,
-        "reference_serving": {"amount": 100, "unit": "g"},
-        "target": {"maximum_amount": 500, "near_limit_from": 350, "unit": "g", "period": "week"},
-    },
-    {
-        "key": "processed_meat",
-        "mutually_exclusive": True,
-        "target_type": "minimize",
-        "display": ["grams", "occasions"],
-    },
-    {"key": "added_oils_fats", "mutually_exclusive": True, "target_type": "monitor_only"},
-    {"key": "sweets", "mutually_exclusive": True, "target_type": "minimize"},
-    {"key": "sugar_sweetened_beverages", "mutually_exclusive": True, "target_type": "minimize"},
-    {"key": "unsweetened_beverages", "mutually_exclusive": True, "target_type": "monitor_only"},
-    {"key": "herbs_spices", "mutually_exclusive": True, "target_type": "monitor_only"},
-)
-
-TRAITS: tuple[dict[str, str], ...] = tuple(
-    {"key": key, "label_ar": label}
-    for key, label in (
-        ("sweetened", "محلى"),
-        ("non_nutritive_sweetened", "محلى بمُحلٍ غير مغذٍ"),
-        ("processed", "مصنع"),
-        ("omega3_rich_seafood", "مأكولات بحرية غنية بأوميغا 3"),
-        ("calcium_fortified", "مدعم بالكالسيوم"),
-        ("unsaturated_fat_source", "مصدر للدهون غير المشبعة"),
-        ("smoked", "مدخن"),
-        ("salted", "مملح"),
-        ("fruit_liquid_100_percent", "عصير أو سموذي فواكه 100%"),
-        ("dried_fruit", "فاكهة مجففة"),
-        ("starchy_root", "جذر نشوي"),
-    )
-)
-
-FOOD_GROUP_LABELS_AR: dict[str, str] = {
-    **{
-        key: FOOD_CATEGORY_LABELS_AR[key]
-        for key in (item["key"] for item in FOOD_GROUPS)
-        if key in FOOD_CATEGORY_LABELS_AR
-    },
-    "whole_grains": "الحبوب الكاملة",
-    "refined_grains": "الحبوب المكررة",
+PRIMARY_CATEGORIES: tuple[str, ...] = tuple(item["key"] for item in FOOD_TAXONOMY)
+SUBCATEGORIES_BY_PRIMARY: dict[str, frozenset[str]] = {
+    item["key"]: frozenset(key for key, _label in item["subcategories"])
+    for item in FOOD_TAXONOMY
 }
 
-GRAIN_TYPE_DEFINITIONS: tuple[dict[str, str], ...] = tuple(
-    {"key": key, "label_ar": label}
-    for key, label in (
-        ("whole", "حبوب كاملة"),
-        ("refined", "حبوب مكررة"),
-        ("mixed", "خليط من الحبوب الكاملة والمكررة"),
-        ("grain_free", "خالٍ من الحبوب"),
-        ("unknown", "غير معروف"),
-    )
+NUTRITION_DATA_SOURCES: tuple[dict[str, str], ...] = (
+    {"key": "official", "label_ar": "رسمي"},
+    {"key": "estimated", "label_ar": "تقديري"},
 )
-
-BAKED_GOOD_TYPE_DEFINITIONS: tuple[dict[str, str], ...] = tuple(
-    {"key": key, "label_ar": label}
-    for key, label in (
-        ("arabic_bread", "خبز عربي"),
-        ("toast", "توست"),
-        ("rolls_wraps", "صامولي أو لفائف"),
-        ("burger_bun", "خبز برغر"),
-        ("flatbread", "خبز مسطح"),
-        ("pastries", "معجنات"),
-        ("cake", "كيك"),
-        ("biscuits_cookies", "بسكويت"),
-        ("other", "مخبوزات أخرى"),
-    )
-)
-
-GRAIN_STARCH_TYPE_DEFINITIONS: tuple[dict[str, str], ...] = tuple(
-    {"key": key, "label_ar": label}
-    for key, label in (
-        ("rice", "أرز"),
-        ("pasta", "معكرونة"),
-        ("oats", "شوفان"),
-        ("breakfast_cereal", "حبوب إفطار"),
-        ("bulgur", "برغل"),
-        ("quinoa", "كينوا"),
-        ("flour", "دقيق"),
-        ("other", "حبوب أو نشويات أخرى"),
-    )
-)
-
-FOOD_GROUP_SUBTYPE_LABELS_AR: dict[str, dict[str, str]] = {
-    "dairy_fortified_alternatives": {
-        "milk_laban_kefir": "حليب أو لبن أو كفير",
-        "yogurt": "زبادي",
-        "hard_cheese": "جبن صلب",
-        "cottage_ricotta": "جبن قريش أو ريكوتا",
-        "fortified_plant_alternative": "بديل نباتي مدعم",
-    },
-    "eggs": {
-        "whole_egg": "بيضة كاملة",
-        "egg_white": "بياض بيض",
-        "mixed_egg_product": "منتج بيض مختلط",
-    },
-}
-
-SOURCE_RELIABILITY: tuple[dict[str, str], ...] = (
-    {"type": "laboratory_analysis", "label_ar": "تحليل مخبري", "reliability": "high"},
-    {
-        "type": "official_food_database",
-        "label_ar": "قاعدة بيانات غذائية رسمية",
-        "reliability": "high",
-    },
-    {"type": "official_product_label", "label_ar": "بطاقة منتج رسمية", "reliability": "high"},
-    {"type": "manufacturer_website", "label_ar": "موقع الشركة المصنعة", "reliability": "high"},
-    {"type": "official_restaurant", "label_ar": "بيانات مطعم رسمية", "reliability": "medium"},
-    {"type": "calculated_recipe", "label_ar": "وصفة محسوبة", "reliability": "medium"},
-    {"type": "manual_estimate", "label_ar": "تقدير يدوي", "reliability": "low"},
-    {"type": "multiple_sources", "label_ar": "مصادر متعددة", "reliability": "mixed"},
-    {"type": "unknown", "label_ar": "مصدر غير معروف", "reliability": "unknown"},
-)
-
-INGREDIENT_SOURCE_TYPES: tuple[str, ...] = (
-    "official_product_label",
-    "manufacturer_website",
-    "official_food_database",
-    "official_restaurant",
-    "calculated_recipe",
-    "manual_entry",
-    "multiple_sources",
-    "unknown",
-)
-
-INGREDIENT_SOURCE_LABELS_AR: dict[str, str] = {
-    "official_product_label": "بطاقة منتج رسمية",
-    "manufacturer_website": "موقع الشركة المصنعة",
-    "official_food_database": "قاعدة بيانات غذائية رسمية",
-    "official_restaurant": "بيانات مطعم رسمية",
-    "calculated_recipe": "وصفة محسوبة",
-    "manual_entry": "إدخال يدوي",
-    "multiple_sources": "مصادر متعددة",
-    "unknown": "مصدر غير معروف",
-}
-
-RELIABILITY_LEVELS: tuple[dict[str, str], ...] = (
-    {"key": "high", "label_ar": "مرتفعة"},
-    {"key": "medium", "label_ar": "متوسطة"},
-    {"key": "low", "label_ar": "محدودة"},
-    {"key": "mixed", "label_ar": "متفاوتة"},
-    {"key": "unknown", "label_ar": "غير معروفة"},
-)
-
-NOVA = {
-    "classifications": [1, 2, 3, 4, "unknown"],
-    "labels_ar": {
-        "1": "NOVA 1",
-        "2": "NOVA 2",
-        "3": "NOVA 3",
-        "4": "NOVA 4",
-        "unknown": "غير معروف",
-    },
-    "review_statuses": ["unreviewed", "reviewed"],
-    "automated_suggestions": False,
-}

@@ -6,25 +6,13 @@ from typing import Any
 
 from app.nutrition_rules.policies import CALCULATION_POLICY
 from app.nutrition_rules.registry import (
-    BAKED_GOOD_TYPE_DEFINITIONS,
-    FOOD_GROUPS,
-    FOOD_GROUP_LABELS_AR,
-    FOOD_GROUP_SUBTYPE_LABELS_AR,
-    GRAIN_STARCH_TYPE_DEFINITIONS,
-    GRAIN_TYPE_DEFINITIONS,
-    INGREDIENT_SOURCE_LABELS_AR,
-    INGREDIENT_SOURCE_TYPES,
+    FOOD_TAXONOMY,
     NUTRIENTS,
-    FOOD_CATEGORIES,
-    FOOD_CATEGORY_LABELS_AR,
-    RELIABILITY_LEVELS,
-    SOURCE_RELIABILITY,
+    NUTRITION_DATA_SOURCES,
+    PRIMARY_CATEGORIES,
     TARGET_TYPES,
-    TRAITS,
 )
 from app.nutrition_rules.versions import VERSIONS
-from app.nutrition_rules.analysis import METRIC_REGISTRY
-from app.nutrition_rules.weekly_priority import priority_registry
 
 
 def rules_manifest() -> dict[str, Any]:
@@ -33,37 +21,19 @@ def rules_manifest() -> dict[str, Any]:
         "calculation_policy": CALCULATION_POLICY,
         "nutrients": [item.as_dict() for item in NUTRIENTS],
         "target_types": list(TARGET_TYPES),
-        "food_categories": list(FOOD_CATEGORIES),
-        "food_category_definitions": [
-            {"key": key, "label_ar": FOOD_CATEGORY_LABELS_AR[key]} for key in FOOD_CATEGORIES
-        ],
-        "grain_type_definitions": list(GRAIN_TYPE_DEFINITIONS),
-        "baked_good_type_definitions": list(BAKED_GOOD_TYPE_DEFINITIONS),
-        "grain_starch_type_definitions": list(GRAIN_STARCH_TYPE_DEFINITIONS),
-        "food_groups": list(FOOD_GROUPS),
-        "food_group_definitions": [
+        "primary_categories": list(PRIMARY_CATEGORIES),
+        "food_taxonomy": [
             {
                 "key": item["key"],
-                "label_ar": FOOD_GROUP_LABELS_AR[item["key"]],
-                "subtype_labels_ar": FOOD_GROUP_SUBTYPE_LABELS_AR.get(item["key"], {}),
-                **item,
+                "label_ar": item["label_ar"],
+                "subcategories": [
+                    {"key": key, "label_ar": label_ar}
+                    for key, label_ar in item["subcategories"]
+                ],
             }
-            for item in FOOD_GROUPS
+            for item in FOOD_TAXONOMY
         ],
-        "traits": list(TRAITS),
-        "source_types": list(SOURCE_RELIABILITY),
-        "ingredient_source_types": list(INGREDIENT_SOURCE_TYPES),
-        "ingredient_source_definitions": [
-            {"type": key, "label_ar": INGREDIENT_SOURCE_LABELS_AR[key]}
-            for key in INGREDIENT_SOURCE_TYPES
-        ],
-        "reliability_levels": list(RELIABILITY_LEVELS),
-        "analysis_metrics": [
-            {"key": key, "unit": value[0], "direction": value[1]}
-            for key, value in sorted(METRIC_REGISTRY.items())
-            if not key.startswith("nova:")
-        ],
-        "weekly_priority_rules": priority_registry(),
+        "nutrition_data_sources": list(NUTRITION_DATA_SOURCES),
     }
 
 
@@ -85,18 +55,7 @@ def registry_response() -> dict[str, Any]:
         "calculation_policy": manifest["calculation_policy"],
         "nutrients": manifest["nutrients"],
         "target_types": manifest["target_types"],
-        "food_categories": manifest["food_categories"],
-        "food_category_definitions": manifest["food_category_definitions"],
-        "grain_type_definitions": manifest["grain_type_definitions"],
-        "baked_good_type_definitions": manifest["baked_good_type_definitions"],
-        "grain_starch_type_definitions": manifest["grain_starch_type_definitions"],
-        "food_groups": manifest["food_groups"],
-        "food_group_definitions": manifest["food_group_definitions"],
-        "traits": manifest["traits"],
-        "source_types": manifest["source_types"],
-        "ingredient_source_types": manifest["ingredient_source_types"],
-        "ingredient_source_definitions": manifest["ingredient_source_definitions"],
-        "reliability_levels": manifest["reliability_levels"],
-        "analysis_metrics": manifest["analysis_metrics"],
-        "weekly_priority_rules": manifest["weekly_priority_rules"],
+        "primary_categories": manifest["primary_categories"],
+        "food_taxonomy": manifest["food_taxonomy"],
+        "nutrition_data_sources": manifest["nutrition_data_sources"],
     }

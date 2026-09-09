@@ -309,12 +309,8 @@ export function EditEntryDialog({ entry, dayVersion, onClose, onSaved }: { entry
   const amount = parseQuantity(quantity);
   const quantityError = validateQuantity(quantity);
   const preview = amount == null ? null : scaleEntryPreview(entry, amount);
-  const equivalentAmount = amount != null && entry.nutrition_snapshot.unit_amount
-    ? Number(entry.nutrition_snapshot.unit_amount) * amount
-    : null;
-  const unitLabel = entry.nutrition_snapshot.default_unit_type
-    ? defaultUnitLabels[entry.nutrition_snapshot.default_unit_type]
-    : "حصة";
+  const equivalentAmount = amount == null ? null : Number(entry.recorded_unit_amount) * amount;
+  const unitLabel = entry.recorded_unit_label ?? defaultUnitLabels[entry.recorded_unit_type];
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -329,10 +325,10 @@ export function EditEntryDialog({ entry, dayVersion, onClose, onSaved }: { entry
     <ModalFrame labelledBy="edit-entry-title" onClose={onClose} pending={mutation.isPending}>
       <form onSubmit={submit}>
         <div className="sheet-header">
-          <div><p className="section-eyebrow-text" dir="auto">{entry.nutrition_snapshot.name}</p><h2 id="edit-entry-title">تعديل الكمية والقسم</h2></div>
+          <div><p className="section-eyebrow-text" dir="auto">{entry.food.name}</p><h2 id="edit-entry-title">تعديل الكمية والقسم</h2></div>
           <button className="btn icon" type="button" onClick={onClose} aria-label="إغلاق تعديل الكمية"><X size={19} /></button>
         </div>
-        <p className="dialog-help">يمكن تعديل الكمية والقسم فقط. يبقى الطعام والتاريخ وبياناته الغذائية كما سُجلت.</p>
+        <p className="dialog-help">يمكن تعديل الكمية والقسم فقط. تبقى الكمية المسجلة ثابتة، وتُحسب القيم من بيانات الطعام الحالية.</p>
         <MealTypeSelector value={mealType} onChange={setMealType} />
         <QuantityStepper
           value={quantity}
@@ -345,7 +341,7 @@ export function EditEntryDialog({ entry, dayVersion, onClose, onSaved }: { entry
           <div className="entry-preview edit-entry-preview" aria-label="معاينة القيم الغذائية بعد التعديل" aria-live="polite">
             <p>
               <bdi dir="ltr">{formatServingMacro(amount ?? 0)}</bdi> {unitLabel}
-              {equivalentAmount != null && entry.nutrition_snapshot.unit_basis ? <> · <bdi dir="ltr">{formatServingMacro(equivalentAmount)}</bdi> {unitBasisLabels[entry.nutrition_snapshot.unit_basis]}</> : null}
+              {equivalentAmount != null ? <> · <bdi dir="ltr">{formatServingMacro(equivalentAmount)}</bdi> {unitBasisLabels[entry.recorded_unit_basis]}</> : null}
             </p>
             <div>
               <span><strong>{Math.round(preview.calories)}</strong> سعرة</span>

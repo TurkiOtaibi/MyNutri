@@ -118,15 +118,18 @@ test.describe("Food details and editing @foods", () => {
     expect((await foodsApi.get(food.id)).name).toBe(food.name);
   });
 
-  test("[FOOD-TC-115] @p0 old Diary snapshot does not change after Food edit", async ({ foodsApi }) => {
-    const food = await foodsApi.create({ name: `E2E-Snapshot-Edit-${Date.now()}`, calories: 100 });
+  test("[FOOD-TC-115] @p0 Food corrections propagate to existing Diary entries", async ({ foodsApi }) => {
+    const food = await foodsApi.create({ name: `E2E-Current-Truth-${Date.now()}`, calories: 130 });
     const date = diaryDate();
-    const entry = await foodsApi.createDiary(food.id, date, 1);
-    const update = await foodsApi.update(food.id, { calories: 300, name: `${food.name}-Updated` });
+    const entry = await foodsApi.createDiary(food.id, date, 2);
+    expect(entry.totals.calories).toBe(260);
+    const update = await foodsApi.update(food.id, { calories: 140, name: `${food.name}-Updated` });
     expect(update.status()).toBe(200);
     const current = (await foodsApi.listDiary(date)).find((item) => item.id === entry.id)!;
-    expect(current.nutrition_snapshot.name).toBe(food.name);
-    expect(current.totals.calories).toBe(100);
+    expect(current.food.name).toBe(`${food.name}-Updated`);
+    expect(current.totals.calories).toBe(280);
+    expect(current.quantity).toBe(2);
+    expect(current.recorded_unit_amount).toBe(100);
   });
 
   test("[FOOD-TC-116] @p1 @mobile edit supports RTL mixed text without overflow", async ({ page, foodsApi }) => {
@@ -152,15 +155,16 @@ test.describe("Food details and editing @foods", () => {
     const food = await foodsApi.create({
       name: `E2E-Full-Details-${Date.now()}`,
       brand: "Detail Brand",
-      food_category_key: "other",
+      primary_category: "other",
+      subcategory: "other",
       fiber_g: 4,
       sugar_g: 8,
       added_sugar_g: 2,
       notes: "Detail notes",
-      data_source: "USDA"
+      nutrition_data_source: "official"
     });
     await page.goto(`/foods/${food.id}`);
-    for (const value of [food.name, "Detail Brand", "أخرى", "Detail notes", "USDA", "4 جم", "8 جم", "2 جم"]) {
+    for (const value of [food.name, "Detail Brand", "أخرى", "Detail notes", "رسمي", "4 جم", "8 جم", "2 جم"]) {
       await expect(page.getByText(value, { exact: true }).first()).toBeVisible();
     }
   });

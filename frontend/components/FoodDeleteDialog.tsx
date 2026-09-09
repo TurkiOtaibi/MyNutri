@@ -104,7 +104,7 @@ export function FoodDeleteDialog({
           <h2 id="delete-food-title">حذف الطعام نهائيًا</h2>
         </div>
         <p id="delete-food-description" className="page-kicker">
-          سيتم حذف {food.name} نهائيًا من كتالوج الأطعمة. ستبقى اليوميات السابقة كما هي لأنها تستخدم نسخة غذائية محفوظة.
+          سيتم حذف {food.name} نهائيًا إذا لم يكن مستخدمًا. إذا كان مرتبطًا بيوميات سابقة فستتم أرشفته بدلًا من ذلك، لتبقى اليوميات قادرة على قراءة بيانات الطعام الحالية.
         </p>
         <div className="actions">
           <button ref={cancelRef} className="btn" type="button" onClick={onCancel} disabled={deleting}>

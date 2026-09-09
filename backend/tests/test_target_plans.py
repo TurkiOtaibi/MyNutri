@@ -15,14 +15,19 @@ from app.core.calendar import current_diary_date, diary_calendar_authority
 from app.db.session import get_session
 from app.main import app
 from app.models import (
+    DefaultUnitType,
     DiaryEntry,
+    Food,
     IdempotencyRecord,
     LegacyTargetTransitionSnapshot,
+    NutritionBasis,
+    NutritionDataSource,
     Principal,
     Profile,
     TargetPlan,
     TargetPlanStatus,
     TargetProvenance,
+    UnitBasis,
 )
 from app.services.target_plans import (
     project_targets,
@@ -1162,19 +1167,33 @@ def test_history_uses_an_opaque_stable_cursor(target_plan_context) -> None:
 
 def test_new_profile_activates_today_without_transition_snapshot(target_plan_context) -> None:
     client, session = target_plan_context
-    snapshot = {
-        "name": "Before activation",
-        "calories": 100,
-        "protein_g": 1,
-        "carb_g": 2,
-        "fat_g": 3,
-    }
+    food = Food(
+        principal_id=PRINCIPAL_A,
+        name="Before activation",
+        normalized_name="before activation",
+        primary_category="other",
+        subcategory="other",
+        nutrition_basis=NutritionBasis.per_100g,
+        default_unit_type=DefaultUnitType.g,
+        unit_amount=1,
+        unit_basis=UnitBasis.g,
+        calories=100,
+        protein_g=1,
+        carb_g=2,
+        fat_g=3,
+        nutrition_data_source=NutritionDataSource.estimated,
+    )
+    session.add(food)
+    session.flush()
     entry = DiaryEntry(
         principal_id=PRINCIPAL_B,
         entry_date=TODAY,
+        food_id=food.id,
         quantity=1,
+        recorded_unit_type=food.default_unit_type,
+        recorded_unit_amount=food.unit_amount,
+        recorded_unit_basis=food.unit_basis,
         target_provenance=TargetProvenance.no_target_source,
-        nutrition_snapshot=snapshot,
     )
     session.add(entry)
     session.commit()
@@ -1191,7 +1210,6 @@ def test_new_profile_activates_today_without_transition_snapshot(target_plan_con
     session.refresh(entry)
     assert entry.target_provenance == TargetProvenance.versioned_plan
     assert str(entry.target_plan_id) == response.json()["plan"]["id"]
-    assert entry.nutrition_snapshot == snapshot
 
 
 def test_preview_hash_rejects_stale_activation_without_partial_persistence(

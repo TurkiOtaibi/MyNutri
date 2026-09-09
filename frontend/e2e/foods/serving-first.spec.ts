@@ -58,13 +58,13 @@ test.describe("Foods serving-first catalog and details @foods", () => {
 
   test("[SERVING-003] @p0 search and category filter work together", async ({ page, foodsApi }) => {
     const stamp = Date.now();
-    const match = await foodsApi.create({ name: `E2E Filter Oats ${stamp}`, food_category_key: "grains_starches", grain_starch_type: "oats", grain_type: "whole" });
-    const wrongCategory = await foodsApi.create({ name: `E2E Filter Oats Other ${stamp}`, food_category_key: "sweets" });
-    const wrongName = await foodsApi.create({ name: `E2E Filter Rice ${stamp}`, food_category_key: "grains_starches", grain_starch_type: "rice", grain_type: "refined" });
+    const match = await foodsApi.create({ name: `E2E Filter Oats ${stamp}`, primary_category: "grains_and_starches", subcategory: "oats" });
+    const wrongCategory = await foodsApi.create({ name: `E2E Filter Oats Other ${stamp}`, primary_category: "sweets_and_sugars", subcategory: "other" });
+    const wrongName = await foodsApi.create({ name: `E2E Filter Rice ${stamp}`, primary_category: "grains_and_starches", subcategory: "rice" });
 
     await page.goto("/foods");
     await page.getByLabel("بحث باسم الطعام").fill(`Oats ${stamp}`);
-    await page.getByLabel("تصفية حسب التصنيف").selectOption("grains_starches");
+    await page.getByLabel("تصفية حسب التصنيف").selectOption("grains_and_starches");
 
     await expect(page.getByText(match.name, { exact: true }).first()).toBeVisible();
     await expect(page.getByText(wrongCategory.name, { exact: true })).toHaveCount(0);
@@ -126,7 +126,8 @@ test.describe("Foods serving-first catalog and details @foods", () => {
     const food = await foodsApi.create({
       name: `بسكويت الشوفان بالشوكولاتة الداكنة بدون سكر - Gullón Oaty ${Date.now()}`.slice(0, 120),
       brand: "Gullón Oaty",
-      food_category_key: "sweets"
+      primary_category: "sweets_and_sugars",
+      subcategory: "other"
     });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/foods");
@@ -141,27 +142,17 @@ function mockFoods(count: number): FoodRecord[] {
   return Array.from({ length: count }, (_, index) => ({
     ...validFood({
       name: `Mock Food ${String(index + 1).padStart(2, "0")}`,
-      food_category_key: index % 2 === 0 ? "fruits" : "other",
+      primary_category: index % 2 === 0 ? "fruits" : "other",
+      subcategory: "other",
       unit_amount: 25,
       calories: 200 + index,
       protein_g: 10 + index / 10
     }),
     id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
     net_carbs_g: 20,
-    nutrition_source: {
-      type: "unknown",
-      name: null,
-      reference: null,
-      reliability: "unknown",
-      reliability_rules_version: "1.0.0"
-    },
-    group_contributions: [],
     created_at: "2026-07-10T00:00:00Z",
-    updated_at: "2026-07-10T00:00:00Z"
-    ,status: "active",
+    updated_at: "2026-07-10T00:00:00Z",
     archived_at: null,
-    group_data_status: "unknown",
-    group_data_completeness: "unknown"
   }));
 }
 

@@ -52,45 +52,33 @@ def test_registry_exposes_exact_version_bundle_and_authoritative_metadata(
     assert body["rules_manifest_hash"] == rules_manifest_hash()
     assert len(body["nutrients"]) == 16
     assert len(body["target_types"]) == 7
-    assert body["analysis_rules_version"] == "w3-analysis-2.0.0"
-    assert body["analysis_rules_status"] == "active"
-    assert body["weekly_priority_rules_version"] == "w3-priority-1.1.0"
-    assert body["weekly_priority_copy_version"] == "w3-priority-ar-1.1.0"
-    assert len(body["weekly_priority_rules"]) == 23
-    actions = [
-        action for rule in body["weekly_priority_rules"] for action in rule["actions"].values()
-    ]
-    assert len(actions) == 28
-    assert sum(action["goal_trackability"] == "trackable" for action in actions) == 9
-    assert sum(action["goal_trackability"] == "informational_only" for action in actions) == 19
-    assert all(
-        action["goal_unavailable_reason"]
-        == (None if action["goal_trackability"] == "trackable" else "action_not_observable")
-        for action in actions
-    )
-    priority_metrics = {item["metric_key"] for item in body["weekly_priority_rules"]}
-    assert "macro:carb_g_per_day" not in priority_metrics
-    assert "macro:fat_g_per_day" not in priority_metrics
-    assert {item["key"] for item in body["analysis_metrics"]} >= {
-        "energy:calories_kcal_per_day",
-        "group:fruit_vegetable_g_per_day",
-    }
-    assert not any(item["key"].startswith("nova:") for item in body["analysis_metrics"])
     assert body["calculation_policy"]["goal_policy"]["maximum_deficit_kcal"] == 750
     assert body["calculation_policy"]["calendar_timezone"] == "Asia/Riyadh"
-    assert body["source_types"][-2] == {
-        "type": "multiple_sources",
-        "label_ar": "مصادر متعددة",
-        "reliability": "mixed",
+    assert len(body["food_taxonomy"]) == 15
+    assert body["food_taxonomy"][-1] == {
+        "key": "other",
+        "label_ar": "أخرى",
+        "subcategories": [{"key": "other", "label_ar": "أخرى"}],
     }
-    assert len(body["food_category_definitions"]) == 19
-    assert "baked_goods" in body["food_categories"]
-    assert "whole_grains" not in body["food_categories"]
-    assert "refined_grains" not in body["food_categories"]
-    assert len(body["food_group_definitions"]) == 17
-    assert len(body["traits"]) == 11
-    assert "nova" not in body
-    assert "nova_rules_version" not in body
+    assert body["nutrition_data_sources"] == [
+        {"key": "official", "label_ar": "رسمي"},
+        {"key": "estimated", "label_ar": "تقديري"},
+    ]
+    retired_keys = {
+        "analysis_rules_version",
+        "analysis_rules_status",
+        "analysis_metrics",
+        "weekly_priority_rules_version",
+        "weekly_priority_copy_version",
+        "weekly_priority_rules",
+        "food_group_definitions",
+        "traits",
+        "source_types",
+        "snapshot_schema_version",
+        "nova",
+        "nova_rules_version",
+    }
+    assert retired_keys.isdisjoint(body)
     assert response.headers["cache-control"] == "private, max-age=300, must-revalidate"
 
 
@@ -145,7 +133,7 @@ def test_profile_preview_exposes_calculation_provenance(client: TestClient) -> N
     assert "وزنك الحالي" in body["protein_calculation"]["explanation_ar"]
     assert body["carb_clamped"] is False
     assert body["calculation_engine_version"] == "2.0.0"
-    assert body["nutrition_registry_version"] == "3.0.0"
+    assert body["nutrition_registry_version"] == "4.0.0"
     assert len(body["additional_targets"]) == 16
 
 

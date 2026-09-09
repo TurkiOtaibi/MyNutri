@@ -13,16 +13,7 @@ export type CutIntensity = NonNullable<OpenApi.ProfileUpsert["selected_cut_inten
 export type NutritionBasis = OpenApi.NutritionBasis;
 export type DefaultUnitType = OpenApi.DefaultUnitType;
 export type UnitBasis = OpenApi.UnitBasis;
-export type FoodKind = OpenApi.FoodKind;
-export type GroupDataStatus = OpenApi.GroupDataStatus;
-export type GroupDataCompleteness = OpenApi.GroupDataCompleteness;
-export type NutritionSourceType = OpenApi.NutritionSourceType;
-export type IngredientsSourceType = OpenApi.IngredientsSourceType;
-export type SourceReliability = OpenApi.RegistrySourceTypeDefinition["reliability"];
-export type FoodStatus = OpenApi.FoodStatus;
-export type GrainType = OpenApi.GrainType;
-export type BakedGoodType = OpenApi.BakedGoodType;
-export type GrainStarchType = OpenApi.GrainStarchType;
+export type NutritionDataSource = OpenApi.NutritionDataSource;
 
 export type TargetResponse = Omit<
   DeepRequired<OpenApi.TargetResponse>,
@@ -77,13 +68,6 @@ export type FoodListResponse = Omit<DeepRequired<OpenApi.FoodListResponse>, "ite
   items: FoodResponse[];
 };
 
-export type NutritionSnapshot = OpenApi.NutritionSnapshot &
-  Required<
-    Pick<
-      OpenApi.NutritionSnapshot,
-      "food_id" | "name" | "calories" | "protein_g" | "carb_g" | "fat_g"
-    >
-  >;
 export type NutritionTotals = Omit<
   DeepRequired<OpenApi.NutritionTotals>,
   "total_sugars_g"
@@ -93,25 +77,13 @@ export type DiaryEntryInput = Omit<
   DeepRequired<OpenApi.Diary.AddEntryDiaryEntriesPost.RequestBody>,
   "id"
 > & { id?: string };
-export type DiaryEntryResponse = Omit<DeepRequired<OpenApi.DiaryEntryResponse>, "totals" | "nutrition_snapshot"> & {
+export type DiaryEntryResponse = Omit<DeepRequired<OpenApi.DiaryEntryResponse>, "totals"> & {
   totals: NutritionTotals;
-  nutrition_snapshot: NutritionSnapshot;
 };
 export type AdminDiaryPage = DeepRequired<OpenApi.AdminDiaryPage>;
 export type AdminDiaryItem = DeepRequired<OpenApi.AdminDiaryItem>;
 export type DiaryLoggingStatus = OpenApi.DiaryLoggingStatus;
 export type DiaryDayStatusResponse = DeepRequired<OpenApi.DiaryDayStatusResponse>;
-export type PatternAnalysisResponse = DeepRequired<OpenApi.NutritionPatternAnalysisResponseV2>;
-export type PatternAnalysisHistory = DeepRequired<OpenApi.NutritionPatternAnalysisHistoryPageV2>;
-export type PatternAnalysisHistoryItem = DeepRequired<OpenApi.NutritionPatternAnalysisHistoryItemV2>;
-export type PatternAnalysisMetric = PatternAnalysisResponse["metric_summaries"][number];
-export type WeeklyPriorityResult = DeepRequired<OpenApi.WeeklyPriorityResultV1>;
-export type WeeklyPriority = DeepRequired<OpenApi.PriorityV1>;
-export type BehaviorGoal = DeepRequired<OpenApi.BehaviorGoalResponseV1>;
-export type BehaviorGoalCurrent = DeepRequired<OpenApi.BehaviorGoalCurrentResponseV1>;
-export type BehaviorGoalHistory = DeepRequired<OpenApi.BehaviorGoalHistoryPageV1>;
-export type BehaviorGoalCommand = OpenApi.BehaviorGoalCommandV1;
-export type BehaviorGoalCommandResponse = DeepRequired<OpenApi.BehaviorGoalCommandResponseV1>;
 export type DaySummary = Omit<DeepRequired<OpenApi.DaySummary>, "totals" | "targets"> & {
   totals: NutritionTotals;
   targets: TargetResponse | null;

@@ -66,8 +66,8 @@ def profile_payload(weight: float = 80) -> dict:
 def food_payload(name: str = "Shared food") -> dict:
     return {
         "name": name,
-        "food_category_key": "other",
-        "food_kind": "simple",
+        "primary_category": "other",
+        "subcategory": "other",
         "nutrition_basis": "per_100g",
         "default_unit_type": "serving",
         "unit_amount": 100,
@@ -76,7 +76,7 @@ def food_payload(name: str = "Shared food") -> dict:
         "protein_g": 10,
         "carb_g": 20,
         "fat_g": 6,
-        "nutrition_source": {"type": "unknown"},
+        "nutrition_data_source": "estimated",
     }
 
 
@@ -332,7 +332,7 @@ def test_admin_archive_restore_and_history_safe_delete(security_context) -> None
         f"/admin/foods/{created['id']}/restore", headers=headers("admin-a")
     )
     assert restored.status_code == 200
-    assert restored.json()["status"] == "active"
+    assert restored.json()["archived_at"] is None
 
 
 def test_admin_monitoring_is_authorized_and_read_only(security_context) -> None:
@@ -375,21 +375,30 @@ def test_admin_monitoring_gets_execute_no_dml(
     due_response, lifecycle = _seed_active_and_due_targets(client, session)
     due_plan = due_response["plan"]
     today = current_diary_date()
+    food = client.post(
+        "/foods", json=food_payload("Monitoring food"), headers=headers("admin-a")
+    ).json()
     session.add_all(
         [
             DiaryEntry(
                 principal_id=PRINCIPAL_B,
                 entry_date=today,
+                food_id=UUID(food["id"]),
                 quantity=1,
+                recorded_unit_type=food["default_unit_type"],
+                recorded_unit_amount=food["unit_amount"],
+                recorded_unit_basis=food["unit_basis"],
                 target_provenance=TargetProvenance.no_target_source,
-                nutrition_snapshot={"name": "Today", "calories": 1, "protein_g": 1, "carb_g": 1, "fat_g": 1},
             ),
             DiaryEntry(
                 principal_id=PRINCIPAL_B,
                 entry_date=today - timedelta(days=1),
+                food_id=UUID(food["id"]),
                 quantity=1,
+                recorded_unit_type=food["default_unit_type"],
+                recorded_unit_amount=food["unit_amount"],
+                recorded_unit_basis=food["unit_basis"],
                 target_provenance=TargetProvenance.no_target_source,
-                nutrition_snapshot={"name": "Yesterday", "calories": 1, "protein_g": 1, "carb_g": 1, "fat_g": 1},
             ),
         ]
     )
@@ -450,14 +459,19 @@ def test_admin_week_failure_executes_no_dml(security_context, monkeypatch) -> No
     _, lifecycle = _seed_active_and_due_targets(client, session)
     today = current_diary_date()
     week_start = today - timedelta(days=(today.weekday() + 1) % 7)
+    food = client.post(
+        "/foods", json=food_payload("Invalid dimension food"), headers=headers("admin-a")
+    ).json()
     session.add(
         DiaryEntry(
             principal_id=PRINCIPAL_B,
             entry_date=week_start + timedelta(days=6),
+            food_id=UUID(food["id"]),
             quantity=1,
-            snapshot_schema_version=2,
+            recorded_unit_type=food["default_unit_type"],
+            recorded_unit_amount=food["unit_amount"],
+            recorded_unit_basis="ml",
             target_provenance=TargetProvenance.no_target_source,
-            nutrition_snapshot={"schema_version": 2},
         )
     )
     session.commit()

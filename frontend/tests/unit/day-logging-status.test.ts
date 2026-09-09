@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import { DayLoggingStatusCard } from "@/features/diary/diary-summary";
-import { dayLoggingStatusLabels, isDayAnalysisEligible, isFutureDiaryStatus, stableStatusCommandAttempt } from "@/features/diary/diary-model";
+import { dayLoggingStatusLabels, isFutureDiaryStatus, stableStatusCommandAttempt } from "@/features/diary/diary-model";
 
 describe("Diary day logging status", () => {
   it("keeps the frozen Arabic vocabulary", () => {
@@ -14,19 +14,12 @@ describe("Diary day logging status", () => {
     });
   });
 
-  it("includes only explicitly complete days in analysis", () => {
-    expect(isDayAnalysisEligible("unregistered")).toBe(false);
-    expect(isDayAnalysisEligible("partial")).toBe(false);
-    expect(isDayAnalysisEligible("complete")).toBe(true);
-  });
-
   it("disables status commands only for a projected future day", () => {
     const status = {
       date: "2026-08-16",
       logging_status: "unregistered" as const,
       logging_status_version: 0,
       entry_count: 0,
-      analysis_eligible: false,
       completed_at: null,
       calendar: {
         current_diary_date: "2026-08-15",
@@ -65,7 +58,6 @@ describe("Diary day logging status", () => {
       logging_status: "complete" as const,
       logging_status_version: 2,
       entry_count: 0,
-      analysis_eligible: true,
       completed_at: "2026-08-15T18:20:00Z",
       calendar: {
         current_diary_date: "2026-08-15",

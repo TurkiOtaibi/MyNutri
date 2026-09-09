@@ -16,7 +16,8 @@ test.describe("Food permanent delete @foods", () => {
     await page.goto("/admin/foods");
     await openDeleteFromList(page, food.name);
     const dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText("ستبقى اليوميات السابقة");
+    await expect(dialog).toContainText("فستتم أرشفته بدلًا من ذلك");
+    await expect(dialog).toContainText("بيانات الطعام الحالية");
     await dialog.getByRole("button", { name: "إلغاء" }).click();
     await expect(dialog).toHaveCount(0);
     expect((await foodsApi.list()).some((item) => item.id === food.id)).toBeTruthy();
@@ -68,7 +69,6 @@ test.describe("Food permanent delete @foods", () => {
   test("[FOOD-TC-125] @p0 unused active Food is eligible for permanent deletion", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E-No-Archive-${Date.now()}` });
     const record = await foodsApi.get(food.id);
-    expect(record.status).toBe("active");
     expect(record.archived_at).toBeNull();
     await page.goto(`/foods/${food.id}`);
     for (const text of ["مؤرشف", "غير نشط", "استعادة", "is_active", "archived_at"]) {

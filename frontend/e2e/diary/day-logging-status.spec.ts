@@ -39,7 +39,6 @@ test.describe("@diary day logging status", () => {
     const completed = await complete.json();
     expect(completed).toMatchObject({
       logging_status: "complete",
-      analysis_eligible: true,
       date: diaryDate
     });
 
@@ -61,8 +60,7 @@ test.describe("@diary day logging status", () => {
     });
     expect(reopened.ok()).toBe(true);
     expect(await reopened.json()).toMatchObject({
-      logging_status: "partial",
-      analysis_eligible: false
+      logging_status: "partial"
     });
   });
 

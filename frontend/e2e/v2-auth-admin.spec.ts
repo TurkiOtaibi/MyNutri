@@ -35,10 +35,10 @@ test("new user receives user role and cannot mutate the shared Food catalog", as
   const mutation = await request.post(`${API_URL}/foods`, {
     headers,
     data: {
-      name: "Forbidden user Food", food_category_key: "other", food_kind: "simple",
+      name: "Forbidden user Food", primary_category: "other", subcategory: "other",
       nutrition_basis: "per_100g", default_unit_type: "serving", unit_amount: 100,
       unit_basis: "g", calories: 100, protein_g: 1, carb_g: 20, fat_g: 1,
-      nutrition_source: { type: "unknown" }
+      nutrition_data_source: "estimated"
     }
   });
   expect(mutation.status()).toBe(403);
@@ -317,19 +317,27 @@ test("@plan025 Diary accessibility matrix covers each applicable state and viewp
   }
 });
 
-test("Food Taxonomy V2 and advanced analysis are mobile safe", async ({ page }) => {
+test("Food two-level taxonomy and simplified source are mobile safe", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 700 });
   await page.goto("/foods/new");
-  await expect(page.getByLabel(/فئة الطعام/)).toBeVisible();
+  const primaryCategory = page.getByLabel(/التصنيف الرئيسي/);
+  const subcategory = page.getByLabel(/التصنيف الفرعي/);
+  const nutritionSource = page.getByLabel(/مصدر البيانات الغذائية/);
+  await expect(primaryCategory).toBeVisible();
+  await expect(subcategory).toBeVisible();
+  await expect(nutritionSource).toBeVisible();
   await expect(page.getByText("الفئة القديمة (للتوافق)")).toHaveCount(0);
-  await page.getByLabel(/فئة الطعام/).selectOption("baked_goods");
-  await expect(page.getByLabel(/نوع المخبوز/)).toBeVisible();
-  await expect(page.getByLabel(/نوع الحبوب/)).toBeVisible();
-  const advanced = page.locator("details", { hasText: "التحليل الغذائي المتقدم" });
-  await expect(advanced).not.toHaveAttribute("open", "");
-  await advanced.locator("summary").click();
-  await expect(page.getByText("المجموعات الغذائية", { exact: true })).toBeVisible();
-  await expect(page.getByText("السمات التحليلية", { exact: true })).toBeVisible();
+  await primaryCategory.selectOption("bakery");
+  await expect(subcategory).toHaveValue("other");
+  await expect(subcategory.locator('option[value="bread"]')).toHaveCount(1);
+  await subcategory.selectOption("croissant");
+  await expect(subcategory).toHaveValue("croissant");
+  await expect(nutritionSource.locator("option")).toHaveCount(2);
+  await nutritionSource.selectOption("official");
+  await expect(nutritionSource).toHaveValue("official");
+  await expect(page.getByText("التحليل الغذائي المتقدم")).toHaveCount(0);
+  await expect(page.getByText("المجموعات الغذائية", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("السمات التحليلية", { exact: true })).toHaveCount(0);
   const layout = await page.evaluate(() => {
     const bar = document.querySelector(".form-actions-sticky")?.getBoundingClientRect();
     const root = document.documentElement;

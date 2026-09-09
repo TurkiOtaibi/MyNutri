@@ -109,15 +109,12 @@ async function establishInitialPublicCatalog(page: Page, foods: FoodIdentity[] =
   return initialFoods;
 }
 
-function plan024Food(idSuffix: number, name: string, status: "active" | "archived" = "active") {
+function plan024Food(idSuffix: number, name: string, archived = false) {
   return {
     ...validFood({ name }),
     id: `00000000-0000-4000-8000-${String(idSuffix).padStart(12, "0")}`,
     net_carbs_g: 20,
-    status,
-    archived_at: status === "archived" ? "2026-08-04T00:00:00Z" : null,
-    group_data_status: "unknown",
-    group_data_completeness: "unknown",
+    archived_at: archived ? "2026-08-04T00:00:00Z" : null,
     created_at: "2026-08-04T00:00:00Z",
     updated_at: "2026-08-04T00:00:00Z"
   };
@@ -461,7 +458,7 @@ test.describe("Foods list, search, and states @foods", () => {
   test("[FOOD-TC-142] @plan024 @p0 @mobile collection-shaping controls clear accumulated rows", async ({ page }) => {
     const activeFirst = plan024Food(241, "Plan024 active first");
     const activeSecond = plan024Food(242, "Plan024 active second");
-    const archived = plan024Food(243, "Plan024 archived", "archived");
+    const archived = plan024Food(243, "Plan024 archived", true);
     const searched = plan024Food(244, "Plan024 searched");
     const categorized = plan024Food(245, "Plan024 categorized");
     const sorted = plan024Food(246, "Plan024 sorted");
@@ -469,7 +466,7 @@ test.describe("Foods list, search, and states @foods", () => {
     await page.route(/\/admin\/foods\?.*$/, async (route) => {
       const params = new URL(route.request().url()).searchParams;
       const requestedPage = Number(params.get("page") ?? "1");
-      if (params.get("status") === "archived") {
+      if (params.get("archived") === "true") {
         return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan024Page([archived])) });
       }
       if (params.get("search")) {
@@ -491,13 +488,13 @@ test.describe("Foods list, search, and states @foods", () => {
     await page.getByRole("button", { name: "عرض المزيد" }).click();
     await expect(plan024VisibleRowTrigger(page, activeSecond)).toBeVisible();
 
-    const status = page.getByLabel("الحالة");
-    await status.selectOption("archived");
+    const archiveControl = page.getByLabel("عرض الأرشيف");
+    await archiveControl.selectOption("archived");
     await expect(plan024VisibleRowTrigger(page, archived)).toBeVisible();
     await expect(plan024VisibleRowTrigger(page, activeFirst)).toHaveCount(0);
     await expect(plan024VisibleRowTrigger(page, activeSecond)).toHaveCount(0);
 
-    await status.selectOption("active");
+    await archiveControl.selectOption("active");
     await expect(plan024VisibleRowTrigger(page, activeFirst)).toBeVisible();
     await expect(plan024VisibleRowTrigger(page, activeSecond)).toHaveCount(0);
 
@@ -543,8 +540,8 @@ test.describe("Foods list, search, and states @foods", () => {
     const archivedIds = new Set<string>();
 
     await page.route(/\/admin\/foods\?.*$/, async (route) => {
-      const status = new URL(route.request().url()).searchParams.get("status");
-      const items = foods.filter((food) => status === "archived" ? archivedIds.has(food.id) : !archivedIds.has(food.id));
+      const archived = new URL(route.request().url()).searchParams.get("archived") === "true";
+      const items = foods.filter((food) => archived ? archivedIds.has(food.id) : !archivedIds.has(food.id));
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan024Page(items)) });
     });
 
@@ -606,7 +603,7 @@ test.describe("Foods list, search, and states @foods", () => {
         return route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ ...food, status: "archived", archived_at: "2026-08-04T00:00:00Z" })
+          body: JSON.stringify({ ...food, archived_at: "2026-08-04T00:00:00Z" })
         });
       });
 
@@ -632,50 +629,50 @@ test.describe("Foods list, search, and states @foods", () => {
     }
   });
 
-  test("[FOOD-TC-144] @plan024 @p0 mobile Admin can archive and restore through status collections", async ({ page }) => {
+  test("[FOOD-TC-144] @plan024 @p0 mobile Admin can archive and restore through archive collections", async ({ page }) => {
     const food = plan024Food(260, "Plan024 lifecycle success");
-    let lifecycleStatus: "active" | "archived" = "active";
+    let archived = false;
 
     await page.route(/\/admin\/foods\?.*$/, async (route) => {
-      const requestedStatus = new URL(route.request().url()).searchParams.get("status") ?? "active";
-      const items = requestedStatus === lifecycleStatus ? [{ ...food, status: lifecycleStatus }] : [];
+      const requestsArchived = new URL(route.request().url()).searchParams.get("archived") === "true";
+      const items = requestsArchived === archived ? [{ ...food, archived_at: archived ? "2026-08-04T00:00:00Z" : null }] : [];
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan024Page(items)) });
     });
     await page.route(new RegExp(`/admin/foods/${food.id}/(archive|restore)$`), async (route) => {
-      lifecycleStatus = route.request().url().endsWith("/restore") ? "active" : "archived";
+      archived = !route.request().url().endsWith("/restore");
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ ...food, status: lifecycleStatus, archived_at: lifecycleStatus === "archived" ? "2026-08-04T00:00:00Z" : null })
+        body: JSON.stringify({ ...food, archived_at: archived ? "2026-08-04T00:00:00Z" : null })
       });
     });
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/admin/foods");
-    const status = page.getByLabel("الحالة");
+    const archiveControl = page.getByLabel("عرض الأرشيف");
     const activeTrigger = page.getByRole("button", { name: `إجراءات ${food.name}` });
     await activeTrigger.focus();
     await activeTrigger.press("Enter");
     await page.getByRole("menuitem", { name: "أرشفة" }).click();
     await expect(plan024VisibleRowTrigger(page, food)).toHaveCount(0);
-    await expect(status).toBeFocused();
+    await expect(archiveControl).toBeFocused();
     await expect(activeTrigger).toHaveCount(0);
     expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
 
-    await status.press("End");
-    await expect(status).toHaveValue("archived");
+    await archiveControl.press("End");
+    await expect(archiveControl).toHaveValue("archived");
     await expect(plan024VisibleRowTrigger(page, food)).toBeVisible();
     const archivedTrigger = page.getByRole("button", { name: `إجراءات ${food.name}` });
     await archivedTrigger.focus();
     await archivedTrigger.press("Enter");
     await page.getByRole("menuitem", { name: "استعادة" }).click();
     await expect(plan024VisibleRowTrigger(page, food)).toHaveCount(0);
-    await expect(status).toBeFocused();
+    await expect(archiveControl).toBeFocused();
     await expect(archivedTrigger).toHaveCount(0);
     expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
 
-    await status.press("Home");
-    await expect(status).toHaveValue("active");
+    await archiveControl.press("Home");
+    await expect(archiveControl).toHaveValue("active");
     await expect(plan024VisibleRowTrigger(page, food)).toBeVisible();
   });
 });

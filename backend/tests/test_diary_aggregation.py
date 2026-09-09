@@ -4,14 +4,21 @@ import os
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy import event, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.core.auth import PrincipalContext
-from app.models import DiaryEntry, Principal
+from app.models import (
+    DefaultUnitType,
+    DiaryEntry,
+    Food,
+    NutritionBasis,
+    NutritionDataSource,
+    Principal,
+    UnitBasis,
+)
 from app.nutrition_rules.registry import NUTRIENTS
 from app.schemas import DiaryNutrientTarget
 from app.services.aggregation import (
@@ -19,6 +26,7 @@ from app.services.aggregation import (
     weekly_summary,
     weekly_summary_read_only,
 )
+from app.services.diary import add_totals, empty_totals, totals_for_entry
 from app.services import target_plans as target_plan_service
 
 
@@ -126,7 +134,39 @@ def test_complete_evaluation_never_returns_negative_remaining_or_available() -> 
     assert monitor.available is None
 
 
-def test_week_summary_rejects_malformed_snapshot_without_understating_totals(
+def _food(*, calories: float = 100, fiber_g: float | None = None) -> Food:
+    return Food(
+        principal_id=PRINCIPAL_ID,
+        name=f"Current truth food {uuid4()}",
+        normalized_name=str(uuid4()),
+        primary_category="other",
+        subcategory="other",
+        nutrition_basis=NutritionBasis.per_100g,
+        default_unit_type=DefaultUnitType.g,
+        unit_amount=1,
+        unit_basis=UnitBasis.g,
+        calories=calories,
+        protein_g=10,
+        carb_g=15,
+        fat_g=4,
+        fiber_g=fiber_g,
+        nutrition_data_source=NutritionDataSource.estimated,
+    )
+
+
+def _entry(food: Food, entry_date: date, *, quantity: float = 1) -> DiaryEntry:
+    return DiaryEntry(
+        principal_id=PRINCIPAL_ID,
+        entry_date=entry_date,
+        food_id=food.id,
+        quantity=quantity,
+        recorded_unit_type=food.default_unit_type,
+        recorded_unit_amount=food.unit_amount,
+        recorded_unit_basis=food.unit_basis,
+    )
+
+
+def test_week_summary_uses_current_food_truth_and_preserves_recorded_amount(
     monkeypatch,
 ) -> None:
     engine = create_engine(
@@ -137,15 +177,11 @@ def test_week_summary_rejects_malformed_snapshot_without_understating_totals(
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
         session.add(Principal(id=PRINCIPAL_ID))
-        session.add(
-            DiaryEntry(
-                principal_id=PRINCIPAL_ID,
-                entry_date=date(2026, 7, 12),
-                quantity=1,
-                snapshot_schema_version=2,
-                nutrition_snapshot={"schema_version": 2},
-            )
-        )
+        food = _food(calories=130)
+        session.add(food)
+        session.flush()
+        entry = _entry(food, date(2026, 7, 12), quantity=200)
+        session.add(entry)
         session.commit()
         advance_calls = 0
         commit_calls = 0
@@ -165,14 +201,50 @@ def test_week_summary_rejects_malformed_snapshot_without_understating_totals(
         )
         monkeypatch.setattr(session, "commit", capture_commit)
 
-        with pytest.raises(HTTPException) as raised:
-            weekly_summary(session, PRINCIPAL, date(2026, 7, 12))
+        first = weekly_summary(session, PRINCIPAL, date(2026, 7, 12))
+        assert first.weekly_totals.calories == 260
 
-    assert advance_calls == 1
-    assert commit_calls == 1
-    assert raised.value.status_code == 409
-    assert raised.value.detail["code"] == "DIARY_SUMMARY_DATA_INTEGRITY_ERROR"
-    assert raised.value.detail["entries"][0]["cause"] == "INVALID_DIARY_SNAPSHOT_DATA"
+        food.calories = 140
+        food.protein_g = 12
+        food.carb_g = 18
+        food.fat_g = 5
+        food.fiber_g = 3
+        food.unit_amount = 35
+        session.add(food)
+        session.commit()
+
+        second = weekly_summary(session, PRINCIPAL, date(2026, 7, 12))
+
+    assert advance_calls == 2
+    assert commit_calls == 3
+    assert second.weekly_totals.calories == 280
+    assert second.weekly_totals.protein_g == 24
+    assert second.weekly_totals.carb_g == 36
+    assert second.weekly_totals.fat_g == 10
+    assert second.weekly_totals.fiber_g == 6
+    assert float(entry.quantity) == 200
+    assert float(entry.recorded_unit_amount) == 1
+
+
+def test_current_food_truth_preserves_optional_unknown_and_explicit_zero() -> None:
+    food = _food(fiber_g=None)
+    entry = _entry(food, date(2026, 7, 12), quantity=100)
+
+    unknown = totals_for_entry(entry, food)
+    assert unknown.fiber_g is None
+    assert unknown.net_carbs_g is None
+    food.fiber_g = 0
+    explicit_zero = totals_for_entry(entry, food)
+    assert explicit_zero.fiber_g == 0
+    assert explicit_zero.net_carbs_g == 15
+    food.fiber_g = 7
+    known = totals_for_entry(entry, food)
+    assert known.fiber_g == 7
+    assert known.net_carbs_g == 8
+
+    assert empty_totals().net_carbs_g == 0
+    assert add_totals(empty_totals(), unknown).net_carbs_g is None
+    assert add_totals(known, unknown).net_carbs_g is None
 
 
 @contextmanager
@@ -194,21 +266,11 @@ def _capture_selects(engine: Engine):
 
 
 def _seed_plan015_entries(session: Session, count: int, week_start: date) -> None:
+    food = _food()
+    session.add(food)
+    session.flush()
     for offset in range(count):
-        session.add(
-            DiaryEntry(
-                principal_id=PRINCIPAL_ID,
-                entry_date=week_start + timedelta(days=offset),
-                quantity=1,
-                nutrition_snapshot={
-                    "name": f"Plan 015 entry {offset}",
-                    "calories": 100,
-                    "protein_g": 10,
-                    "carb_g": 15,
-                    "fat_g": 4,
-                },
-            )
-        )
+        session.add(_entry(food, week_start + timedelta(days=offset)))
     session.commit()
 
 

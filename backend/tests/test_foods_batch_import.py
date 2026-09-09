@@ -44,12 +44,22 @@ def test_transport_mapping_preserves_null_and_explicit_zero() -> None:
     mapped = map_record(sample_record())
 
     assert mapped["nutrition_basis"] == "per_100g"
+    assert mapped["primary_category"] == "other"
+    assert mapped["subcategory"] == "other"
+    assert mapped["nutrition_data_source"] == "estimated"
     assert mapped["default_unit_type"] == "serving"
     assert mapped["carb_g"] == 20
     assert mapped["sugar_g"] == 0
     assert mapped["fiber_g"] is None
     assert mapped["added_sugar_g"] is None
     assert mapped["notes"].startswith("جودة البيانات: تقديرية.")
+
+
+def test_confirmed_label_data_maps_to_official_source() -> None:
+    assert (
+        map_record(sample_record(data_quality="label_direct"))["nutrition_data_source"]
+        == "official"
+    )
 
 
 def test_arabic_unit_mapping_and_unsupported_container() -> None:
