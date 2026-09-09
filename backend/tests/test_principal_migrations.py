@@ -6,7 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -367,6 +367,16 @@ def _reset_database(url: str) -> None:
         connection.execute(text("DROP SCHEMA public CASCADE"))
         connection.execute(text("CREATE SCHEMA public"))
     engine.dispose()
+
+
+@pytest.fixture
+def database_restored_to_current_head() -> Iterator[str]:
+    url = _database_url()
+    try:
+        yield url
+    finally:
+        _reset_database(url)
+        _run_alembic(url, "upgrade", "head")
 
 
 def _seed_0003(url: str) -> dict[str, UUID]:
@@ -2876,8 +2886,10 @@ def test_plan033_empty_downgrade_and_reupgrade_are_reversible() -> None:
 
 
 @pytest.mark.migration
-def test_plan033_populated_downgrade_refuses_without_deleting_history() -> None:
-    url = _database_url()
+def test_plan033_populated_downgrade_refuses_without_deleting_history(
+    database_restored_to_current_head: str,
+) -> None:
+    url = database_restored_to_current_head
     _reset_database(url)
     _run_alembic(url, "upgrade", NOVA_RETIREMENT_REVISION)
     principal_id, analysis_id, revision_id, recommendation_id = (
