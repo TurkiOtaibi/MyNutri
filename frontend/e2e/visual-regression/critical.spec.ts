@@ -1,6 +1,6 @@
 import { type Page, type Route } from "@playwright/test";
 
-import type { ProfileResponse, TargetResponse } from "../../lib/types";
+import type { ProfileResponse, TargetResponse, WeekSummary } from "../../lib/types";
 import {
   API_TOKEN,
   API_URL,
@@ -31,6 +31,36 @@ async function routeFixedCalendar(page: Page): Promise<void> {
           current_diary_date: FIXED_VISUAL_DATE,
           calendar_timezone: "Asia/Riyadh",
           next_rollover_at: FIXED_NEXT_ROLLOVER
+        }
+      });
+    }
+  );
+}
+
+async function routeNoTargetWeek(page: Page): Promise<void> {
+  await page.route(
+    (url) => isExactApiPath(url, "/diary/week"),
+    async (route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      const response = await route.fetch();
+      const week = await response.json() as WeekSummary;
+      await route.fulfill({
+        response,
+        json: {
+          ...week,
+          targets: null,
+          days: week.days.map((day) => ({
+            ...day,
+            targets: null,
+            target_provenance: "no_target_source",
+            nutrient_aggregates: day.nutrient_aggregates.map((aggregate) => ({
+              ...aggregate,
+              target: null,
+              evaluation: null,
+              progress_percent: null,
+              remaining: null
+            }))
+          }))
         }
       });
     }
@@ -98,6 +128,8 @@ test.describe("critical visual regression", () => {
       weight_kg: 80,
       activity_level: "moderate",
       goal: "maintain",
+      effective_plan: null,
+      pending_plan: null,
       updated_at: FIXED_VISUAL_TIME
     };
     await page.route(
@@ -110,6 +142,17 @@ test.describe("critical visual regression", () => {
     await page.route(
       (url) => isExactApiPath(url, "/profile/preview"),
       fulfillBlockedPreview
+    );
+    await page.route(
+      (url) => isExactApiPath(url, "/target-plans"),
+      async (route) => {
+        if (route.request().method() !== "GET") return route.continue();
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          json: { items: [], next_cursor: null }
+        });
+      }
     );
 
     await page.goto("/profile?visual=blocked-safety");
@@ -125,6 +168,7 @@ test.describe("critical visual regression", () => {
     const food = await foodsApi.create({ name: "E2E-Visual-Diary-Food", calories: 240 });
     await foodsApi.createDiary(food.id, FIXED_VISUAL_DATE, 1, "breakfast");
     await routeFixedCalendar(page);
+    await routeNoTargetWeek(page);
 
     await page.goto("/diary?visual=populated");
     await expect(page.getByText(food.name, { exact: true })).toBeVisible();
