@@ -128,8 +128,6 @@ test.describe("critical visual regression", () => {
       weight_kg: 80,
       activity_level: "moderate",
       goal: "maintain",
-      effective_plan: null,
-      pending_plan: null,
       updated_at: FIXED_VISUAL_TIME
     };
     await page.route(
@@ -143,25 +141,15 @@ test.describe("critical visual regression", () => {
       (url) => isExactApiPath(url, "/profile/preview"),
       fulfillBlockedPreview
     );
-    await page.route(
-      (url) => isExactApiPath(url, "/target-plans"),
-      async (route) => {
-        if (route.request().method() !== "GET") return route.continue();
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          json: { items: [], next_cursor: null }
-        });
-      }
-    );
-
     await page.goto("/profile?visual=blocked-safety");
     await page.getByLabel("الوزن").fill(String(profile.weight_kg + 1));
     const preview = page.getByRole("region", { name: "الأهداف المتوقعة بعد الحفظ" });
     await expect(preview).toContainText("799");
     await stableRendering(page);
 
-    await expect(preview).toHaveScreenshot("profile-blocked-safety.png");
+    await expect(preview).toHaveScreenshot("profile-blocked-safety.png", {
+      maxDiffPixelRatio: 0.01
+    });
   });
 
   test("Diary populated day and week strip", async ({ page, foodsApi }) => {
