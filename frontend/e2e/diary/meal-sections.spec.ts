@@ -1,7 +1,7 @@
 import type { Page, Response } from "@playwright/test";
 
 import { weekStartSunday } from "../../lib/dates";
-import { API_TOKEN, API_URL, diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
+import { API_URL, diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
 
 const apiOrigin = new URL(API_URL).origin;
 
@@ -122,16 +122,15 @@ test.describe("@diary @meals Gregorian meal sections", () => {
     await expect(dialog.getByRole("button", { name: "إضافة إلى السناك" })).toBeEnabled();
   });
 
-  test("@p0 API accepts standard meals, defaults omitted values, and rejects tampering", async ({ request, foodsApi }) => {
+  test("@p0 API accepts standard meals, defaults omitted values, and rejects tampering", async ({ foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Meal API") });
     const base = { food_id: food.id, entry_date: localDate(), quantity: 1 };
-    const headers = { Authorization: `Bearer ${API_TOKEN}` };
-    const omitted = await request.post(`${API_URL}/diary`, { headers, data: base });
+    const omitted = await foodsApi.createDiaryRaw(base);
     expect(omitted.status()).toBe(201);
     expect((await omitted.json()).meal_type).toBe("unspecified");
-    const invalid = await request.post(`${API_URL}/diary`, { headers, data: { ...base, meal_type: "brunch" } });
+    const invalid = await foodsApi.createDiaryRaw({ ...base, meal_type: "brunch" });
     expect(invalid.status()).toBe(422);
-    await request.delete(`${API_URL}/diary/${(await omitted.json()).id}`, { headers });
+    await foodsApi.removeDiary((await omitted.json()).id, base.entry_date);
   });
 
   test("@p0 edit moves entry between meals without exposing immutable fields", async ({ page, foodsApi }) => {

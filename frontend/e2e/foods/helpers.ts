@@ -228,24 +228,54 @@ export class FoodsApi {
   }
 
   async remove(id: string): Promise<void> {
-    const response = await this.request.delete(`${API_URL}/foods/${id}`, { headers: this.headers() });
-    expect([204, 404]).toContain(response.status());
+    const response = await this.request.delete(`${API_URL}/admin/foods/${id}`, { headers: this.headers() });
+    expect([200, 404]).toContain(response.status());
     this.foodIds.delete(id);
   }
 
   async createDiary(foodId: string, entryDate: string, quantity = 1, mealType = "breakfast") {
+    const response = await this.createDiaryRaw({
+      food_id: foodId,
+      entry_date: entryDate,
+      quantity,
+      meal_type: mealType
+    });
+    expect(response.status(), await response.text()).toBe(201);
+    return response.json() as Promise<DiaryRecord>;
+  }
+
+  async createDiaryRaw(payload: {
+    food_id: string;
+    entry_date: string;
+    quantity: number;
+    meal_type?: string;
+  }) {
+    const entryDate = payload.entry_date;
     const status = await this.writableDayStatus(entryDate);
     const response = await this.request.post(`${API_URL}/diary/entries`, {
       headers: {
         ...this.headers(),
         "If-Match": `"day-${status.logging_status_version}"`
       },
-      data: { food_id: foodId, entry_date: entryDate, quantity, meal_type: mealType }
+      data: payload
     });
-    expect(response.status(), await response.text()).toBe(201);
-    const entry = (await response.json()) as DiaryRecord;
-    this.diaryIds.set(entry.id, entryDate);
-    return entry;
+    if (response.ok()) {
+      const entry = (await response.json()) as DiaryRecord;
+      this.diaryIds.set(entry.id, entryDate);
+    }
+    return response;
+  }
+
+  async removeDiary(id: string, entryDate: string): Promise<void> {
+    const status = await this.writableDayStatus(entryDate);
+    const response = await this.request.delete(`${API_URL}/diary/entries/${id}`, {
+      headers: {
+        ...this.headers(),
+        "If-Match": `"day-${status.logging_status_version}"`
+      }
+    });
+    expect([204, 404]).toContain(response.status());
+    this.diaryIds.delete(id);
   }
 
   async listDiary(entryDate: string) {
@@ -255,7 +285,7 @@ export class FoodsApi {
   }
 
   async cleanup(): Promise<void> {
-    const diaryResponse = await this.request.get(`${API_URL}/diary`, { headers: this.headers() });
+    const diaryResponse = await this.request.get(`${API_URL}/diary/entries`, { headers: this.headers() });
     if (diaryResponse.ok()) {
       const entries = (await diaryResponse.json()) as DiaryRecord[];
       for (const entry of entries) {
@@ -265,17 +295,10 @@ export class FoodsApi {
       }
     }
     for (const [id, entryDate] of this.diaryIds) {
-      const status = await this.writableDayStatus(entryDate);
-      const response = await this.request.delete(`${API_URL}/diary/entries/${id}`, {
-        headers: {
-          ...this.headers(),
-          "If-Match": `"day-${status.logging_status_version}"`
-        }
-      });
-      expect([204, 404]).toContain(response.status());
+      await this.removeDiary(id, entryDate);
     }
     for (const id of this.foodIds) {
-      await this.request.delete(`${API_URL}/foods/${id}`, { headers: this.headers() });
+      await this.request.delete(`${API_URL}/admin/foods/${id}`, { headers: this.headers() });
     }
     this.diaryIds.clear();
     this.foodIds.clear();

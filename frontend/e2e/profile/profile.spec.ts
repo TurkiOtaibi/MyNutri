@@ -4,6 +4,7 @@ import { expect, test as base, type APIRequestContext, type Page, type Route } f
 import type { CalendarAuthority } from "../../lib/api";
 import type { ProfileInput, ProfileResponse, TargetResponse } from "../../lib/types";
 import { API_TOKEN, API_URL } from "../foods/helpers";
+import { applyProfileThroughTargetPlan } from "../profile-api";
 
 const apiHeaders = () => ({ Authorization: `Bearer ${API_TOKEN}` });
 const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
@@ -139,7 +140,7 @@ const test = base.extend<{ originalProfile: ProfileResponse }>({
   originalProfile: async ({ request }, provide) => {
     const original = await readProfile(request);
     await provide(original);
-    await request.put(`${API_URL}/profile`, { headers: apiHeaders(), data: inputFrom(original) });
+    await applyProfileThroughTargetPlan(request, API_TOKEN, inputFrom(original));
   }
 });
 

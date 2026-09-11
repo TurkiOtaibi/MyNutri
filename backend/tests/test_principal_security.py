@@ -25,10 +25,12 @@ from app.models import (
     Principal,
     PrincipalRole,
     PrincipalStatus,
+    Profile,
     TargetPlan,
     TargetPlanStatus,
     TargetProvenance,
 )
+from app.schemas import ProfileUpsert
 
 PRINCIPAL_A = UUID("00000000-0000-0000-0000-00000000000a")
 PRINCIPAL_B = UUID("00000000-0000-0000-0000-00000000000b")
@@ -121,6 +123,17 @@ def security_context():
 
 def headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def _seed_profile(session: Session, principal_id: UUID, payload: dict) -> Profile:
+    validated = ProfileUpsert.model_validate(payload)
+    data = validated.model_dump()
+    data["cut_intensity"] = data.pop("selected_cut_intensity")
+    profile = Profile(principal_id=principal_id, **data)
+    session.add(profile)
+    session.commit()
+    session.refresh(profile)
+    return profile
 
 
 def _activate_target(
@@ -281,15 +294,14 @@ def test_disabled_principal_is_rejected(security_context) -> None:
 
 
 def test_profile_diary_and_target_plan_isolation(security_context) -> None:
-    client, _ = security_context
-    a_profile = client.put("/profile", json=profile_payload(82), headers=headers("admin-a"))
-    b_profile = client.put("/profile", json=profile_payload(67), headers=headers("user-b"))
-    assert a_profile.status_code == b_profile.status_code == 200
-    assert a_profile.json()["id"] != b_profile.json()["id"]
+    client, session = security_context
+    a_profile = _seed_profile(session, PRINCIPAL_A, profile_payload(82))
+    b_profile = _seed_profile(session, PRINCIPAL_B, profile_payload(67))
+    assert a_profile.id != b_profile.id
     assert client.get("/profile", headers=headers("admin-a")).json()["weight_kg"] == 82
     assert client.get("/profile", headers=headers("user-b")).json()["weight_kg"] == 67
-    assert client.get("/diary", headers=headers("admin-a")).json() == []
-    assert client.get("/diary", headers=headers("user-b")).json() == []
+    assert client.get("/diary/entries", headers=headers("admin-a")).json() == []
+    assert client.get("/diary/entries", headers=headers("user-b")).json() == []
     assert client.get("/target-plans", headers=headers("admin-a")).status_code == 200
     assert client.get("/target-plans", headers=headers("user-b")).status_code == 200
 
@@ -304,7 +316,6 @@ def test_shared_catalog_and_admin_only_mutations(security_context) -> None:
     assert client.get("/foods", headers=headers("user-b")).json()[0]["id"] == food_id
     assert client.get(f"/foods/{food_id}", headers=headers("user-b")).status_code == 200
     assert client.put(f"/foods/{food_id}", json={"name": "No"}, headers=headers("user-b")).status_code == 403
-    assert client.delete(f"/foods/{food_id}", headers=headers("user-b")).status_code == 403
 
 
 def test_admin_archive_restore_and_history_safe_delete(security_context) -> None:
@@ -313,14 +324,14 @@ def test_admin_archive_restore_and_history_safe_delete(security_context) -> None
         "/foods", json=food_payload("Historically used"), headers=headers("admin-a")
     ).json()
     diary = client.post(
-        "/diary",
+        "/diary/entries",
         json={
             "food_id": created["id"],
             "entry_date": current_diary_date().isoformat(),
             "quantity": 1,
             "meal_type": "breakfast",
         },
-        headers=headers("user-b"),
+        headers={**headers("user-b"), "If-Match": '"day-0"'},
     )
     assert diary.status_code == 201, diary.text
     deletion = client.delete(f"/admin/foods/{created['id']}", headers=headers("admin-a"))
@@ -344,14 +355,6 @@ def test_admin_monitoring_is_authorized_and_read_only(security_context) -> None:
         ).status_code
         == 403
     )
-    assert (
-        client.get(
-            f"/admin/users/{PRINCIPAL_B}/diary/week",
-            params={"start": current_diary_date().isoformat()},
-            headers=headers("user-b"),
-        ).status_code
-        == 403
-    )
     listing = client.get("/admin/users", headers=headers("admin-a"))
     detail = client.get(f"/admin/users/{PRINCIPAL_B}", headers=headers("admin-a"))
     assert listing.status_code == detail.status_code == 200
@@ -366,7 +369,7 @@ def test_admin_monitoring_is_authorized_and_read_only(security_context) -> None:
 
 @pytest.mark.parametrize(
     "endpoint",
-    ["detail", "week", "diary", "diary_invalid", "target_history"],
+    ["detail", "diary", "diary_invalid"],
 )
 def test_admin_monitoring_gets_execute_no_dml(
     security_context, monkeypatch, endpoint: str
@@ -405,12 +408,8 @@ def test_admin_monitoring_gets_execute_no_dml(
     session.commit()
     paths = {
         "detail": f"/admin/users/{PRINCIPAL_B}",
-        "week": (
-            f"/admin/users/{PRINCIPAL_B}/diary/week?start={today.isoformat()}"
-        ),
         "diary": f"/admin/users/{PRINCIPAL_B}/diary?entry_date={today.isoformat()}",
         "diary_invalid": f"/admin/users/{PRINCIPAL_B}/diary?cursor=not-a-cursor",
-        "target_history": f"/admin/users/{PRINCIPAL_B}/target-plans",
     }
     path = paths[endpoint]
     engine, statements, cleanup = _install_admin_read_guards(monkeypatch, session)
@@ -425,66 +424,12 @@ def test_admin_monitoring_gets_execute_no_dml(
             if endpoint == "detail":
                 assert response.json()["current_target"]["plan"]["id"] == due_plan["id"]
                 assert response.json()["pending_plan"] is None
-            elif endpoint == "week":
-                today_summary = next(
-                    day
-                    for day in response.json()["days"]
-                    if day["date"] == today.isoformat()
-                )
-                assert (
-                    today_summary["targets"]["final_target_calories"]
-                    == due_plan["targets"]["final_target_calories"]
-                )
             elif endpoint == "diary":
                 assert [item["entry_date"] for item in response.json()["items"]] == [today.isoformat()]
             elif endpoint == "diary_invalid":
                 assert response.json()["detail"]["code"] == "INVALID_CURSOR"
-            else:
-                assert response.json()["items"][0]["id"] == due_plan["id"]
             _assert_lifecycle_unchanged(engine, lifecycle)
         assert response_documents[0] == response_documents[1]
-    finally:
-        cleanup()
-
-    normalized = [statement.lower() for statement in statements]
-    assert not any(
-        statement.startswith(("insert ", "update ", "delete "))
-        for statement in normalized
-    )
-    assert not any(" for update" in statement for statement in normalized)
-
-
-def test_admin_week_failure_executes_no_dml(security_context, monkeypatch) -> None:
-    client, session = security_context
-    _, lifecycle = _seed_active_and_due_targets(client, session)
-    today = current_diary_date()
-    week_start = today - timedelta(days=(today.weekday() + 1) % 7)
-    food = client.post(
-        "/foods", json=food_payload("Invalid dimension food"), headers=headers("admin-a")
-    ).json()
-    session.add(
-        DiaryEntry(
-            principal_id=PRINCIPAL_B,
-            entry_date=week_start + timedelta(days=6),
-            food_id=UUID(food["id"]),
-            quantity=1,
-            recorded_unit_type=food["default_unit_type"],
-            recorded_unit_amount=food["unit_amount"],
-            recorded_unit_basis="ml",
-            target_provenance=TargetProvenance.no_target_source,
-        )
-    )
-    session.commit()
-    engine, statements, cleanup = _install_admin_read_guards(monkeypatch, session)
-    _reject_admin_commit(monkeypatch, session)
-    try:
-        response = client.get(
-            f"/admin/users/{PRINCIPAL_B}/diary/week?start={today.isoformat()}",
-            headers=headers("admin-a"),
-        )
-        assert response.status_code == 409, response.text
-        assert response.json()["detail"]["code"] == "DIARY_SUMMARY_DATA_INTEGRITY_ERROR"
-        _assert_lifecycle_unchanged(engine, lifecycle)
     finally:
         cleanup()
 
@@ -523,7 +468,7 @@ def test_client_authoritative_identity_and_role_are_rejected(security_context) -
     for field in ("principal_id", "owner_id", "user_id", "role"):
         payload = profile_payload()
         payload[field] = "admin"
-        assert client.put("/profile", json=payload, headers=headers("user-b")).status_code == 422
+        assert client.post("/profile/preview", json=payload, headers=headers("user-b")).status_code == 422
 
 
 def test_openapi_declares_http_bearer_security() -> None:

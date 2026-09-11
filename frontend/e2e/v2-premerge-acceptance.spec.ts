@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
 
+import type { ProfileInput } from "../lib/types";
+import { applyProfileThroughTargetPlan } from "./profile-api";
+
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
 const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
 
@@ -17,7 +20,7 @@ function auth(accessToken: string) {
   return { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
 }
 
-const profile = (weight: number) => ({
+const profile = (weight: number): ProfileInput => ({
   sex: "male",
   birth_date: "1990-01-01",
   height_cm: 175,
@@ -47,8 +50,8 @@ test("User A, User B, and Admin remain isolated through API and UI", async ({ br
   expect(accountB.role).toBe("user");
   expect(accountA.principal_id).not.toBe(accountB.principal_id);
 
-  expect((await request.put(`${API_URL}/profile`, { headers: auth(tokenA), data: profile(71) })).status()).toBe(200);
-  expect((await request.put(`${API_URL}/profile`, { headers: auth(tokenB), data: profile(89) })).status()).toBe(200);
+  await applyProfileThroughTargetPlan(request, tokenA, profile(71));
+  await applyProfileThroughTargetPlan(request, tokenB, profile(89));
   const ownA = await request.get(`${API_URL}/profile`, { headers: auth(tokenA) });
   const ownB = await request.get(`${API_URL}/profile`, { headers: auth(tokenB) });
   expect((await ownA.json()).weight_kg).toBe(71);

@@ -124,13 +124,6 @@ export async function getProfile(): Promise<ProfileResponse | null> {
   }
 }
 
-export function saveProfile(payload: ProfileInput, accessToken: string | null | undefined, signal?: AbortSignal): Promise<ProfileResponse> {
-  return apiFetch<ProfileResponse>("/profile", authorizedInit(accessToken, signal, {
-    method: "PUT",
-    body: JSON.stringify(payload)
-  }));
-}
-
 export function previewProfile(payload: ProfileInput, accessToken: string | null | undefined, signal?: AbortSignal): Promise<TargetResponse> {
   return apiFetch<TargetResponse>("/profile/preview", authorizedInit(accessToken, signal, {
     method: "POST",
@@ -307,10 +300,6 @@ export function getAdminUserDiary(
 
 export function listDiaryEntries(entryDate: string): Promise<DiaryEntryResponse[]> {
   return apiFetch<DiaryEntryResponse[]>(`/diary/entries?entry_date=${encodeURIComponent(entryDate)}`);
-}
-
-export function listDiaryHistory(): Promise<DiaryEntryResponse[]> {
-  return apiFetch<DiaryEntryResponse[]>("/diary");
 }
 
 export function createDiaryEntry(payload: DiaryEntryInput, dayVersion: number, accessToken: string | null | undefined, signal?: AbortSignal): Promise<DiaryEntryResponse> {

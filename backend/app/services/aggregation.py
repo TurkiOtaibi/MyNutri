@@ -19,7 +19,6 @@ from app.services.day_logging_status import project_status_range
 from app.services.profile import to_target_response
 from app.services.target_plans import (
     WeekTargetContext,
-    project_week_target_context,
     resolve_week_target_context,
     target_for_date,
 )
@@ -220,28 +219,16 @@ def _weekly_summary(
     session: Session,
     principal: PrincipalContext,
     start: date,
-    *,
-    read_only: bool,
 ) -> WeekSummary:
     week_start = sunday_start(start)
     week_end = week_start + timedelta(days=6)
     authority = diary_calendar_authority()
-    target_context = (
-        project_week_target_context(
-            session,
-            principal,
-            week_start,
-            week_end,
-            authoritative_current_date=authority.current_diary_date,
-        )
-        if read_only
-        else resolve_week_target_context(
-            session,
-            principal,
-            week_start,
-            week_end,
-            authoritative_current_date=authority.current_diary_date,
-        )
+    target_context = resolve_week_target_context(
+        session,
+        principal,
+        week_start,
+        week_end,
+        authoritative_current_date=authority.current_diary_date,
     )
     entries = session.exec(
         select(DiaryEntry, Food).join(Food, Food.id == DiaryEntry.food_id).where(
@@ -281,10 +268,4 @@ def _weekly_summary(
 
 
 def weekly_summary(session: Session, principal: PrincipalContext, start: date) -> WeekSummary:
-    return _weekly_summary(session, principal, start, read_only=False)
-
-
-def weekly_summary_read_only(
-    session: Session, principal: PrincipalContext, start: date
-) -> WeekSummary:
-    return _weekly_summary(session, principal, start, read_only=True)
+    return _weekly_summary(session, principal, start)

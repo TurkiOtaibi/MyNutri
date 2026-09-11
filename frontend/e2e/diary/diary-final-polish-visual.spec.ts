@@ -33,7 +33,7 @@ function isExactDiaryResponse(
 async function runDiaryTransition(page: Page, value: string, trigger: () => Promise<unknown>) {
   const weekStart = sundayStart(value);
   const [entriesResponse, weekResponse] = await Promise.all([
-    page.waitForResponse((response) => isExactDiaryResponse(response, "/diary", "entry_date", value)),
+    page.waitForResponse((response) => isExactDiaryResponse(response, "/diary/entries", "entry_date", value)),
     page.waitForResponse((response) => isExactDiaryResponse(response, "/diary/week", "start", weekStart)),
     trigger()
   ]);
@@ -213,8 +213,8 @@ test("@diary @visual capture final Diary polish states", async ({ page, request,
   const profile = await request.get(`${API_URL}/profile`, { headers: { Authorization: `Bearer ${API_TOKEN}` } });
   expect(profile.status()).toBe(200);
   const targets = (await profile.json()).targets as { target_calories: number; protein_g: number; carb_g: number; fat_g: number };
-  await request.delete(`${API_URL}/diary/${firstEntry.id}`, { headers: { Authorization: `Bearer ${API_TOKEN}` } });
-  await request.delete(`${API_URL}/diary/${secondEntry.id}`, { headers: { Authorization: `Bearer ${API_TOKEN}` } });
+  await foodsApi.removeDiary(firstEntry.id, currentDate);
+  await foodsApi.removeDiary(secondEntry.id, currentDate);
   const comparisonDate = localDate();
   const comparison = await foodsApi.create({
     name: uniqueName("Macro comparison"), calories: 100,
@@ -243,7 +243,7 @@ test("@diary @visual capture final Diary polish states", async ({ page, request,
   const comparisonEntries = await foodsApi.listDiary(comparisonDate);
   const comparisonEntry = comparisonEntries.find((entry) => entry.food.name === comparison.name);
   expect(comparisonEntry).toBeDefined();
-  await request.delete(`${API_URL}/diary/${comparisonEntry!.id}`, { headers: { Authorization: `Bearer ${API_TOKEN}` } });
+  await foodsApi.removeDiary(comparisonEntry!.id, comparisonDate);
 
   const emptyDate = localDate(-340);
   await selectDate(page, emptyDate);

@@ -1,5 +1,7 @@
 import { expect, test, type Page, type Request } from "@playwright/test";
+import type { ProfileInput } from "../lib/types";
 import { fillRequiredFoodForm, submitFoodForm } from "./foods/helpers";
+import { applyProfileThroughTargetPlan } from "./profile-api";
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
 const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
@@ -28,7 +30,7 @@ function tokenSubject(accessToken: string): string {
   return (JSON.parse(Buffer.from(normalized, "base64").toString("utf8")) as { sub: string }).sub;
 }
 
-function profile(weight: number) {
+function profile(weight: number): ProfileInput {
   return {
     sex: "male",
     birth_date: "1990-01-01",
@@ -333,8 +335,8 @@ test("same browser context isolates cached profile and diary data across A to B 
   const tokenA = await token(emailA);
   const tokenB = await token(emailB);
   const adminToken = await token(ADMIN_EMAIL, ADMIN_PASSWORD);
-  expect((await request.put(`${API_URL}/profile`, { headers: headers(tokenA), data: profile(71) })).status()).toBe(200);
-  expect((await request.put(`${API_URL}/profile`, { headers: headers(tokenB), data: profile(89) })).status()).toBe(200);
+  await applyProfileThroughTargetPlan(request, tokenA, profile(71));
+  await applyProfileThroughTargetPlan(request, tokenB, profile(89));
 
   const diaryNameA = `A diary marker ${suffix}`;
   const foodResponse = await request.post(`${API_URL}/foods`, {
@@ -358,8 +360,8 @@ test("same browser context isolates cached profile and diary data across A to B 
   expect(foodResponse.status()).toBe(201);
   const food = await foodResponse.json() as { id: string };
   const diaryDate = await authoritativeDiaryDate(tokenA);
-  const diaryResponse = await request.post(`${API_URL}/diary`, {
-    headers: headers(tokenA),
+  const diaryResponse = await request.post(`${API_URL}/diary/entries`, {
+    headers: { ...headers(tokenA), "If-Match": '"day-0"' },
     data: {
       entry_date: diaryDate,
       food_id: food.id,
@@ -458,8 +460,8 @@ test("@plan016 external A to B subject change clears A's dirty Profile registrat
   const emailB = `plan016-b-${suffix}@example.test`;
   const tokenA = await token(emailA);
   const tokenB = await token(emailB);
-  expect((await request.put(`${API_URL}/profile`, { headers: headers(tokenA), data: profile(71) })).status()).toBe(200);
-  expect((await request.put(`${API_URL}/profile`, { headers: headers(tokenB), data: profile(89) })).status()).toBe(200);
+  await applyProfileThroughTargetPlan(request, tokenA, profile(71));
+  await applyProfileThroughTargetPlan(request, tokenB, profile(89));
 
   const context = await browser.newContext({ storageState: undefined });
   const page = await context.newPage();
@@ -861,7 +863,7 @@ test("Admin private list and detail caches disappear when the same browser conte
   const tokenB = await token(emailB);
   const tokenMonitored = await token(emailMonitored);
   const adminToken = await token(ADMIN_EMAIL, ADMIN_PASSWORD);
-  expect((await request.put(`${API_URL}/profile`, { headers: headers(tokenB), data: profile(83) })).status()).toBe(200);
+  await applyProfileThroughTargetPlan(request, tokenB, profile(83));
   const monitoredAccount = await request.get(`${API_URL}/account/me`, { headers: headers(tokenMonitored) });
   expect(monitoredAccount.status()).toBe(200);
   const monitoredPrincipalId = (await monitoredAccount.json() as { principal_id: string }).principal_id;
@@ -919,7 +921,7 @@ test("a refresh-token session update keeps User A's query client and does not re
   const suffix = Date.now();
   const emailA = `refresh-a-${suffix}@example.test`;
   const tokenA = await token(emailA);
-  expect((await request.put(`${API_URL}/profile`, { headers: headers(tokenA), data: profile(74) })).status()).toBe(200);
+  await applyProfileThroughTargetPlan(request, tokenA, profile(74));
 
   const context = await browser.newContext({ storageState: undefined });
   const page = await context.newPage();

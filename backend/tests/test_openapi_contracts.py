@@ -140,3 +140,30 @@ def test_retired_analysis_priority_and_snapshot_contracts_are_absent() -> None:
         "nutritionanalysis",
     ):
         assert retired not in serialized
+
+
+def test_unused_routes_are_absent_and_protected_routes_remain() -> None:
+    operations = {
+        (method, route.path)
+        for route in app.routes
+        for method in getattr(route, "methods", set())
+    }
+    assert operations.isdisjoint(
+        {
+            ("POST", "/diary"),
+            ("GET", "/diary"),
+            ("GET", "/diary/{entry_id}"),
+            ("PUT", "/diary/{entry_id}"),
+            ("DELETE", "/diary/{entry_id}"),
+            ("GET", "/diary/entries/{entry_id}"),
+            ("GET", "/admin/users/{principal_id}/diary/week"),
+            ("GET", "/admin/users/{principal_id}/target-plans"),
+            ("DELETE", "/foods/{food_id}"),
+            ("PUT", "/profile"),
+        }
+    )
+    assert {
+        ("GET", "/target-plans/current"),
+        ("GET", "/target-plans/pending"),
+        ("GET", "/admin/users/{principal_id}/diary-days"),
+    } <= operations

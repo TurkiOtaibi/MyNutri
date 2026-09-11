@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 from app.core.auth import PrincipalContext, get_principal_context, get_token_verifier
 from app.core.calendar import diary_calendar_authority, following_diary_date
 from app.main import app
-from app.schemas import ProfilePreview, ProfileResponse, TargetResponse
-from app.api.routes.profile import preview_profile, save_profile
+from app.schemas import ProfilePreview, TargetResponse
+from app.api.routes.profile import preview_profile
 
 
 def test_calendar_authority_before_and_after_riyadh_midnight() -> None:
@@ -135,29 +135,3 @@ def test_plan008_preview_captures_one_calendar_authority(
 
     assert calls == 1
     assert captured_date == fixed.current_diary_date + timedelta(days=expected_date_offset)
-
-
-def test_plan008_save_captures_one_calendar_authority(monkeypatch) -> None:
-    fixed = diary_calendar_authority(
-        datetime(2026, 7, 22, 21, 0, 0, tzinfo=timezone.utc)
-    )
-    calls = 0
-    captured_date = None
-
-    def authority():
-        nonlocal calls
-        calls += 1
-        return fixed
-
-    def upsert(session, principal, payload, calculation_date):
-        nonlocal captured_date
-        captured_date = calculation_date
-        return ProfileResponse.model_construct()
-
-    monkeypatch.setattr("app.api.routes.profile.diary_calendar_authority", authority)
-    monkeypatch.setattr("app.api.routes.profile.upsert_profile", upsert)
-
-    save_profile(_plan008_payload(), PrincipalContext(UUID(int=10)), object())
-
-    assert calls == 1
-    assert captured_date == fixed.current_diary_date

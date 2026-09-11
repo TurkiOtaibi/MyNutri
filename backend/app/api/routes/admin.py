@@ -16,10 +16,7 @@ from app.schemas import (
     AdminDiaryPage,
     AdminUserListResponse,
     AdminUserSummary,
-    TargetPlanHistoryResponse,
-    WeekSummary,
 )
-from app.services.aggregation import weekly_summary_read_only
 from app.services.diary import AdminDiaryCursorError, admin_diary_page
 from app.services.day_logging_status import project_status_range
 from app.services.errors import resource_not_found
@@ -164,17 +161,6 @@ def user_diary(
         raise HTTPException(status_code=422, detail={"code": "INVALID_CURSOR"}) from error
 
 
-@router.get("/users/{principal_id}/diary/week", response_model=WeekSummary)
-def user_week(
-    principal_id: UUID,
-    start: date,
-    _admin: PrincipalContext = Depends(require_admin),
-    session: Session = Depends(get_session),
-) -> WeekSummary:
-    selected = _selected_context(_get_principal(session, principal_id))
-    return weekly_summary_read_only(session, selected, start)
-
-
 @router.get(
     "/users/{principal_id}/diary-days",
     response_model=AdminDiaryDayStatusPage,
@@ -194,13 +180,3 @@ def user_diary_days(
             session, selected, start, end, diary_calendar_authority()
         )
     )
-
-
-@router.get("/users/{principal_id}/target-plans", response_model=TargetPlanHistoryResponse)
-def user_target_plans(
-    principal_id: UUID,
-    _admin: PrincipalContext = Depends(require_admin),
-    session: Session = Depends(get_session),
-) -> TargetPlanHistoryResponse:
-    selected = _selected_context(_get_principal(session, principal_id))
-    return plan_history(session, selected, 100, None)

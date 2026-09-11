@@ -37,8 +37,8 @@ test.describe("@diary daily-use redesign", () => {
 
   test("@p0 future Diary API date is rejected", async ({ request, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Future date") });
-    const response = await request.post(`${API_URL}/diary`, {
-      headers: { Authorization: `Bearer ${API_TOKEN}` },
+    const response = await request.post(`${API_URL}/diary/entries`, {
+      headers: { Authorization: `Bearer ${API_TOKEN}`, "If-Match": '"day-0"' },
       data: { food_id: food.id, entry_date: localDate(1), quantity: 1 }
     });
     expect(response.status()).toBe(422);

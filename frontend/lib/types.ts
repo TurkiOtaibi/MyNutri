@@ -9,7 +9,7 @@ type DeepRequired<T> = T extends readonly (infer Item)[]
 export type Sex = OpenApi.Sex;
 export type ActivityLevel = OpenApi.ActivityLevel;
 export type Goal = OpenApi.Goal;
-export type CutIntensity = NonNullable<OpenApi.ProfileUpsert["selected_cut_intensity"]>;
+export type CutIntensity = NonNullable<OpenApi.ProfilePreview["selected_cut_intensity"]>;
 export type NutritionBasis = OpenApi.NutritionBasis;
 export type DefaultUnitType = OpenApi.DefaultUnitType;
 export type UnitBasis = OpenApi.UnitBasis;
@@ -29,8 +29,8 @@ export type CalendarAuthorityResponse = DeepRequired<OpenApi.CalendarAuthorityRe
 
 /** Editable Profile domain input mapped to the generated transport request. */
 export type ProfileInput = Required<
-  Pick<OpenApi.ProfileUpsert, "protein_per_kg" | "fat_pct" | "selected_cut_intensity">
-> & Omit<OpenApi.ProfileUpsert, "protein_per_kg" | "fat_pct" | "selected_cut_intensity">;
+  Pick<OpenApi.ProfilePreview, "protein_per_kg" | "fat_pct" | "selected_cut_intensity">
+> & Omit<OpenApi.ProfilePreview, "protein_per_kg" | "fat_pct" | "selected_cut_intensity">;
 
 export type NutritionRegistryResponse = DeepRequired<OpenApi.NutritionRegistryResponse>;
 export type ProfileResponse = Omit<

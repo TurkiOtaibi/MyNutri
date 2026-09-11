@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from pydantic import SkipValidation
 from sqlmodel import Session
@@ -133,16 +133,6 @@ def edit_food(
 ) -> FoodResponse:
     food_payload = validate_food_payload(FoodUpdate, payload)
     return update_food_response(session, principal, food_id, food_payload)
-
-
-@router.delete("/{food_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remove_food(
-    food_id: UUID,
-    principal: PrincipalContext = Depends(require_admin),
-    session: Session = Depends(get_session),
-) -> Response:
-    delete_food(session, principal, food_id)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 admin_router = APIRouter(prefix="/admin/foods", tags=["admin-foods"])

@@ -547,20 +547,6 @@ def resolve_week_target_context(
     )
 
 
-def project_week_target_context(
-    session: Session,
-    principal: PrincipalContext,
-    week_start: date,
-    week_end: date,
-    *,
-    authoritative_current_date: date | None = None,
-) -> WeekTargetContext:
-    current_date = authoritative_current_date or diary_calendar_authority().current_diary_date
-    return _load_week_target_context(
-        session, principal, week_start, week_end, current_date
-    )
-
-
 def resolve_targets(
     session: Session, principal: PrincipalContext, requested_date: date
 ) -> TargetSourceResponse:

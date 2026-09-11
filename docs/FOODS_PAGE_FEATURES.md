@@ -258,7 +258,7 @@ These decisions resolve the previously unclear Foods page scope items before use
 * Priority: Must Have.
 * Source location: `frontend/components/FoodsPage.tsx:179`, `backend/app/services/food.py:87`.
 * Related UI: Delete icon button in the row.
-* Related API/database: Current API uses `DELETE /foods/{food_id}` hard delete. Product scope requires usage-aware hard delete for unused foods and archive/inactive behavior for used foods.
+* Related API/database: Current API uses `DELETE /admin/foods/{food_id}` for usage-aware hard delete of unused foods and archive behavior for used foods.
 * Related tests: No direct delete test confirmed.
 * Notes: Delete confirmation is required. Used foods must be archived/inactive and hidden from future Diary selection.
 * Risks: Current implementation has no confirmation, no usage check, and no archive/inactive field.
