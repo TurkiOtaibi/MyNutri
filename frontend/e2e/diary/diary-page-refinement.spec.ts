@@ -174,7 +174,7 @@ test.describe("@diary @page-refinement compact Diary page", () => {
     const summary = page.getByLabel("ملخص تقدم اليوم");
     await expect(summary.getByText("تم الوصول إلى الهدف")).toBeVisible();
     await expect(summary.getByRole("progressbar", { name: /100% من هدف السعرات/ })).toHaveAttribute("aria-valuenow", "100");
-    await request.delete(`${API_URL}/diary/${exactEntry.id}`, { headers: { Authorization: `Bearer ${API_TOKEN}` } });
+    await foodsApi.removeDiary(exactEntry.id, exactDate);
     await foodsApi.createDiary(over.id, overDate, 1, "lunch");
     await page.reload();
     await selectDate(page, overDate);

@@ -787,49 +787,6 @@ export interface ProfileResponse {
   weight_kg: number;
 }
 
-/** ProfileUpsert */
-export interface ProfileUpsert {
-  activity_level: ActivityLevel;
-  /**
-   * Birth Date
-   * @format date
-   */
-  birth_date: string;
-  /**
-   * Fat Pct
-   * @min 0.15
-   * @max 0.4
-   * @default 0.25
-   */
-  fat_pct?: number;
-  goal: Goal;
-  /**
-   * Height Cm
-   * @min 100
-   * @max 250
-   */
-  height_cm: number;
-  /**
-   * Protein Per Kg
-   * @min 1
-   * @max 3
-   * @default 1.2
-   */
-  protein_per_kg?: number;
-  /**
-   * Selected Cut Intensity
-   * @default 0.2
-   */
-  selected_cut_intensity?: 0.15 | 0.2 | 0.25;
-  sex: Sex;
-  /**
-   * Weight Kg
-   * @min 20
-   * @max 300
-   */
-  weight_kg: number;
-}
-
 /** ProteinCalculationResponse */
 export interface ProteinCalculationResponse {
   /** Actual Weight Kg */
@@ -1451,56 +1408,6 @@ export namespace Admin {
     export type RequestHeaders = {};
     export type ResponseBody = AdminDiaryDayStatusPage;
   }
-
-  /**
-   * No description
-   * @tags admin
-   * @name UserTargetPlansAdminUsersPrincipalIdTargetPlansGet
-   * @summary User Target Plans
-   * @request GET:/admin/users/{principal_id}/target-plans
-   * @secure
-   */
-  export namespace UserTargetPlansAdminUsersPrincipalIdTargetPlansGet {
-    export type RequestParams = {
-      /**
-       * Principal Id
-       * @format uuid
-       */
-      principalId: string;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = TargetPlanHistoryResponse;
-  }
-
-  /**
-   * No description
-   * @tags admin
-   * @name UserWeekAdminUsersPrincipalIdDiaryWeekGet
-   * @summary User Week
-   * @request GET:/admin/users/{principal_id}/diary/week
-   * @secure
-   */
-  export namespace UserWeekAdminUsersPrincipalIdDiaryWeekGet {
-    export type RequestParams = {
-      /**
-       * Principal Id
-       * @format uuid
-       */
-      principalId: string;
-    };
-    export type RequestQuery = {
-      /**
-       * Start
-       * @format date
-       */
-      start: string;
-    };
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = WeekSummary;
-  }
 }
 
 export namespace Diary {
@@ -1639,28 +1546,6 @@ export namespace Diary {
     export type RequestBody = never;
     export type RequestHeaders = {};
     export type ResponseBody = DiaryEntryResponse[];
-  }
-
-  /**
-   * No description
-   * @tags diary
-   * @name ReadEntryDiaryEntriesEntryIdGet
-   * @summary Read Entry
-   * @request GET:/diary/entries/{entry_id}
-   * @secure
-   */
-  export namespace ReadEntryDiaryEntriesEntryIdGet {
-    export type RequestParams = {
-      /**
-       * Entry Id
-       * @format uuid
-       */
-      entryId: string;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = DiaryEntryResponse;
   }
 
   /**
@@ -2030,28 +1915,6 @@ export namespace Foods {
     export type RequestHeaders = {};
     export type ResponseBody = FoodResponseV3[] | FoodListResponse;
   }
-
-  /**
-   * No description
-   * @tags foods
-   * @name RemoveFoodFoodsFoodIdDelete
-   * @summary Remove Food
-   * @request DELETE:/foods/{food_id}
-   * @secure
-   */
-  export namespace RemoveFoodFoodsFoodIdDelete {
-    export type RequestParams = {
-      /**
-       * Food Id
-       * @format uuid
-       */
-      foodId: string;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = void;
-  }
 }
 
 export namespace Health {
@@ -2121,22 +1984,6 @@ export namespace Profile {
     export type RequestParams = {};
     export type RequestQuery = {};
     export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = ProfileResponse;
-  }
-
-  /**
-   * No description
-   * @tags profile
-   * @name SaveProfileProfilePut
-   * @summary Save Profile
-   * @request PUT:/profile
-   * @secure
-   */
-  export namespace SaveProfileProfilePut {
-    export type RequestParams = {};
-    export type RequestQuery = {};
-    export type RequestBody = ProfileUpsert;
     export type RequestHeaders = {};
     export type ResponseBody = ProfileResponse;
   }

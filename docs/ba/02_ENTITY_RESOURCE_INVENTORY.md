@@ -9,7 +9,7 @@ This inventory separates v1 requirements from current implementation evidence an
 | v1 status | Confirmed |
 | Purpose | Store the single user's stats and goal for target calculation. |
 | Evidence | `backend/app/models.py`, `backend/app/schemas.py`, `frontend/components/ProfilePage.tsx` |
-| API routes | `GET /profile`, `PUT /profile`, `POST /profile/preview` |
+| API routes | `GET /profile`, `POST /profile/preview`, `POST /target-plans/activate`, `POST /target-plans/pending/replace` |
 | Relationships | Used by target preview and weekly target display. |
 | Current implementation gap | Validation ranges in code are looser/different than D-009 and D-012. |
 
@@ -65,7 +65,7 @@ This section supersedes older Food entity rows that treat archive/inactive field
 | Entity | Food |
 | Purpose | Current catalog item used for future Diary logging. Deleted Foods are permanently removed from the catalog. |
 | Routes | `/foods`, `/foods/new`, `/foods/:id`, `/foods/:id/edit` |
-| API routes | `GET /foods`, `POST /foods`, `GET /foods/{id}`, `PUT /foods/{id}`, `DELETE /foods/{id}` |
+| API routes | `GET /foods`, `POST /foods`, `GET /foods/{id}`, `PUT /foods/{id}`, `DELETE /admin/foods/{id}` |
 | Nutrition source of truth | Values per 100g or per 100ml. |
 | Required fields | `name`, `nutrition_basis`, `calories`, `protein_g`, `carb_g`, `fat_g`, `default_unit_type`, `unit_amount`, `unit_basis` |
 | Optional basic fields | `brand`, `category`, `notes`, `data_source` |
@@ -140,7 +140,7 @@ v1 lifecycle:
 | v1 status | Confirmed / needs gram and edit alignment |
 | Purpose | Store what was eaten on a date. |
 | Evidence | `backend/app/models.py`, `backend/app/schemas.py`, `frontend/components/DiaryPage.tsx` |
-| API routes | `GET /diary`, `GET /diary/{id}`, `POST /diary`, `PUT /diary/{id}`, `DELETE /diary/{id}` |
+| API routes | `GET /diary/entries`, `POST /diary/entries`, `PATCH /diary/entries/{id}`, `DELETE /diary/entries/{id}`, `GET /diary/week` |
 | Relationships | Has nullable `food_id`; owns `nutrition_snapshot`. |
 | Current implementation gap | Current create uses serving quantity only and lacks D-021 `log_mode`; update API allows food/date changes, but v1 permits quantity-only edit. |
 

@@ -6,6 +6,13 @@ import pytest
 from fastapi import HTTPException
 from pydantic import TypeAdapter
 
+from app.api.routes import (
+    admin as admin_routes,
+    diary as diary_routes,
+    foods as food_routes,
+    profile as profile_routes,
+    target_plans as target_plan_routes,
+)
 from app.api.routes.diary import _command_expected_version, add_entry, edit_entry
 from app.api.routes.foods import add_food, edit_food
 from app.main import app
@@ -140,3 +147,38 @@ def test_retired_analysis_priority_and_snapshot_contracts_are_absent() -> None:
         "nutritionanalysis",
     ):
         assert retired not in serialized
+
+
+def test_unused_routes_are_absent_and_protected_routes_remain() -> None:
+    relevant_routers = (
+        admin_routes.router,
+        diary_routes.router,
+        food_routes.router,
+        profile_routes.router,
+        target_plan_routes.router,
+    )
+    operations = {
+        (method, route.path)
+        for router in relevant_routers
+        for route in router.routes
+        for method in getattr(route, "methods", set())
+    }
+    assert operations.isdisjoint(
+        {
+            ("POST", "/diary"),
+            ("GET", "/diary"),
+            ("GET", "/diary/{entry_id}"),
+            ("PUT", "/diary/{entry_id}"),
+            ("DELETE", "/diary/{entry_id}"),
+            ("GET", "/diary/entries/{entry_id}"),
+            ("GET", "/admin/users/{principal_id}/diary/week"),
+            ("GET", "/admin/users/{principal_id}/target-plans"),
+            ("DELETE", "/foods/{food_id}"),
+            ("PUT", "/profile"),
+        }
+    )
+    assert {
+        ("GET", "/target-plans/current"),
+        ("GET", "/target-plans/pending"),
+        ("GET", "/admin/users/{principal_id}/diary-days"),
+    } <= operations

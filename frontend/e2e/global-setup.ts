@@ -1,4 +1,5 @@
 import { chromium, type FullConfig } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -35,14 +36,25 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 
   const profile = await fetch(`${API_URL}/profile`, { headers });
   if (profile.status === 404) {
-    await ensureSuccessful(await fetch(`${API_URL}/profile`, {
-      method: "PUT", headers,
+    const payload = {
+      sex: "male", birth_date: "1990-01-01", height_cm: 175, weight_kg: 80,
+      activity_level: "moderate", goal: "maintain", protein_per_kg: 1.2,
+      fat_pct: 0.25, selected_cut_intensity: 0.2
+    };
+    const preview = await fetch(`${API_URL}/profile/preview`, {
+      method: "POST", headers, body: JSON.stringify(payload)
+    });
+    await ensureSuccessful(preview, "Profile seed preview");
+    const previewBody = await preview.json() as { preview_hash: string };
+    await ensureSuccessful(await fetch(`${API_URL}/target-plans/activate`, {
+      method: "POST",
+      headers: { ...headers, "Idempotency-Key": `e2e-global-profile-${randomUUID()}` },
       body: JSON.stringify({
-        sex: "male", birth_date: "1990-01-01", height_cm: 175, weight_kg: 80,
-        activity_level: "moderate", goal: "maintain", protein_per_kg: 1.2,
-        fat_pct: 0.25, selected_cut_intensity: 0.2
+        ...payload,
+        confirmed: true,
+        expected_preview_hash: previewBody.preview_hash
       })
-    }), "Profile seed");
+    }), "Profile seed activation");
   } else {
     await ensureSuccessful(profile, "Profile read");
   }

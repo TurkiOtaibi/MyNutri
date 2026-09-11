@@ -24,7 +24,6 @@ from app.schemas import DiaryNutrientTarget
 from app.services.aggregation import (
     aggregate_nutrient,
     weekly_summary,
-    weekly_summary_read_only,
 )
 from app.services.diary import add_totals, empty_totals, totals_for_entry
 from app.services import target_plans as target_plan_service
@@ -274,34 +273,6 @@ def _seed_plan015_entries(session: Session, count: int, week_start: date) -> Non
     session.commit()
 
 
-def _assert_plan015_read_only_query_budget(session: Session, count: int) -> None:
-    week_start = date(2026, 7, 12)
-    _seed_plan015_entries(session, count, week_start)
-    engine = session.get_bind()
-    with _capture_selects(engine) as statements:
-        summary = weekly_summary_read_only(session, PRINCIPAL, week_start)
-
-    assert len(summary.days) == 7
-    assert sum(len(day.nutrient_aggregates) > 0 for day in summary.days) == 7
-    # PLAN 031 adds two bounded projections: persisted day rows and legacy
-    # entry-date counts. The budget remains constant as entry volume changes.
-    assert len(statements) == 7
-
-
-@pytest.mark.parametrize("entry_count", [0, 1, 7])
-def test_plan015_admin_week_query_budget_is_fixed(entry_count: int) -> None:
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    SQLModel.metadata.create_all(engine)
-    with Session(engine) as session:
-        session.add(Principal(id=PRINCIPAL_ID))
-        session.commit()
-        _assert_plan015_read_only_query_budget(session, entry_count)
-
-
 @pytest.mark.parametrize("entry_count", [0, 1, 7])
 def test_plan015_owner_week_advances_and_commits_once(
     monkeypatch, entry_count: int
@@ -394,18 +365,17 @@ def plan015_postgresql_session():
 
 
 @pytest.mark.parametrize("entry_count", [0, 1, 7])
-def test_plan015_postgresql_admin_week_query_budget_is_fixed(
+def test_plan015_postgresql_owner_week_query_budget_is_fixed(
     plan015_postgresql_session: Session, entry_count: int
 ) -> None:
-    _assert_plan015_read_only_query_budget(
-        plan015_postgresql_session, entry_count
-    )
+    week_start = date(2026, 7, 12)
+    _seed_plan015_entries(plan015_postgresql_session, entry_count, week_start)
     engine = plan015_postgresql_session.get_bind()
     with _capture_selects(engine) as statements:
         weekly_summary(
             plan015_postgresql_session,
             PRINCIPAL,
-            date(2026, 7, 12),
+            week_start,
         )
     # PLAN 031 adds the persisted day-status and legacy entry-count range
     # projections. The budget remains fixed as entry volume changes.

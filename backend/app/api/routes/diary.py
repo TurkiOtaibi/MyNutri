@@ -24,7 +24,6 @@ from app.services.aggregation import weekly_summary
 from app.services.diary import (
     create_entry,
     delete_entry,
-    get_entry,
     get_food_for_entry,
     list_entries,
     to_entry_response,
@@ -62,7 +61,6 @@ def _command_expected_version(payload: DiaryDayStatusCommand, if_match: str | No
 
 
 @router.get("/entries", response_model=list[DiaryEntryResponse])
-@router.get("", response_model=list[DiaryEntryResponse], include_in_schema=False)
 def read_entries(
     entry_date: date | None = None,
     principal: PrincipalContext = Depends(get_principal_context),
@@ -119,32 +117,6 @@ def add_entry(
     return _add_entry(payload, response, if_match, principal, session)
 
 
-@router.post(
-    "",
-    response_model=DiaryEntryResponse,
-    status_code=status.HTTP_201_CREATED,
-    include_in_schema=False,
-)
-def add_entry_legacy(
-    payload: Annotated[SkipValidation[DiaryEntryCreate], Body()],
-    response: Response,
-    principal: PrincipalContext = Depends(get_principal_context),
-    session: Session = Depends(get_session),
-) -> DiaryEntryResponse:
-    return _add_entry(payload, response, None, principal, session)
-
-
-@router.get("/entries/{entry_id}", response_model=DiaryEntryResponse)
-@router.get("/{entry_id}", response_model=DiaryEntryResponse, include_in_schema=False)
-def read_entry(
-    entry_id: UUID,
-    principal: PrincipalContext = Depends(get_principal_context),
-    session: Session = Depends(get_session),
-) -> DiaryEntryResponse:
-    entry = get_entry(session, principal, entry_id)
-    return to_entry_response(entry, get_food_for_entry(session, entry))
-
-
 def _edit_entry(
     entry_id: UUID,
     payload: Annotated[SkipValidation[DiaryEntryUpdate], Body()],
@@ -179,17 +151,6 @@ def edit_entry(
     return _edit_entry(entry_id, payload, response, if_match, principal, session)
 
 
-@router.put("/{entry_id}", response_model=DiaryEntryResponse, include_in_schema=False)
-def edit_entry_legacy(
-    entry_id: UUID,
-    payload: Annotated[SkipValidation[DiaryEntryUpdate], Body()],
-    response: Response,
-    principal: PrincipalContext = Depends(get_principal_context),
-    session: Session = Depends(get_session),
-) -> DiaryEntryResponse:
-    return _edit_entry(entry_id, payload, response, None, principal, session)
-
-
 def remove_entry(
     entry_id: UUID,
     if_match: str | None,
@@ -214,15 +175,6 @@ def remove_entry_documented(
     session: Session = Depends(get_session),
 ) -> Response:
     return remove_entry(entry_id, if_match, principal, session)
-
-
-@router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT, include_in_schema=False)
-def remove_entry_legacy(
-    entry_id: UUID,
-    principal: PrincipalContext = Depends(get_principal_context),
-    session: Session = Depends(get_session),
-) -> Response:
-    return remove_entry(entry_id, None, principal, session)
 
 
 @router.get("/days/{diary_date}/status", response_model=DiaryDayStatusResponse)

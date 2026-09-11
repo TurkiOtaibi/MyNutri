@@ -7,8 +7,8 @@ from sqlmodel import Session
 from app.core.auth import PrincipalContext, get_principal_context
 from app.db.session import get_session
 from app.nutrition_rules.calculation import CalculationError
-from app.schemas import ProfilePreview, ProfileResponse, ProfileUpsert, TargetResponse
-from app.services.profile import get_profile, preview_targets, to_profile_response, upsert_profile
+from app.schemas import ProfilePreview, ProfileResponse, TargetResponse
+from app.services.profile import get_profile, preview_targets, to_profile_response
 from app.core.calendar import diary_calendar_authority, following_diary_date
 
 router = APIRouter(prefix="/profile", tags=["profile"])
@@ -35,16 +35,6 @@ def read_profile(
         response.effective_plan = source.plan
     response.pending_plan = pending_plan(session, principal)
     return response
-
-
-@router.put("", response_model=ProfileResponse)
-def save_profile(
-    payload: ProfileUpsert,
-    principal: PrincipalContext = Depends(get_principal_context),
-    session: Session = Depends(get_session),
-) -> ProfileResponse:
-    authority = diary_calendar_authority()
-    return upsert_profile(session, principal, payload, authority.current_diary_date)
 
 
 @router.post("/preview", response_model=TargetResponse)

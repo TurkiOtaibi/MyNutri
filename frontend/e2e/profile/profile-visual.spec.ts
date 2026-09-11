@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 
 import type { ProfileInput, ProfileResponse } from "../../lib/types";
 import { API_TOKEN, API_URL } from "../foods/helpers";
+import { applyProfileThroughTargetPlan } from "../profile-api";
 
 const output = resolve(process.cwd(), "test-results", "manual-capture", "profile-targets-redesign");
 const headers = { Authorization: `Bearer ${API_TOKEN}` };
@@ -135,6 +136,6 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
     await errorPage.screenshot({ path: resolve(output, "17-initial-load-error-390.png"), fullPage: true });
     await errorPage.close();
   } finally {
-    await request.put(`${API_URL}/profile`, { headers, data: inputFrom(original) });
+    await applyProfileThroughTargetPlan(request, API_TOKEN, inputFrom(original));
   }
 });

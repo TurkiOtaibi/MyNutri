@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from sqlmodel import Session, select
 from app.core.auth import PrincipalContext
 from app.core.calendar import current_diary_date
-from app.models import Profile, utcnow
+from app.models import Profile
 from app.schemas import (
     ProfileDomainValidationError,
     ProfilePreview,
@@ -108,33 +108,6 @@ def get_profile(session: Session, principal: PrincipalContext) -> Profile | None
     return session.exec(
         select(Profile).where(Profile.principal_id == principal.principal_id)
     ).first()
-
-
-def upsert_profile(
-    session: Session,
-    principal: PrincipalContext,
-    payload: ProfileUpsert,
-    calculation_date: date,
-) -> ProfileResponse:
-    try:
-        profile = get_profile(session, principal)
-        data = payload.model_dump()
-        data["cut_intensity"] = data.pop("selected_cut_intensity")
-        if profile is None:
-            profile = Profile(principal_id=principal.principal_id, **data)
-        else:
-            for key, value in data.items():
-                setattr(profile, key, value)
-            profile.updated_at = utcnow()
-
-        session.add(profile)
-        session.flush()
-        response = to_profile_response(profile, calculation_date)
-        session.commit()
-        return response
-    except Exception:
-        session.rollback()
-        raise
 
 
 def preview_targets(payload: ProfilePreview, calculation_date: date | None = None) -> TargetResponse:

@@ -31,11 +31,11 @@ from app.models import (
 )
 from app.services.target_plans import (
     project_targets,
-    project_week_target_context,
+    resolve_week_target_context,
     target_for_date,
 )
-from app.schemas import ProfileResponse, ProfileUpsert
-from app.services.profile import upsert_profile
+from app.schemas import ProfileUpsert
+from app.services.profile import to_profile_response
 
 PRINCIPAL_A = UUID("00000000-0000-0000-0000-00000000000a")
 PRINCIPAL_B = UUID("00000000-0000-0000-0000-00000000000b")
@@ -121,52 +121,19 @@ def _profile_state(profile: Profile) -> tuple:
     )
 
 
-@pytest.mark.parametrize("failure_point", ["calculation", "serialization", "flush", "commit"])
-@pytest.mark.parametrize("existing", [False, True])
-def test_plan008_profile_upsert_rolls_back_every_failure(
-    target_plan_context, monkeypatch, failure_point: str, existing: bool
-) -> None:
-    client, session = target_plan_context
-    principal_id = PRINCIPAL_A if existing else PRINCIPAL_B
-    principal = PrincipalContext(principal_id)
-    before = None
-    if existing:
-        created = client.put(
-            "/profile", json=profile_payload(weight=80), headers=headers("token-a")
-        )
-        assert created.status_code == 200
-        stored = session.exec(
-            select(Profile).where(Profile.principal_id == principal_id)
-        ).one()
-        before = _profile_state(stored)
-
-    payload = ProfileUpsert.model_validate(profile_payload(weight=92))
-
-    def fail(*args, **kwargs):
-        raise RuntimeError(f"injected {failure_point} failure")
-
-    with monkeypatch.context() as patch:
-        if failure_point == "calculation":
-            patch.setattr("app.services.profile.calculate_targets", fail)
-        elif failure_point == "serialization":
-            patch.setattr(ProfileResponse, "model_validate", classmethod(fail))
-        elif failure_point == "flush":
-            patch.setattr(session, "flush", fail)
-        else:
-            patch.setattr(session, "commit", fail)
-
-        with pytest.raises(RuntimeError, match=f"injected {failure_point} failure"):
-            upsert_profile(session, principal, payload, TODAY)
-
-    session.expire_all()
-    stored_after = session.exec(
-        select(Profile).where(Profile.principal_id == principal_id)
-    ).first()
-    if existing:
-        assert stored_after is not None
-        assert _profile_state(stored_after) == before
-    else:
-        assert stored_after is None
+def seed_legacy_profile(
+    session: Session,
+    payload: dict | None = None,
+    principal_id: UUID = PRINCIPAL_A,
+) -> dict:
+    validated = ProfileUpsert.model_validate(payload or profile_payload())
+    data = validated.model_dump()
+    data["cut_intensity"] = data.pop("selected_cut_intensity")
+    profile = Profile(principal_id=principal_id, **data)
+    session.add(profile)
+    session.commit()
+    session.refresh(profile)
+    return to_profile_response(profile, TODAY).model_dump(mode="json")
 
 
 def preview(client: TestClient, payload: dict, token: str = "token-a") -> dict:
@@ -188,22 +155,20 @@ def preview(client: TestClient, payload: dict, token: str = "token-a") -> dict:
         ("fat_pct", 0.40),
     ],
 )
-def test_plan008_valid_profile_boundaries_save(
+def test_plan008_valid_profile_boundaries_preview(
     target_plan_context, field: str, value: float
 ) -> None:
     client, session = target_plan_context
-    response = client.put(
-        "/profile",
+    response = client.post(
+        "/profile/preview",
         json=profile_payload() | {field: value},
         headers=headers("token-a"),
     )
 
     assert response.status_code == 200, response.text
-    stored = session.exec(
+    assert session.exec(
         select(Profile).where(Profile.principal_id == PRINCIPAL_A)
-    ).one()
-    stored_field = "cut_intensity" if field == "selected_cut_intensity" else field
-    assert float(getattr(stored, stored_field)) == value
+    ).first() is None
 
 
 @pytest.mark.parametrize(
@@ -223,8 +188,8 @@ def test_plan008_invalid_numeric_requests_return_422_without_profile(
     target_plan_context, field: str, value: float, error_type: str
 ) -> None:
     client, session = target_plan_context
-    response = client.put(
-        "/profile",
+    response = client.post(
+        "/profile/preview",
         json=profile_payload() | {field: value},
         headers=headers("token-a"),
     )
@@ -239,18 +204,17 @@ def test_plan008_invalid_numeric_requests_return_422_without_profile(
     ).first() is None
 
 
-@pytest.mark.parametrize("path", ["/profile", "/profile/preview"])
 @pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
 def test_plan008_non_finite_raw_json_returns_stable_422_without_profile(
-    target_plan_context, path: str, constant: str
+    target_plan_context, constant: str
 ) -> None:
     client, session = target_plan_context
     payload = json.dumps(profile_payload(), separators=(",", ":"))
     payload = payload.replace('"height_cm":175', f'"height_cm":{constant}')
 
     response = client.request(
-        "PUT" if path == "/profile" else "POST",
-        path,
+        "POST",
+        "/profile/preview",
         content=payload,
         headers={**headers("token-a"), "Content-Type": "application/json"},
     )
@@ -293,8 +257,8 @@ def test_plan008_invalid_birth_dates_return_422_without_profile(
     monkeypatch.setattr(
         "app.api.routes.profile.diary_calendar_authority", lambda: authority
     )
-    response = client.put(
-        "/profile",
+    response = client.post(
+        "/profile/preview",
         json=profile_payload() | {"birth_date": birth_date},
         headers=headers("token-a"),
     )
@@ -319,10 +283,13 @@ def activate(client: TestClient, payload: dict, key: str, token: str = "token-a"
 def test_plan010_activation_captures_one_calendar_authority(
     target_plan_context, monkeypatch, token: str, existing_profile: bool
 ) -> None:
-    client, _ = target_plan_context
+    client, session = target_plan_context
     if existing_profile:
-        saved = client.put("/profile", json=profile_payload(), headers=headers(token))
-        assert saved.status_code == 200
+        seed_legacy_profile(
+            session,
+            profile_payload(),
+            PRINCIPAL_B if token == "token-b" else PRINCIPAL_A,
+        )
 
     fixed = diary_calendar_authority(
         datetime(2026, 7, 15, 21, 0, 0, tzinfo=timezone.utc)
@@ -358,8 +325,11 @@ def test_plan010_midnight_crossing_cannot_skip_an_effective_date(
 ) -> None:
     client, session = target_plan_context
     if existing_profile:
-        saved = client.put("/profile", json=profile_payload(), headers=headers(token))
-        assert saved.status_code == 200
+        seed_legacy_profile(
+            session,
+            profile_payload(),
+            PRINCIPAL_B if token == "token-b" else PRINCIPAL_A,
+        )
 
     before_midnight = diary_calendar_authority(
         datetime(2026, 12, 30, 21, 0, 0, tzinfo=timezone.utc)
@@ -403,15 +373,15 @@ def test_plan010_midnight_crossing_cannot_skip_an_effective_date(
 def test_current_legacy_profile_target_is_available_before_transition(
     target_plan_context,
 ) -> None:
-    client, _ = target_plan_context
-    created = client.put("/profile", json=profile_payload(), headers=headers("token-a"))
+    client, session = target_plan_context
+    created = seed_legacy_profile(session)
     source = client.get(
         f"/target-plans/current?date={TODAY.isoformat()}", headers=headers("token-a")
     )
     assert source.status_code == 200
     assert source.json()["target_provenance"] == "legacy_unversioned"
     assert source.json()["target_source_detail"] == "no_preserved_target_source"
-    assert source.json()["targets"] == created.json()["targets"]
+    assert source.json()["targets"] == created["targets"]
 
 
 def test_project_targets_selects_due_plan_without_lifecycle_dml(
@@ -419,21 +389,17 @@ def test_project_targets_selects_due_plan_without_lifecycle_dml(
 ) -> None:
     client, session = target_plan_context
 
-    fallback = client.put(
-        "/profile", json=profile_payload(weight=67), headers=headers("token-b")
+    fallback = seed_legacy_profile(
+        session, profile_payload(weight=67), PRINCIPAL_B
     )
-    assert fallback.status_code == 200
     fallback_source = project_targets(
         session, PrincipalContext(PRINCIPAL_B), TODAY
     )
     assert fallback_source.target_source_detail == "no_preserved_target_source"
     assert fallback_source.targets is not None
-    assert fallback_source.targets.model_dump(mode="json") == fallback.json()["targets"]
+    assert fallback_source.targets.model_dump(mode="json") == fallback["targets"]
 
-    created = client.put(
-        "/profile", json=profile_payload(weight=80), headers=headers("token-a")
-    )
-    assert created.status_code == 200
+    created = seed_legacy_profile(session, profile_payload(weight=80))
     activation = activate(client, profile_payload(weight=82), "due-plan")
     assert activation.status_code == 201, activation.text
     due = session.exec(
@@ -470,7 +436,7 @@ def test_project_targets_selects_due_plan_without_lifecycle_dml(
     transition_targets = transition_source.targets.model_dump(
         mode="json", exclude={"preview_hash"}
     )
-    expected_transition_targets = created.json()["targets"].copy()
+    expected_transition_targets = created["targets"].copy()
     expected_transition_targets.pop("preview_hash")
     assert transition_targets == expected_transition_targets
 
@@ -487,11 +453,8 @@ def test_plan015_bulk_context_matches_single_date_projection(
     target_plan_context,
 ) -> None:
     client, session = target_plan_context
-    created = client.put(
-        "/profile", json=profile_payload(weight=80), headers=headers("token-a")
-    )
-    assert created.status_code == 200
-    fallback_context = project_week_target_context(
+    created = seed_legacy_profile(session, profile_payload(weight=80))
+    fallback_context = resolve_week_target_context(
         session,
         PrincipalContext(PRINCIPAL_A),
         TODAY,
@@ -501,7 +464,7 @@ def test_plan015_bulk_context_matches_single_date_projection(
     fallback_tomorrow = target_for_date(fallback_context, TOMORROW)
     assert fallback_today.target_source_detail == "no_preserved_target_source"
     assert fallback_today.targets is not None
-    assert fallback_today.targets.model_dump(mode="json") == created.json()["targets"]
+    assert fallback_today.targets.model_dump(mode="json") == created["targets"]
     assert fallback_tomorrow.target_provenance == "no_target_source"
 
     activation = activate(client, profile_payload(weight=82), "plan015-bulk")
@@ -517,7 +480,7 @@ def test_plan015_bulk_context_matches_single_date_projection(
         for requested in dates
     }
 
-    context = project_week_target_context(
+    context = resolve_week_target_context(
         session,
         PrincipalContext(PRINCIPAL_A),
         week_start,
@@ -538,10 +501,7 @@ def test_plan015_out_of_week_transition_blocks_profile_fallback_without_loading_
     target_plan_context,
 ) -> None:
     client, session = target_plan_context
-    created = client.put(
-        "/profile", json=profile_payload(weight=80), headers=headers("token-a")
-    )
-    assert created.status_code == 200
+    seed_legacy_profile(session, profile_payload(weight=80))
     activation = activate(client, profile_payload(weight=82), "plan015-history")
     assert activation.status_code == 201, activation.text
     template_profile = session.exec(
@@ -602,7 +562,7 @@ def test_plan015_out_of_week_transition_blocks_profile_fallback_without_loading_
 
     event.listen(engine, "before_cursor_execute", capture)
     try:
-        context = project_week_target_context(
+        context = resolve_week_target_context(
             session,
             PrincipalContext(PRINCIPAL_A),
             week_start,
@@ -611,7 +571,7 @@ def test_plan015_out_of_week_transition_blocks_profile_fallback_without_loading_
     finally:
         event.remove(engine, "before_cursor_execute", capture)
 
-    assert len(statements) == 4
+    assert len(statements) == 5
     assert context.transitions_by_date == {}
     assert context.has_transition is True
     for offset in range(7):
@@ -637,7 +597,7 @@ def test_plan015_bulk_context_matches_active_closed_and_scheduled_boundaries(
     )
     assert active_response.status_code == 201, active_response.text
 
-    active_context = project_week_target_context(
+    active_context = resolve_week_target_context(
         session,
         PrincipalContext(PRINCIPAL_B),
         TODAY,
@@ -670,7 +630,7 @@ def test_plan015_bulk_context_matches_active_closed_and_scheduled_boundaries(
 
     week_start = TODAY - timedelta(days=2)
     week_end = week_start + timedelta(days=6)
-    context = project_week_target_context(
+    context = resolve_week_target_context(
         session,
         PrincipalContext(PRINCIPAL_B),
         week_start,
@@ -746,9 +706,8 @@ def test_existing_legacy_activation_preserves_today_and_updates_profile_atomical
 ) -> None:
     client, session = target_plan_context
     original = profile_payload(weight=80)
-    created = client.put("/profile", json=original, headers=headers("token-a"))
-    assert created.status_code == 200
-    before = created.json()["targets"]
+    created = seed_legacy_profile(session, original)
+    before = created["targets"]
 
     changed = profile_payload(weight=90, intensity=0.25)
     response = activate(client, changed, "legacy-first")
@@ -778,7 +737,7 @@ def test_existing_legacy_activation_preserves_today_and_updates_profile_atomical
 
 def test_idempotent_replay_and_payload_conflict_do_not_mutate(target_plan_context) -> None:
     client, session = target_plan_context
-    client.put("/profile", json=profile_payload(), headers=headers("token-a"))
+    seed_legacy_profile(session)
     payload = profile_payload(weight=82)
     result = preview(client, payload)
     body = {**payload, "confirmed": True, "expected_preview_hash": result["preview_hash"]}
@@ -805,8 +764,7 @@ def test_plan021_activation_and_replacement_complete_operation_ledgers(
     target_plan_context,
 ) -> None:
     client, session = target_plan_context
-    saved = client.put("/profile", json=profile_payload(), headers=headers("token-a"))
-    assert saved.status_code == 200
+    seed_legacy_profile(session)
 
     activation_payload = profile_payload(weight=82)
     activation_preview = preview(client, activation_payload)
@@ -882,8 +840,7 @@ def test_plan021_same_visible_key_is_independent_across_operations(
     target_plan_context,
 ) -> None:
     client, session = target_plan_context
-    saved = client.put("/profile", json=profile_payload(), headers=headers("token-a"))
-    assert saved.status_code == 200
+    seed_legacy_profile(session)
     shared_key = "plan021-shared-operation-key"
 
     activation_payload = profile_payload(weight=82)
@@ -1017,8 +974,7 @@ def test_plan021_replacement_rollback_leaves_no_ledger_and_retry_succeeds(
     target_plan_context, monkeypatch
 ) -> None:
     client, session = target_plan_context
-    saved = client.put("/profile", json=profile_payload(), headers=headers("token-a"))
-    assert saved.status_code == 200
+    seed_legacy_profile(session)
     activation = activate(client, profile_payload(weight=82), "plan021-rollback-seed")
     assert activation.status_code == 201, activation.text
     activation_plan_id = activation.json()["plan"]["id"]
@@ -1103,7 +1059,7 @@ def test_idempotency_key_requires_visible_ascii(target_plan_context) -> None:
 
 def test_pending_replacement_reuses_original_transition_snapshot(target_plan_context) -> None:
     client, session = target_plan_context
-    client.put("/profile", json=profile_payload(), headers=headers("token-a"))
+    seed_legacy_profile(session)
     assert activate(client, profile_payload(weight=82), "first").status_code == 201
     snapshot = session.exec(select(LegacyTargetTransitionSnapshot)).one()
     original_document = snapshot.legacy_target_document.copy()
@@ -1128,8 +1084,8 @@ def test_pending_replacement_reuses_original_transition_snapshot(target_plan_con
 
 
 def test_history_uses_an_opaque_stable_cursor(target_plan_context) -> None:
-    client, _ = target_plan_context
-    client.put("/profile", json=profile_payload(), headers=headers("token-a"))
+    client, session = target_plan_context
+    seed_legacy_profile(session)
     assert activate(client, profile_payload(weight=82), "first").status_code == 201
     replacement_payload = profile_payload(weight=84)
     replacement_preview = preview(client, replacement_payload)
@@ -1216,7 +1172,7 @@ def test_preview_hash_rejects_stale_activation_without_partial_persistence(
     target_plan_context,
 ) -> None:
     client, session = target_plan_context
-    client.put("/profile", json=profile_payload(), headers=headers("token-a"))
+    seed_legacy_profile(session)
     payload = profile_payload(weight=88)
     body = {**payload, "confirmed": True, "expected_preview_hash": "0" * 64}
     response = client.post("/target-plans/activate", json=body, headers=headers("token-a", "bad"))
@@ -1228,8 +1184,8 @@ def test_preview_hash_rejects_stale_activation_without_partial_persistence(
 
 
 def test_target_plan_reads_are_principal_scoped(target_plan_context) -> None:
-    client, _ = target_plan_context
-    client.put("/profile", json=profile_payload(), headers=headers("token-a"))
+    client, session = target_plan_context
+    seed_legacy_profile(session)
     assert activate(client, profile_payload(weight=82), "private").status_code == 201
     assert client.get("/target-plans/pending", headers=headers("token-b")).json() is None
     assert client.get("/target-plans", headers=headers("token-b")).json()["items"] == []
@@ -1244,7 +1200,7 @@ def test_transaction_failure_rolls_back_snapshot_profile_plan_and_idempotency(
     target_plan_context, monkeypatch
 ) -> None:
     client, session = target_plan_context
-    client.put("/profile", json=profile_payload(), headers=headers("token-a"))
+    seed_legacy_profile(session)
     changed = profile_payload(weight=95)
     result = preview(client, changed)
     body = {**changed, "confirmed": True, "expected_preview_hash": result["preview_hash"]}
