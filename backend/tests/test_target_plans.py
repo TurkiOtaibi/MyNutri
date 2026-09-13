@@ -138,6 +138,53 @@ def test_target_binding_uses_the_request_captured_date(
     assert binding.provenance.value == "no_target_source"
 
 
+def test_diary_create_still_binds_the_active_target_plan(
+    target_plan_context, monkeypatch
+) -> None:
+    client, session = target_plan_context
+    authority = diary_calendar_authority(
+        datetime(2026, 7, 15, 21, 0, 0, tzinfo=timezone.utc)
+    )
+    monkeypatch.setattr(
+        "app.api.routes.diary.diary_calendar_authority", lambda: authority
+    )
+    activation = activate(client, profile_payload(), "diary-binding", token="token-b")
+    assert activation.status_code == 201, activation.text
+
+    food = Food(
+        principal_id=PRINCIPAL_A,
+        name="Diary target binding",
+        normalized_name="diary target binding",
+        primary_category="other",
+        subcategory="other",
+        nutrition_basis=NutritionBasis.per_100g,
+        default_unit_type=DefaultUnitType.g,
+        unit_amount=1,
+        unit_basis=UnitBasis.g,
+        calories=100,
+        protein_g=1,
+        carb_g=2,
+        fat_g=3,
+        nutrition_data_source=NutritionDataSource.estimated,
+    )
+    session.add(food)
+    session.commit()
+
+    created = client.post(
+        "/diary/entries",
+        json={
+            "food_id": str(food.id),
+            "entry_date": TODAY.isoformat(),
+            "quantity": 1,
+            "meal_type": "breakfast",
+        },
+        headers=headers("token-b"),
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["target_provenance"] == "versioned_plan"
+    assert created.json()["target_plan_id"] == activation.json()["plan"]["id"]
+
+
 def _profile_state(profile: Profile) -> tuple:
     return (
         profile.sex,
