@@ -425,6 +425,27 @@ jobs:
           done
           cat /tmp/mynutri-api.log /tmp/mynutri-web.log
           exit 1
+      - name: Run complete assigned Playwright shard
+        working-directory: frontend
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+          SHARD_TOTAL: "4"
+        run: >-
+          npm run test:e2e -- --project=foods-chromium
+          --shard=${SHARD_INDEX}/${SHARD_TOTAL}
+      - name: Capture functional shard execution evidence
+        if: always()
+        working-directory: frontend
+        shell: bash
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          evidence_dir="shard-evidence/${SHARD_INDEX}"
+          mkdir -p "$evidence_dir"
+          if [[ -f test-results/foods-results.json ]]; then
+            cp test-results/foods-results.json "$evidence_dir/actual-results.json"
+          fi
       - name: Run critical visual regression
         if: matrix.shard == 1
         id: critical_visual
@@ -458,27 +479,6 @@ jobs:
             frontend/playwright-report
           if-no-files-found: ignore
           retention-days: 7
-      - name: Run complete assigned Playwright shard
-        working-directory: frontend
-        env:
-          SHARD_INDEX: ${{ matrix.shard }}
-          SHARD_TOTAL: "4"
-        run: >-
-          npm run test:e2e -- --project=foods-chromium
-          --shard=${SHARD_INDEX}/${SHARD_TOTAL}
-      - name: Capture functional shard execution evidence
-        if: always()
-        working-directory: frontend
-        shell: bash
-        env:
-          SHARD_INDEX: ${{ matrix.shard }}
-        run: |
-          set -euo pipefail
-          evidence_dir="shard-evidence/${SHARD_INDEX}"
-          mkdir -p "$evidence_dir"
-          if [[ -f test-results/foods-results.json ]]; then
-            cp test-results/foods-results.json "$evidence_dir/actual-results.json"
-          fi
       - name: Run development StrictMode signal smoke
         if: matrix.shard == 1
         working-directory: frontend
