@@ -5,8 +5,19 @@ on:
     branches: ["main"]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  EXPECTED_FUNCTIONAL_PLAYWRIGHT_TESTS: "365"
+  EXPECTED_BACKEND_TESTS: "609"
+  EXPECTED_BACKEND_UNIT_TESTS: "534"
+  EXPECTED_BACKEND_POSTGRES_TESTS: "75"
+
 jobs:
-  backend:
+  backend-static:
+    name: Backend static, audit, migration and container gates
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -14,27 +25,42 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: mynutri_test_ci
+          POSTGRES_DB: mynutri_test_static_ci
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d mynutri_test_ci"
+          --health-cmd "pg_isready -U postgres -d mynutri_test_static_ci"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_test_ci
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_test_ci
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_test_static_ci
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_test_static_ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.lock
       - name: Install backend
         working-directory: backend
         run: |
           pip install --require-hashes -r requirements-dev.lock
           pip install --no-deps --no-build-isolation -e .
+      - name: Collect deterministic backend test partition plan
+        working-directory: backend
+        run: >-
+          pytest -p ci_pytest_partition
+          --ci-backend-partition plan
+          --ci-backend-evidence backend-test-plan.json
+          --collect-only -q
+      - name: Upload backend test partition plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-plan
+          path: backend/backend-test-plan.json
+          if-no-files-found: error
       - name: Verify Python lock drift and shared versions
         working-directory: backend
         run: |
@@ -73,13 +99,11 @@ jobs:
       - name: Lint backend
         working-directory: backend
         run: ruff check .
-      - name: Test backend
-        working-directory: backend
-        run: pytest
       - name: Verify migration head and model drift
         working-directory: backend
         run: |
           alembic heads
+          alembic upgrade head
           alembic check
       - name: Verify production database preflight
         working-directory: backend
@@ -89,7 +113,7 @@ jobs:
           PGPASSWORD: postgres
         run: |
           alembic upgrade head
-          psql -h 127.0.0.1 -U postgres -d mynutri_test_ci -v ON_ERROR_STOP=1 -c \
+          psql -h 127.0.0.1 -U postgres -d mynutri_test_static_ci -v ON_ERROR_STOP=1 -c \
             "INSERT INTO principal (id,auth_user_id,email,display_name,role,status,created_at,updated_at)
              VALUES ('00000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001',
              'admin.ci@example.test','CI Admin','admin','active',now(),now()) ON CONFLICT (id) DO UPDATE SET
@@ -248,6 +272,263 @@ jobs:
             exit 1
           fi
 
+  backend-unit:
+    name: Backend SQLite, unit and security tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.lock
+      - name: Install backend
+        working-directory: backend
+        run: |
+          pip install --require-hashes -r requirements-dev.lock
+          pip install --no-deps --no-build-isolation -e .
+      - name: Test SQLite, unit and security partition
+        working-directory: backend
+        run: >-
+          pytest -p ci_pytest_partition
+          --ci-backend-partition unit
+          --ci-backend-evidence backend-unit-results.json
+          --durations=20
+      - name: Upload backend unit test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-evidence-unit
+          path: backend/backend-unit-results.json
+          if-no-files-found: error
+
+  backend-postgres:
+    name: Backend PostgreSQL tests shard ${{ matrix.shard }}/2
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mynutri_test_backend_${{ matrix.shard }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mynutri_test_backend_${{ matrix.shard }}"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_test_backend_${{ matrix.shard }}
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_test_backend_${{ matrix.shard }}
+      BACKEND_POSTGRES_SHARD: ${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.lock
+      - name: Install backend
+        working-directory: backend
+        run: |
+          pip install --require-hashes -r requirements-dev.lock
+          pip install --no-deps --no-build-isolation -e .
+      - name: Test isolated PostgreSQL partition
+        working-directory: backend
+        run: >-
+          pytest -p ci_pytest_partition
+          --ci-backend-partition "postgres-${BACKEND_POSTGRES_SHARD}"
+          --ci-backend-evidence "backend-postgres-${BACKEND_POSTGRES_SHARD}-results.json"
+          --durations=20
+      - name: Upload backend PostgreSQL test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-evidence-postgres-${{ matrix.shard }}
+          path: backend/backend-postgres-${{ matrix.shard }}-results.json
+          if-no-files-found: error
+
+  backend-summary:
+    name: backend
+    if: always()
+    needs:
+      - backend-static
+      - backend-unit
+      - backend-postgres
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download backend test evidence
+        id: backend_evidence
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: backend-test-*
+          path: backend-test-evidence
+      - name: Verify backend gates and complete test execution
+        shell: bash
+        env:
+          STATIC_RESULT: ${{ needs['backend-static'].result }}
+          UNIT_RESULT: ${{ needs['backend-unit'].result }}
+          POSTGRES_RESULT: ${{ needs['backend-postgres'].result }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          from collections import Counter
+          from pathlib import Path
+
+          evidence_root = Path("backend-test-evidence")
+          errors = []
+          for job_name, result in (
+              ("backend-static", os.environ["STATIC_RESULT"]),
+              ("backend-unit", os.environ["UNIT_RESULT"]),
+              ("backend-postgres", os.environ["POSTGRES_RESULT"]),
+          ):
+              if result != "success":
+                  errors.append(f"Required job {job_name} finished with {result}.")
+
+          def one_file(name):
+              paths = list(evidence_root.rglob(name))
+              if len(paths) != 1:
+                  errors.append(f"Expected one {name} artifact; found {len(paths)}.")
+                  return None
+              return paths[0]
+
+          plan_path = one_file("backend-test-plan.json")
+          result_paths = {
+              "unit": one_file("backend-unit-results.json"),
+              "postgres-1": one_file("backend-postgres-1-results.json"),
+              "postgres-2": one_file("backend-postgres-2-results.json"),
+          }
+
+          if plan_path is not None:
+              plan = json.loads(plan_path.read_text(encoding="utf-8"))
+              full = plan.get("full", [])
+              partitions = plan.get("partitions", {})
+              allowed_skips = set(plan.get("allowedSkips", []))
+              expected = plan.get("expected", {})
+              expected_values = {
+                  "full": int(os.environ["EXPECTED_BACKEND_TESTS"]),
+                  "unit": int(os.environ["EXPECTED_BACKEND_UNIT_TESTS"]),
+                  "postgres": int(os.environ["EXPECTED_BACKEND_POSTGRES_TESTS"]),
+                  "postgresShards": 2,
+              }
+              if expected != expected_values:
+                  errors.append(f"Backend plan expectations differ: {expected} != {expected_values}.")
+              if len(full) != len(set(full)):
+                  errors.append("The unfiltered backend collection contains duplicate node IDs.")
+              if set(partitions) != set(result_paths):
+                  errors.append(
+                      f"Expected partitions {sorted(result_paths)}; found {sorted(partitions)}."
+                  )
+
+              assigned = [
+                  nodeid
+                  for partition in result_paths
+                  for nodeid in partitions.get(partition, [])
+              ]
+              assigned_counts = Counter(assigned)
+              assigned_duplicates = [
+                  nodeid for nodeid, count in assigned_counts.items() if count != 1
+              ]
+              assigned_set = set(assigned)
+              full_set = set(full)
+              if assigned_set != full_set or assigned_duplicates:
+                  errors.append(
+                      "Backend partition union differs from the unfiltered collection: "
+                      f"missing={len(full_set - assigned_set)}, "
+                      f"unexpected={len(assigned_set - full_set)}, "
+                      f"duplicates={len(assigned_duplicates)}."
+                  )
+
+              postgres_count = sum(
+                  len(partitions.get(name, [])) for name in ("postgres-1", "postgres-2")
+              )
+              actual_counts = {
+                  "full": len(full),
+                  "unit": len(partitions.get("unit", [])),
+                  "postgres": postgres_count,
+              }
+              for name in ("full", "unit", "postgres"):
+                  if actual_counts[name] != expected_values[name]:
+                      errors.append(
+                          f"Backend {name} count={actual_counts[name]}, "
+                          f"expected={expected_values[name]}."
+                      )
+
+              execution_counts = Counter()
+              observed_skips = set()
+              for partition, result_path in result_paths.items():
+                  if result_path is None:
+                      continue
+                  result = json.loads(result_path.read_text(encoding="utf-8"))
+                  if result.get("partition") != partition:
+                      errors.append(
+                          f"Evidence for {partition} reports partition={result.get('partition')}."
+                      )
+                  selected = result.get("selected", [])
+                  executed = result.get("executed", [])
+                  if selected != partitions.get(partition, []):
+                      errors.append(f"{partition} selection differs from the deterministic plan.")
+                  if set(executed) != set(selected) or len(executed) != len(selected):
+                      errors.append(
+                          f"{partition} execution differs from selection: "
+                          f"selected={len(selected)}, executed={len(executed)}."
+                      )
+                  if result.get("errors"):
+                      errors.append(f"{partition} verifier errors: {result['errors']}.")
+                  execution_counts.update(executed)
+                  observed_skips.update(result.get("skipped", []))
+                  print(
+                      f"Backend {partition}: assigned={len(partitions.get(partition, []))}, "
+                      f"executed={len(executed)}, skipped={len(result.get('skipped', []))}"
+                  )
+
+              execution_duplicates = [
+                  nodeid for nodeid, count in execution_counts.items() if count != 1
+              ]
+              execution_set = set(execution_counts)
+              if execution_set != full_set or execution_duplicates:
+                  errors.append(
+                      "Backend execution union differs from the unfiltered collection: "
+                      f"missing={len(full_set - execution_set)}, "
+                      f"unexpected={len(execution_set - full_set)}, "
+                      f"duplicates={len(execution_duplicates)}."
+                  )
+              if observed_skips != allowed_skips:
+                  errors.append(
+                      f"Backend skip set differs: actual={sorted(observed_skips)}, "
+                      f"allowed={sorted(allowed_skips)}."
+                  )
+
+              print(f"Backend unfiltered collection: {len(full)} tests")
+              print(
+                  f"Backend assigned union: {len(assigned_set)} tests; "
+                  f"duplicates: {len(assigned_duplicates)}"
+              )
+              print(
+                  f"Backend executed union: {len(execution_set)} tests; "
+                  f"duplicates: {len(execution_duplicates)}"
+              )
+              print(f"Backend allowed skips executed: {len(observed_skips)}")
+
+          if errors:
+              print("Backend aggregation failed:", file=sys.stderr)
+              for error in errors:
+                  print(f"- {error}", file=sys.stderr)
+              sys.exit(1)
+
+          print("All backend gates passed and every collected backend test executed exactly once.")
+          PY
+
   frontend:
     runs-on: ubuntu-latest
     steps:
@@ -255,6 +536,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -264,7 +547,7 @@ jobs:
         run: pip install --require-hashes -r backend/requirements.lock
       - name: Install frontend
         working-directory: frontend
-        run: npm ci
+        run: npm ci --no-audit --prefer-offline
       - name: Audit all dependencies
         working-directory: frontend
         run: npm audit
@@ -290,23 +573,28 @@ jobs:
         run: npm run build
 
   e2e:
+    name: E2E functional shard ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     services:
       postgres:
         image: postgres:16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: mynutri_e2e_ci
+          POSTGRES_DB: mynutri_e2e_ci_${{ matrix.shard }}
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d mynutri_e2e_ci"
+          --health-cmd "pg_isready -U postgres -d mynutri_e2e_ci_${{ matrix.shard }}"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_e2e_ci
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_e2e_ci_${{ matrix.shard }}
       SUPABASE_URL: http://127.0.0.1:8765
       SUPABASE_JWT_AUDIENCE: authenticated
       CALENDAR_TIMEZONE: Asia/Riyadh
@@ -321,6 +609,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -328,13 +618,55 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install Backend
         run: |
-          pip install --require-hashes -r backend/requirements-dev.lock
+          pip install --require-hashes -r backend/requirements.lock
           pip install --no-deps --no-build-isolation -e ./backend
       - name: Install Frontend and Chromium
         working-directory: frontend
         run: |
-          npm ci
-          npx playwright install --with-deps chromium
+          npm ci --no-audit --prefer-offline
+          npx playwright install --with-deps --only-shell chromium
+      - name: Collect deterministic functional shard evidence
+        working-directory: frontend
+        shell: bash
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+          SHARD_TOTAL: "4"
+        run: |
+          set -euo pipefail
+          evidence_dir="shard-evidence/${SHARD_INDEX}"
+          mkdir -p "$evidence_dir"
+
+          npx playwright test --project=foods-chromium --list
+          cp test-results/foods-results.json "$evidence_dir/full-collection.json"
+
+          npx playwright test --project=foods-chromium \
+            --shard="${SHARD_INDEX}/${SHARD_TOTAL}" --list
+          cp test-results/foods-results.json "$evidence_dir/assigned-collection.json"
+          rm -f test-results/foods-results.json
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          shard_index = int(os.environ["SHARD_INDEX"])
+          shard_total = int(os.environ["SHARD_TOTAL"])
+          expected = int(os.environ["EXPECTED_FUNCTIONAL_PLAYWRIGHT_TESTS"])
+          evidence_dir = Path("shard-evidence") / str(shard_index)
+          (evidence_dir / "metadata.json").write_text(
+              json.dumps(
+                  {
+                      "shardIndex": shard_index,
+                      "shardTotal": shard_total,
+                      "expectedTests": expected,
+                  },
+                  indent=2,
+                  sort_keys=True,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
       - name: Upgrade disposable database
         working-directory: backend
         run: alembic upgrade head
@@ -342,7 +674,7 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: >-
-          psql -h 127.0.0.1 -U postgres -d mynutri_e2e_ci -v ON_ERROR_STOP=1
+          psql -h 127.0.0.1 -U postgres -d mynutri_e2e_ci_${{ matrix.shard }} -v ON_ERROR_STOP=1
           -c "INSERT INTO principal
           (id,auth_user_id,email,display_name,role,status,created_at,updated_at) VALUES
           ('00000000-0000-0000-0000-000000000001',
@@ -365,16 +697,35 @@ jobs:
           done
           cat /tmp/mynutri-api.log /tmp/mynutri-web.log
           exit 1
-      - name: Run complete Playwright suite
+      - name: Run complete assigned Playwright shard
         working-directory: frontend
-        run: npm run test:e2e -- --project=foods-chromium
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+          SHARD_TOTAL: "4"
+        run: >-
+          npm run test:e2e -- --project=foods-chromium
+          --shard=${SHARD_INDEX}/${SHARD_TOTAL}
+      - name: Capture functional shard execution evidence
+        if: always()
+        working-directory: frontend
+        shell: bash
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          evidence_dir="shard-evidence/${SHARD_INDEX}"
+          mkdir -p "$evidence_dir"
+          if [[ -f test-results/foods-results.json ]]; then
+            cp test-results/foods-results.json "$evidence_dir/actual-results.json"
+          fi
       - name: Run critical visual regression
+        if: matrix.shard == 4
         id: critical_visual
         continue-on-error: true
         working-directory: frontend
         run: npm run test:visual
       - name: Retain critical visual failure evidence
-        if: steps.critical_visual.outcome == 'failure'
+        if: matrix.shard == 4 && steps.critical_visual.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: critical-visual-failure-${{ github.run_id }}-${{ github.run_attempt }}
@@ -385,9 +736,23 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
       - name: Verify static-shell PWA isolation
+        if: matrix.shard == 4
+        id: pwa
+        continue-on-error: true
         working-directory: frontend
         run: npx playwright test e2e/pwa-shell.spec.ts --project=pwa-chromium
+      - name: Retain PWA failure evidence
+        if: matrix.shard == 4 && steps.pwa.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pwa-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            frontend/test-results
+            frontend/playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Run development StrictMode signal smoke
+        if: matrix.shard == 4
         working-directory: frontend
         env:
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
@@ -468,17 +833,32 @@ jobs:
             cat /tmp/mynutri-web-dev.log
             exit 1
           fi
-      - name: Enforce critical visual result
-        if: always()
+      - name: Enforce early critical gate results
+        if: always() && matrix.shard == 4
         shell: bash
         env:
           CRITICAL_VISUAL_OUTCOME: ${{ steps.critical_visual.outcome }}
+          PWA_OUTCOME: ${{ steps.pwa.outcome }}
         run: |
           set -euo pipefail
+          failed=0
           if [[ "$CRITICAL_VISUAL_OUTCOME" != "success" ]]; then
             echo "Critical visual regression outcome was $CRITICAL_VISUAL_OUTCOME."
-            exit 1
+            failed=1
           fi
+          if [[ "$PWA_OUTCOME" != "success" ]]; then
+            echo "Static-shell PWA outcome was $PWA_OUTCOME."
+            failed=1
+          fi
+          exit "$failed"
+      - name: Upload functional shard evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-shard-evidence-${{ matrix.shard }}
+          path: frontend/shard-evidence/${{ matrix.shard }}
+          if-no-files-found: error
+          retention-days: 7
 
   plan020-provider-acceptance:
     name: Plan 020 provider acceptance
@@ -496,6 +876,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -507,11 +889,11 @@ jobs:
           version: 2.111.0
       - name: Install provider acceptance dependencies
         run: |
-          pip install --require-hashes -r backend/requirements-dev.lock
+          pip install --require-hashes -r backend/requirements.lock
           pip install --no-deps --no-build-isolation -e ./backend
           cd frontend
-          npm ci
-          npx playwright install --with-deps chromium
+          npm ci --no-audit --prefer-offline
+          npx playwright install --with-deps --only-shell chromium
       - name: Start isolated local Supabase Auth and Mailpit
         shell: bash
         run: |
@@ -709,3 +1091,173 @@ jobs:
             cleanup_failed=1
           fi
           exit "$cleanup_failed"
+
+  ci-summary:
+    name: CI required summary
+    if: always()
+    needs:
+      - backend-summary
+      - frontend
+      - e2e
+      - plan020-provider-acceptance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download functional shard evidence
+        id: shard_evidence
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: playwright-shard-evidence-*
+          path: playwright-shard-evidence
+      - name: Verify required jobs and functional shard coverage
+        shell: bash
+        env:
+          BACKEND_RESULT: ${{ needs['backend-summary'].result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+          PROVIDER_RESULT: ${{ needs['plan020-provider-acceptance'].result }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          from collections import Counter
+          from pathlib import Path
+
+          evidence_root = Path("playwright-shard-evidence")
+          expected_total = int(os.environ["EXPECTED_FUNCTIONAL_PLAYWRIGHT_TESTS"])
+          expected_shards = set(range(1, 5))
+          errors = []
+
+          for job_name, result in (
+              ("backend-summary", os.environ["BACKEND_RESULT"]),
+              ("frontend", os.environ["FRONTEND_RESULT"]),
+              ("e2e", os.environ["E2E_RESULT"]),
+              ("plan020-provider-acceptance", os.environ["PROVIDER_RESULT"]),
+          ):
+              if result != "success":
+                  errors.append(f"Required job {job_name} finished with {result}.")
+
+          def collection(path):
+              report = json.loads(path.read_text(encoding="utf-8"))
+              entries = {}
+
+              def visit(suite):
+                  for spec in suite.get("specs", []):
+                      for test in spec.get("tests", []):
+                          if test.get("projectName") != "foods-chromium":
+                              continue
+                          test_id = f"foods-chromium::{spec['id']}"
+                          if test_id in entries:
+                              errors.append(f"Duplicate test identity inside {path}: {test_id}")
+                          entries[test_id] = {
+                              "file": spec.get("file"),
+                              "line": spec.get("line"),
+                              "status": test.get("status"),
+                              "results": [result.get("status") for result in test.get("results", [])],
+                          }
+                  for child in suite.get("suites", []):
+                      visit(child)
+
+              for suite in report.get("suites", []):
+                  visit(suite)
+              return entries
+
+          metadata_paths = sorted(evidence_root.rglob("metadata.json"))
+          shards = {}
+          for metadata_path in metadata_paths:
+              metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+              shard = metadata.get("shardIndex")
+              if shard in shards:
+                  errors.append(f"Duplicate evidence artifact for shard {shard}.")
+                  continue
+              if metadata.get("shardTotal") != 4:
+                  errors.append(f"Shard {shard} reports shardTotal={metadata.get('shardTotal')} instead of 4.")
+              if metadata.get("expectedTests") != expected_total:
+                  errors.append(
+                      f"Shard {shard} expectedTests={metadata.get('expectedTests')} instead of {expected_total}."
+                  )
+              base = metadata_path.parent
+              required_files = {
+                  "full": base / "full-collection.json",
+                  "assigned": base / "assigned-collection.json",
+                  "actual": base / "actual-results.json",
+              }
+              missing = [name for name, path in required_files.items() if not path.is_file()]
+              if missing:
+                  errors.append(f"Shard {shard} is missing evidence: {', '.join(missing)}.")
+                  continue
+              shards[shard] = {name: collection(path) for name, path in required_files.items()}
+
+          discovered_shards = set(shards)
+          if discovered_shards != expected_shards:
+              errors.append(
+                  f"Expected evidence for shards {sorted(expected_shards)}; found {sorted(discovered_shards)}."
+              )
+
+          if shards:
+              reference_full = set(next(iter(shards.values()))["full"])
+              if len(reference_full) != expected_total:
+                  errors.append(
+                      f"Unsharded collection has {len(reference_full)} tests; expected {expected_total}."
+                  )
+
+              assigned_occurrences = Counter()
+              actual_occurrences = Counter()
+              for shard in sorted(shards):
+                  full = set(shards[shard]["full"])
+                  assigned = set(shards[shard]["assigned"])
+                  actual = set(shards[shard]["actual"])
+                  if full != reference_full:
+                      errors.append(f"Shard {shard} observed a different unsharded collection.")
+                  if actual != assigned:
+                      missing_actual = sorted(assigned - actual)
+                      unexpected_actual = sorted(actual - assigned)
+                      errors.append(
+                          f"Shard {shard} execution differs from assignment: "
+                          f"missing={len(missing_actual)}, unexpected={len(unexpected_actual)}."
+                      )
+                  for test_id, entry in shards[shard]["actual"].items():
+                      if entry["status"] != "expected" or entry["results"] != ["passed"]:
+                          errors.append(
+                              f"Shard {shard} did not execute {test_id} exactly once successfully: "
+                              f"status={entry['status']}, results={entry['results']}."
+                          )
+                  assigned_occurrences.update(assigned)
+                  actual_occurrences.update(actual)
+                  print(f"Shard {shard}: assigned={len(assigned)}, executed={len(actual)}")
+
+              assigned_union = set(assigned_occurrences)
+              actual_union = set(actual_occurrences)
+              assigned_duplicates = [key for key, count in assigned_occurrences.items() if count != 1]
+              actual_duplicates = [key for key, count in actual_occurrences.items() if count != 1]
+              if assigned_union != reference_full:
+                  errors.append(
+                      f"Assigned shard union differs from full collection: "
+                      f"missing={len(reference_full - assigned_union)}, "
+                      f"unexpected={len(assigned_union - reference_full)}."
+                  )
+              if actual_union != reference_full:
+                  errors.append(
+                      f"Executed shard union differs from full collection: "
+                      f"missing={len(reference_full - actual_union)}, "
+                      f"unexpected={len(actual_union - reference_full)}."
+                  )
+              if assigned_duplicates:
+                  errors.append(f"Assigned shard collections contain {len(assigned_duplicates)} duplicate tests.")
+              if actual_duplicates:
+                  errors.append(f"Shard executions contain {len(actual_duplicates)} duplicate tests.")
+
+              print(f"Unsharded collection: {len(reference_full)} tests")
+              print(f"Assigned union: {len(assigned_union)} tests; duplicates: {len(assigned_duplicates)}")
+              print(f"Executed union: {len(actual_union)} tests; duplicates: {len(actual_duplicates)}")
+
+          if errors:
+              print("CI aggregation failed:", file=sys.stderr)
+              for error in errors:
+                  print(f"- {error}", file=sys.stderr)
+              sys.exit(1)
+
+          print("All required jobs passed and all functional Playwright tests executed exactly once across four shards.")
+          PY
