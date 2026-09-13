@@ -732,7 +732,7 @@ def test_day_status_retirement_is_selective_and_forward_only(
         for operation, key, resource_type in (
             ("diary_day_complete", "complete", "diary_day_status"),
             ("diary_day_reopen", "reopen", "diary_day_status"),
-            ("target_plan_activate", "target", "target_plan"),
+            ("target_plan.activate", "target", "target_plan"),
             ("diary_day_complete", "other-resource", "target_plan"),
             ("unrelated_operation", "other-operation", "diary_day_status"),
         ):
@@ -775,7 +775,7 @@ def test_day_status_retirement_is_selective_and_forward_only(
         ).all()
     engine.dispose()
     assert set(remaining) == {
-        ("target_plan_activate", "target_plan"),
+        ("target_plan.activate", "target_plan"),
         ("diary_day_complete", "target_plan"),
         ("unrelated_operation", "diary_day_status"),
     }
