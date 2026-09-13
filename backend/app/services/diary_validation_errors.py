@@ -27,9 +27,6 @@ def validate_diary_payload(schema: type[ModelT], payload: dict[str, Any]) -> Mod
             elif field == "quantity":
                 message = "أدخل كمية صحيحة بين 0.01 و50."
                 code = "invalid_quantity"
-            elif field == "entry_date":
-                message = "لا يمكن تسجيل يوميات بتاريخ مستقبلي."
-                code = "invalid_entry_date"
             else:
                 message = "راجع الحقول المحددة ثم حاول مرة أخرى."
                 code = "invalid"

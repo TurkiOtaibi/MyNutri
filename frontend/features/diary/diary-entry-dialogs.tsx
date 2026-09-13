@@ -14,7 +14,7 @@ import { useDebouncedValue } from "./diary-hooks";
 
 const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
 
-export function AddEntrySheet({ selectedDate, dayVersion, initialMeal, onClose, onSaved }: { selectedDate: string; dayVersion: number; initialMeal: MealType | null; onClose: () => void; onSaved: (meal: MealType) => Promise<void> }) {
+export function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { selectedDate: string; initialMeal: MealType | null; onClose: () => void; onSaved: (meal: MealType) => Promise<void> }) {
   const [search, setSearch] = useState("");
   const [selectedFood, setSelectedFood] = useState<FoodPickerItem | null>(null);
   const [quantity, setQuantity] = useState("1");
@@ -46,7 +46,7 @@ export function AddEntrySheet({ selectedDate, dayVersion, initialMeal, onClose, 
   });
 
   const mutation = useMutation({
-    mutationFn: (payload: DiaryEntryInput) => createDiaryEntry(payload, dayVersion, accessToken, sessionSignal),
+    mutationFn: (payload: DiaryEntryInput) => createDiaryEntry(payload, accessToken, sessionSignal),
     onSuccess: async () => {
       if (sessionSignal.aborted) return;
       setSaveSucceeded(true);
@@ -287,7 +287,7 @@ export function SelectedFoodSummary({ food, onChange }: { food: FoodPickerItem; 
   );
 }
 
-export function EditEntryDialog({ entry, dayVersion, onClose, onSaved }: { entry: DiaryEntryResponse; dayVersion: number; onClose: () => void; onSaved: (meal: MealType) => Promise<void> }) {
+export function EditEntryDialog({ entry, onClose, onSaved }: { entry: DiaryEntryResponse; onClose: () => void; onSaved: (meal: MealType) => Promise<void> }) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const sessionSignal = useSessionAbortSignal();
@@ -295,7 +295,7 @@ export function EditEntryDialog({ entry, dayVersion, onClose, onSaved }: { entry
   const [mealType, setMealType] = useState<MealType>(entry.meal_type ?? "unspecified");
   const [error, setError] = useState("");
   const mutation = useMutation({
-    mutationFn: (amount: number) => updateDiaryEntry(entry.id, amount, mealType, dayVersion, accessToken, sessionSignal),
+    mutationFn: (amount: number) => updateDiaryEntry(entry.id, amount, mealType, accessToken, sessionSignal),
     onSuccess: async () => {
       if (sessionSignal.aborted) return;
       await onSaved(mealType);

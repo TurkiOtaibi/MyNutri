@@ -1,6 +1,4 @@
 from datetime import date, datetime
-from contextvars import ContextVar, Token
-from enum import Enum
 import math
 from typing import Any, Literal
 from uuid import UUID
@@ -40,17 +38,6 @@ from app.services.food_validation_errors import (
     SATURATED_TRANS_GT_FAT_MESSAGE,
     TRANS_FAT_GT_FAT_MESSAGE,
 )
-
-_diary_validation_date: ContextVar[date | None] = ContextVar("diary_validation_date", default=None)
-
-
-def set_diary_validation_date(value: date) -> Token[date | None]:
-    return _diary_validation_date.set(value)
-
-
-def reset_diary_validation_date(token: Token[date | None]) -> None:
-    _diary_validation_date.reset(token)
-
 
 class RegistryNutrientDefinition(BaseModel):
     key: str
@@ -723,35 +710,6 @@ class CalendarAuthorityResponse(BaseModel):
     next_rollover_at: datetime
 
 
-class DiaryLoggingStatus(str, Enum):
-    unregistered = "unregistered"
-    partial = "partial"
-    complete = "complete"
-
-
-class DiaryDayStatusCommand(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    expected_version: int = Field(ge=0)
-
-
-class DiaryDayStatusResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    date: date
-    logging_status: DiaryLoggingStatus
-    logging_status_version: int = Field(ge=0)
-    entry_count: int = Field(ge=0)
-    completed_at: datetime | None
-    calendar: CalendarAuthorityResponse
-
-
-class AdminDiaryDayStatusPage(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    items: list[DiaryDayStatusResponse]
-
-
 class AdminUserSummary(BaseModel):
     principal_id: UUID
     email: str | None
@@ -828,17 +786,6 @@ class DiaryEntryCreate(BaseModel):
     quantity: float = Field(gt=0, le=50)
     meal_type: MealType = MealType.unspecified
 
-    @field_validator("entry_date")
-    @classmethod
-    def prevent_future_entry_date(cls, value: date) -> date:
-        from app.core.calendar import current_diary_date
-
-        authoritative_date = _diary_validation_date.get() or current_diary_date()
-        if value > authoritative_date:
-            raise ValueError("لا يمكن تسجيل يوميات بتاريخ مستقبلي.")
-        return value
-
-
 class DiaryEntryUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -889,10 +836,6 @@ class DaySummary(BaseModel):
     target_provenance: Literal["versioned_plan", "legacy_unversioned", "no_target_source"]
     nutrient_aggregates: list["DiaryNutrientAggregate"]
     overall_nutrient_coverage_percent: float | None
-    logging_status: DiaryLoggingStatus
-    logging_status_version: int = Field(ge=0)
-    entry_count: int = Field(ge=0)
-    completed_at: datetime | None
 
 
 class DiaryNutrientTarget(BaseModel):

@@ -20,6 +20,13 @@ catalog. Food taxonomy and provenance are intentionally small and stable.
 - Food status, Food kind, group completeness, NOVA, Food Groups, and Food
   Analytical Traits are absent.
 - Pattern Analysis and Weekly Priority are absent and have no replacement.
+- Day Logging Status is absent. Diary days have no complete/reopen commands,
+  persisted completion state, day version, status history, or status-command
+  idempotency.
+- Diary entry create, update, and delete do not require `If-Match`, do not depend
+  on a day state machine, and permit past, current, and future Diary dates.
+- Diary day and week views derive from Diary entries and target/nutrition data;
+  they expose no day-status or entry-presence badge contract.
 - Food nutrition is current authoritative truth. Every Diary calculation joins
   through `food_id` to the current Food nutrition.
 - A Diary entry stores the historical consumed quantity and captured measurement
@@ -43,8 +50,8 @@ decision says otherwise.
 
 ## Retired concepts
 
-NOVA, Pattern Analysis, Weekly Priority, Food Group Contributions, Food
-Analytical Traits, and Food nutrition snapshots are retired product history.
+NOVA, Day Logging Status, Pattern Analysis, Weekly Priority, Food Group
+Contributions, Food Analytical Traits, and Food nutrition snapshots are retired product history.
 Historical Alembic revisions that introduced them remain immutable technical
 history so clean and supported databases can reproduce the migration chain.
 

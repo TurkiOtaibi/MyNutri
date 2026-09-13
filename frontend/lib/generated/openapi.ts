@@ -67,12 +67,6 @@ export interface AdditionalNutrientTarget {
   unit: string;
 }
 
-/** AdminDiaryDayStatusPage */
-export interface AdminDiaryDayStatusPage {
-  /** Items */
-  items: DiaryDayStatusResponse[];
-}
-
 /** AdminDiaryItem */
 export interface AdminDiaryItem {
   /**
@@ -182,24 +176,11 @@ export interface CalendarAuthorityResponse {
 
 /** DaySummary */
 export interface DaySummary {
-  /** Completed At */
-  completed_at: string | null;
   /**
    * Date
    * @format date
    */
   date: string;
-  /**
-   * Entry Count
-   * @min 0
-   */
-  entry_count: number;
-  logging_status: DiaryLoggingStatus;
-  /**
-   * Logging Status Version
-   * @min 0
-   */
-  logging_status_version: number;
   /** Nutrient Aggregates */
   nutrient_aggregates: DiaryNutrientAggregate[];
   /** Overall Nutrient Coverage Percent */
@@ -224,38 +205,6 @@ export type DefaultUnitType =
   | "serving"
   | "tablespoon"
   | "teaspoon";
-
-/** DiaryDayStatusCommand */
-export interface DiaryDayStatusCommand {
-  /**
-   * Expected Version
-   * @min 0
-   */
-  expected_version: number;
-}
-
-/** DiaryDayStatusResponse */
-export interface DiaryDayStatusResponse {
-  calendar: CalendarAuthorityResponse;
-  /** Completed At */
-  completed_at: string | null;
-  /**
-   * Date
-   * @format date
-   */
-  date: string;
-  /**
-   * Entry Count
-   * @min 0
-   */
-  entry_count: number;
-  logging_status: DiaryLoggingStatus;
-  /**
-   * Logging Status Version
-   * @min 0
-   */
-  logging_status_version: number;
-}
 
 /** DiaryEntryResponse */
 export interface DiaryEntryResponse {
@@ -311,9 +260,6 @@ export interface DiaryFoodReference {
   /** Name */
   name: string;
 }
-
-/** DiaryLoggingStatus */
-export type DiaryLoggingStatus = "unregistered" | "partial" | "complete";
 
 /** DiaryNutrientAggregate */
 export interface DiaryNutrientAggregate {
@@ -1375,39 +1321,6 @@ export namespace Admin {
     export type RequestHeaders = {};
     export type ResponseBody = AdminDiaryPage;
   }
-
-  /**
-   * No description
-   * @tags admin
-   * @name UserDiaryDaysAdminUsersPrincipalIdDiaryDaysGet
-   * @summary User Diary Days
-   * @request GET:/admin/users/{principal_id}/diary-days
-   * @secure
-   */
-  export namespace UserDiaryDaysAdminUsersPrincipalIdDiaryDaysGet {
-    export type RequestParams = {
-      /**
-       * Principal Id
-       * @format uuid
-       */
-      principalId: string;
-    };
-    export type RequestQuery = {
-      /**
-       * End
-       * @format date
-       */
-      end: string;
-      /**
-       * Start
-       * @format date
-       */
-      start: string;
-    };
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = AdminDiaryDayStatusPage;
-  }
 }
 
 export namespace Diary {
@@ -1444,38 +1357,8 @@ export namespace Diary {
        */
       quantity: number;
     };
-    export type RequestHeaders = {
-      /** If-Match */
-      "If-Match": string;
-    };
+    export type RequestHeaders = {};
     export type ResponseBody = DiaryEntryResponse;
-  }
-
-  /**
-   * No description
-   * @tags diary
-   * @name CompleteDayDiaryDaysDiaryDateCompletePut
-   * @summary Complete Day
-   * @request PUT:/diary/days/{diary_date}/complete
-   * @secure
-   */
-  export namespace CompleteDayDiaryDaysDiaryDateCompletePut {
-    export type RequestParams = {
-      /**
-       * Diary Date
-       * @format date
-       */
-      diaryDate: string;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = DiaryDayStatusCommand;
-    export type RequestHeaders = {
-      /** Idempotency-Key */
-      "Idempotency-Key": string;
-      /** If-Match */
-      "If-Match"?: string | null;
-    };
-    export type ResponseBody = DiaryDayStatusResponse;
   }
 
   /**
@@ -1500,33 +1383,8 @@ export namespace Diary {
       /** Quantity */
       quantity?: number | null;
     };
-    export type RequestHeaders = {
-      /** If-Match */
-      "If-Match": string;
-    };
-    export type ResponseBody = DiaryEntryResponse;
-  }
-
-  /**
-   * No description
-   * @tags diary
-   * @name ReadDayStatusDiaryDaysDiaryDateStatusGet
-   * @summary Read Day Status
-   * @request GET:/diary/days/{diary_date}/status
-   * @secure
-   */
-  export namespace ReadDayStatusDiaryDaysDiaryDateStatusGet {
-    export type RequestParams = {
-      /**
-       * Diary Date
-       * @format date
-       */
-      diaryDate: string;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = never;
     export type RequestHeaders = {};
-    export type ResponseBody = DiaryDayStatusResponse;
+    export type ResponseBody = DiaryEntryResponse;
   }
 
   /**
@@ -1588,38 +1446,8 @@ export namespace Diary {
     };
     export type RequestQuery = {};
     export type RequestBody = never;
-    export type RequestHeaders = {
-      /** If-Match */
-      "If-Match": string;
-    };
+    export type RequestHeaders = {};
     export type ResponseBody = void;
-  }
-
-  /**
-   * No description
-   * @tags diary
-   * @name ReopenDayDiaryDaysDiaryDateReopenPut
-   * @summary Reopen Day
-   * @request PUT:/diary/days/{diary_date}/reopen
-   * @secure
-   */
-  export namespace ReopenDayDiaryDaysDiaryDateReopenPut {
-    export type RequestParams = {
-      /**
-       * Diary Date
-       * @format date
-       */
-      diaryDate: string;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = DiaryDayStatusCommand;
-    export type RequestHeaders = {
-      /** Idempotency-Key */
-      "Idempotency-Key": string;
-      /** If-Match */
-      "If-Match"?: string | null;
-    };
-    export type ResponseBody = DiaryDayStatusResponse;
   }
 }
 

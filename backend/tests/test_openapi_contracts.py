@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from typing import get_type_hints
 
-import pytest
-from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from pydantic import TypeAdapter
 
 from app.api.routes import (
@@ -13,14 +12,11 @@ from app.api.routes import (
     profile as profile_routes,
     target_plans as target_plan_routes,
 )
-from app.api.routes.diary import _command_expected_version, add_entry, edit_entry
+from app.api.routes.diary import add_entry, edit_entry
 from app.api.routes.foods import add_food, edit_food
 from app.main import app
 from app.nutrition_rules.manifest import registry_response
-from app.schemas import (
-    DiaryDayStatusCommand,
-    NutritionRegistryResponse,
-)
+from app.schemas import NutritionRegistryResponse
 
 
 def _request_schema(path: str, method: str) -> dict[str, object]:
@@ -79,58 +75,48 @@ def test_registry_openapi_is_typed_without_changing_runtime_payload() -> None:
     assert "nova" not in validated.model_dump(mode="json")
 
 
-def test_day_logging_status_openapi_is_structured_and_admin_is_read_only() -> None:
+def test_day_logging_status_contract_is_absent() -> None:
     schema = app.openapi()
     paths = schema["paths"]
     components = schema["components"]["schemas"]
 
-    assert paths["/diary/days/{diary_date}/status"]["get"]["responses"]["200"]
-    for action in ("complete", "reopen"):
-        operation = paths[f"/diary/days/{{diary_date}}/{action}"]["put"]
-        body = operation["requestBody"]["content"]["application/json"]["schema"]
-        assert body == {"$ref": "#/components/schemas/DiaryDayStatusCommand"}
-        headers = {item["name"]: item for item in operation["parameters"] if item["in"] == "header"}
-        assert headers["If-Match"]["required"] is False
-    response = components["DiaryDayStatusResponse"]
-    assert set(response["required"]) == {
-        "date",
+    retired_paths = {
+        "/diary/days/{diary_date}/status",
+        "/diary/days/{diary_date}/complete",
+        "/diary/days/{diary_date}/reopen",
+        "/admin/users/{principal_id}/diary-days",
+    }
+    assert retired_paths.isdisjoint(paths)
+    assert {
+        "DiaryLoggingStatus",
+        "DiaryDayStatusCommand",
+        "DiaryDayStatusResponse",
+        "AdminDiaryDayStatusPage",
+    }.isdisjoint(components)
+    assert {
         "logging_status",
         "logging_status_version",
         "entry_count",
         "completed_at",
-        "calendar",
-    }
-    assert set(components["DiaryLoggingStatus"]["enum"]) == {
-        "unregistered",
-        "partial",
-        "complete",
-    }
-    admin_path = paths["/admin/users/{principal_id}/diary-days"]
-    assert set(admin_path) == {"get"}
-    assert not any(
-        path.startswith("/admin/") and path.endswith(("/complete", "/reopen")) for path in paths
-    )
+    }.isdisjoint(components["DaySummary"]["properties"])
     for path, method in (
         ("/diary/entries", "post"),
         ("/diary/entries/{entry_id}", "patch"),
         ("/diary/entries/{entry_id}", "delete"),
     ):
-        headers = {
-            item["name"]: item
-            for item in paths[path][method]["parameters"]
-            if item["in"] == "header"
-        }
-        assert headers["If-Match"]["required"] is True
+        assert not any(
+            item["in"] == "header" and item["name"].lower() == "if-match"
+            for item in paths[path][method].get("parameters", [])
+        )
 
-
-def test_day_command_if_match_must_agree_with_body_version() -> None:
-    payload = DiaryDayStatusCommand(expected_version=7)
-    assert _command_expected_version(payload, None) == 7
-    assert _command_expected_version(payload, '"day-7"') == 7
-    with pytest.raises(HTTPException) as mismatch:
-        _command_expected_version(payload, '"day-8"')
-    assert mismatch.value.status_code == 422
-    assert mismatch.value.detail["code"] == "VALIDATION_ERROR"
+    client = TestClient(app)
+    for method, url in (
+        ("GET", "/diary/days/2026-09-13/status"),
+        ("PUT", "/diary/days/2026-09-13/complete"),
+        ("PUT", "/diary/days/2026-09-13/reopen"),
+        ("GET", "/admin/users/00000000-0000-0000-0000-000000000001/diary-days"),
+    ):
+        assert client.request(method, url, json={} if method == "PUT" else None).status_code == 404
 
 
 def test_retired_analysis_priority_and_snapshot_contracts_are_absent() -> None:
@@ -173,6 +159,10 @@ def test_unused_routes_are_absent_and_protected_routes_remain() -> None:
             ("GET", "/diary/entries/{entry_id}"),
             ("GET", "/admin/users/{principal_id}/diary/week"),
             ("GET", "/admin/users/{principal_id}/target-plans"),
+            ("GET", "/diary/days/{diary_date}/status"),
+            ("PUT", "/diary/days/{diary_date}/complete"),
+            ("PUT", "/diary/days/{diary_date}/reopen"),
+            ("GET", "/admin/users/{principal_id}/diary-days"),
             ("DELETE", "/foods/{food_id}"),
             ("PUT", "/profile"),
         }
@@ -180,5 +170,4 @@ def test_unused_routes_are_absent_and_protected_routes_remain() -> None:
     assert {
         ("GET", "/target-plans/current"),
         ("GET", "/target-plans/pending"),
-        ("GET", "/admin/users/{principal_id}/diary-days"),
     } <= operations

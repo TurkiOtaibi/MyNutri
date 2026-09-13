@@ -2,11 +2,15 @@
 
 ## Migration topology
 
-The simplified Food/current-Diary contract is introduced by the additive
-Alembic revision:
+The simplified Food/current-Diary contract is introduced by Alembic revision:
 
 - revision: `f47a2c9d6e13`
 - parent: `8a91c4e7d2f6`
+
+Day Logging Status is removed by the coordinated hard-cutover revision:
+
+- revision: `a6c81e4f2d90`
+- parent: `f47a2c9d6e13`
 
 Historical revisions remain unchanged so the base-to-head chain is
 reconstructable. Their retired tables, columns, and guards are removed only by
@@ -60,6 +64,13 @@ Existing relevant development/test data is experimental. Ephemeral automated
 test databases may be rebuilt. Persistent non-production cleanup and every
 production cleanup operation require separate authorization.
 
+The Day Logging Status retirement permanently deletes only idempotency rows
+whose operation is `diary_day_complete` or `diary_day_reopen` and whose
+`resource_type` is `diary_day_status`. It then drops
+`diary_day_status_history` before `diary_day_status`. Target Plan and unrelated
+idempotency rows remain. No status data is exported or preserved. Historical
+Alembic files remain byte-for-byte unchanged.
+
 ## Cutover gates
 
 Before any release authorization:
@@ -71,7 +82,10 @@ Before any release authorization:
 5. Regenerate OpenAPI and generated TypeScript deterministically.
 6. Run backend, frontend, E2E, architecture, and current-Food-truth regression tests.
 7. Confirm retired endpoints, fields, tables, configuration, and navigation are absent.
-8. Confirm historical migrations are byte-for-byte unchanged.
+8. Confirm Day Logging Status routes, schemas, generated types, UI, tables, and
+   status-specific idempotency rows are absent.
+9. Confirm future Diary create, update, and delete work without `If-Match`.
+10. Confirm historical migrations are byte-for-byte unchanged.
 
 ## Downgrade boundary
 
@@ -80,3 +94,7 @@ removed snapshot payloads and retired product schemas cannot be reconstructed
 without fabricating historical data and reintroducing obsolete contracts. Roll
 forward or restore an approved backup. A production rollback or cleanup remains
 separately authorized operational work.
+
+Revision `a6c81e4f2d90` also fails closed on downgrade. Deleted status, history,
+and command-idempotency rows cannot be reconstructed faithfully. Roll forward
+or restore an approved backup with the matching application revision.

@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
 from app.core.calendar import DiaryCalendarAuthority, diary_calendar_authority
-from app.models import DiaryDayStatusEvent, DiaryEntry, Food
+from app.models import DiaryEntry, Food, Principal
 from app.schemas import (
     DiaryEntryCreate,
     DiaryFoodReference,
@@ -23,12 +23,6 @@ from app.schemas import (
 )
 from app.services.food import get_active_food_for_logging, lock_food_namespace_for_logging
 from app.services.target_plans import resolve_target_binding
-from app.services.day_logging_status import (
-    entry_count_for_day,
-    lock_day_for_entry,
-    lock_owner,
-    record_entry_mutation,
-)
 
 DETAIL_FIELDS = (
     "fiber_g",
@@ -57,6 +51,14 @@ DETAIL_FIELDS = (
 
 class AdminDiaryCursorError(ValueError):
     pass
+
+
+def _lock_owner_for_target_binding(session: Session, principal: PrincipalContext) -> None:
+    session.exec(
+        select(Principal)
+        .where(Principal.id == principal.principal_id)
+        .with_for_update()
+    ).one()
 
 
 def _diary_integrity_error(code: str, message_ar: str) -> HTTPException:
@@ -261,7 +263,6 @@ def create_entry(
     principal: PrincipalContext,
     payload: DiaryEntryCreate,
     *,
-    expected_day_version: int | None = None,
     calendar_authority: DiaryCalendarAuthority | None = None,
 ) -> DiaryEntry:
     if payload.id is not None:
@@ -290,15 +291,12 @@ def create_entry(
                 },
             )
     authority = calendar_authority or diary_calendar_authority()
-    lock_owner(session, principal)
+    _lock_owner_for_target_binding(session, principal)
     binding = resolve_target_binding(
         session,
         principal,
         payload.entry_date,
         authoritative_current_date=authority.current_diary_date,
-    )
-    day = lock_day_for_entry(
-        session, principal, payload.entry_date, expected_day_version, authority
     )
     lock_food_namespace_for_logging(session)
     food = get_active_food_for_logging(session, principal, payload.food_id)
@@ -320,20 +318,6 @@ def create_entry(
     entry = DiaryEntry(**entry_data)
     session.add(entry)
     session.flush()
-    previous_count = (
-        day.entry_count
-        if day
-        else entry_count_for_day(session, principal.principal_id, payload.entry_date) - 1
-    )
-    record_entry_mutation(
-        session,
-        principal,
-        payload.entry_date,
-        day,
-        DiaryDayStatusEvent.entry_created,
-        entry.id,
-        previous_count + 1,
-    )
     session.commit()
     session.refresh(entry)
     return entry
@@ -344,14 +328,8 @@ def update_entry(
     principal: PrincipalContext,
     entry_id: UUID,
     payload: DiaryEntryUpdate,
-    *,
-    expected_day_version: int | None = None,
-    calendar_authority: DiaryCalendarAuthority | None = None,
 ) -> DiaryEntry:
     entry = get_entry(session, principal, entry_id)
-    authority = calendar_authority or diary_calendar_authority()
-    lock_owner(session, principal)
-    day = lock_day_for_entry(session, principal, entry.entry_date, expected_day_version, authority)
     entry = session.exec(
         select(DiaryEntry)
         .where(
@@ -360,25 +338,11 @@ def update_entry(
         )
         .with_for_update()
     ).one()
-    current_count = (
-        day.entry_count
-        if day
-        else entry_count_for_day(session, principal.principal_id, entry.entry_date)
-    )
     if payload.quantity is not None:
         entry.quantity = payload.quantity
     if payload.meal_type is not None:
         entry.meal_type = payload.meal_type
     session.add(entry)
-    record_entry_mutation(
-        session,
-        principal,
-        entry.entry_date,
-        day,
-        DiaryDayStatusEvent.entry_edited,
-        entry.id,
-        current_count,
-    )
     session.commit()
     session.refresh(entry)
     return entry
@@ -388,14 +352,8 @@ def delete_entry(
     session: Session,
     principal: PrincipalContext,
     entry_id: UUID,
-    *,
-    expected_day_version: int | None = None,
-    calendar_authority: DiaryCalendarAuthority | None = None,
 ) -> None:
     entry = get_entry(session, principal, entry_id)
-    authority = calendar_authority or diary_calendar_authority()
-    lock_owner(session, principal)
-    day = lock_day_for_entry(session, principal, entry.entry_date, expected_day_version, authority)
     entry = session.exec(
         select(DiaryEntry)
         .where(
@@ -404,21 +362,7 @@ def delete_entry(
         )
         .with_for_update()
     ).one()
-    diary_date = entry.entry_date
-    current_count = (
-        day.entry_count if day else entry_count_for_day(session, principal.principal_id, diary_date)
-    )
-    remaining = max(current_count - 1, 0)
     session.delete(entry)
-    record_entry_mutation(
-        session,
-        principal,
-        diary_date,
-        day,
-        DiaryDayStatusEvent.entry_deleted,
-        entry.id,
-        remaining,
-    )
     session.commit()
 
 
