@@ -11,9 +11,13 @@ concurrency:
 
 env:
   EXPECTED_FUNCTIONAL_PLAYWRIGHT_TESTS: "365"
+  EXPECTED_BACKEND_TESTS: "609"
+  EXPECTED_BACKEND_UNIT_TESTS: "534"
+  EXPECTED_BACKEND_POSTGRES_TESTS: "75"
 
 jobs:
-  backend:
+  backend-static:
+    name: Backend static, audit, migration and container gates
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -21,17 +25,17 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: mynutri_test_ci
+          POSTGRES_DB: mynutri_test_static_ci
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d mynutri_test_ci"
+          --health-cmd "pg_isready -U postgres -d mynutri_test_static_ci"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_test_ci
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_test_ci
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_test_static_ci
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_test_static_ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -44,6 +48,19 @@ jobs:
         run: |
           pip install --require-hashes -r requirements-dev.lock
           pip install --no-deps --no-build-isolation -e .
+      - name: Collect deterministic backend test partition plan
+        working-directory: backend
+        run: >-
+          pytest -p ci_pytest_partition
+          --ci-backend-partition plan
+          --ci-backend-evidence backend-test-plan.json
+          --collect-only -q
+      - name: Upload backend test partition plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-plan
+          path: backend/backend-test-plan.json
+          if-no-files-found: error
       - name: Verify Python lock drift and shared versions
         working-directory: backend
         run: |
@@ -82,13 +99,11 @@ jobs:
       - name: Lint backend
         working-directory: backend
         run: ruff check .
-      - name: Test backend
-        working-directory: backend
-        run: pytest
       - name: Verify migration head and model drift
         working-directory: backend
         run: |
           alembic heads
+          alembic upgrade head
           alembic check
       - name: Verify production database preflight
         working-directory: backend
@@ -98,7 +113,7 @@ jobs:
           PGPASSWORD: postgres
         run: |
           alembic upgrade head
-          psql -h 127.0.0.1 -U postgres -d mynutri_test_ci -v ON_ERROR_STOP=1 -c \
+          psql -h 127.0.0.1 -U postgres -d mynutri_test_static_ci -v ON_ERROR_STOP=1 -c \
             "INSERT INTO principal (id,auth_user_id,email,display_name,role,status,created_at,updated_at)
              VALUES ('00000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001',
              'admin.ci@example.test','CI Admin','admin','active',now(),now()) ON CONFLICT (id) DO UPDATE SET
@@ -256,6 +271,263 @@ jobs:
             echo "Plan 026 failed: the smoke container survived cleanup."
             exit 1
           fi
+
+  backend-unit:
+    name: Backend SQLite, unit and security tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.lock
+      - name: Install backend
+        working-directory: backend
+        run: |
+          pip install --require-hashes -r requirements-dev.lock
+          pip install --no-deps --no-build-isolation -e .
+      - name: Test SQLite, unit and security partition
+        working-directory: backend
+        run: >-
+          pytest -p ci_pytest_partition
+          --ci-backend-partition unit
+          --ci-backend-evidence backend-unit-results.json
+          --durations=20
+      - name: Upload backend unit test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-evidence-unit
+          path: backend/backend-unit-results.json
+          if-no-files-found: error
+
+  backend-postgres:
+    name: Backend PostgreSQL tests shard ${{ matrix.shard }}/2
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mynutri_test_backend_${{ matrix.shard }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mynutri_test_backend_${{ matrix.shard }}"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_test_backend_${{ matrix.shard }}
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_test_backend_${{ matrix.shard }}
+      BACKEND_POSTGRES_SHARD: ${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.lock
+      - name: Install backend
+        working-directory: backend
+        run: |
+          pip install --require-hashes -r requirements-dev.lock
+          pip install --no-deps --no-build-isolation -e .
+      - name: Test isolated PostgreSQL partition
+        working-directory: backend
+        run: >-
+          pytest -p ci_pytest_partition
+          --ci-backend-partition "postgres-${BACKEND_POSTGRES_SHARD}"
+          --ci-backend-evidence "backend-postgres-${BACKEND_POSTGRES_SHARD}-results.json"
+          --durations=20
+      - name: Upload backend PostgreSQL test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-evidence-postgres-${{ matrix.shard }}
+          path: backend/backend-postgres-${{ matrix.shard }}-results.json
+          if-no-files-found: error
+
+  backend-summary:
+    name: backend
+    if: always()
+    needs:
+      - backend-static
+      - backend-unit
+      - backend-postgres
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download backend test evidence
+        id: backend_evidence
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: backend-test-*
+          path: backend-test-evidence
+      - name: Verify backend gates and complete test execution
+        shell: bash
+        env:
+          STATIC_RESULT: ${{ needs['backend-static'].result }}
+          UNIT_RESULT: ${{ needs['backend-unit'].result }}
+          POSTGRES_RESULT: ${{ needs['backend-postgres'].result }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          from collections import Counter
+          from pathlib import Path
+
+          evidence_root = Path("backend-test-evidence")
+          errors = []
+          for job_name, result in (
+              ("backend-static", os.environ["STATIC_RESULT"]),
+              ("backend-unit", os.environ["UNIT_RESULT"]),
+              ("backend-postgres", os.environ["POSTGRES_RESULT"]),
+          ):
+              if result != "success":
+                  errors.append(f"Required job {job_name} finished with {result}.")
+
+          def one_file(name):
+              paths = list(evidence_root.rglob(name))
+              if len(paths) != 1:
+                  errors.append(f"Expected one {name} artifact; found {len(paths)}.")
+                  return None
+              return paths[0]
+
+          plan_path = one_file("backend-test-plan.json")
+          result_paths = {
+              "unit": one_file("backend-unit-results.json"),
+              "postgres-1": one_file("backend-postgres-1-results.json"),
+              "postgres-2": one_file("backend-postgres-2-results.json"),
+          }
+
+          if plan_path is not None:
+              plan = json.loads(plan_path.read_text(encoding="utf-8"))
+              full = plan.get("full", [])
+              partitions = plan.get("partitions", {})
+              allowed_skips = set(plan.get("allowedSkips", []))
+              expected = plan.get("expected", {})
+              expected_values = {
+                  "full": int(os.environ["EXPECTED_BACKEND_TESTS"]),
+                  "unit": int(os.environ["EXPECTED_BACKEND_UNIT_TESTS"]),
+                  "postgres": int(os.environ["EXPECTED_BACKEND_POSTGRES_TESTS"]),
+                  "postgresShards": 2,
+              }
+              if expected != expected_values:
+                  errors.append(f"Backend plan expectations differ: {expected} != {expected_values}.")
+              if len(full) != len(set(full)):
+                  errors.append("The unfiltered backend collection contains duplicate node IDs.")
+              if set(partitions) != set(result_paths):
+                  errors.append(
+                      f"Expected partitions {sorted(result_paths)}; found {sorted(partitions)}."
+                  )
+
+              assigned = [
+                  nodeid
+                  for partition in result_paths
+                  for nodeid in partitions.get(partition, [])
+              ]
+              assigned_counts = Counter(assigned)
+              assigned_duplicates = [
+                  nodeid for nodeid, count in assigned_counts.items() if count != 1
+              ]
+              assigned_set = set(assigned)
+              full_set = set(full)
+              if assigned_set != full_set or assigned_duplicates:
+                  errors.append(
+                      "Backend partition union differs from the unfiltered collection: "
+                      f"missing={len(full_set - assigned_set)}, "
+                      f"unexpected={len(assigned_set - full_set)}, "
+                      f"duplicates={len(assigned_duplicates)}."
+                  )
+
+              postgres_count = sum(
+                  len(partitions.get(name, [])) for name in ("postgres-1", "postgres-2")
+              )
+              actual_counts = {
+                  "full": len(full),
+                  "unit": len(partitions.get("unit", [])),
+                  "postgres": postgres_count,
+              }
+              for name in ("full", "unit", "postgres"):
+                  if actual_counts[name] != expected_values[name]:
+                      errors.append(
+                          f"Backend {name} count={actual_counts[name]}, "
+                          f"expected={expected_values[name]}."
+                      )
+
+              execution_counts = Counter()
+              observed_skips = set()
+              for partition, result_path in result_paths.items():
+                  if result_path is None:
+                      continue
+                  result = json.loads(result_path.read_text(encoding="utf-8"))
+                  if result.get("partition") != partition:
+                      errors.append(
+                          f"Evidence for {partition} reports partition={result.get('partition')}."
+                      )
+                  selected = result.get("selected", [])
+                  executed = result.get("executed", [])
+                  if selected != partitions.get(partition, []):
+                      errors.append(f"{partition} selection differs from the deterministic plan.")
+                  if set(executed) != set(selected) or len(executed) != len(selected):
+                      errors.append(
+                          f"{partition} execution differs from selection: "
+                          f"selected={len(selected)}, executed={len(executed)}."
+                      )
+                  if result.get("errors"):
+                      errors.append(f"{partition} verifier errors: {result['errors']}.")
+                  execution_counts.update(executed)
+                  observed_skips.update(result.get("skipped", []))
+                  print(
+                      f"Backend {partition}: assigned={len(partitions.get(partition, []))}, "
+                      f"executed={len(executed)}, skipped={len(result.get('skipped', []))}"
+                  )
+
+              execution_duplicates = [
+                  nodeid for nodeid, count in execution_counts.items() if count != 1
+              ]
+              execution_set = set(execution_counts)
+              if execution_set != full_set or execution_duplicates:
+                  errors.append(
+                      "Backend execution union differs from the unfiltered collection: "
+                      f"missing={len(full_set - execution_set)}, "
+                      f"unexpected={len(execution_set - full_set)}, "
+                      f"duplicates={len(execution_duplicates)}."
+                  )
+              if observed_skips != allowed_skips:
+                  errors.append(
+                      f"Backend skip set differs: actual={sorted(observed_skips)}, "
+                      f"allowed={sorted(allowed_skips)}."
+                  )
+
+              print(f"Backend unfiltered collection: {len(full)} tests")
+              print(
+                  f"Backend assigned union: {len(assigned_set)} tests; "
+                  f"duplicates: {len(assigned_duplicates)}"
+              )
+              print(
+                  f"Backend executed union: {len(execution_set)} tests; "
+                  f"duplicates: {len(execution_duplicates)}"
+              )
+              print(f"Backend allowed skips executed: {len(observed_skips)}")
+
+          if errors:
+              print("Backend aggregation failed:", file=sys.stderr)
+              for error in errors:
+                  print(f"- {error}", file=sys.stderr)
+              sys.exit(1)
+
+          print("All backend gates passed and every collected backend test executed exactly once.")
+          PY
 
   frontend:
     runs-on: ubuntu-latest
@@ -824,7 +1096,7 @@ jobs:
     name: CI required summary
     if: always()
     needs:
-      - backend
+      - backend-summary
       - frontend
       - e2e
       - plan020-provider-acceptance
@@ -840,7 +1112,7 @@ jobs:
       - name: Verify required jobs and functional shard coverage
         shell: bash
         env:
-          BACKEND_RESULT: ${{ needs.backend.result }}
+          BACKEND_RESULT: ${{ needs['backend-summary'].result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           E2E_RESULT: ${{ needs.e2e.result }}
           PROVIDER_RESULT: ${{ needs['plan020-provider-acceptance'].result }}
@@ -859,7 +1131,7 @@ jobs:
           errors = []
 
           for job_name, result in (
-              ("backend", os.environ["BACKEND_RESULT"]),
+              ("backend-summary", os.environ["BACKEND_RESULT"]),
               ("frontend", os.environ["FRONTEND_RESULT"]),
               ("e2e", os.environ["E2E_RESULT"]),
               ("plan020-provider-acceptance", os.environ["PROVIDER_RESULT"]),
