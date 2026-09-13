@@ -46,7 +46,7 @@ async function mockAuthority(
 }
 
 test.describe("@diary @calendar-authority authoritative Diary date", () => {
-  test("@p0 ignores browser-local and UTC-runner dates and blocks Backend tomorrow", async ({ browser, request, foodsApi }) => {
+  test("@p0 ignores browser-local and UTC-runner dates while allowing future Diary dates", async ({ browser, request, foodsApi }) => {
     const context = await contextWithTimezone(browser, "America/Los_Angeles");
     const page = await context.newPage();
     await page.clock.install({ time: new Date("2026-07-22T20:30:00.000Z") });
@@ -56,12 +56,11 @@ test.describe("@diary @calendar-authority authoritative Diary date", () => {
     const picker = page.locator('input[type="date"]');
     await expect(picker).toHaveValue(AFTER_ROLLOVER.current_diary_date);
     expect(await page.evaluate(() => new Date().getDate())).toBe(22);
-    await expect(page.locator(".week-day-arrow.next")).toBeDisabled();
+    await expect(page.locator(".week-day-arrow.next")).toBeEnabled();
 
     const tomorrow = offsetIsoDate(AFTER_ROLLOVER.current_diary_date, 1);
     await picker.fill(tomorrow);
-    await expect(picker).toHaveValue(AFTER_ROLLOVER.current_diary_date);
-    await expect(page.locator(".date-error[role=alert]")).toBeVisible();
+    await expect(picker).toHaveValue(tomorrow);
 
     const food = await foodsApi.create({ name: `E2E-Calendar-authority-${Date.now()}` });
     const actualAuthorityResponse = await request.get(`${API_URL}/account/calendar`, {
@@ -69,11 +68,12 @@ test.describe("@diary @calendar-authority authoritative Diary date", () => {
     });
     expect(actualAuthorityResponse.status()).toBe(200);
     const actualAuthority = await actualAuthorityResponse.json() as Authority;
-    const response = await request.post(`${API_URL}/diary/entries`, {
-      headers: { Authorization: `Bearer ${API_TOKEN}`, "If-Match": '"day-0"' },
-      data: { food_id: food.id, entry_date: offsetIsoDate(actualAuthority.current_diary_date, 1), quantity: 1 }
+    const response = await foodsApi.createDiaryRaw({
+      food_id: food.id,
+      entry_date: offsetIsoDate(actualAuthority.current_diary_date, 1),
+      quantity: 1
     });
-    expect(response.status()).toBe(422);
+    expect(response.status()).toBe(201);
     await context.close();
   });
 
@@ -117,7 +117,7 @@ test.describe("@diary @calendar-authority authoritative Diary date", () => {
     await rolloverRecheckStarted;
     releaseRolloverRecheck();
     await expect(picker).toHaveValue(AFTER_ROLLOVER.current_diary_date);
-    await expect(page.locator(".week-day-arrow.next")).toBeDisabled();
+    await expect(page.locator(".week-day-arrow.next")).toBeEnabled();
   });
 
   test("@p0 focus refresh after rollover preserves history, week navigation, and Today authority", async ({ page }) => {

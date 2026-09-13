@@ -4,14 +4,14 @@ import base64
 import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from jwt.exceptions import PyJWKClientConnectionError, PyJWKClientError
-from sqlalchemy import Delete, Insert, Select, Update, event
+from sqlalchemy import Delete, Insert, Select, Update, event, text
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -331,7 +331,7 @@ def test_admin_archive_restore_and_history_safe_delete(security_context) -> None
             "quantity": 1,
             "meal_type": "breakfast",
         },
-        headers={**headers("user-b"), "If-Match": '"day-0"'},
+        headers=headers("user-b"),
     )
     assert diary.status_code == 201, diary.text
     deletion = client.delete(f"/admin/foods/{created['id']}", headers=headers("admin-a"))
@@ -344,6 +344,113 @@ def test_admin_archive_restore_and_history_safe_delete(security_context) -> None
     )
     assert restored.status_code == 200
     assert restored.json()["archived_at"] is None
+
+
+def test_future_diary_crud_without_if_match_preserves_replay_and_isolation(
+    security_context,
+) -> None:
+    client, _ = security_context
+    food = client.post(
+        "/foods", json=food_payload("Future diary food"), headers=headers("admin-a")
+    ).json()
+    entry_id = str(uuid4())
+    payload = {
+        "id": entry_id,
+        "food_id": food["id"],
+        "entry_date": (current_diary_date() + timedelta(days=30)).isoformat(),
+        "quantity": 1,
+        "meal_type": "breakfast",
+    }
+
+    created = client.post("/diary/entries", json=payload, headers=headers("user-b"))
+    replayed = client.post("/diary/entries", json=payload, headers=headers("user-b"))
+    assert created.status_code == replayed.status_code == 201
+    assert created.json()["id"] == replayed.json()["id"] == entry_id
+    assert created.json()["target_provenance"] == "no_target_source"
+
+    assert client.patch(
+        f"/diary/entries/{entry_id}",
+        json={"quantity": 2},
+        headers=headers("admin-a"),
+    ).status_code == 404
+    updated = client.patch(
+        f"/diary/entries/{entry_id}",
+        json={"quantity": 2},
+        headers=headers("user-b"),
+    )
+    assert updated.status_code == 200
+    assert updated.json()["quantity"] == 2
+    assert client.delete(
+        f"/diary/entries/{entry_id}", headers=headers("user-b")
+    ).status_code == 204
+
+
+def test_legacy_completed_row_does_not_block_or_receive_diary_crud_writes(
+    security_context,
+) -> None:
+    client, session = security_context
+    food = client.post(
+        "/foods", json=food_payload("Legacy status food"), headers=headers("admin-a")
+    ).json()
+    diary_date = current_diary_date().isoformat()
+    session.exec(
+        text(
+            "CREATE TABLE diary_day_status "
+            "(id TEXT PRIMARY KEY, principal_id TEXT, diary_date TEXT, status TEXT, "
+            "version INTEGER, entry_count INTEGER, completed_at TEXT)"
+        )
+    )
+    session.exec(
+        text(
+            "CREATE TABLE diary_day_status_history "
+            "(id TEXT PRIMARY KEY, day_status_id TEXT, event_type TEXT)"
+        )
+    )
+    status_id = str(uuid4())
+    session.exec(
+        text(
+            "INSERT INTO diary_day_status "
+            "(id,principal_id,diary_date,status,version,entry_count,completed_at) "
+            "VALUES (:id,:principal_id,:diary_date,'complete',7,0,:completed_at)"
+        ),
+        params={
+            "id": status_id,
+            "principal_id": str(PRINCIPAL_B),
+            "diary_date": diary_date,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    session.exec(
+        text(
+            "INSERT INTO diary_day_status_history (id,day_status_id,event_type) "
+            "VALUES (:id,:day_status_id,'completed')"
+        ),
+        params={"id": str(uuid4()), "day_status_id": status_id},
+    )
+    session.commit()
+
+    created = client.post(
+        "/diary/entries",
+        json={
+            "food_id": food["id"],
+            "entry_date": diary_date,
+            "quantity": 1,
+            "meal_type": "lunch",
+        },
+        headers=headers("user-b"),
+    )
+    assert created.status_code == 201, created.text
+    entry_id = created.json()["id"]
+    assert client.patch(
+        f"/diary/entries/{entry_id}",
+        json={"quantity": 2},
+        headers=headers("user-b"),
+    ).status_code == 200
+    assert client.delete(
+        f"/diary/entries/{entry_id}", headers=headers("user-b")
+    ).status_code == 204
+    assert session.exec(text("SELECT count(*) FROM diary_day_status")).scalar_one() == 1
+    assert session.exec(text("SELECT count(*) FROM diary_day_status_history")).scalar_one() == 1
 
 
 def test_admin_monitoring_is_authorized_and_read_only(security_context) -> None:

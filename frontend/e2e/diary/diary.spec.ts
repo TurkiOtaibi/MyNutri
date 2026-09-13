@@ -1,10 +1,4 @@
-import { API_TOKEN, API_URL, diaryDate as localDate, expect, offsetIsoDate, test, uniqueName } from "../foods/helpers";
-
-function sundayStart(input: string): string {
-  const [year, month, day] = input.split("-").map(Number);
-  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
-  return offsetIsoDate(input, -weekday);
-}
+import { diaryDate as localDate, expect, offsetIsoDate, test, uniqueName } from "../foods/helpers";
 
 test.describe("@diary daily-use redesign", () => {
   test("@p0 mobile page uses compact date, week, summary, log order without duplicate goals", async ({ page }) => {
@@ -32,17 +26,17 @@ test.describe("@diary daily-use redesign", () => {
 
     await page.getByRole("button", { name: "اليوم", exact: true }).click();
     await expect(picker).toHaveValue(localDate());
-    await expect(page.getByRole("button", { name: "اليوم التالي" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "اليوم التالي" })).toBeEnabled();
   });
 
-  test("@p0 future Diary API date is rejected", async ({ request, foodsApi }) => {
+  test("@p0 future Diary API date is accepted without If-Match", async ({ foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Future date") });
-    const response = await request.post(`${API_URL}/diary/entries`, {
-      headers: { Authorization: `Bearer ${API_TOKEN}`, "If-Match": '"day-0"' },
-      data: { food_id: food.id, entry_date: localDate(1), quantity: 1 }
+    const response = await foodsApi.createDiaryRaw({
+      food_id: food.id,
+      entry_date: localDate(1),
+      quantity: 1
     });
-    expect(response.status()).toBe(422);
-    expect(await response.text()).toContain("لا يمكن تسجيل يوميات بتاريخ مستقبلي");
+    expect(response.status()).toBe(201);
   });
 
   test("@p0 week strip starts on Sunday and selecting a past day updates Diary", async ({ page }) => {
@@ -220,8 +214,6 @@ test.describe("@diary daily-use redesign", () => {
     }
   });
 });
-
-const DIARY_DAY_ERROR_COPY = "تعذر تحميل يوميات هذا اليوم. تحقق من الاتصال وحاول مرة أخرى.";
 
 function localDateFrom(input: string, days: number): string {
   return offsetIsoDate(input, days);

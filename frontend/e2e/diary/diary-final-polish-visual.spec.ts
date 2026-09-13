@@ -213,8 +213,8 @@ test("@diary @visual capture final Diary polish states", async ({ page, request,
   const profile = await request.get(`${API_URL}/profile`, { headers: { Authorization: `Bearer ${API_TOKEN}` } });
   expect(profile.status()).toBe(200);
   const targets = (await profile.json()).targets as { target_calories: number; protein_g: number; carb_g: number; fat_g: number };
-  await foodsApi.removeDiary(firstEntry.id, currentDate);
-  await foodsApi.removeDiary(secondEntry.id, currentDate);
+  await foodsApi.removeDiary(firstEntry.id);
+  await foodsApi.removeDiary(secondEntry.id);
   const comparisonDate = localDate();
   const comparison = await foodsApi.create({
     name: uniqueName("Macro comparison"), calories: 100,
@@ -243,7 +243,7 @@ test("@diary @visual capture final Diary polish states", async ({ page, request,
   const comparisonEntries = await foodsApi.listDiary(comparisonDate);
   const comparisonEntry = comparisonEntries.find((entry) => entry.food.name === comparison.name);
   expect(comparisonEntry).toBeDefined();
-  await foodsApi.removeDiary(comparisonEntry!.id, comparisonDate);
+  await foodsApi.removeDiary(comparisonEntry!.id);
 
   const emptyDate = localDate(-340);
   await selectDate(page, emptyDate);

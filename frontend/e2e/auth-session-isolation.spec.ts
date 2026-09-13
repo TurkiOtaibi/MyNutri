@@ -361,7 +361,7 @@ test("same browser context isolates cached profile and diary data across A to B 
   const food = await foodResponse.json() as { id: string };
   const diaryDate = await authoritativeDiaryDate(tokenA);
   const diaryResponse = await request.post(`${API_URL}/diary/entries`, {
-    headers: { ...headers(tokenA), "If-Match": '"day-0"' },
+    headers: headers(tokenA),
     data: {
       entry_date: diaryDate,
       food_id: food.id,

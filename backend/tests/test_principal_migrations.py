@@ -8,7 +8,7 @@ import subprocess
 import sys
 from collections.abc import Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from threading import Barrier, Event
@@ -88,6 +88,7 @@ PLAN033_REVISION = "22733dbf5249"
 NOVA_RETIREMENT_REVISION = "8a91c4e7d2f6"
 NOVA_RETIREMENT_DOWNGRADE_ERROR = "NOVA_RETIREMENT_READER_FLOOR_REQUIRED"
 FOOD_SIMPLIFICATION_REVISION = "f47a2c9d6e13"
+DAY_STATUS_RETIREMENT_REVISION = "a6c81e4f2d90"
 PLAN023_CONSTRAINT = "ck_diary_entry_quantity_positive_finite"
 PLAN023_PREFLIGHT_ERROR = "PLAN023_DIARY_QUANTITY_PREFLIGHT_BLOCKED"
 PLAN023_PREFLIGHT_GUARD = "plan023_diary_quantity_positive_finite_preflight"
@@ -449,6 +450,7 @@ def _assert_immutable_revision_hashes(versions: Path) -> None:
     assert revision_files == set(BASELINE_HASHES) | {
         "8a91c4e7d2f6_nova_retirement_phase1.py",
         "f47a2c9d6e13_retire_food_and_analysis_features.py",
+        "a6c81e4f2d90_retire_diary_day_status.py",
     }
     actual = {name: _normalized_revision_hash(versions / name) for name in BASELINE_HASHES}
     assert actual == BASELINE_HASHES
@@ -568,7 +570,7 @@ def test_authoritative_historical_checks_are_in_metadata_and_sqlite_safe() -> No
 
 
 @pytest.mark.migration
-def test_fresh_postgresql_upgrade_has_one_head_and_simplified_food_contract() -> None:
+def test_fresh_postgresql_upgrade_has_one_head_and_current_contract() -> None:
     url = _database_url()
     _reset_database(url)
     _run_alembic(url, "upgrade", "head")
@@ -577,7 +579,7 @@ def test_fresh_postgresql_upgrade_has_one_head_and_simplified_food_contract() ->
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            FOOD_SIMPLIFICATION_REVISION
+            DAY_STATUS_RETIREMENT_REVISION
         )
         authoritative_checks = connection.execute(
             text(
@@ -653,6 +655,8 @@ def test_fresh_postgresql_upgrade_has_one_head_and_simplified_food_contract() ->
         "behavior_goal_history",
         "behavior_goal_command_idempotency",
         "behavior_goal_reminder_delivery",
+        "diary_day_status_history",
+        "diary_day_status",
     }
     assert retired_tables.isdisjoint(inspector.get_table_names())
     assert {"legacy_target_transition_snapshots", "target_plan", "idempotency_record"}.issubset(
@@ -680,6 +684,109 @@ def test_fresh_postgresql_upgrade_has_one_head_and_simplified_food_contract() ->
     check_output = check_result.stdout + check_result.stderr
     assert "alembic.autogenerate.checkconstraint_byname" in check_output
     assert "No new upgrade operations detected." in check_output
+
+
+@pytest.mark.migration
+def test_day_status_retirement_is_selective_and_forward_only(
+    database_restored_to_current_head: str,
+) -> None:
+    url = database_restored_to_current_head
+    _reset_database(url)
+    _run_alembic(url, "upgrade", FOOD_SIMPLIFICATION_REVISION)
+    principal_id = uuid4()
+    status_id = uuid4()
+    now = datetime.now(UTC)
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO principal (id,role,status,created_at,updated_at) "
+                "VALUES (:id,'user','active',:now,:now)"
+            ),
+            {"id": principal_id, "now": now},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO diary_day_status "
+                "(id,principal_id,diary_date,status,version,entry_count,completed_at,"
+                "created_at,updated_at) VALUES "
+                "(:id,:principal_id,'2026-09-13','complete',4,0,:now,:now,:now)"
+            ),
+            {"id": status_id, "principal_id": principal_id, "now": now},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO diary_day_status_history "
+                "(id,day_status_id,principal_id,diary_date,from_status,to_status,event_type,"
+                "day_version,actor_principal_id,occurred_at) VALUES "
+                "(:id,:status_id,:principal_id,'2026-09-13','partial','complete','completed',"
+                "4,:principal_id,:now)"
+            ),
+            {
+                "id": uuid4(),
+                "status_id": status_id,
+                "principal_id": principal_id,
+                "now": now,
+            },
+        )
+        for operation, key, resource_type in (
+            ("diary_day_complete", "complete", "diary_day_status"),
+            ("diary_day_reopen", "reopen", "diary_day_status"),
+            ("target_plan.activate", "target", "target_plan"),
+            ("diary_day_complete", "other-resource", "target_plan"),
+            ("unrelated_operation", "other-operation", "diary_day_status"),
+        ):
+            connection.execute(
+                text(
+                    "INSERT INTO idempotency_record "
+                    "(id,principal_id,operation,idempotency_key,request_hash,state,"
+                    "resource_type,created_at,expires_at) VALUES "
+                    "(:id,:principal_id,:operation,:key,:request_hash,'in_progress',"
+                    ":resource_type,:now,:expires_at)"
+                ),
+                {
+                    "id": uuid4(),
+                    "principal_id": principal_id,
+                    "operation": operation,
+                    "key": key,
+                    "request_hash": key.ljust(64, "0"),
+                    "resource_type": resource_type,
+                    "now": now,
+                    "expires_at": now + timedelta(days=7),
+                },
+            )
+    engine.dispose()
+
+    _run_alembic(url, "upgrade", "head")
+    engine = create_engine(url)
+    inspector = inspect(engine)
+    assert {"diary_day_status", "diary_day_status_history"}.isdisjoint(
+        inspector.get_table_names()
+    )
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            DAY_STATUS_RETIREMENT_REVISION
+        )
+        remaining = connection.execute(
+            text(
+                "SELECT operation,resource_type FROM idempotency_record "
+                "ORDER BY idempotency_key"
+            )
+        ).all()
+    engine.dispose()
+    assert set(remaining) == {
+        ("target_plan.activate", "target_plan"),
+        ("diary_day_complete", "target_plan"),
+        ("unrelated_operation", "diary_day_status"),
+    }
+
+    blocked = _run_alembic(
+        url, "downgrade", FOOD_SIMPLIFICATION_REVISION, check=False
+    )
+    assert blocked.returncode != 0
+    assert "DIARY_DAY_STATUS_RETIREMENT_DOWNGRADE_BLOCKED" in (
+        blocked.stdout + blocked.stderr
+    )
 
 
 @pytest.mark.migration

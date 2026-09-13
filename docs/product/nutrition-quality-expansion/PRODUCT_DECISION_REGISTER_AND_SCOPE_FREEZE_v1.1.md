@@ -740,28 +740,6 @@ Rules:
 
 ---
 
-# PD-015 — Day logging status
-
-**Status:** Approved
-
-Statuses:
-
-```text
-unregistered
-partial
-complete
-```
-
-Rules:
-
-- one Food entry does not automatically make a day complete;
-- the user explicitly marks a day complete;
-- an intentionally empty day may be explicitly completed;
-- partial and unregistered days are never treated as zero-intake days;
-- strong seven-day analysis uses completed days.
-
----
-
 # PD-016 — Nutrition Pattern Analysis
 
 **Status:** Approved
@@ -1063,11 +1041,10 @@ Approved API capability areas:
 2. Food nutrition/source/group/trait extensions.
 3. Diary entry snapshot creation and scaling.
 4. Diary day summary and coverage.
-5. Day logging status.
-6. Target Plan preview/current/history.
-7. Nutrition Analysis and contributors.
-8. Analysis Snapshots.
-9. Weekly behavior goals.
+5. Target Plan preview/current/history.
+6. Nutrition Analysis and contributors.
+7. Analysis Snapshots.
+8. Weekly behavior goals.
 
 Mutation rules:
 

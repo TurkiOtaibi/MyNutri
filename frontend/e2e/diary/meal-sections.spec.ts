@@ -130,7 +130,7 @@ test.describe("@diary @meals Gregorian meal sections", () => {
     expect((await omitted.json()).meal_type).toBe("unspecified");
     const invalid = await foodsApi.createDiaryRaw({ ...base, meal_type: "brunch" });
     expect(invalid.status()).toBe(422);
-    await foodsApi.removeDiary((await omitted.json()).id, base.entry_date);
+    await foodsApi.removeDiary((await omitted.json()).id);
   });
 
   test("@p0 edit moves entry between meals without exposing immutable fields", async ({ page, foodsApi }) => {

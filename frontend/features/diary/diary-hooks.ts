@@ -17,8 +17,7 @@ export function useDebouncedValue<T>(value: T, delay: number): T {
 export async function invalidateDiary(queryClient: QueryClient) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: ["entries"] }),
-    queryClient.invalidateQueries({ queryKey: ["week"] }),
-    queryClient.invalidateQueries({ queryKey: ["diary-day-status"] })
+    queryClient.invalidateQueries({ queryKey: ["week"] })
   ]);
 }
 
@@ -60,21 +59,4 @@ export function useCalendarAuthorityRefresh(
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [refetch]);
-}
-
-export type ReopenInvoker =
-  | { kind: "element"; element: HTMLElement }
-  | { kind: "entry"; action: "edit" | "delete"; entryId: string };
-
-export function restoreReopenFocus(invoker: ReopenInvoker, openEntryMenu: (entryId: string) => void) {
-  if (invoker.kind === "element") {
-    requestAnimationFrame(() => {
-      if (invoker.element.isConnected) invoker.element.focus();
-    });
-    return;
-  }
-  openEntryMenu(invoker.entryId);
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    document.querySelector<HTMLElement>(`[data-diary-entry-action="${invoker.action}-${invoker.entryId}"]`)?.focus();
-  }));
 }

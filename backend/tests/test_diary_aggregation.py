@@ -327,7 +327,7 @@ def test_plan015_owner_week_advances_and_commits_once(
     assert advance_calls == 1
     assert authority_calls == 1
     assert commit_calls == 1
-    assert len(statements) == 8
+    assert len(statements) == 6
 
 
 @pytest.fixture
@@ -377,6 +377,5 @@ def test_plan015_postgresql_owner_week_query_budget_is_fixed(
             PRINCIPAL,
             week_start,
         )
-    # PLAN 031 adds the persisted day-status and legacy entry-count range
-    # projections. The budget remains fixed as entry volume changes.
-    assert len(statements) == 8
+    # The entry-derived weekly projection remains fixed as entry volume changes.
+    assert len(statements) == 6

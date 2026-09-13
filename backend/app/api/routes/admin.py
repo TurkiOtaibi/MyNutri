@@ -7,18 +7,16 @@ from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext, require_admin
-from app.core.calendar import current_diary_date, diary_calendar_authority
+from app.core.calendar import current_diary_date
 from app.db.session import get_session
 from app.models import DiaryEntry, Principal, Profile
 from app.schemas import (
     AdminUserDetail,
-    AdminDiaryDayStatusPage,
     AdminDiaryPage,
     AdminUserListResponse,
     AdminUserSummary,
 )
 from app.services.diary import AdminDiaryCursorError, admin_diary_page
-from app.services.day_logging_status import project_status_range
 from app.services.errors import resource_not_found
 from app.services.profile import to_profile_response
 from app.services.target_plans import pending_plan, plan_history, project_targets
@@ -159,24 +157,3 @@ def user_diary(
         return admin_diary_page(session, selected, limit, cursor, entry_date)
     except AdminDiaryCursorError as error:
         raise HTTPException(status_code=422, detail={"code": "INVALID_CURSOR"}) from error
-
-
-@router.get(
-    "/users/{principal_id}/diary-days",
-    response_model=AdminDiaryDayStatusPage,
-)
-def user_diary_days(
-    principal_id: UUID,
-    start: date,
-    end: date,
-    _admin: PrincipalContext = Depends(require_admin),
-    session: Session = Depends(get_session),
-) -> AdminDiaryDayStatusPage:
-    if end < start or (end - start).days > 30:
-        raise HTTPException(status_code=422, detail={"code": "INVALID_DATE_RANGE"})
-    selected = _selected_context(_get_principal(session, principal_id))
-    return AdminDiaryDayStatusPage(
-        items=project_status_range(
-            session, selected, start, end, diary_calendar_authority()
-        )
-    )

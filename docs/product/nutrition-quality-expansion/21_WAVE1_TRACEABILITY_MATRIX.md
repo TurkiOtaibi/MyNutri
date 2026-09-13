@@ -76,7 +76,6 @@ Pinned revision identifies the approval content commit; subsequent pin metadata 
 | `PD-012` NOVA/ingredients | Active foundation | H07 | Food/API/snapshot | US-011/012 | transitions/history |
 | `PD-013` completeness/source/coverage | Active | H07/H11/ADR-008 | Food/snapshot/summary | US-009/011/015; UI-033-035 | null/coverage |
 | `PD-014` Snapshot v2 | Active | H08/ADR-006 | Diary model/API/migration | US-013/014/016; GC-025-028 | v1/v2/integrity |
-| `PD-015` day status | Deferred later analysis foundation | scope exclusion | no Wave 1 field/route | no story/UI | scope test |
 | `PD-016` Pattern Analysis | Deferred Wave 3 | H10 reserved analysis | no schema/API | none | no implementation |
 | `PD-017` priority engine | Deferred Wave 3 | H10 | none | none | no implementation |
 | `PD-018` behavior goals | Deferred | scope | none | none | no implementation |
@@ -139,7 +138,7 @@ Traceability gaps: `0`.
 
 ## 6. Superseded and Deferred Integrity
 
-The complete v1.1 Register, approved direction records, and Artifact 13 supersede provisional NQ IDs, old offline-first/multi-profile assumptions, actual-weight-only protein, silent carb clamp, duplicated Registry authority, and mutable historical target assumptions. PD-015-021 and PD-027-028 remain approved future decisions but are outside Wave 1 implementation. PD-008's four-week Progress experience remains deferred while immutable Target Plan foundation is Wave 1.
+The complete v1.1 Register, approved direction records, and Artifact 13 supersede provisional NQ IDs, old offline-first/multi-profile assumptions, actual-weight-only protein, silent carb clamp, duplicated Registry authority, and mutable historical target assumptions. PD-016-021 and PD-027-028 remain approved future decisions but are outside Wave 1 implementation. PD-008's four-week Progress experience remains deferred while immutable Target Plan foundation is Wave 1.
 
 ## 7. Implementation Stage Sequence
 

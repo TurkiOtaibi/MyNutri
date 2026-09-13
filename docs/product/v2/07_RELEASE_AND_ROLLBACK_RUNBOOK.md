@@ -5,8 +5,8 @@ production mutation.
 
 ## Release identity
 
-The Food simplification migration has revision `f47a2c9d6e13` and parent
-`8a91c4e7d2f6`. Confirm the intended application commit, generated contract,
+The current migration head is Day Logging Status retirement revision
+`a6c81e4f2d90`, with parent `f47a2c9d6e13`. Confirm the intended application commit, generated contract,
 single Alembic head, and approved environment before any rollout action.
 
 ## Required pre-release validation
@@ -23,6 +23,9 @@ single Alembic head, and approved environment before any rollout action.
 - Diary quantity, recorded measurement, archived-Food resolution, hard-delete
   restriction, and mass/volume dimension safety tests pass.
 - Historical Target Plan effective-date behavior remains unchanged.
+- Diary create, update, and delete accept future dates without `If-Match` and
+  do not read or write Day Logging Status state or history.
+- Target Plan and unrelated idempotency rows survive the selective cleanup.
 - Retired endpoints, navigation, schema fields, tables, flags, and generated
   contracts are absent.
 - Historical Alembic revision hashes remain unchanged.
@@ -39,6 +42,8 @@ is granted, perform read-only counts first for:
 - Diary rows whose derived recorded mass/volume basis conflicts with the current
   referenced Food nutrition basis;
 - Food rows whose legacy taxonomy/source cannot follow the approved fallback.
+- Day Logging Status and history row counts, and status-command idempotency row
+  counts, as destructive-cutover evidence rather than blockers.
 
 Any non-zero blocking count stops the rollout. Do not delete, rewrite, or infer
 production data during preflight.
@@ -48,7 +53,8 @@ production data during preflight.
 Only after a separately approved release window:
 
 1. Verify backups and restore procedure.
-2. Stop incompatible writers.
+2. Stop all incompatible Day Logging Status and Diary writers; there is no
+   compatibility window.
 3. Apply the reviewed migration to the explicitly identified environment.
 4. Deploy backend and frontend artifacts built from the same approved revision.
 5. Verify health, authentication, Food reads, Diary reads, and Target Plan history.
@@ -66,14 +72,18 @@ Only after a separately approved release window:
   hard-deleted.
 - Verify an incompatible mass/volume basis edit is rejected for a referenced Food.
 - Verify an older date continues to use its effective historical Target Plan.
+- Create, update, and delete a future-dated Diary entry without `If-Match`.
+- Confirm all four retired status routes return `404` and week summaries contain
+  no status, version, completion timestamp, or entry-count presence field.
 
 ## Rollback
 
-Do not attempt an Alembic downgrade below `f47a2c9d6e13`; it fails closed by
-design because removed product schemas and Food snapshots cannot be faithfully
-reconstructed. Stop writes and either roll forward with an approved corrective
-revision or restore the pre-migration database backup together with the matching
-application release.
+Do not downgrade below `a6c81e4f2d90`. Both the current revision and
+`f47a2c9d6e13` fail closed because deleted status/history/idempotency data and
+removed product schemas or Food snapshots cannot be faithfully reconstructed.
+Stop writes and either roll forward with an approved corrective revision or
+restore the pre-migration database backup together with the matching application
+release.
 
 Rollback is not permission to delete production data, rewrite historical
 migrations, revive retired features, or deploy without a separate authorization.

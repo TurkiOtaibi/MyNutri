@@ -77,7 +77,7 @@ async function targetsForDate(request: import("@playwright/test").APIRequestCont
 }
 
 test.describe("@diary @page-refinement compact Diary page", () => {
-  test("@plan019 week markers use each day's target and stay independent of selection", async ({ page }) => {
+  test("@plan019 week progress uses each day's diary totals and target independently", async ({ page }) => {
     const selectedDate = localDate(-14);
     const mockedWeekStart = sundayStart(selectedDate);
 
@@ -115,8 +115,8 @@ test.describe("@diary @page-refinement compact Diary page", () => {
       (element as HTMLElement).style.getPropertyValue("--day-progress")
     );
 
-    await expect(days.nth(0).locator("small")).toHaveText("○ 500 · غير مسجل");
-    await expect(days.nth(2).locator("small")).toHaveText("○ 500 · غير مسجل");
+    await expect(days.nth(0).locator("small")).toHaveText("500 سعرة");
+    await expect(days.nth(2).locator("small")).toHaveText("500 سعرة");
     await expect(days.nth(2).locator("i")).toHaveCount(0);
     expect(await progress(0)).toBe("50%");
     expect(await progress(1)).toBe("25%");
@@ -174,7 +174,7 @@ test.describe("@diary @page-refinement compact Diary page", () => {
     const summary = page.getByLabel("ملخص تقدم اليوم");
     await expect(summary.getByText("تم الوصول إلى الهدف")).toBeVisible();
     await expect(summary.getByRole("progressbar", { name: /100% من هدف السعرات/ })).toHaveAttribute("aria-valuenow", "100");
-    await foodsApi.removeDiary(exactEntry.id, exactDate);
+    await foodsApi.removeDiary(exactEntry.id);
     await foodsApi.createDiary(over.id, overDate, 1, "lunch");
     await page.reload();
     await selectDate(page, overDate);
@@ -208,7 +208,6 @@ test.describe("@diary @page-refinement compact Diary page", () => {
     const food = await foodsApi.create({ name: uniqueName("Expansion") });
     await foodsApi.createDiary(food.id, firstDate, 1, "lunch");
     await page.goto("/diary");
-    const picker = page.getByLabel("اختيار تاريخ اليوميات");
     await selectDate(page, firstDate);
     const lunch = page.getByRole("button", { name: "إغلاق قسم غداء" });
     await expect(lunch).toHaveAttribute("aria-expanded", "true");

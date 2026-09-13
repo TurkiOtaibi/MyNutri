@@ -1,11 +1,11 @@
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Cookie, MoreVertical, Moon, Pencil, Plus, Sun, Sunrise, Trash2, X } from "lucide-react";
-import type { CSSProperties, MouseEvent as ReactMouseEvent, SyntheticEvent } from "react";
-import { addDays, formatDayNumber, formatLongArabicDate, formatShortDate, weekStartSunday } from "@/lib/dates";
+import type { CSSProperties } from "react";
+import { addDays, formatDayNumber, formatShortDate, weekStartSunday } from "@/lib/dates";
 import { formatServingMacro } from "@/lib/food";
 import { weekdays } from "@/lib/labels";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels, type NutrientDefinition } from "@/lib/nutrients";
-import type { DaySummary, DiaryDayStatusResponse, DiaryEntryResponse, DiaryNutrientAggregate, MealType, NutritionRegistryResponse, NutritionTotals, TargetResponse, WeekSummary } from "@/lib/types";
-import { dayLoggingStatusLabels, emptyNutritionTotals, entryQuantityLabel, formatDiarySelectedDate, isFutureDiaryStatus, mealItemCountLabel, mealLabels, shortWeekdays, standardMeals } from "./diary-model";
+import type { DaySummary, DiaryEntryResponse, DiaryNutrientAggregate, MealType, NutritionRegistryResponse, NutritionTotals, TargetResponse, WeekSummary } from "@/lib/types";
+import { emptyNutritionTotals, entryQuantityLabel, formatDiarySelectedDate, mealItemCountLabel, mealLabels, shortWeekdays, standardMeals } from "./diary-model";
 import { ModalFrame } from "./diary-entry-dialogs";
 
 const WEEK_READ_ERROR = "تعذر تحميل ملخص الأسبوع. تحقق من الاتصال وحاول مرة أخرى.";
@@ -16,7 +16,6 @@ export function CompactWeekNavigator({
   error,
   selectedDate,
   today,
-  dateError,
   onSelect,
   onRetry
 }: {
@@ -25,16 +24,14 @@ export function CompactWeekNavigator({
   error: boolean;
   selectedDate: string;
   today: string;
-  dateError: string;
   onSelect: (date: string) => void;
   onRetry: () => void;
 }) {
   const fallbackStart = weekStartSunday(selectedDate);
-  const days: Array<Pick<DaySummary, "date" | "totals" | "targets" | "logging_status">> = week?.days ?? Array.from({ length: 7 }, (_, index) => ({
+  const days: Array<Pick<DaySummary, "date" | "totals" | "targets">> = week?.days ?? Array.from({ length: 7 }, (_, index) => ({
     date: addDays(fallbackStart, index),
     totals: emptyNutritionTotals(),
-    targets: null,
-    logging_status: "unregistered"
+    targets: null
   }));
   const selectedLabel = formatDiarySelectedDate(selectedDate, today);
 
@@ -45,16 +42,14 @@ export function CompactWeekNavigator({
         <label className="compact-selected-date">
           <CalendarDays size={17} aria-hidden="true" />
           <h2>{selectedLabel}</h2>
-          <input type="date" value={selectedDate} max={today} onChange={(event) => onSelect(event.target.value)} aria-label="اختيار تاريخ اليوميات" />
+          <input type="date" value={selectedDate} onChange={(event) => onSelect(event.target.value)} aria-label="اختيار تاريخ اليوميات" />
         </label>
-        <button className="week-day-arrow next" type="button" disabled={selectedDate >= today} onClick={() => onSelect(addDays(selectedDate, 1))} aria-label="اليوم التالي"><ChevronRight size={19} /></button>
+        <button className="week-day-arrow next" type="button" onClick={() => onSelect(addDays(selectedDate, 1))} aria-label="اليوم التالي"><ChevronRight size={19} /></button>
         {selectedDate !== today ? <button className="compact-today" type="button" onClick={() => onSelect(today)}>اليوم</button> : null}
       </div>
       <div className="compact-week-days" role="tablist" aria-label="أيام الأسبوع">
         {days.map((day, index) => {
           const selected = day.date === selectedDate;
-          const future = day.date > today;
-          const hasIntake = day.totals.calories > 0;
           const dayTarget = day.targets?.target_calories;
           const progress = typeof dayTarget === "number" && Number.isFinite(dayTarget) && dayTarget > 0
             ? Math.min(100, Math.max(0, day.totals.calories / dayTarget * 100))
@@ -64,63 +59,21 @@ export function CompactWeekNavigator({
               className={`compact-week-day ${selected ? "selected" : ""}`}
               key={day.date}
               type="button"
-              disabled={future}
               onClick={() => onSelect(day.date)}
               role="tab"
               aria-selected={selected}
               aria-current={selected ? "date" : undefined}
-              aria-label={`${weekdays[index]}، ${formatShortDate(day.date)}، ${Math.round(day.totals.calories)} سعرة، ${dayLoggingStatusLabels[day.logging_status]}`}
+              aria-label={`${weekdays[index]}، ${formatShortDate(day.date)}، ${Math.round(day.totals.calories)} سعرة`}
             >
               <span>{shortWeekdays[index]}</span>
               <strong>{formatDayNumber(day.date)}</strong>
-              <small><span aria-hidden="true">{day.logging_status === "complete" ? "✓" : day.logging_status === "partial" ? "◐" : "○"}</span> {hasIntake ? `${Math.round(day.totals.calories)} · ` : ""}{dayLoggingStatusLabels[day.logging_status]}</small>
-              {hasIntake && progress !== null ? <i style={{ "--day-progress": `${progress}%` } as CSSProperties} /> : null}
+              <small>{Math.round(day.totals.calories)} سعرة</small>
+              {progress !== null ? <i style={{ "--day-progress": `${progress}%` } as CSSProperties} /> : null}
             </button>
           );
         })}
       </div>
       {error ? <div className="week-inline-error"><span>{WEEK_READ_ERROR}</span><button type="button" onClick={onRetry}>إعادة المحاولة</button></div> : null}
-      {dateError ? <p className="field-error date-error" role="alert">{dateError}</p> : null}
-    </section>
-  );
-}
-
-export function DayLoggingStatusCard({
-  status,
-  pending,
-  failed,
-  stale,
-  commandPending,
-  onComplete,
-  onReopen,
-  onRetry
-}: {
-  status: DiaryDayStatusResponse | undefined;
-  pending: boolean;
-  failed: boolean;
-  stale: boolean;
-  commandPending: boolean;
-  onComplete: () => void;
-  onReopen: () => void;
-  onRetry: () => void;
-}) {
-  if (pending) return <section className="day-status-card is-loading" role="status" aria-busy="true">جارٍ تحميل حالة اليوم</section>;
-  if (failed || !status) return <section className="day-status-card" role="alert">تعذر تحميل حالة تسجيل اليوم <button type="button" onClick={onRetry}>إعادة المحاولة</button></section>;
-  const future = isFutureDiaryStatus(status);
-  return (
-    <section className={`day-status-card status-${status.logging_status}`} aria-labelledby="day-status-title" aria-label={`${formatLongArabicDate(status.date)}، ${dayLoggingStatusLabels[status.logging_status]}`}>
-      <div>
-        <h2 id="day-status-title" tabIndex={-1}>حالة تسجيل اليوم<span className="sr-only">، {formatLongArabicDate(status.date)}، {dayLoggingStatusLabels[status.logging_status]}</span></h2>
-        <strong><span aria-hidden="true">{status.logging_status === "complete" ? "✓" : status.logging_status === "partial" ? "◐" : "○"}</span> {dayLoggingStatusLabels[status.logging_status]}</strong>
-      </div>
-      {stale ? <p role="status">قد تكون الحالة المعروضة قديمة. تعذر تحديثها الآن. <button type="button" onClick={onRetry}>إعادة المحاولة</button></p> : null}
-      {status.logging_status === "partial" ? <p>لن يُعامل هذا اليوم كاستهلاك صفري حتى تنهي تسجيله.</p> : null}
-      {future ? <p>لا يمكن إنهاء تسجيل يوم مستقبلي.</p> : null}
-      {status.logging_status === "complete" ? (
-        <button type="button" disabled={commandPending || future} onClick={onReopen}>إعادة فتح اليوم</button>
-      ) : (
-        <button type="button" disabled={commandPending || future} onClick={onComplete}>إنهاء تسجيل اليوم</button>
-      )}
     </section>
   );
 }
@@ -228,10 +181,10 @@ export function MealSections({
   expanded: Set<MealType>;
   openMenuId: string | null;
   onToggleMeal: (meal: MealType) => void;
-  onAdd: (event: ReactMouseEvent<HTMLButtonElement>, meal: MealType) => void;
+  onAdd: (meal: MealType) => void;
   onToggleMenu: (id: string) => void;
-  onEdit: (event: SyntheticEvent<HTMLElement>, entry: DiaryEntryResponse) => void;
-  onDelete: (event: ReactMouseEvent<HTMLButtonElement>, entry: DiaryEntryResponse) => void;
+  onEdit: (entry: DiaryEntryResponse) => void;
+  onDelete: (entry: DiaryEntryResponse) => void;
   deletingId: string | null;
 }) {
   const normalizedMeal = (entry: DiaryEntryResponse): MealType => entry.meal_type ?? "unspecified";
@@ -256,7 +209,7 @@ export function MealSections({
                 <ChevronDown className="meal-chevron" size={18} aria-hidden="true" />
               </button>
               {meal !== "unspecified" ? (
-                <button data-diary-add-trigger={`meal-${meal}`} className="btn icon meal-add" type="button" onClick={(event) => onAdd(event, meal)} aria-label={`إضافة طعام إلى ${mealLabels[meal]}`}><Plus size={18} /></button>
+                <button data-diary-add-trigger={`meal-${meal}`} className="btn icon meal-add" type="button" onClick={() => onAdd(meal)} aria-label={`إضافة طعام إلى ${mealLabels[meal]}`}><Plus size={18} /></button>
               ) : null}
             </div>
             <div id={`meal-${meal}`} className="meal-section-content" hidden={!isOpen}>
@@ -266,8 +219,8 @@ export function MealSections({
                   entry={entry}
                   menuOpen={openMenuId === entry.id}
                   onToggleMenu={() => onToggleMenu(entry.id)}
-                  onEdit={(event) => onEdit(event, entry)}
-                  onDelete={(event) => onDelete(event, entry)}
+                  onEdit={() => onEdit(entry)}
+                  onDelete={() => onDelete(entry)}
                   deleting={deletingId === entry.id}
                 />
               ))}
@@ -290,12 +243,12 @@ export function DiaryEntryRow({
   entry: DiaryEntryResponse;
   menuOpen: boolean;
   onToggleMenu: () => void;
-  onEdit: (event: SyntheticEvent<HTMLElement>) => void;
-  onDelete: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  onEdit: () => void;
+  onDelete: () => void;
   deleting: boolean;
 }) {
   return (
-    <article className={`diary-entry-row ${deleting ? "is-deleting" : ""}`} role="button" tabIndex={deleting ? -1 : 0} aria-label={`تعديل ${entry.food.name}`} onClick={(event) => { if (!deleting) onEdit(event); }} onKeyDown={(event) => { if (!deleting && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onEdit(event); } }}>
+    <article className={`diary-entry-row ${deleting ? "is-deleting" : ""}`} role="button" tabIndex={deleting ? -1 : 0} aria-label={`تعديل ${entry.food.name}`} onClick={() => { if (!deleting) onEdit(); }} onKeyDown={(event) => { if (!deleting && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onEdit(); } }}>
       <div className="diary-entry-copy">
         <h3 dir="auto">{entry.food.name}</h3>
         <p>{entryQuantityLabel(entry)}</p>

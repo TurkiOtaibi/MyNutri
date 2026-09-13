@@ -15,7 +15,6 @@ from app.schemas import (
     WeekSummary,
 )
 from app.services.diary import add_totals, empty_totals, totals_for_entry
-from app.services.day_logging_status import project_status_range
 from app.services.profile import to_target_response
 from app.services.target_plans import (
     WeekTargetContext,
@@ -176,7 +175,6 @@ def _day_summary(
     current: date,
     entries: list[tuple[DiaryEntry, Food]],
     target_context: WeekTargetContext,
-    status,
 ) -> DaySummary:
     totals = empty_totals()
     entry_totals = []
@@ -208,10 +206,6 @@ def _day_summary(
         target_provenance=source.target_provenance,
         nutrient_aggregates=aggregates,
         overall_nutrient_coverage_percent=overall,
-        logging_status=status.logging_status,
-        logging_status_version=status.logging_status_version,
-        entry_count=status.entry_count,
-        completed_at=status.completed_at,
     )
 
 
@@ -249,17 +243,12 @@ def _weekly_summary(
     entries_by_date: dict[date, list[tuple[DiaryEntry, Food]]] = {}
     for entry, food in entries:
         entries_by_date.setdefault(entry.entry_date, []).append((entry, food))
-    statuses = {
-        item.date: item
-        for item in project_status_range(session, principal, week_start, week_end, authority)
-    }
     for offset in range(7):
         current = week_start + timedelta(days=offset)
         day = _day_summary(
             current,
             entries_by_date.get(current, []),
             target_context,
-            statuses[current],
         )
         weekly_totals = add_totals(weekly_totals, day.totals)
         days.append(day)
