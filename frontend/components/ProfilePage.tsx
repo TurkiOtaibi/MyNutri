@@ -274,6 +274,7 @@ export function ProfilePage() {
       savedProfileSubjectRef.current = subjectId;
       setEffectiveFrom(submission.effectiveFrom);
       setSavedEffectiveFrom(submission.effectiveFrom);
+      setSavedTargets(accepted.plan.targets);
       setPendingServerProfile(undefined);
       setPreview(null);
       setPreviewDraftHash(null);

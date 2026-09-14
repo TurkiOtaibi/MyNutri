@@ -375,7 +375,7 @@ test.describe("@profile Profile and targets redesign", () => {
     });
 
     await page.goto("/profile?date-effective=1");
-    const effectiveDate = page.getByLabel("تاريخ سريان الأهداف");
+    const effectiveDate = page.getByRole("textbox", { name: "تاريخ سريان الأهداف" });
     await expect(effectiveDate).toHaveAttribute("min", today);
     await expect(effectiveDate).toHaveValue(today);
 
