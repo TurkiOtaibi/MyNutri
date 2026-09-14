@@ -56,6 +56,7 @@ export function ProfilePage() {
   const writePhaseRef = useRef<TargetPlanWritePhase>(writePhase);
   const mountedRef = useRef(true);
   const formSubjectRef = useRef(subjectId);
+  const savedProfileSubjectRef = useRef<string | null | undefined>(undefined);
 
   function transitionWrite(next: TargetPlanWritePhase) {
     writePhaseRef.current = next;
@@ -66,9 +67,14 @@ export function ProfilePage() {
     mountedRef.current = false;
   }, []);
 
-  const profileQuery = useQuery({ queryKey: ["profile"], queryFn: getProfile });
+  const profileQueryKey = ["profile", subjectId] as const;
+  const profileQuery = useQuery({
+    queryKey: profileQueryKey,
+    queryFn: getProfile,
+    enabled: Boolean(accessToken)
+  });
   const authorityQuery = useQuery({
-    queryKey: ["calendar-authority"],
+    queryKey: ["calendar-authority", subjectId],
     queryFn: () => getCalendarAuthority({ accessToken: accessToken!, signal: sessionSignal }),
     enabled: Boolean(accessToken)
   });
@@ -78,9 +84,10 @@ export function ProfilePage() {
     staleTime: 300_000
   });
   const planHistoryQuery = useInfiniteQuery({
-    queryKey: ["target-plan-history"],
+    queryKey: ["target-plan-history", subjectId],
     queryFn: ({ pageParam }) => listTargetPlanHistory(pageParam),
     initialPageParam: null as string | null,
+    enabled: Boolean(accessToken),
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined
   });
   const registryReady = registryQuery.data?.registry_schema_version === 4;
@@ -97,7 +104,8 @@ export function ProfilePage() {
     if (["reconciling", "recovery"].includes(writePhaseRef.current.kind)) return;
     const nextDraft = profileQuery.data ? toDraft(profileQuery.data) : blankDraft();
     const responsePhaseOwnsAuthority = ["reconciling", "recovery", "committed"].includes(writePhaseRef.current.kind);
-    if (dirty && !responsePhaseOwnsAuthority) {
+    const savedProfileBelongsToSubject = savedProfileSubjectRef.current === subjectId;
+    if (dirty && savedProfileBelongsToSubject && !responsePhaseOwnsAuthority) {
       if (normalizeDraft(nextDraft) !== normalizeDraft(savedDraft ?? blankDraft())) {
         // Preserve an in-progress draft when a newer server response arrives.
         // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -107,6 +115,7 @@ export function ProfilePage() {
     }
     setDraft(nextDraft);
     setSavedDraft(nextDraft);
+    savedProfileSubjectRef.current = subjectId;
     setSavedTargets(profileQuery.data?.targets ?? null);
     setPreview(null);
     setPreviewDraftHash(null);
@@ -122,7 +131,8 @@ export function ProfilePage() {
     enabled: !writeOwnsAuthority,
     discard: () => {
       setSavedDraft(draft);
-      setSavedEffectiveFrom(selectedEffectiveFrom);
+      savedProfileSubjectRef.current = subjectId;
+      setSavedEffectiveFrom(selectedEffectiveFrom || null);
       setPendingServerProfile(undefined);
     }
   });
@@ -130,6 +140,7 @@ export function ProfilePage() {
   useLayoutEffect(() => {
     if (formSubjectRef.current === subjectId) return;
     formSubjectRef.current = subjectId;
+    savedProfileSubjectRef.current = undefined;
     setDraft(blankDraft());
     setSavedDraft(null);
     setEffectiveFrom("");
@@ -226,9 +237,10 @@ export function ProfilePage() {
         return;
       }
       const confirmed = toDraft(profile);
-      queryClient.setQueryData(["profile"], profile);
+      queryClient.setQueryData(profileQueryKey, profile);
       setDraft(confirmed);
       setSavedDraft(confirmed);
+      savedProfileSubjectRef.current = subjectId;
       setEffectiveFrom(submission.effectiveFrom);
       setSavedEffectiveFrom(submission.effectiveFrom);
       setSavedTargets(profile.targets);
@@ -259,6 +271,7 @@ export function ProfilePage() {
       const committedDraft = toDraft(submission.payload);
       setDraft(committedDraft);
       setSavedDraft(committedDraft);
+      savedProfileSubjectRef.current = subjectId;
       setEffectiveFrom(submission.effectiveFrom);
       setSavedEffectiveFrom(submission.effectiveFrom);
       setPendingServerProfile(undefined);

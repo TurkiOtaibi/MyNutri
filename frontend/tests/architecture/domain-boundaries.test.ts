@@ -164,8 +164,8 @@ describe("domain boundaries", () => {
       featureSource("diary"), featureSource("foods"),
     ].join("\n");
     for (const key of [
-      '["profile"]', '["calendar-authority"]', '["nutrition-registry"]',
-      '["target-plan-history"]', '["week", session?.user.id, weekStart]',
+      '["profile", subjectId]', '["calendar-authority", subjectId]', '["nutrition-registry"]',
+      '["target-plan-history", subjectId]', '["week", session?.user.id, weekStart]',
       '["entries", session?.user.id, activeDate]',
       '["diary-food-picker", session?.user.id, normalizedSearch]',
       '["food", foodId]', '["foods"]',
