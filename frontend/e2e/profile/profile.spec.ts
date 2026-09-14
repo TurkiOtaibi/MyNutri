@@ -14,15 +14,21 @@ const ADMIN_EMAIL = "admin.e2e@example.test";
 const ADMIN_PASSWORD = "E2e-only-password-2026!";
 const LOCAL_TEST_PASSWORD = "Acceptance-only-password-2026!";
 const SPECIALIST_REVIEW_REQUIRED =
-  "لا يمكن تفعيل هذا الهدف لأنه غير مناسب لحالتك الحالية. إذا رغبت في اتباع هذا الهدف، فاستشر أخصائي تغذية قبل اعتماده.";
+  "لا يمكن حفظ هذا الهدف لأنه غير مناسب لحالتك الحالية. إذا رغبت في اتباع هذا الهدف، فاستشر أخصائي تغذية قبل اعتماده.";
 const VERY_LOW_ENERGY_TARGET_BLOCKED =
-  "لا يمكن تفعيل هذا الهدف لأن السعرات المستهدفة منخفضة جدًا ولا تحقق الحد الأدنى الآمن المعتمد في النظام.";
-const BLOCKED_PREVIEW_DESCRIPTION = "هذه معاينة توضيحية فقط، ولا يمكن تفعيل هذا الهدف.";
+  "لا يمكن حفظ هذا الهدف لأن السعرات المستهدفة منخفضة جدًا ولا تحقق الحد الأدنى الآمن المعتمد في النظام.";
+const BLOCKED_PREVIEW_DESCRIPTION = "هذه معاينة توضيحية فقط، ولا يمكن حفظ هذا الهدف.";
 const profilePath = (url: URL) => url.origin === API_ORIGIN && url.pathname === "/profile";
 const previewPath = (url: URL) => url.pathname === "/profile/preview";
 const calendarPath = (url: URL) => url.pathname === "/account/calendar";
-const activationPath = (url: URL) =>
-  url.pathname === "/target-plans/activate" || url.pathname === "/target-plans/pending/replace";
+const targetPlanWritePath = (url: URL) =>
+  url.pathname === "/target-plans";
+
+function addIsoDays(value: string, days: number): string {
+  const [year, month, day] = value.split("-").map(Number);
+  const result = new Date(Date.UTC(year, month - 1, day + days));
+  return result.toISOString().slice(0, 10);
+}
 
 if (!["127.0.0.1", "localhost"].includes(new URL(AUTH_URL).hostname)) {
   throw new Error(`Profile tests refuse non-local auth target ${AUTH_URL}`);
@@ -72,29 +78,20 @@ async function assertBlockedResponsiveAndAxe(page: Page, message: string): Promi
   expect(accessibility.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
 }
 
-function activationPlan(profile: ProfileResponse, targets: TargetResponse) {
-  const existing = profile.pending_plan ?? profile.effective_plan;
-  return existing
-    ? { ...existing, targets }
-    : {
-        id: "00000000-0000-4000-8000-000000000005",
-        status: "scheduled",
-        effective_from: "2026-07-25",
-        effective_to: null,
-        calendar_timezone: "Asia/Riyadh",
-        predecessor_plan_id: null,
-        superseded_by_plan_id: null,
-        targets,
-        created_at: "2026-07-24T00:00:00Z",
-        activated_at: "2026-07-24T00:00:00Z",
-        closed_at: null,
-        superseded_at: null
-      };
+function writtenPlan(profile: ProfileResponse, targets: TargetResponse) {
+  const existing = profile.effective_plan;
+  return {
+    id: "00000000-0000-4000-8000-000000000005",
+    effective_from: existing?.effective_from ?? "2026-07-25",
+    revision: (existing?.revision ?? 0) + 1,
+    targets,
+    created_at: "2026-07-24T00:00:00Z"
+  };
 }
 
-function plan011ActivationPlan(profile: ProfileResponse, targets: TargetResponse) {
+function plan011WrittenPlan(profile: ProfileResponse, targets: TargetResponse) {
   return {
-    ...activationPlan(profile, targets),
+    ...writtenPlan(profile, targets),
     id: "00000000-0000-4000-8000-000000000011",
     targets
   };
@@ -267,7 +264,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await weight.fill("0");
     await expect(page.locator(".profile-save-bar")).toBeVisible();
     let activations = 0;
-    await page.route("**/target-plans/**", async (route) => {
+    await page.route(targetPlanWritePath, async (route) => {
       if (route.request().method() === "POST") activations += 1;
       await route.continue();
     });
@@ -335,6 +332,72 @@ test.describe("@profile Profile and targets redesign", () => {
     }
   });
 
+  test("@p0 effective date accepts today or future, rejects the past, and is sent to the unified write", async ({ page, originalProfile }) => {
+    const today = "2030-01-02";
+    const future = addIsoDays(today, 40);
+    let previewRequests = 0;
+    let writePayload: Record<string, unknown> | null = null;
+    await page.route(calendarPath, (route) => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      json: {
+        current_diary_date: today,
+        calendar_timezone: "Asia/Riyadh",
+        next_rollover_at: "2030-01-03T00:00:00+03:00"
+      }
+    }));
+    await page.route(previewPath, (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      previewRequests += 1;
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        json: { ...originalProfile.targets, preview_hash: "date-effective-preview", can_activate: true, safety_outcome: "normal" }
+      });
+    });
+    await page.route(targetPlanWritePath, (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      writePayload = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        json: {
+          plan: {
+            id: "00000000-0000-4000-8000-000000000902",
+            effective_from: future,
+            revision: 1,
+            targets: originalProfile.targets,
+            created_at: "2030-01-02T09:00:00Z"
+          },
+          replaced_plan: null
+        }
+      });
+    });
+
+    await page.goto("/profile?date-effective=1");
+    const effectiveDate = page.getByLabel("تاريخ سريان الأهداف");
+    await expect(effectiveDate).toHaveAttribute("min", today);
+    await expect(effectiveDate).toHaveValue(today);
+
+    await effectiveDate.fill(addIsoDays(today, -1));
+    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+    await expect(page.getByText("اختر تاريخًا يبدأ من اليوم")).toBeVisible();
+    await expect(effectiveDate).toBeFocused();
+    expect(previewRequests).toBe(0);
+    expect(writePayload).toBeNull();
+
+    await effectiveDate.fill(future);
+    await expect.poll(() => previewRequests).toBe(1);
+    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+    await page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" }).getByRole("button", { name: "حفظ الخطة" }).click();
+    await expect.poll(() => writePayload?.effective_from).toBe(future);
+    expect(writePayload).toEqual(expect.objectContaining({
+      effective_from: future,
+      confirmed: true,
+      expected_preview_hash: "date-effective-preview"
+    }));
+  });
+
   test("@plan008 numeric guidance enforces exact practical boundaries", async ({ page, originalProfile }) => {
     let previewRequests = 0;
     await page.route(previewPath, async (route) => {
@@ -379,8 +442,8 @@ test.describe("@profile Profile and targets redesign", () => {
     const preview = page.getByRole("region", { name: "الأهداف المتوقعة بعد الحفظ" });
     await expect(preview).toBeVisible();
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
-    const confirmation = page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ });
-    await confirmation.getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+    const confirmation = page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" });
+    await confirmation.getByRole("button", { name: "حفظ الخطة" }).click();
     await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
     await expect(height).toHaveValue("100");
     await expect(weight).toHaveValue("300");
@@ -394,13 +457,13 @@ test.describe("@profile Profile and targets redesign", () => {
     expect(stored.fat_pct).toBe(0.15);
   });
 
-  test("@p0 @plan011 @plan016 successful activation adopts the accepted response and clears navigation guard", async ({ page, originalProfile }) => {
+  test("@p0 @plan011 @plan016 successful plan write adopts the accepted response and clears navigation guard", async ({ page, originalProfile }) => {
     await page.goto("/profile");
     const nextWeight = originalProfile.weight_kg + 1;
     let previewRequests = 0;
     let activationRequests = 0;
     await page.route("**/profile/preview", async (route) => { previewRequests += 1; await route.continue(); });
-    await page.route("**/target-plans/**", async (route) => { if (route.request().method() === "POST") activationRequests += 1; await route.continue(); });
+    await page.route(targetPlanWritePath, async (route) => { if (route.request().method() === "POST") activationRequests += 1; await route.continue(); });
     await page.getByLabel("الوزن").fill(String(nextWeight));
     const preview = page.getByRole("region", { name: "الأهداف المتوقعة بعد الحفظ" });
     await expect(preview).toBeVisible();
@@ -409,8 +472,8 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect.poll(() => previewRequests).toBe(1);
     const save = page.getByRole("button", { name: "مراجعة وتأكيد" });
     await save.click();
-    const confirmation = page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ });
-    await confirmation.getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).evaluate((element) => {
+    const confirmation = page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" });
+    await confirmation.getByRole("button", { name: "حفظ الخطة" }).evaluate((element) => {
       const button = element as HTMLButtonElement;
       button.click();
       button.click();
@@ -424,27 +487,27 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(page).toHaveURL(/\/diary$/);
   });
 
-  test("@plan011 @plan016 pending activation keeps its draft and guard until acceptance", async ({ page, originalProfile }) => {
+  test("@plan011 @plan016 in-flight plan write keeps its draft and guard until acceptance", async ({ page, originalProfile }) => {
     const targets = await mockPlan011Preview(page, originalProfile);
     let activationRequests = 0;
     let releaseActivation!: () => void;
     const activationGate = new Promise<void>((resolve) => { releaseActivation = resolve; });
-    await page.route(activationPath, async (route) => {
+    await page.route(targetPlanWritePath, async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       activationRequests += 1;
       await activationGate;
       await route.fulfill({
         status: 201,
         contentType: "application/json",
-        json: { plan: plan011ActivationPlan(originalProfile, targets), replaced_plan: null }
+        json: { plan: plan011WrittenPlan(originalProfile, targets), replaced_plan: null }
       });
     });
 
     await page.goto("/profile?plan011-pending=1");
     const heldDraft = await changedWeight(page, originalProfile);
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
-    const dialog = page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ });
-    const confirm = dialog.getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ });
+    const dialog = page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" });
+    const confirm = dialog.getByRole("button", { name: "حفظ الخطة" });
     await confirm.evaluate((element) => {
       const button = element as HTMLButtonElement;
       button.click();
@@ -496,9 +559,9 @@ test.describe("@profile Profile and targets redesign", () => {
   });
 
   for (const reconciliation of ["error", "empty", "stale"] as const) {
-    test(`@plan011 accepted activation survives ${reconciliation} Profile reconciliation`, async ({ page, originalProfile }) => {
+    test(`@plan011 accepted plan write survives ${reconciliation} Profile reconciliation`, async ({ page, originalProfile }) => {
       const targets = await mockPlan011Preview(page, originalProfile);
-      const acceptedPlan = plan011ActivationPlan(originalProfile, targets);
+      const acceptedPlan = plan011WrittenPlan(originalProfile, targets);
       let accepted = false;
       let allowFresh = false;
       let acceptedPayload: ProfileInput | null = null;
@@ -516,7 +579,7 @@ test.describe("@profile Profile and targets redesign", () => {
               ...originalProfile,
               ...acceptedPayload,
               targets,
-              pending_plan: acceptedPlan
+              effective_plan: acceptedPlan
             }
           });
         }
@@ -528,7 +591,7 @@ test.describe("@profile Profile and targets redesign", () => {
         }
         return route.fulfill({ status: 200, contentType: "application/json", json: originalProfile });
       });
-      await page.route(activationPath, async (route) => {
+      await page.route(targetPlanWritePath, async (route) => {
         if (route.request().method() !== "POST") return route.continue();
         activationRequests += 1;
         acceptedPayload = route.request().postDataJSON() as ProfileInput;
@@ -543,7 +606,7 @@ test.describe("@profile Profile and targets redesign", () => {
       await page.goto(`/profile?plan011-reconciliation=${reconciliation}`);
       const acceptedWeight = await changedWeight(page, originalProfile);
       await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
-      await page.getByRole("dialog").getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "حفظ الخطة" }).click();
 
       const recovery = page.getByRole("status").filter({ hasText: "تعذر تحديث البيانات المعروضة" });
       await expect(recovery).toBeVisible();
@@ -563,16 +626,16 @@ test.describe("@profile Profile and targets redesign", () => {
     });
   }
 
-  test("@plan011 first Profile activation retains accepted truth when reconciliation is empty", async ({ page, originalProfile }) => {
+  test("@plan011 first Profile plan write retains accepted truth when reconciliation is empty", async ({ page, originalProfile }) => {
     const targets = await mockPlan011Preview(page, originalProfile);
-    const acceptedPlan = plan011ActivationPlan(originalProfile, targets);
+    const acceptedPlan = plan011WrittenPlan(originalProfile, targets);
     let activationRequests = 0;
     await page.route(profilePath, (route) =>
       route.request().method() === "GET" && route.request().resourceType() === "fetch"
         ? route.fulfill({ status: 404, contentType: "application/json", json: { detail: "not found" } })
         : route.continue()
     );
-    await page.route(activationPath, async (route) => {
+    await page.route(targetPlanWritePath, async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       activationRequests += 1;
       await route.fulfill({
@@ -587,7 +650,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.getByLabel("الطول").fill("170");
     await page.getByLabel("الوزن").fill("70");
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "حفظ الخطة" }).click();
 
     await expect(page.getByRole("status").filter({ hasText: "تعذر تحديث البيانات المعروضة" })).toBeVisible();
     await expect(page.getByLabel("الوزن")).toHaveValue("70");
@@ -595,7 +658,7 @@ test.describe("@profile Profile and targets redesign", () => {
     expect(activationRequests).toBe(1);
   });
 
-  test("@p0 cut intensity survives edits and activation payloads", async ({ page, originalProfile }) => {
+  test("@p0 cut intensity survives edits and plan write payloads", async ({ page, originalProfile }) => {
     let currentProfile = structuredClone(originalProfile);
     let expectedIntensity: 0.15 | 0.25 = 0.15;
     let latestTargets = originalProfile.targets;
@@ -617,7 +680,7 @@ test.describe("@profile Profile and targets redesign", () => {
         return latestTargets;
       });
     });
-    await page.route(activationPath, async (route) => {
+    await page.route(targetPlanWritePath, async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       const payload = route.request().postDataJSON() as ProfileInput & { expected_preview_hash: string };
       activationPayloads.push(payload);
@@ -631,7 +694,7 @@ test.describe("@profile Profile and targets redesign", () => {
       await route.fulfill({
         status: 201,
         contentType: "application/json",
-        json: { plan: activationPlan(currentProfile, latestTargets), replaced_plan: null }
+        json: { plan: writtenPlan(currentProfile, latestTargets), replaced_plan: null }
       });
     });
 
@@ -653,8 +716,8 @@ test.describe("@profile Profile and targets redesign", () => {
         await changedWeight(page, currentProfile, index + 1);
         await expect.poll(() => previewPayloads.length).toBe(index + 1);
         await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
-        const confirmation = page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ });
-        await confirmation.getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+        const confirmation = page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" });
+        await confirmation.getByRole("button", { name: "حفظ الخطة" }).click();
         await expect.poll(() => activationPayloads.length).toBe(index + 1);
         await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
         expect(currentProfile.selected_cut_intensity).toBe(intensity);
@@ -673,7 +736,7 @@ test.describe("@profile Profile and targets redesign", () => {
       previewPayloads.push(previewPayload);
       return route.continue();
     });
-    await page.route(activationPath, (route) => {
+    await page.route(targetPlanWritePath, (route) => {
       if (route.request().method() !== "POST") return route.continue();
       const activationPayload = route.request().postDataJSON() as ProfileInput;
       activationPayloads.push(activationPayload);
@@ -727,7 +790,7 @@ test.describe("@profile Profile and targets redesign", () => {
       await expect.poll(() => previewPayloads.at(-1)?.goal).toBe("maintain");
       await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
       await page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة/ })
-        .getByRole("button", { name: "تفعيل الخطة" }).click();
+        .getByRole("button", { name: "حفظ الخطة" }).click();
       await expect.poll(() => activationPayloads.at(-1)?.goal).toBe("maintain");
       expect(activationPayloads.at(-1)?.selected_cut_intensity).toBe(0.15);
       await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
@@ -736,7 +799,7 @@ test.describe("@profile Profile and targets redesign", () => {
     }
   });
 
-  test("@p0 specialist review preview blocks activation", async ({ page, originalProfile }) => {
+  test("@p0 specialist review preview blocks plan writes", async ({ page, originalProfile }) => {
     let boundary = 800;
     let activationPosts = 0;
     await page.route(previewPath, (route) => fulfillPreview(route, (targets) => ({
@@ -747,7 +810,7 @@ test.describe("@profile Profile and targets redesign", () => {
       safety_outcome: "specialist_review_required",
       can_activate: false
     })));
-    await page.route(activationPath, async (route) => {
+    await page.route(targetPlanWritePath, async (route) => {
       if (route.request().method() === "POST") activationPosts += 1;
       await route.continue();
     });
@@ -771,7 +834,7 @@ test.describe("@profile Profile and targets redesign", () => {
       await expect(explanation.getByText(SPECIALIST_REVIEW_REQUIRED, { exact: true })).toBeVisible();
       await expect(explanation).toHaveAttribute("aria-live", "assertive");
       await expect(explanation).toBeFocused();
-      await expect(page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ })).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" })).toHaveCount(0);
       expect(activationPosts).toBe(0);
 
       if (index === 0) {
@@ -779,14 +842,14 @@ test.describe("@profile Profile and targets redesign", () => {
         await reviewButton.click();
         explanation = preview.getByRole("alert").filter({ hasText: SPECIALIST_REVIEW_REQUIRED });
         await expect(explanation).toBeFocused();
-        await expect(page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ })).toHaveCount(0);
+        await expect(page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" })).toHaveCount(0);
         expect(activationPosts).toBe(0);
         await assertBlockedResponsiveAndAxe(page, SPECIALIST_REVIEW_REQUIRED);
       }
     }
   });
 
-  test("@p0 very low energy preview blocks activation", async ({ page, originalProfile }) => {
+  test("@p0 very low energy preview blocks plan writes", async ({ page, originalProfile }) => {
     let activationPosts = 0;
     await page.route(previewPath, (route) => fulfillPreview(route, (targets) => ({
       ...targets,
@@ -796,7 +859,7 @@ test.describe("@profile Profile and targets redesign", () => {
       safety_outcome: "very_low_energy_blocked",
       can_activate: false
     })));
-    await page.route(activationPath, async (route) => {
+    await page.route(targetPlanWritePath, async (route) => {
       if (route.request().method() === "POST") activationPosts += 1;
       await route.continue();
     });
@@ -815,7 +878,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(explanation.getByText(VERY_LOW_ENERGY_TARGET_BLOCKED, { exact: true })).toBeVisible();
     await expect(explanation).toHaveAttribute("aria-live", "assertive");
     await expect(explanation).toBeFocused();
-    await expect(page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ })).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" })).toHaveCount(0);
     expect(activationPosts).toBe(0);
     await assertBlockedResponsiveAndAxe(page, VERY_LOW_ENERGY_TARGET_BLOCKED);
   });
@@ -871,13 +934,13 @@ test.describe("@profile Profile and targets redesign", () => {
       };
       return latestTargets;
     }));
-    await page.route(activationPath, async (route) => {
+    await page.route(targetPlanWritePath, async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       activationPosts += 1;
       await route.fulfill({
         status: 201,
         contentType: "application/json",
-        json: { plan: activationPlan(originalProfile, latestTargets), replaced_plan: null }
+        json: { plan: writtenPlan(originalProfile, latestTargets), replaced_plan: null }
       });
     });
     await page.goto("/profile?authoritative-disclosures=1");
@@ -898,14 +961,14 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(preview).toContainText("70");
     await expect(preview).not.toContainText("null");
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
-    const confirmation = page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ });
+    const confirmation = page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" });
     await expect(confirmation).toBeVisible();
-    await confirmation.getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+    await confirmation.getByRole("button", { name: "حفظ الخطة" }).click();
     await expect.poll(() => activationPosts).toBe(1);
     await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
   });
 
-  test("@p0 activation safety errors preserve the draft", async ({ page, originalProfile }) => {
+  test("@p0 plan-write safety errors preserve the draft", async ({ page, originalProfile }) => {
     const cases = [
       ["SPECIALIST_REVIEW_REQUIRED", SPECIALIST_REVIEW_REQUIRED],
       ["VERY_LOW_ENERGY_TARGET_BLOCKED", VERY_LOW_ENERGY_TARGET_BLOCKED]
@@ -917,13 +980,13 @@ test.describe("@profile Profile and targets redesign", () => {
       previewRequests += 1;
       return fulfillPreview(route, (targets) => ({ ...targets, safety_outcome: "normal", can_activate: true }));
     });
-    await page.route(activationPath, async (route) => {
+    await page.route(targetPlanWritePath, async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       activationPosts += 1;
       await route.fulfill({
         status: 422,
         contentType: "application/json",
-        json: { error: { code: activeCase[0], message_ar: "لا يمكن تفعيل هذه النتيجة وفق سياسة السلامة.", details: {}, request_id: crypto.randomUUID() } }
+        json: { error: { code: activeCase[0], message_ar: "لا يمكن حفظ هذه النتيجة وفق سياسة السلامة.", details: {}, request_id: crypto.randomUUID() } }
       });
     });
 
@@ -933,13 +996,13 @@ test.describe("@profile Profile and targets redesign", () => {
       const retainedWeight = await changedWeight(page, originalProfile, index + 1);
       const previewsBeforeActivation = previewRequests;
       await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
-      await page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ })
-        .getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+      await page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" })
+        .getByRole("button", { name: "حفظ الخطة" }).click();
       const recovery = page.getByRole("alert").filter({ hasText: scenario[1] });
       await expect(recovery.getByText(scenario[1], { exact: true })).toBeVisible();
       await expect(recovery).toBeFocused();
       await expect(page.getByLabel("الوزن")).toHaveValue(retainedWeight);
-      await expect(page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة|استبدال الخطة المجدولة/ })).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" })).toHaveCount(0);
       await page.getByRole("button", { name: "تحديث المعاينة" }).click();
       await expect.poll(() => previewRequests).toBeGreaterThan(previewsBeforeActivation);
       expect(activationPosts).toBe(index + 1);
@@ -952,14 +1015,14 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.getByLabel("الطول").fill(String(nextHeight));
     let fail = true;
     const idempotencyKeys: string[] = [];
-    await page.route("**/target-plans/**", async (route) => {
+    await page.route(targetPlanWritePath, async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       idempotencyKeys.push(route.request().headers()["idempotency-key"]);
       if (fail) return route.abort("failed");
       return route.continue();
     });
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "حفظ الخطة" }).click();
     await expect(page.getByText("تعذر حفظ التغييرات")).toBeVisible();
     await expect(page.getByLabel("الطول")).toHaveValue(String(nextHeight));
     let profileRefetches = 0;
@@ -992,7 +1055,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.unroute(profilePath);
     fail = false;
     await page.getByRole("button", { name: "إعادة المحاولة" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "حفظ الخطة" }).click();
     await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
     expect(idempotencyKeys).toHaveLength(2);
     expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
@@ -1223,7 +1286,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await errorPage.close();
   });
 
-  test("@p1 Registry unavailable and incompatible states block activation without fabricated metadata", async ({ page, originalProfile }) => {
+  test("@p1 Registry unavailable and incompatible states block writes without fabricated metadata", async ({ page, originalProfile }) => {
     await page.route("**/nutrition/registry", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "unavailable" }) }));
     await page.goto("/profile?registry-unavailable=1");
     await expect(page.getByRole("alert").filter({ hasText: "تعذر تحميل البيانات الغذائية" })).toBeVisible();
@@ -1242,37 +1305,33 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(page.getByRole("button", { name: "مراجعة وتأكيد" })).toBeDisabled();
   });
 
-  test("@p1 target plan history exposes lifecycle state without raw plan documents", async ({ page, originalProfile }) => {
+  test("@p1 target plan history exposes immutable revisions without raw plan documents", async ({ page, originalProfile }) => {
     await page.route("**/target-plans?**", (route) => route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
         items: [{
           id: "00000000-0000-0000-0000-000000000901",
-          status: "superseded_before_effective",
           effective_from: "2026-07-18",
-          effective_to: null,
-          calendar_timezone: "Asia/Riyadh",
-          predecessor_plan_id: null,
-          superseded_by_plan_id: "00000000-0000-0000-0000-000000000902",
+          revision: 2,
           targets: originalProfile.targets,
-          created_at: "2026-07-17T09:00:00Z",
-          activated_at: null,
-          closed_at: null,
-          superseded_at: "2026-07-17T10:00:00Z"
+          created_at: "2026-07-17T09:00:00Z"
         }],
         next_cursor: null
       })
     }));
     await page.goto("/profile?plan-history=1");
     const history = page.getByRole("region", { name: "سجل الخطط" });
-    await expect(history).toContainText("استُبدلت قبل أن تبدأ");
+    await expect(history).toContainText("النسخة 2");
     await expect(history).toContainText("2026-07-18");
     await expect(history).not.toContainText("preview_hash");
+    for (const retiredCopy of ["الخطة المجدولة", "الأهداف المجدولة", "مجدولة", "تفعيل الخطة", "استبدال الخطة المجدولة؟"]) {
+      await expect(page.getByText(retiredCopy, { exact: true })).toHaveCount(0);
+    }
   });
 
-  test("@p1 stale activation responses require a fresh preview without discarding the draft", async ({ page, originalProfile }) => {
-    await page.route("**/target-plans/**", (route) => {
+  test("@p1 stale write responses require a fresh preview without discarding the draft", async ({ page, originalProfile }) => {
+    await page.route(targetPlanWritePath, (route) => {
       if (route.request().method() !== "POST") return route.continue();
       return route.fulfill({
         status: 409,
@@ -1284,7 +1343,7 @@ test.describe("@profile Profile and targets redesign", () => {
     const nextWeight = originalProfile.weight_kg + 1;
     await page.getByLabel("الوزن").fill(String(nextWeight));
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "حفظ الخطة" }).click();
     await expect(page.getByText("تغيّرت المعاينة. راجع الأهداف المحدثة ثم أكد مجددًا")).toBeVisible();
     await expect(page.getByLabel("الوزن")).toHaveValue(String(nextWeight));
     await expect(page.getByRole("button", { name: "مراجعة المعاينة" })).toBeEnabled();

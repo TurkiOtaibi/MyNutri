@@ -1,7 +1,7 @@
 import { AlertTriangle, Check, Info } from "lucide-react";
 import type { RefObject } from "react";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels } from "@/lib/nutrients";
-import type { Goal, NutritionRegistryResponse, ProfileResponse, TargetPlanSummary, TargetResponse } from "@/lib/types";
+import type { Goal, NutritionRegistryResponse, TargetPlanSummary, TargetResponse } from "@/lib/types";
 import { blockingSafetyMessage, formatTargetNumber, isPreviewActivatable, type BlockingSafetyOutcome } from "./profile-model";
 
 export function TargetsCard({ title, badge, targets }: { title: string; badge: string; targets: TargetResponse | null }) {
@@ -55,13 +55,6 @@ export function RegistryState({ kind, onRetry }: { kind: "loading" | "unavailabl
   );
 }
 
-const planStatusLabels: Record<TargetPlanSummary["status"], string> = {
-  active: "حالية",
-  scheduled: "مجدولة",
-  closed: "سابقة",
-  superseded_before_effective: "استُبدلت قبل أن تبدأ"
-};
-
 export function TargetPlanHistory({ plans, pending, failed, hasMore, loadingMore, onRetry, onLoadMore }: { plans: TargetPlanSummary[]; pending: boolean; failed: boolean; hasMore: boolean; loadingMore: boolean; onRetry: () => void; onLoadMore: () => void }) {
   return (
     <section className="profile-plan-history" aria-labelledby="target-plan-history-title">
@@ -69,22 +62,8 @@ export function TargetPlanHistory({ plans, pending, failed, hasMore, loadingMore
       {pending ? <div className="profile-history-loading" role="status">جارٍ تحميل سجل الخطط</div> : null}
       {failed ? <div className="profile-history-error" role="alert">تعذر تحميل سجل الخطط<button className="btn" type="button" onClick={onRetry}>إعادة المحاولة</button></div> : null}
       {!pending && !failed && plans.length === 0 ? <p>لا توجد خطط محفوظة بعد.</p> : null}
-      {!failed && plans.length > 0 ? <ol>{plans.map((plan) => <li key={plan.id}><div><strong>{planStatusLabels[plan.status]}</strong><span>تبدأ <bdi dir="ltr">{plan.effective_from}</bdi>{plan.effective_to ? <> وتنتهي قبل <bdi dir="ltr">{plan.effective_to}</bdi></> : null}</span></div><bdi dir="ltr">{plan.targets.target_calories} kcal</bdi></li>)}</ol> : null}
+      {!failed && plans.length > 0 ? <ol>{plans.map((plan) => <li key={plan.id}><div><strong>النسخة <bdi dir="ltr">{plan.revision}</bdi></strong><span>تاريخ السريان <bdi dir="ltr">{plan.effective_from}</bdi></span></div><bdi dir="ltr">{plan.targets.target_calories} kcal</bdi></li>)}</ol> : null}
       {hasMore ? <button className="profile-text-action" type="button" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? "جارٍ التحميل…" : "عرض خطط أقدم"}</button> : null}
-    </section>
-  );
-}
-
-export function ScheduledPlanCard({ plan }: { plan: NonNullable<ProfileResponse["pending_plan"]> }) {
-  return (
-    <section className="profile-preview-card" aria-label="الأهداف المجدولة">
-      <header><span>الخطة المجدولة</span><strong>تبدأ في <bdi dir="ltr">{plan.effective_from}</bdi></strong></header>
-      <div className="profile-preview-values">
-        <strong><bdi>{plan.targets.target_calories}</bdi> سعرة</strong>
-        <span>بروتين <bdi dir="ltr">{formatTargetNumber(plan.targets.protein_g)}</bdi> جم</span>
-        <span>كارب <bdi dir="ltr">{formatTargetNumber(plan.targets.carb_g)}</bdi> جم</span>
-        <span>دهون <bdi dir="ltr">{formatTargetNumber(plan.targets.fat_g)}</bdi> جم</span>
-      </div>
     </section>
   );
 }
@@ -112,13 +91,13 @@ export function ExpectedTargetsCard({
   const safetyMessage = outcome
     ? blockingSafetyMessage(outcome) ??
       (targets && !isPreviewActivatable(targets)
-        ? "تعذر التحقق من إمكانية تفعيل هذا الهدف. حدّث المعاينة قبل المتابعة."
+        ? "تعذر التحقق من إمكانية حفظ هذا الهدف. حدّث المعاينة قبل المتابعة."
         : null)
     : null;
   const previewDescription = targets && isPreviewActivatable(targets)
     ? "ستُطبق هذه الأهداف بعد حفظ التغييرات."
     : safetyMessage
-      ? "هذه معاينة توضيحية فقط، ولا يمكن تفعيل هذا الهدف."
+      ? "هذه معاينة توضيحية فقط، ولا يمكن حفظ هذا الهدف."
       : "راجع نتيجة المعاينة قبل المتابعة.";
   const announceSafety = safetyAttemptSequence > 0;
   return (
@@ -184,12 +163,12 @@ export function ExpectedTargetsCard({
           data-focus-requested={announceSafety ? "true" : "false"}
         >
           <AlertTriangle size={20} aria-hidden="true" />
-          <div><strong>لا يمكن تفعيل الهدف</strong><p>{safetyMessage}</p></div>
+          <div><strong>لا يمكن حفظ الهدف</strong><p>{safetyMessage}</p></div>
         </div>
       ) : !pending && !failed && isPreviewActivatable(targets) ? (
         <div className="profile-safety-decision is-available" role="status">
           <Check size={20} aria-hidden="true" />
-          <div><strong>الهدف متاح للتفعيل</strong><p>راجِع القيم ثم تابع إلى التأكيد.</p></div>
+          <div><strong>الهدف جاهز للحفظ</strong><p>راجِع القيم ثم تابع إلى التأكيد.</p></div>
         </div>
       ) : null}
     </section>

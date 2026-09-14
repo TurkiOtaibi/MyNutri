@@ -6,9 +6,11 @@
 > Groups, Food Analytical Traits, Pattern Analysis, or Weekly Priority. Current
 > authority is [V2 Scope and Decisions](../v2/01_V2_SCOPE_AND_DECISIONS.md),
 > [Shared Food Catalog](../v2/04_SHARED_FOOD_CATALOG.md), and
-> [V2 Food Taxonomy](../v2/05_FOOD_TAXONOMY_V2.md). Unaffected Target Plan,
-> authentication, authorization, nutrient-nullability, and Diary-event requirements
-> remain applicable only where they do not conflict with those current authorities.
+> [V2 Food Taxonomy](../v2/05_FOOD_TAXONOMY_V2.md), and [Target Plan
+> date-effective model](../v2/09_TARGET_PLAN_DATE_EFFECTIVE_MODEL.md). Target
+> Plan lifecycle and activation/pending traceability is also superseded.
+> Authentication, authorization, nutrient-nullability, and unaffected calculation
+> requirements remain applicable only where they do not conflict with current authority.
 
 ## Metadata
 

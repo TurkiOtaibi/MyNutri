@@ -1,5 +1,11 @@
 # H04 Approved Product Owner Direction
 
+> **SUPERSEDED FOR CURRENT TARGET PLAN IMPLEMENTATION.** This document is
+> retained as historical lifecycle evidence. The current authority is the
+> [Target Plan date-effective model](../v2/09_TARGET_PLAN_DATE_EFFECTIVE_MODEL.md),
+> which removes lifecycle status, activation, pending plans, and mutable
+> lifecycle transitions while retaining immutable calculation/version evidence.
+
 ## 1. Issue Identity
 
 | Field | Value |

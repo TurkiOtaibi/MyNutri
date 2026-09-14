@@ -15,7 +15,6 @@ from app.schemas import (
     WeekSummary,
 )
 from app.services.diary import add_totals, empty_totals, totals_for_entry
-from app.services.profile import to_target_response
 from app.services.target_plans import (
     WeekTargetContext,
     resolve_week_target_context,
@@ -232,12 +231,6 @@ def _weekly_summary(
         )
     ).all()
 
-    targets = (
-        to_target_response(target_context.profile)
-        if target_context.profile is not None
-        else None
-    )
-
     days: list[DaySummary] = []
     weekly_totals = empty_totals()
     entries_by_date: dict[date, list[tuple[DiaryEntry, Food]]] = {}
@@ -253,7 +246,12 @@ def _weekly_summary(
         weekly_totals = add_totals(weekly_totals, day.totals)
         days.append(day)
 
-    return WeekSummary(start=week_start, end=week_end, days=days, weekly_totals=weekly_totals, targets=targets)
+    return WeekSummary(
+        start=week_start,
+        end=week_end,
+        days=days,
+        weekly_totals=weekly_totals,
+    )
 
 
 def weekly_summary(session: Session, principal: PrincipalContext, start: date) -> WeekSummary:

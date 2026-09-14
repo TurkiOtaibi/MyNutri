@@ -521,7 +521,6 @@ def test_plan025_postgresql_budgets_read_only_and_bounded_pages(
     session.autoflush = False
     monkeypatch.setattr(session, "flush", forbidden)
     monkeypatch.setattr(session, "commit", forbidden)
-    monkeypatch.setattr("app.services.target_plans._advance_lifecycle", forbidden)
     with _capture_statements(session) as statements:
         page = admin_route.list_users(
             page=1,
@@ -655,7 +654,7 @@ def test_plan025_migration_rehearsal_catalog_and_reversibility(
     plan025_postgresql_database: str,
 ) -> None:
     heads = _run_alembic(plan025_postgresql_database, "heads")
-    assert heads.stdout.strip() == "a6c81e4f2d90 (head)"
+    assert heads.stdout.strip() == "b7d42e9a1c36 (head)"
     _run_alembic(plan025_postgresql_database, "upgrade", "9f2a1b6c3d05")
     engine = sa_create_engine(plan025_postgresql_database)
     try:

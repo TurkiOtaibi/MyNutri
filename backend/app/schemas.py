@@ -236,17 +236,10 @@ def validate_profile_domain(profile: ProfileUpsert, effective_date: date) -> Pro
 
 class TargetPlanSummary(BaseModel):
     id: UUID
-    status: Literal["active", "scheduled", "closed", "superseded_before_effective"]
     effective_from: date
-    effective_to: date | None
-    calendar_timezone: str
-    predecessor_plan_id: UUID | None
-    superseded_by_plan_id: UUID | None
+    revision: int
     targets: TargetResponse
     created_at: datetime
-    activated_at: datetime | None
-    closed_at: datetime | None
-    superseded_at: datetime | None
 
 
 class TargetSourceResponse(BaseModel):
@@ -258,17 +251,16 @@ class TargetSourceResponse(BaseModel):
     targets: TargetResponse | None
 
 
-class TargetPlanActivationRequest(ProfilePreview):
+class TargetPlanPreviewRequest(ProfilePreview):
+    effective_from: date
+
+
+class TargetPlanWriteRequest(TargetPlanPreviewRequest):
     confirmed: Literal[True]
     expected_preview_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
 
 
-class TargetPlanReplacementRequest(ProfilePreview):
-    replace_confirmed: Literal[True]
-    expected_preview_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
-
-
-class TargetPlanActivationResponse(BaseModel):
+class TargetPlanWriteResponse(BaseModel):
     plan: TargetPlanSummary
     replaced_plan: TargetPlanSummary | None = None
 
@@ -284,7 +276,6 @@ class ProfileResponse(ProfileUpsert):
     targets: TargetResponse
     target_provenance: Literal["versioned_plan", "legacy_unversioned"] = "legacy_unversioned"
     effective_plan: TargetPlanSummary | None = None
-    pending_plan: TargetPlanSummary | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -734,7 +725,6 @@ class AdminUserDetail(BaseModel):
     account: AdminUserSummary
     profile: ProfileResponse | None
     current_target: TargetSourceResponse | None
-    pending_plan: TargetPlanSummary | None
     plan_history: TargetPlanHistoryResponse
 
 
@@ -869,7 +859,6 @@ class WeekSummary(BaseModel):
     end: date
     days: list[DaySummary]
     weekly_totals: NutritionTotals
-    targets: TargetResponse | None = None
 
 
 class SyncOperation(BaseModel):

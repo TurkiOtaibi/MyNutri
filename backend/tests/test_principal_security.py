@@ -27,7 +27,6 @@ from app.models import (
     PrincipalStatus,
     Profile,
     TargetPlan,
-    TargetPlanStatus,
     TargetProvenance,
 )
 from app.schemas import ProfileUpsert
@@ -136,15 +135,21 @@ def _seed_profile(session: Session, principal_id: UUID, payload: dict) -> Profil
     return profile
 
 
-def _activate_target(
+def _write_target(
     client: TestClient, payload: dict, idempotency_key: str
 ) -> dict:
-    preview = client.post("/profile/preview", json=payload, headers=headers("user-b"))
+    effective_from = current_diary_date().isoformat()
+    preview = client.post(
+        "/profile/preview",
+        json={**payload, "effective_from": effective_from},
+        headers=headers("user-b"),
+    )
     assert preview.status_code == 200, preview.text
     response = client.post(
-        "/target-plans/activate",
+        "/target-plans",
         json={
             **payload,
+            "effective_from": effective_from,
             "confirmed": True,
             "expected_preview_hash": preview.json()["preview_hash"],
         },
@@ -154,43 +159,29 @@ def _activate_target(
     return response.json()
 
 
-def _seed_active_and_due_targets(
+def _seed_current_target_revisions(
     client: TestClient, session: Session
 ) -> tuple[dict, dict]:
-    _activate_target(client, profile_payload(70), "active-target")
-    due_response = _activate_target(client, profile_payload(67), "due-target")
-    today = current_diary_date()
+    _write_target(client, profile_payload(70), "target-revision-1")
+    current_response = _write_target(client, profile_payload(67), "target-revision-2")
     plans = session.exec(
         select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_B)
     ).all()
-    active = next(plan for plan in plans if plan.status == TargetPlanStatus.active)
-    due = next(plan for plan in plans if plan.status == TargetPlanStatus.scheduled)
-    active.effective_from = today - timedelta(days=2)
-    active.effective_to = today - timedelta(days=1)
-    due.effective_from = today
-    session.add(active)
-    session.add(due)
-    session.commit()
-    lifecycle = {
+    plan_state = {
         plan.id: (
-            plan.status,
             plan.effective_from,
-            plan.effective_to,
-            plan.activated_at,
-            plan.closed_at,
-            plan.superseded_at,
+            plan.revision,
+            plan.calculation_document,
+            plan.created_at,
         )
-        for plan in (active, due)
+        for plan in plans
     }
-    return due_response, lifecycle
+    return current_response, plan_state
 
 
 def _install_admin_read_guards(monkeypatch, session: Session):
     engine = session.get_bind()
     statements: list[str] = []
-
-    def fail_lifecycle(*_args, **_kwargs) -> None:
-        raise AssertionError("admin monitoring invoked lifecycle advancement")
 
     def reject_writes(
         _conn, clauseelement, _multiparams, _params, _execution_options
@@ -214,7 +205,6 @@ def _install_admin_read_guards(monkeypatch, session: Session):
     def reject_flush(*_args, **_kwargs) -> None:
         raise AssertionError("admin monitoring flushed its transaction")
 
-    monkeypatch.setattr("app.services.target_plans._advance_lifecycle", fail_lifecycle)
     event.listen(engine, "before_execute", reject_writes)
     event.listen(engine, "before_cursor_execute", capture_cursor)
     event.listen(session, "before_flush", reject_flush)
@@ -227,16 +217,14 @@ def _install_admin_read_guards(monkeypatch, session: Session):
     return engine, statements, cleanup
 
 
-def _assert_lifecycle_unchanged(engine, expected: dict) -> None:
+def _assert_plans_unchanged(engine, expected: dict) -> None:
     with Session(engine) as fresh_session:
         actual = {
             plan.id: (
-                plan.status,
                 plan.effective_from,
-                plan.effective_to,
-                plan.activated_at,
-                plan.closed_at,
-                plan.superseded_at,
+                plan.revision,
+                plan.calculation_document,
+                plan.created_at,
             )
             for plan in fresh_session.exec(
                 select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_B)
@@ -482,8 +470,8 @@ def test_admin_monitoring_gets_execute_no_dml(
     security_context, monkeypatch, endpoint: str
 ) -> None:
     client, session = security_context
-    due_response, lifecycle = _seed_active_and_due_targets(client, session)
-    due_plan = due_response["plan"]
+    current_response, plan_state = _seed_current_target_revisions(client, session)
+    current_plan = current_response["plan"]
     today = current_diary_date()
     food = client.post(
         "/foods", json=food_payload("Monitoring food"), headers=headers("admin-a")
@@ -529,13 +517,12 @@ def test_admin_monitoring_gets_execute_no_dml(
             assert response.status_code == expected_status, response.text
             response_documents.append(response.json())
             if endpoint == "detail":
-                assert response.json()["current_target"]["plan"]["id"] == due_plan["id"]
-                assert response.json()["pending_plan"] is None
+                assert response.json()["current_target"]["plan"]["id"] == current_plan["id"]
             elif endpoint == "diary":
                 assert [item["entry_date"] for item in response.json()["items"]] == [today.isoformat()]
             elif endpoint == "diary_invalid":
                 assert response.json()["detail"]["code"] == "INVALID_CURSOR"
-            _assert_lifecycle_unchanged(engine, lifecycle)
+            _assert_plans_unchanged(engine, plan_state)
         assert response_documents[0] == response_documents[1]
     finally:
         cleanup()
@@ -550,7 +537,7 @@ def test_admin_monitoring_gets_execute_no_dml(
 
 def test_plan025_admin_diary_service_failure_executes_no_dml(security_context, monkeypatch) -> None:
     client, session = security_context
-    _, lifecycle = _seed_active_and_due_targets(client, session)
+    _, plan_state = _seed_current_target_revisions(client, session)
     engine, statements, cleanup = _install_admin_read_guards(monkeypatch, session)
     _reject_admin_commit(monkeypatch, session)
 
@@ -561,7 +548,7 @@ def test_plan025_admin_diary_service_failure_executes_no_dml(security_context, m
     try:
         with pytest.raises(RuntimeError, match="synthetic admin diary failure"):
             client.get(f"/admin/users/{PRINCIPAL_B}/diary", headers=headers("admin-a"))
-        _assert_lifecycle_unchanged(engine, lifecycle)
+        _assert_plans_unchanged(engine, plan_state)
     finally:
         cleanup()
 
@@ -575,6 +562,7 @@ def test_client_authoritative_identity_and_role_are_rejected(security_context) -
     for field in ("principal_id", "owner_id", "user_id", "role"):
         payload = profile_payload()
         payload[field] = "admin"
+        payload["effective_from"] = current_diary_date().isoformat()
         assert client.post("/profile/preview", json=payload, headers=headers("user-b")).status_code == 422
 
 

@@ -62,7 +62,6 @@ const plan025Detail = {
   account: { display_name: "مستخدم الاختبار", email: "plan025@example.test", status: "active", role: "user", created_at: "2026-08-01T12:00:00Z" },
   profile: null,
   current_target: null,
-  pending_plan: null,
   plan_history: { items: [], next_cursor: null }
 };
 const plan025FirstPage = {

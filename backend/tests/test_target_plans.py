@@ -1,49 +1,48 @@
 from datetime import date, datetime, timedelta, timezone
 import inspect
-import json
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
-from fastapi.testclient import TestClient
 from fastapi import Request
+from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.core.config import Settings, get_settings
 from app.core.auth import PrincipalContext, get_principal_context
-from app.core.calendar import current_diary_date, diary_calendar_authority
+from app.core.calendar import diary_calendar_authority
+from app.core.config import Settings, get_settings
 from app.db.session import get_session
 from app.main import app
-from app.services import diary as diary_service
 from app.models import (
     DefaultUnitType,
     DiaryEntry,
     Food,
     IdempotencyRecord,
+    IdempotencyState,
     LegacyTargetTransitionSnapshot,
     NutritionBasis,
     NutritionDataSource,
     Principal,
     Profile,
     TargetPlan,
-    TargetPlanStatus,
     TargetProvenance,
     UnitBasis,
+    utcnow,
 )
+from app.schemas import ProfileUpsert, TargetPlanWriteRequest
+from app.services import diary as diary_service
+from app.services.profile import to_profile_response
 from app.services.target_plans import (
-    project_targets,
+    _legacy_hash,
     resolve_target_binding,
     resolve_week_target_context,
     target_for_date,
 )
-from app.schemas import ProfileUpsert
-from app.services.profile import to_profile_response
 
 PRINCIPAL_A = UUID("00000000-0000-0000-0000-00000000000a")
 PRINCIPAL_B = UUID("00000000-0000-0000-0000-00000000000b")
 TODAY = date(2026, 7, 16)
-TOMORROW = date(2026, 7, 17)
 
 
 def profile_payload(weight: float = 80, intensity: float = 0.2) -> dict:
@@ -79,20 +78,31 @@ def target_plan_context(monkeypatch):
     def override_session():
         yield session
 
-    app.dependency_overrides[get_session] = override_session
-    app.dependency_overrides[get_settings] = lambda: settings
     def override_principal(request: Request) -> PrincipalContext:
         token = request.headers.get("Authorization", "").removeprefix("Bearer ")
         return PrincipalContext(PRINCIPAL_B if token == "token-b" else PRINCIPAL_A)
 
+    app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_principal_context] = override_principal
     fixed_authority = diary_calendar_authority(
         datetime(2026, 7, 15, 21, 0, 0, tzinfo=timezone.utc)
     )
     monkeypatch.setattr(
-        "app.services.target_plans.diary_calendar_authority", lambda: fixed_authority
+        "app.services.target_plans.current_diary_date", lambda: TODAY
     )
-    monkeypatch.setattr("app.services.target_plans.current_diary_date", lambda: TODAY)
+    monkeypatch.setattr(
+        "app.api.routes.target_plans.current_diary_date", lambda: TODAY
+    )
+    monkeypatch.setattr(
+        "app.api.routes.profile.diary_calendar_authority", lambda: fixed_authority
+    )
+    monkeypatch.setattr(
+        "app.services.aggregation.diary_calendar_authority", lambda: fixed_authority
+    )
+    monkeypatch.setattr(
+        "app.api.routes.diary.diary_calendar_authority", lambda: fixed_authority
+    )
     client = TestClient(app)
     try:
         yield client, session
@@ -102,101 +112,46 @@ def target_plan_context(monkeypatch):
         session.close()
 
 
-def headers(token: str, key: str | None = None) -> dict[str, str]:
+def headers(token: str = "token-a", key: str | None = None) -> dict[str, str]:
     result = {"Authorization": f"Bearer {token}"}
-    if key:
+    if key is not None:
         result["Idempotency-Key"] = key
     return result
 
 
-def test_diary_create_preserves_target_binding_lock_order() -> None:
-    source = inspect.getsource(diary_service.create_entry)
-    symbols = [
-        "_lock_owner_for_target_binding(",
-        "resolve_target_binding(",
-        "lock_food_namespace_for_logging(",
-        "get_active_food_for_logging(",
-    ]
-    offsets = [source.index(symbol) for symbol in symbols]
-    assert offsets == sorted(offsets)
-
-
-def test_target_binding_uses_the_request_captured_date(
-    target_plan_context, monkeypatch
-) -> None:
-    _, session = target_plan_context
-    monkeypatch.setattr(
-        "app.services.target_plans.current_diary_date",
-        lambda: (_ for _ in ()).throw(AssertionError("must not recapture the clock")),
+def preview(
+    client: TestClient,
+    payload: dict,
+    effective_from: date = TODAY,
+    token: str = "token-a",
+) -> dict:
+    response = client.post(
+        "/profile/preview",
+        json=payload | {"effective_from": effective_from.isoformat()},
+        headers=headers(token),
     )
-    binding = resolve_target_binding(
-        session,
-        PrincipalContext(PRINCIPAL_A),
-        TODAY,
-        authoritative_current_date=TODAY,
-    )
-    assert binding.provenance.value == "no_target_source"
+    assert response.status_code == 200, response.text
+    return response.json()
 
 
-def test_diary_create_still_binds_the_active_target_plan(
-    target_plan_context, monkeypatch
-) -> None:
-    client, session = target_plan_context
-    authority = diary_calendar_authority(
-        datetime(2026, 7, 15, 21, 0, 0, tzinfo=timezone.utc)
-    )
-    monkeypatch.setattr(
-        "app.api.routes.diary.diary_calendar_authority", lambda: authority
-    )
-    activation = activate(client, profile_payload(), "diary-binding", token="token-b")
-    assert activation.status_code == 201, activation.text
-
-    food = Food(
-        principal_id=PRINCIPAL_A,
-        name="Diary target binding",
-        normalized_name="diary target binding",
-        primary_category="other",
-        subcategory="other",
-        nutrition_basis=NutritionBasis.per_100g,
-        default_unit_type=DefaultUnitType.g,
-        unit_amount=1,
-        unit_basis=UnitBasis.g,
-        calories=100,
-        protein_g=1,
-        carb_g=2,
-        fat_g=3,
-        nutrition_data_source=NutritionDataSource.estimated,
-    )
-    session.add(food)
-    session.commit()
-
-    created = client.post(
-        "/diary/entries",
-        json={
-            "food_id": str(food.id),
-            "entry_date": TODAY.isoformat(),
-            "quantity": 1,
-            "meal_type": "breakfast",
-        },
-        headers=headers("token-b"),
-    )
-    assert created.status_code == 201, created.text
-    assert created.json()["target_provenance"] == "versioned_plan"
-    assert created.json()["target_plan_id"] == activation.json()["plan"]["id"]
-
-
-def _profile_state(profile: Profile) -> tuple:
-    return (
-        profile.sex,
-        profile.birth_date,
-        float(profile.height_cm),
-        float(profile.weight_kg),
-        profile.activity_level,
-        profile.goal,
-        float(profile.protein_per_kg),
-        float(profile.fat_pct),
-        float(profile.cut_intensity),
-        profile.updated_at,
+def write_plan(
+    client: TestClient,
+    payload: dict,
+    key: str,
+    *,
+    effective_from: date = TODAY,
+    token: str = "token-a",
+):
+    result = preview(client, payload, effective_from, token)
+    body = payload | {
+        "effective_from": effective_from.isoformat(),
+        "confirmed": True,
+        "expected_preview_hash": result["preview_hash"],
+    }
+    return client.post(
+        "/target-plans",
+        json=body,
+        headers=headers(token, key),
     )
 
 
@@ -215,997 +170,11 @@ def seed_legacy_profile(
     return to_profile_response(profile, TODAY).model_dump(mode="json")
 
 
-def preview(client: TestClient, payload: dict, token: str = "token-a") -> dict:
-    response = client.post("/profile/preview", json=payload, headers=headers(token))
-    assert response.status_code == 200, response.text
-    return response.json()
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("height_cm", 100),
-        ("height_cm", 250),
-        ("weight_kg", 20),
-        ("weight_kg", 300),
-        ("protein_per_kg", 1.0),
-        ("protein_per_kg", 3.0),
-        ("fat_pct", 0.15),
-        ("fat_pct", 0.40),
-    ],
-)
-def test_plan008_valid_profile_boundaries_preview(
-    target_plan_context, field: str, value: float
-) -> None:
-    client, session = target_plan_context
-    response = client.post(
-        "/profile/preview",
-        json=profile_payload() | {field: value},
-        headers=headers("token-a"),
-    )
-
-    assert response.status_code == 200, response.text
-    assert session.exec(
-        select(Profile).where(Profile.principal_id == PRINCIPAL_A)
-    ).first() is None
-
-
-@pytest.mark.parametrize(
-    ("field", "value", "error_type"),
-    [
-        ("height_cm", 99.9, "greater_than_equal"),
-        ("height_cm", 250.1, "less_than_equal"),
-        ("weight_kg", 19.9, "greater_than_equal"),
-        ("weight_kg", 300.1, "less_than_equal"),
-        ("protein_per_kg", 0.9, "greater_than_equal"),
-        ("protein_per_kg", 3.1, "less_than_equal"),
-        ("fat_pct", 0.14, "greater_than_equal"),
-        ("fat_pct", 0.41, "less_than_equal"),
-    ],
-)
-def test_plan008_invalid_numeric_requests_return_422_without_profile(
-    target_plan_context, field: str, value: float, error_type: str
-) -> None:
-    client, session = target_plan_context
-    response = client.post(
-        "/profile/preview",
-        json=profile_payload() | {field: value},
-        headers=headers("token-a"),
-    )
-
-    assert response.status_code == 422
-    error = response.json()["detail"][0]
-    assert error["loc"] == ["body", field]
-    assert error["type"] == error_type
-    assert error["msg"]
-    assert session.exec(
-        select(Profile).where(Profile.principal_id == PRINCIPAL_A)
-    ).first() is None
-
-
-@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
-def test_plan008_non_finite_raw_json_returns_stable_422_without_profile(
-    target_plan_context, constant: str
-) -> None:
-    client, session = target_plan_context
-    payload = json.dumps(profile_payload(), separators=(",", ":"))
-    payload = payload.replace('"height_cm":175', f'"height_cm":{constant}')
-
-    response = client.request(
-        "POST",
-        "/profile/preview",
-        content=payload,
-        headers={**headers("token-a"), "Content-Type": "application/json"},
-    )
-
-    assert response.status_code == 422
-    assert response.json()["detail"] == [
-        {
-            "type": "finite_number",
-            "loc": ["body", "height_cm"],
-            "msg": "Input should be a finite number",
-            "input": constant,
-        }
-    ]
-    assert session.exec(
-        select(Profile).where(Profile.principal_id == PRINCIPAL_A)
-    ).first() is None
-
-
-@pytest.mark.parametrize(
-    ("birth_date", "error_type"),
-    [
-        ("2020-07-28", "profile_age_below_minimum"),
-        ("1920-07-26", "profile_age_above_maximum"),
-        ("2031-01-01", "profile_birth_date_future"),
-    ],
-)
-def test_plan008_invalid_birth_dates_return_422_without_profile(
-    target_plan_context, monkeypatch, birth_date: str, error_type: str
-) -> None:
-    client, session = target_plan_context
-    authority = type(
-        "Authority",
-        (),
-        {
-            "current_diary_date": date(2030, 7, 27),
-            "calendar_timezone": "Asia/Riyadh",
-            "next_rollover_at": datetime(2030, 7, 28, tzinfo=timezone.utc),
-        },
-    )()
-    monkeypatch.setattr(
-        "app.api.routes.profile.diary_calendar_authority", lambda: authority
-    )
-    response = client.post(
-        "/profile/preview",
-        json=profile_payload() | {"birth_date": birth_date},
-        headers=headers("token-a"),
-    )
-
-    assert response.status_code == 422
-    error = response.json()["detail"][0]
-    assert error["loc"] == ["body", "birth_date"]
-    assert error["type"] == error_type
-    assert error["msg"]
-    assert session.exec(
-        select(Profile).where(Profile.principal_id == PRINCIPAL_A)
-    ).first() is None
-
-
-def activate(client: TestClient, payload: dict, key: str, token: str = "token-a"):
-    result = preview(client, payload, token)
-    body = {**payload, "confirmed": True, "expected_preview_hash": result["preview_hash"]}
-    return client.post("/target-plans/activate", json=body, headers=headers(token, key))
-
-
-@pytest.mark.parametrize(("token", "existing_profile"), [("token-b", False), ("token-a", True)])
-def test_plan010_activation_captures_one_calendar_authority(
-    target_plan_context, monkeypatch, token: str, existing_profile: bool
-) -> None:
-    client, session = target_plan_context
-    if existing_profile:
-        seed_legacy_profile(
-            session,
-            profile_payload(),
-            PRINCIPAL_B if token == "token-b" else PRINCIPAL_A,
-        )
-
-    fixed = diary_calendar_authority(
-        datetime(2026, 7, 15, 21, 0, 0, tzinfo=timezone.utc)
-    )
-    calls = 0
-
-    def authority():
-        nonlocal calls
-        calls += 1
-        return fixed
-
-    monkeypatch.setattr("app.services.target_plans.diary_calendar_authority", authority)
-
-    response = activate(client, profile_payload(weight=82), f"plan010-{token}", token)
-
-    assert response.status_code == 201, response.text
-    assert calls == 1
-
-
-@pytest.mark.parametrize(
-    ("token", "existing_profile", "expected_effective_from"),
-    [
-        ("token-b", False, date(2026, 12, 31)),
-        ("token-a", True, date(2027, 1, 1)),
-    ],
-)
-def test_plan010_midnight_crossing_cannot_skip_an_effective_date(
-    target_plan_context,
-    monkeypatch,
-    token: str,
-    existing_profile: bool,
-    expected_effective_from: date,
-) -> None:
-    client, session = target_plan_context
-    if existing_profile:
-        seed_legacy_profile(
-            session,
-            profile_payload(),
-            PRINCIPAL_B if token == "token-b" else PRINCIPAL_A,
-        )
-
-    before_midnight = diary_calendar_authority(
-        datetime(2026, 12, 30, 21, 0, 0, tzinfo=timezone.utc)
-    )
-    after_midnight = diary_calendar_authority(
-        datetime(2026, 12, 31, 21, 0, 0, tzinfo=timezone.utc)
-    )
-    calls = 0
-
-    def crossing_authority():
-        nonlocal calls
-        authority = before_midnight if calls == 0 else after_midnight
-        calls += 1
-        return authority
-
-    monkeypatch.setattr(
-        "app.api.routes.profile.diary_calendar_authority", lambda: before_midnight
-    )
-    monkeypatch.setattr(
-        "app.services.target_plans.diary_calendar_authority", crossing_authority
-    )
-
-    response = activate(client, profile_payload(weight=82), f"midnight-{token}", token)
-
-    assert response.status_code == 201, response.text
-    assert calls == 1
-    assert response.json()["plan"]["effective_from"] == expected_effective_from.isoformat()
-    transitions = session.exec(
-        select(LegacyTargetTransitionSnapshot).where(
-            LegacyTargetTransitionSnapshot.principal_id
-            == (PRINCIPAL_A if existing_profile else PRINCIPAL_B)
-        )
-    ).all()
-    if existing_profile:
-        assert len(transitions) == 1
-        assert transitions[0].transition_date == before_midnight.current_diary_date
-    else:
-        assert transitions == []
-
-
-def test_current_legacy_profile_target_is_available_before_transition(
-    target_plan_context,
-) -> None:
-    client, session = target_plan_context
-    created = seed_legacy_profile(session)
-    source = client.get(
-        f"/target-plans/current?date={TODAY.isoformat()}", headers=headers("token-a")
-    )
-    assert source.status_code == 200
-    assert source.json()["target_provenance"] == "legacy_unversioned"
-    assert source.json()["target_source_detail"] == "no_preserved_target_source"
-    assert source.json()["targets"] == created["targets"]
-
-
-def test_project_targets_selects_due_plan_without_lifecycle_dml(
-    target_plan_context,
-) -> None:
-    client, session = target_plan_context
-
-    fallback = seed_legacy_profile(
-        session, profile_payload(weight=67), PRINCIPAL_B
-    )
-    fallback_source = project_targets(
-        session, PrincipalContext(PRINCIPAL_B), TODAY
-    )
-    assert fallback_source.target_source_detail == "no_preserved_target_source"
-    assert fallback_source.targets is not None
-    assert fallback_source.targets.model_dump(mode="json") == fallback["targets"]
-
-    created = seed_legacy_profile(session, profile_payload(weight=80))
-    activation = activate(client, profile_payload(weight=82), "due-plan")
-    assert activation.status_code == 201, activation.text
-    due = session.exec(
-        select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_A)
-    ).one()
-    assert due.status == TargetPlanStatus.scheduled
-    lifecycle_before = (
-        due.status,
-        due.effective_to,
-        due.activated_at,
-        due.closed_at,
-        due.superseded_at,
-    )
-
-    due_source = project_targets(session, PrincipalContext(PRINCIPAL_A), TOMORROW)
-    assert due_source.target_source_detail == "effective_target_plan"
-    assert due_source.plan is not None
-    assert str(due_source.plan.id) == activation.json()["plan"]["id"]
-    assert due_source.targets == due_source.plan.targets
-    session.refresh(due)
-    assert (
-        due.status,
-        due.effective_to,
-        due.activated_at,
-        due.closed_at,
-        due.superseded_at,
-    ) == lifecycle_before
-
-    transition_source = project_targets(
-        session, PrincipalContext(PRINCIPAL_A), TODAY
-    )
-    assert transition_source.target_source_detail == "legacy_transition_snapshot"
-    assert transition_source.targets is not None
-    transition_targets = transition_source.targets.model_dump(
-        mode="json", exclude={"preview_hash"}
-    )
-    expected_transition_targets = created["targets"].copy()
-    expected_transition_targets.pop("preview_hash")
-    assert transition_targets == expected_transition_targets
-
-    no_source = project_targets(
-        session,
-        PrincipalContext(UUID("00000000-0000-0000-0000-00000000000c")),
-        date(2026, 7, 15),
-    )
-    assert no_source.target_provenance == "no_target_source"
-    assert no_source.targets is None
-
-
-def test_plan015_bulk_context_matches_single_date_projection(
-    target_plan_context,
-) -> None:
-    client, session = target_plan_context
-    created = seed_legacy_profile(session, profile_payload(weight=80))
-    fallback_context = resolve_week_target_context(
-        session,
-        PrincipalContext(PRINCIPAL_A),
-        TODAY,
-        TOMORROW,
-    )
-    fallback_today = target_for_date(fallback_context, TODAY)
-    fallback_tomorrow = target_for_date(fallback_context, TOMORROW)
-    assert fallback_today.target_source_detail == "no_preserved_target_source"
-    assert fallback_today.targets is not None
-    assert fallback_today.targets.model_dump(mode="json") == created["targets"]
-    assert fallback_tomorrow.target_provenance == "no_target_source"
-
-    activation = activate(client, profile_payload(weight=82), "plan015-bulk")
-    assert activation.status_code == 201, activation.text
-
-    week_start = TODAY - timedelta(days=2)
-    week_end = week_start + timedelta(days=6)
-    dates = [week_start + timedelta(days=offset) for offset in range(7)]
-    expected = {
-        requested: project_targets(
-            session, PrincipalContext(PRINCIPAL_A), requested
-        ).model_dump(mode="json")
-        for requested in dates
-    }
-
-    context = resolve_week_target_context(
-        session,
-        PrincipalContext(PRINCIPAL_A),
-        week_start,
-        week_end,
-    )
-    actual = {
-        requested: target_for_date(context, requested).model_dump(mode="json")
-        for requested in dates
-    }
-
-    assert actual == expected
-    assert actual[TODAY]["target_source_detail"] == "legacy_transition_snapshot"
-    assert actual[TOMORROW]["target_source_detail"] == "effective_target_plan"
-    assert actual[week_start]["target_provenance"] == "no_target_source"
-
-
-def test_plan015_out_of_week_transition_blocks_profile_fallback_without_loading_history(
-    target_plan_context,
-) -> None:
-    client, session = target_plan_context
-    seed_legacy_profile(session, profile_payload(weight=80))
-    activation = activate(client, profile_payload(weight=82), "plan015-history")
-    assert activation.status_code == 201, activation.text
-    template_profile = session.exec(
-        select(Profile).where(Profile.principal_id == PRINCIPAL_A)
-    ).one()
-    template_transition = session.exec(
-        select(LegacyTargetTransitionSnapshot).where(
-            LegacyTargetTransitionSnapshot.principal_id == PRINCIPAL_A
-        )
-    ).one()
-
-    # The schema permits one transition per Profile. Extra historical rows for
-    # other Principals verify that neither result size nor query count grows.
-    extra_profiles = []
-    for _ in range(20):
-        principal_id = uuid4()
-        session.add(Principal(id=principal_id))
-        extra_profiles.append(
-            Profile(
-                principal_id=principal_id,
-                sex=template_profile.sex,
-                birth_date=template_profile.birth_date,
-                height_cm=template_profile.height_cm,
-                weight_kg=template_profile.weight_kg,
-                activity_level=template_profile.activity_level,
-                goal=template_profile.goal,
-                protein_per_kg=template_profile.protein_per_kg,
-                fat_pct=template_profile.fat_pct,
-                cut_intensity=template_profile.cut_intensity,
-            )
-        )
-    session.flush()
-    session.add_all(extra_profiles)
-    session.flush()
-    for offset, profile in enumerate(extra_profiles, start=30):
-        session.add(
-            LegacyTargetTransitionSnapshot(
-                principal_id=profile.principal_id,
-                profile_id=profile.id,
-                transition_date=TODAY - timedelta(days=offset),
-                calendar_timezone="Asia/Riyadh",
-                target_document_schema_version=1,
-                legacy_target_document=template_transition.legacy_target_document,
-            )
-        )
-    session.commit()
-
-    week_start = TODAY - timedelta(days=14)
-    week_end = week_start + timedelta(days=6)
-    statements: list[str] = []
-    engine = session.get_bind()
-
-    def capture(
-        _connection, _cursor, statement, _parameters, _context, _executemany
-    ) -> None:
-        if statement.lstrip().lower().startswith("select "):
-            statements.append(" ".join(statement.split()))
-
-    event.listen(engine, "before_cursor_execute", capture)
-    try:
-        context = resolve_week_target_context(
-            session,
-            PrincipalContext(PRINCIPAL_A),
-            week_start,
-            week_end,
-        )
-    finally:
-        event.remove(engine, "before_cursor_execute", capture)
-
-    assert len(statements) == 5
-    assert context.transitions_by_date == {}
-    assert context.has_transition is True
-    for offset in range(7):
-        requested = week_start + timedelta(days=offset)
-        bulk = target_for_date(context, requested)
-        single = project_targets(
-            session, PrincipalContext(PRINCIPAL_A), requested
-        )
-        assert bulk.model_dump(mode="json") == single.model_dump(mode="json")
-        assert bulk.target_provenance == "no_target_source"
-        assert bulk.targets is None
-
-
-def test_plan015_bulk_context_matches_active_closed_and_scheduled_boundaries(
-    target_plan_context,
-) -> None:
-    client, session = target_plan_context
-    active_response = activate(
-        client,
-        profile_payload(weight=75),
-        "plan015-active",
-        token="token-b",
-    )
-    assert active_response.status_code == 201, active_response.text
-
-    active_context = resolve_week_target_context(
-        session,
-        PrincipalContext(PRINCIPAL_B),
-        TODAY,
-        TODAY + timedelta(days=6),
-    )
-    active_source = target_for_date(active_context, TODAY)
-    assert active_source.plan is not None
-    assert str(active_source.plan.id) == active_response.json()["plan"]["id"]
-
-    scheduled_response = activate(
-        client,
-        profile_payload(weight=77),
-        "plan015-scheduled",
-        token="token-b",
-    )
-    assert scheduled_response.status_code == 201, scheduled_response.text
-    plans = session.exec(
-        select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_B)
-    ).all()
-    closed = next(plan for plan in plans if plan.status == TargetPlanStatus.active)
-    scheduled = next(
-        plan for plan in plans if plan.status == TargetPlanStatus.scheduled
-    )
-    closed.status = TargetPlanStatus.closed
-    closed.effective_from = TODAY - timedelta(days=2)
-    closed.effective_to = TOMORROW
-    closed.closed_at = datetime.now(timezone.utc)
-    session.add(closed)
-    session.commit()
-
-    week_start = TODAY - timedelta(days=2)
-    week_end = week_start + timedelta(days=6)
-    context = resolve_week_target_context(
-        session,
-        PrincipalContext(PRINCIPAL_B),
-        week_start,
-        week_end,
-    )
-    actual = {
-        requested: target_for_date(context, requested).model_dump(mode="json")
-        for requested in (week_start, TODAY, TOMORROW, week_end)
-    }
-    expected = {
-        requested: project_targets(
-            session, PrincipalContext(PRINCIPAL_B), requested
-        ).model_dump(mode="json")
-        for requested in actual
-    }
-
-    assert actual == expected
-    assert actual[TODAY]["plan"]["id"] == str(closed.id)
-    assert actual[TOMORROW]["plan"]["id"] == str(scheduled.id)
-
-
-def test_owner_current_get_advances_due_target_lifecycle(
-    target_plan_context, monkeypatch
-) -> None:
-    client, session = target_plan_context
-    active_response = activate(
-        client, profile_payload(weight=80), "owner-active", token="token-b"
-    )
-    assert active_response.status_code == 201, active_response.text
-    scheduled_response = activate(
-        client, profile_payload(weight=82), "owner-scheduled", token="token-b"
-    )
-    assert scheduled_response.status_code == 201, scheduled_response.text
-
-    plans = session.exec(
-        select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_B)
-    ).all()
-    active = next(plan for plan in plans if plan.status == TargetPlanStatus.active)
-    scheduled = next(
-        plan for plan in plans if plan.status == TargetPlanStatus.scheduled
-    )
-    active.effective_from = TODAY - timedelta(days=1)
-    assert active.effective_to is None
-    assert active.closed_at is None
-    assert scheduled.effective_from == TOMORROW
-    assert scheduled.activated_at is None
-    session.add(active)
-    session.commit()
-
-    monkeypatch.setattr(
-        "app.services.target_plans.current_diary_date", lambda: TOMORROW
-    )
-    response = client.get(
-        f"/target-plans/current?date={TOMORROW.isoformat()}",
-        headers=headers("token-b"),
-    )
-    assert response.status_code == 200, response.text
-    assert response.json()["plan"]["id"] == str(scheduled.id)
-
-    session.refresh(active)
-    session.refresh(scheduled)
-    assert active.status == TargetPlanStatus.closed
-    assert active.effective_to == TOMORROW
-    assert active.closed_at is not None
-    assert scheduled.status == TargetPlanStatus.active
-    assert scheduled.activated_at is not None
-    assert scheduled.closed_at is None
-    assert active.closed_at == scheduled.activated_at
-
-
-def test_existing_legacy_activation_preserves_today_and_updates_profile_atomically(
-    target_plan_context,
-) -> None:
-    client, session = target_plan_context
-    original = profile_payload(weight=80)
-    created = seed_legacy_profile(session, original)
-    before = created["targets"]
-
-    changed = profile_payload(weight=90, intensity=0.25)
-    response = activate(client, changed, "legacy-first")
-    assert response.status_code == 201, response.text
-    assert response.json()["plan"]["effective_from"] == TOMORROW.isoformat()
-    assert response.json()["plan"]["status"] == "scheduled"
-
-    profile = client.get("/profile", headers=headers("token-a")).json()
-    assert profile["weight_kg"] == 90
-    assert profile["selected_cut_intensity"] == 0.25
-    today = client.get(
-        f"/target-plans/current?date={TODAY.isoformat()}", headers=headers("token-a")
-    ).json()
-    assert today["target_source_detail"] == "legacy_transition_snapshot"
-    assert today["target_provenance"] == "legacy_unversioned"
-    assert today["targets"]["final_target_calories"] == before["final_target_calories"]
-    tomorrow = client.get(
-        f"/target-plans/current?date={TOMORROW.isoformat()}", headers=headers("token-a")
-    ).json()
-    assert tomorrow["target_source_detail"] == "effective_target_plan"
-    assert tomorrow["targets"]["final_target_calories"] == response.json()["plan"]["targets"]["final_target_calories"]
-    previous = client.get("/target-plans/current?date=2026-07-15", headers=headers("token-a")).json()
-    assert previous["target_provenance"] == "no_target_source"
-    assert previous["targets"] is None
-    assert len(session.exec(select(LegacyTargetTransitionSnapshot)).all()) == 1
-
-
-def test_idempotent_replay_and_payload_conflict_do_not_mutate(target_plan_context) -> None:
-    client, session = target_plan_context
-    seed_legacy_profile(session)
-    payload = profile_payload(weight=82)
-    result = preview(client, payload)
-    body = {**payload, "confirmed": True, "expected_preview_hash": result["preview_hash"]}
-    first = client.post("/target-plans/activate", json=body, headers=headers("token-a", "same"))
-    replay = client.post("/target-plans/activate", json=body, headers=headers("token-a", "same"))
-    assert first.status_code == replay.status_code == 201
-    assert replay.headers["Idempotent-Replayed"] == "true"
-    assert first.json() == replay.json()
-
-    other = profile_payload(weight=83)
-    other_preview = preview(client, other)
-    conflict = client.post(
-        "/target-plans/activate",
-        json={**other, "confirmed": True, "expected_preview_hash": other_preview["preview_hash"]},
-        headers=headers("token-a", "same"),
-    )
-    assert conflict.status_code == 409
-    assert conflict.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
-    assert len(session.exec(select(TargetPlan)).all()) == 1
-    assert len(session.exec(select(LegacyTargetTransitionSnapshot)).all()) == 1
-
-
-def test_plan021_activation_and_replacement_complete_operation_ledgers(
-    target_plan_context,
-) -> None:
-    client, session = target_plan_context
-    seed_legacy_profile(session)
-
-    activation_payload = profile_payload(weight=82)
-    activation_preview = preview(client, activation_payload)
-    activation_body = {
-        **activation_payload,
-        "confirmed": True,
-        "expected_preview_hash": activation_preview["preview_hash"],
-    }
-    activation = client.post(
-        "/target-plans/activate",
-        json=activation_body,
-        headers=headers("token-a", "plan021-activate-ledger"),
-    )
-    assert activation.status_code == 201, activation.text
-
-    replacement_payload = profile_payload(weight=84)
-    replacement_preview = preview(client, replacement_payload)
-    replacement_body = {
-        **replacement_payload,
-        "replace_confirmed": True,
-        "expected_preview_hash": replacement_preview["preview_hash"],
-    }
-    replacement = client.post(
-        "/target-plans/pending/replace",
-        json=replacement_body,
-        headers=headers("token-a", "plan021-replace-ledger"),
-    )
-    assert replacement.status_code == 201, replacement.text
-
-    session.expire_all()
-    records = {
-        record.operation: record
-        for record in session.exec(
-            select(IdempotencyRecord).where(
-                IdempotencyRecord.principal_id == PRINCIPAL_A
-            )
-        ).all()
-    }
-    assert set(records) == {"target_plan.activate", "target_plan.replace"}
-    for operation, response in (
-        ("target_plan.activate", activation),
-        ("target_plan.replace", replacement),
-    ):
-        record = records[operation]
-        assert record.state == "completed"
-        assert record.response_status == 201
-        assert record.response_document == response.json()
-        assert record.resource_type == "target_plan"
-        assert str(record.resource_id) == response.json()["plan"]["id"]
-        assert record.completed_at is not None
-
-    activation_replay = client.post(
-        "/target-plans/activate",
-        json=activation_body,
-        headers=headers("token-a", "plan021-activate-ledger"),
-    )
-    replacement_replay = client.post(
-        "/target-plans/pending/replace",
-        json=replacement_body,
-        headers=headers("token-a", "plan021-replace-ledger"),
-    )
-    assert activation_replay.status_code == replacement_replay.status_code == 201
-    assert activation_replay.headers["Idempotent-Replayed"] == "true"
-    assert replacement_replay.headers["Idempotent-Replayed"] == "true"
-    assert activation_replay.json() == activation.json()
-    assert replacement_replay.json() == replacement.json()
-    assert len(session.exec(select(TargetPlan)).all()) == 2
-    assert len(session.exec(select(LegacyTargetTransitionSnapshot)).all()) == 1
-    assert len(session.exec(select(IdempotencyRecord)).all()) == 2
-
-
-def test_plan021_same_visible_key_is_independent_across_operations(
-    target_plan_context,
-) -> None:
-    client, session = target_plan_context
-    seed_legacy_profile(session)
-    shared_key = "plan021-shared-operation-key"
-
-    activation_payload = profile_payload(weight=82)
-    activation_preview = preview(client, activation_payload)
-    activation_body = {
-        **activation_payload,
-        "confirmed": True,
-        "expected_preview_hash": activation_preview["preview_hash"],
-    }
-    activation = client.post(
-        "/target-plans/activate",
-        json=activation_body,
-        headers=headers("token-a", shared_key),
-    )
-    assert activation.status_code == 201, activation.text
-
-    replacement_payload = profile_payload(weight=84)
-    replacement_preview = preview(client, replacement_payload)
-    replacement_body = {
-        **replacement_payload,
-        "replace_confirmed": True,
-        "expected_preview_hash": replacement_preview["preview_hash"],
-    }
-    replacement = client.post(
-        "/target-plans/pending/replace",
-        json=replacement_body,
-        headers=headers("token-a", shared_key),
-    )
-    assert replacement.status_code == 201, replacement.text
-
-    session.expire_all()
-    profile_before_replays = _profile_state(
-        session.exec(select(Profile).where(Profile.principal_id == PRINCIPAL_A)).one()
-    )
-    plans_before_replays = tuple(
-        sorted(
-            (
-                str(plan.id),
-                str(plan.status),
-                str(plan.predecessor_plan_id),
-                str(plan.superseded_by_plan_id),
-            )
-            for plan in session.exec(
-                select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_A)
-            ).all()
-        )
-    )
-    transition_before_replays = session.exec(
-        select(LegacyTargetTransitionSnapshot).where(
-            LegacyTargetTransitionSnapshot.principal_id == PRINCIPAL_A
-        )
-    ).one()
-    transition_document_before_replays = transition_before_replays.legacy_target_document.copy()
-
-    activation_replay = client.post(
-        "/target-plans/activate",
-        json=activation_body,
-        headers=headers("token-a", shared_key),
-    )
-    replacement_replay = client.post(
-        "/target-plans/pending/replace",
-        json=replacement_body,
-        headers=headers("token-a", shared_key),
-    )
-    assert activation_replay.status_code == replacement_replay.status_code == 201
-    assert activation_replay.headers["Idempotent-Replayed"] == "true"
-    assert replacement_replay.headers["Idempotent-Replayed"] == "true"
-    assert activation_replay.json() == activation.json()
-    assert replacement_replay.json() == replacement.json()
-
-    changed_activation = profile_payload(weight=86)
-    changed_activation_preview = preview(client, changed_activation)
-    activation_conflict = client.post(
-        "/target-plans/activate",
-        json={
-            **changed_activation,
-            "confirmed": True,
-            "expected_preview_hash": changed_activation_preview["preview_hash"],
-        },
-        headers=headers("token-a", shared_key),
-    )
-    changed_replacement = profile_payload(weight=88)
-    changed_replacement_preview = preview(client, changed_replacement)
-    replacement_conflict = client.post(
-        "/target-plans/pending/replace",
-        json={
-            **changed_replacement,
-            "replace_confirmed": True,
-            "expected_preview_hash": changed_replacement_preview["preview_hash"],
-        },
-        headers=headers("token-a", shared_key),
-    )
-    assert activation_conflict.status_code == replacement_conflict.status_code == 409
-    assert activation_conflict.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
-    assert replacement_conflict.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
-
-    session.expire_all()
-    records = session.exec(
-        select(IdempotencyRecord).where(
-            IdempotencyRecord.principal_id == PRINCIPAL_A,
-            IdempotencyRecord.idempotency_key == shared_key,
-        )
-    ).all()
-    assert {(record.operation, str(record.resource_id)) for record in records} == {
-        ("target_plan.activate", activation.json()["plan"]["id"]),
-        ("target_plan.replace", replacement.json()["plan"]["id"]),
-    }
-    assert all(record.state == "completed" for record in records)
-    assert _profile_state(
-        session.exec(select(Profile).where(Profile.principal_id == PRINCIPAL_A)).one()
-    ) == profile_before_replays
-    assert tuple(
-        sorted(
-            (
-                str(plan.id),
-                str(plan.status),
-                str(plan.predecessor_plan_id),
-                str(plan.superseded_by_plan_id),
-            )
-            for plan in session.exec(
-                select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_A)
-            ).all()
-        )
-    ) == plans_before_replays
-    session.refresh(transition_before_replays)
-    assert transition_before_replays.legacy_target_document == transition_document_before_replays
-    assert len(records) == 2
-
-
-def test_plan021_replacement_rollback_leaves_no_ledger_and_retry_succeeds(
-    target_plan_context, monkeypatch
-) -> None:
-    client, session = target_plan_context
-    seed_legacy_profile(session)
-    activation = activate(client, profile_payload(weight=82), "plan021-rollback-seed")
-    assert activation.status_code == 201, activation.text
-    activation_plan_id = activation.json()["plan"]["id"]
-
-    replacement_payload = profile_payload(weight=84)
-    replacement_preview = preview(client, replacement_payload)
-    replacement_body = {
-        **replacement_payload,
-        "replace_confirmed": True,
-        "expected_preview_hash": replacement_preview["preview_hash"],
-    }
-    real_commit = session.commit
-
-    def fail_commit() -> None:
-        raise RuntimeError("injected Plan 021 replacement commit failure")
-
-    monkeypatch.setattr(session, "commit", fail_commit)
-    with pytest.raises(
-        RuntimeError, match="injected Plan 021 replacement commit failure"
-    ):
-        client.post(
-            "/target-plans/pending/replace",
-            json=replacement_body,
-            headers=headers("token-a", "plan021-rollback-replace"),
-        )
-    monkeypatch.setattr(session, "commit", real_commit)
-
-    session.expire_all()
-    plans_after_rollback = session.exec(
-        select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_A)
-    ).all()
-    records_after_rollback = session.exec(
-        select(IdempotencyRecord).where(
-            IdempotencyRecord.principal_id == PRINCIPAL_A
-        )
-    ).all()
-    profile_after_rollback = session.exec(
-        select(Profile).where(Profile.principal_id == PRINCIPAL_A)
-    ).one()
-    assert len(plans_after_rollback) == 1
-    assert str(plans_after_rollback[0].id) == activation_plan_id
-    assert plans_after_rollback[0].status == "scheduled"
-    assert plans_after_rollback[0].superseded_by_plan_id is None
-    assert [(record.operation, record.idempotency_key) for record in records_after_rollback] == [
-        ("target_plan.activate", "plan021-rollback-seed")
-    ]
-    assert float(profile_after_rollback.weight_kg) == 82
-
-    retry = client.post(
-        "/target-plans/pending/replace",
-        json=replacement_body,
-        headers=headers("token-a", "plan021-rollback-replace"),
-    )
-    assert retry.status_code == 201, retry.text
-    session.expire_all()
-    replacement_record = session.exec(
-        select(IdempotencyRecord).where(
-            IdempotencyRecord.principal_id == PRINCIPAL_A,
-            IdempotencyRecord.operation == "target_plan.replace",
-            IdempotencyRecord.idempotency_key == "plan021-rollback-replace",
-        )
-    ).one()
-    assert replacement_record.state == "completed"
-    assert str(replacement_record.resource_id) == retry.json()["plan"]["id"]
-    assert len(session.exec(select(TargetPlan)).all()) == 2
-    assert len(session.exec(select(IdempotencyRecord)).all()) == 2
-
-
-def test_idempotency_key_requires_visible_ascii(target_plan_context) -> None:
-    client, session = target_plan_context
-    payload = profile_payload()
-    result = preview(client, payload)
-    response = client.post(
-        "/target-plans/activate",
-        json={**payload, "confirmed": True, "expected_preview_hash": result["preview_hash"]},
-        headers=headers("token-a", "contains space"),
-    )
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "INVALID_IDEMPOTENCY_KEY"
-    assert session.exec(select(TargetPlan)).all() == []
-
-
-def test_pending_replacement_reuses_original_transition_snapshot(target_plan_context) -> None:
-    client, session = target_plan_context
-    seed_legacy_profile(session)
-    assert activate(client, profile_payload(weight=82), "first").status_code == 201
-    snapshot = session.exec(select(LegacyTargetTransitionSnapshot)).one()
-    original_document = snapshot.legacy_target_document.copy()
-
-    replacement_payload = profile_payload(weight=84)
-    result = preview(client, replacement_payload)
-    response = client.post(
-        "/target-plans/pending/replace",
-        json={
-            **replacement_payload,
-            "replace_confirmed": True,
-            "expected_preview_hash": result["preview_hash"],
-        },
-        headers=headers("token-a", "replace"),
-    )
-    assert response.status_code == 201, response.text
-    assert response.json()["replaced_plan"]["status"] == "superseded_before_effective"
-    session.refresh(snapshot)
-    assert snapshot.legacy_target_document == original_document
-    assert len(session.exec(select(LegacyTargetTransitionSnapshot)).all()) == 1
-    assert len(session.exec(select(TargetPlan)).all()) == 2
-
-
-def test_history_uses_an_opaque_stable_cursor(target_plan_context) -> None:
-    client, session = target_plan_context
-    seed_legacy_profile(session)
-    assert activate(client, profile_payload(weight=82), "first").status_code == 201
-    replacement_payload = profile_payload(weight=84)
-    replacement_preview = preview(client, replacement_payload)
-    replacement = client.post(
-        "/target-plans/pending/replace",
-        json={
-            **replacement_payload,
-            "replace_confirmed": True,
-            "expected_preview_hash": replacement_preview["preview_hash"],
-        },
-        headers=headers("token-a", "replace"),
-    )
-    assert replacement.status_code == 201
-
-    first_page = client.get("/target-plans?limit=1", headers=headers("token-a"))
-    assert first_page.status_code == 200
-    assert len(first_page.json()["items"]) == 1
-    assert first_page.json()["next_cursor"]
-    second_page = client.get(
-        "/target-plans",
-        params={"limit": 1, "cursor": first_page.json()["next_cursor"]},
-        headers=headers("token-a"),
-    )
-    assert second_page.status_code == 200
-    assert len(second_page.json()["items"]) == 1
-    assert first_page.json()["items"][0]["id"] != second_page.json()["items"][0]["id"]
-    assert second_page.json()["next_cursor"] is None
-
-    invalid = client.get(
-        "/target-plans", params={"cursor": "not-a-cursor"}, headers=headers("token-a")
-    )
-    assert invalid.status_code == 422
-    assert invalid.json()["error"]["code"] == "INVALID_CURSOR"
-
-
-def test_new_profile_activates_today_without_transition_snapshot(target_plan_context) -> None:
-    client, session = target_plan_context
+def seed_food(session: Session, principal_id: UUID = PRINCIPAL_A) -> Food:
     food = Food(
-        principal_id=PRINCIPAL_A,
-        name="Before activation",
-        normalized_name="before activation",
+        principal_id=principal_id,
+        name="Target binding food",
+        normalized_name="target binding food",
         primary_category="other",
         subcategory="other",
         nutrition_basis=NutritionBasis.per_100g,
@@ -1219,90 +188,518 @@ def test_new_profile_activates_today_without_transition_snapshot(target_plan_con
         nutrition_data_source=NutritionDataSource.estimated,
     )
     session.add(food)
-    session.flush()
-    entry = DiaryEntry(
-        principal_id=PRINCIPAL_B,
-        entry_date=TODAY,
-        food_id=food.id,
-        quantity=1,
-        recorded_unit_type=food.default_unit_type,
-        recorded_unit_amount=food.unit_amount,
-        recorded_unit_basis=food.unit_basis,
-        target_provenance=TargetProvenance.no_target_source,
-    )
-    session.add(entry)
     session.commit()
-    response = activate(client, profile_payload(), "new", token="token-b")
+    return food
+
+
+def create_diary_entry(
+    client: TestClient,
+    food: Food,
+    entry_date: date,
+    token: str = "token-a",
+):
+    response = client.post(
+        "/diary/entries",
+        json={
+            "food_id": str(food.id),
+            "entry_date": entry_date.isoformat(),
+            "quantity": 1,
+            "meal_type": "breakfast",
+        },
+        headers=headers(token),
+    )
     assert response.status_code == 201, response.text
-    assert response.json()["plan"]["status"] == "active"
+    return response
+
+
+def test_diary_create_preserves_principal_then_target_then_food_lock_order() -> None:
+    source = inspect.getsource(diary_service.create_entry)
+    symbols = [
+        "_lock_owner_for_target_binding(",
+        "resolve_target_binding(",
+        "lock_food_namespace_for_logging(",
+        "get_active_food_for_logging(",
+    ]
+    offsets = [source.index(symbol) for symbol in symbols]
+    assert offsets == sorted(offsets)
+
+
+def test_first_plan_can_be_effective_today(target_plan_context) -> None:
+    client, session = target_plan_context
+    response = write_plan(client, profile_payload(), "today")
+
+    assert response.status_code == 201, response.text
     assert response.json()["plan"]["effective_from"] == TODAY.isoformat()
-    assert session.exec(
-        select(LegacyTargetTransitionSnapshot).where(
-            LegacyTargetTransitionSnapshot.principal_id == PRINCIPAL_B
-        )
-    ).first() is None
-    assert session.exec(select(Profile).where(Profile.principal_id == PRINCIPAL_B)).one()
-    session.refresh(entry)
-    assert entry.target_provenance == TargetProvenance.versioned_plan
-    assert str(entry.target_plan_id) == response.json()["plan"]["id"]
+    assert response.json()["plan"]["revision"] == 1
+    assert response.json()["replaced_plan"] is None
+    assert set(response.json()["plan"]) == {
+        "id",
+        "effective_from",
+        "revision",
+        "targets",
+        "created_at",
+    }
+    plan = session.exec(select(TargetPlan)).one()
+    assert plan.revision == 1
+    assert session.exec(select(Profile)).one().weight_kg == 80
 
 
-def test_preview_hash_rejects_stale_activation_without_partial_persistence(
+def test_multiple_future_points_resolve_by_date(target_plan_context) -> None:
+    client, _ = target_plan_context
+    first_date = TODAY + timedelta(days=2)
+    second_date = TODAY + timedelta(days=5)
+    first = write_plan(client, profile_payload(80), "future-1", effective_from=first_date)
+    second = write_plan(client, profile_payload(85), "future-2", effective_from=second_date)
+    assert first.status_code == second.status_code == 201
+
+    before = client.get(
+        f"/target-plans/current?date={(TODAY + timedelta(days=1)).isoformat()}",
+        headers=headers(),
+    ).json()
+    middle = client.get(
+        f"/target-plans/current?date={(TODAY + timedelta(days=4)).isoformat()}",
+        headers=headers(),
+    ).json()
+    after = client.get(
+        f"/target-plans/current?date={(TODAY + timedelta(days=8)).isoformat()}",
+        headers=headers(),
+    ).json()
+    assert before["plan"] is None
+    assert middle["plan"]["id"] == first.json()["plan"]["id"]
+    assert after["plan"]["id"] == second.json()["plan"]["id"]
+
+
+def test_same_date_write_inserts_immutable_revision(target_plan_context) -> None:
+    client, session = target_plan_context
+    effective = TODAY + timedelta(days=2)
+    first = write_plan(client, profile_payload(80), "revision-1", effective_from=effective)
+    second = write_plan(client, profile_payload(84), "revision-2", effective_from=effective)
+
+    assert first.status_code == second.status_code == 201
+    assert second.json()["plan"]["revision"] == 2
+    assert second.json()["replaced_plan"]["id"] == first.json()["plan"]["id"]
+    assert second.json()["replaced_plan"]["revision"] == 1
+    plans = session.exec(
+        select(TargetPlan).order_by(TargetPlan.revision)
+    ).all()
+    assert [plan.revision for plan in plans] == [1, 2]
+    assert [plan.calculation_document["profile_inputs"]["weight_kg"] for plan in plans] == [80, 84]
+
+    current = client.get(
+        f"/target-plans/current?date={effective.isoformat()}", headers=headers()
+    )
+    assert current.json()["plan"]["id"] == second.json()["plan"]["id"]
+
+
+def test_past_write_is_rejected_atomically(target_plan_context) -> None:
+    client, session = target_plan_context
+    past = TODAY - timedelta(days=1)
+    result = preview(client, profile_payload(), past)
+    response = client.post(
+        "/target-plans",
+        json=profile_payload()
+        | {
+            "effective_from": past.isoformat(),
+            "confirmed": True,
+            "expected_preview_hash": result["preview_hash"],
+        },
+        headers=headers(key="past"),
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "TARGET_PLAN_EFFECTIVE_DATE_PAST"
+    assert session.exec(select(TargetPlan)).all() == []
+    assert session.exec(select(Profile)).all() == []
+    assert session.exec(select(IdempotencyRecord)).all() == []
+
+
+def test_midnight_boundary_rolls_back_every_write(
+    target_plan_context, monkeypatch
+) -> None:
+    client, session = target_plan_context
+    dates = iter([TODAY, TODAY + timedelta(days=1)])
+    monkeypatch.setattr(
+        "app.services.target_plans._database_riyadh_date", lambda _session: next(dates)
+    )
+    response = write_plan(client, profile_payload(), "midnight")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "TARGET_PLAN_DATE_BOUNDARY_CHANGED"
+    assert session.exec(select(TargetPlan)).all() == []
+    assert session.exec(select(Profile)).all() == []
+    assert session.exec(select(IdempotencyRecord)).all() == []
+
+
+def test_future_rebinding_uses_the_complete_affected_interval(
     target_plan_context,
 ) -> None:
     client, session = target_plan_context
     seed_legacy_profile(session)
-    payload = profile_payload(weight=88)
-    body = {**payload, "confirmed": True, "expected_preview_hash": "0" * 64}
-    response = client.post("/target-plans/activate", json=body, headers=headers("token-a", "bad"))
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "PREVIEW_RESULT_CHANGED"
-    assert len(session.exec(select(TargetPlan)).all()) == 0
-    assert len(session.exec(select(LegacyTargetTransitionSnapshot)).all()) == 0
-    assert float(session.exec(select(Profile)).one().weight_kg) == 80
+    food = seed_food(session)
+    dates = [
+        TODAY - timedelta(days=1),
+        TODAY,
+        TODAY + timedelta(days=1),
+        TODAY + timedelta(days=3),
+        TODAY + timedelta(days=4),
+    ]
+    entries = [create_diary_entry(client, food, value).json() for value in dates]
+    later = write_plan(
+        client,
+        profile_payload(85),
+        "later",
+        effective_from=TODAY + timedelta(days=3),
+    ).json()["plan"]
+    earlier = write_plan(
+        client,
+        profile_payload(82),
+        "earlier",
+        effective_from=TODAY,
+    ).json()["plan"]
+
+    bound = {
+        entry.entry_date: entry.target_plan_id
+        for entry in session.exec(select(DiaryEntry)).all()
+    }
+    assert bound[dates[0]] is None
+    assert str(bound[dates[1]]) == earlier["id"]
+    assert str(bound[dates[2]]) == earlier["id"]
+    assert str(bound[dates[3]]) == later["id"]
+    assert str(bound[dates[4]]) == later["id"]
+    assert entries[0]["target_provenance"] == "legacy_unversioned"
 
 
-def test_target_plan_reads_are_principal_scoped(target_plan_context) -> None:
+def test_same_date_revision_rebinds_today_and_future_only(target_plan_context) -> None:
     client, session = target_plan_context
     seed_legacy_profile(session)
-    assert activate(client, profile_payload(weight=82), "private").status_code == 201
-    assert client.get("/target-plans/pending", headers=headers("token-b")).json() is None
-    assert client.get("/target-plans", headers=headers("token-b")).json()["items"] == []
-    source = client.get(
-        f"/target-plans/current?date={TOMORROW.isoformat()}", headers=headers("token-b")
-    ).json()
-    assert source["target_provenance"] == "no_target_source"
-    assert source["plan"] is None
+    food = seed_food(session)
+    past = create_diary_entry(client, food, TODAY - timedelta(days=1)).json()
+    today = create_diary_entry(client, food, TODAY).json()
+    first = write_plan(client, profile_payload(80), "same-1").json()["plan"]
+    second = write_plan(client, profile_payload(83), "same-2").json()["plan"]
+
+    rows = {str(row.id): row for row in session.exec(select(DiaryEntry)).all()}
+    assert rows[past["id"]].target_plan_id is None
+    assert str(rows[today["id"]].target_plan_id) == second["id"]
+    assert first["id"] != second["id"]
 
 
-def test_transaction_failure_rolls_back_snapshot_profile_plan_and_idempotency(
+def test_diary_create_binds_highest_revision_for_its_date(target_plan_context) -> None:
+    client, session = target_plan_context
+    first = write_plan(client, profile_payload(80), "bind-1").json()["plan"]
+    second = write_plan(client, profile_payload(82), "bind-2").json()["plan"]
+    food = seed_food(session)
+    created = create_diary_entry(client, food, TODAY)
+    assert created.json()["target_plan_id"] == second["id"]
+    assert created.json()["target_plan_id"] != first["id"]
+
+
+def test_new_namespace_idempotency_replays_clean_response(target_plan_context) -> None:
+    client, session = target_plan_context
+    result = preview(client, profile_payload(), TODAY)
+    body = profile_payload() | {
+        "effective_from": TODAY.isoformat(),
+        "confirmed": True,
+        "expected_preview_hash": result["preview_hash"],
+    }
+    first = client.post("/target-plans", json=body, headers=headers(key="replay"))
+    replay = client.post("/target-plans", json=body, headers=headers(key="replay"))
+
+    assert first.status_code == replay.status_code == 201
+    assert replay.headers["Idempotent-Replayed"] == "true"
+    assert replay.json() == first.json()
+    assert len(session.exec(select(TargetPlan)).all()) == 1
+    record = session.exec(select(IdempotencyRecord)).one()
+    assert record.operation == "target_plan.write"
+
+
+def test_legacy_activation_replay_is_rehydrated_even_after_date_becomes_past(
     target_plan_context, monkeypatch
 ) -> None:
     client, session = target_plan_context
+    result = preview(client, profile_payload(), TODAY)
+    body = profile_payload() | {
+        "effective_from": TODAY.isoformat(),
+        "confirmed": True,
+        "expected_preview_hash": result["preview_hash"],
+    }
+    created = client.post(
+        "/target-plans", json=body, headers=headers(key="legacy-replay")
+    )
+    plan = session.exec(select(TargetPlan)).one()
+    current_record = session.exec(select(IdempotencyRecord)).one()
+    session.delete(current_record)
+    request = TargetPlanWriteRequest.model_validate(body)
+    session.add(
+        IdempotencyRecord(
+            principal_id=PRINCIPAL_A,
+            operation="target_plan.activate",
+            idempotency_key="legacy-replay",
+            request_hash=_legacy_hash(request, "target_plan.activate"),
+            state=IdempotencyState.completed,
+            response_status=201,
+            response_document={
+                "plan": {
+                    "id": str(plan.id),
+                    "effective_from": TODAY.isoformat(),
+                    "status": "active",
+                },
+                "replaced_plan": None,
+            },
+            resource_type="target_plan",
+            resource_id=plan.id,
+            completed_at=utcnow(),
+            expires_at=utcnow() + timedelta(days=1),
+        )
+    )
+    session.commit()
+    monkeypatch.setattr(
+        "app.services.target_plans._database_riyadh_date",
+        lambda _session: TODAY + timedelta(days=1),
+    )
+
+    replay = client.post(
+        "/target-plans", json=body, headers=headers(key="legacy-replay")
+    )
+    assert created.status_code == replay.status_code == 201
+    assert replay.headers["Idempotent-Replayed"] == "true"
+    assert replay.json()["plan"]["id"] == str(plan.id)
+    assert "status" not in replay.json()["plan"]
+    assert len(session.exec(select(TargetPlan)).all()) == 1
+
+
+def test_ambiguous_legacy_replay_fails_closed(target_plan_context) -> None:
+    client, session = target_plan_context
+    created = write_plan(client, profile_payload(), "seed")
+    plan = session.exec(select(TargetPlan)).one()
+    session.delete(session.exec(select(IdempotencyRecord)).one())
+    result = preview(client, profile_payload(), TODAY)
+    body = profile_payload() | {
+        "effective_from": TODAY.isoformat(),
+        "confirmed": True,
+        "expected_preview_hash": result["preview_hash"],
+    }
+    request = TargetPlanWriteRequest.model_validate(body)
+    now = utcnow()
+    for operation in ("target_plan.activate", "target_plan.replace"):
+        session.add(
+            IdempotencyRecord(
+                principal_id=PRINCIPAL_A,
+                operation=operation,
+                idempotency_key="ambiguous",
+                request_hash=_legacy_hash(request, operation),
+                state=IdempotencyState.completed,
+                response_status=201,
+                response_document={"plan": {"id": str(plan.id)}, "replaced_plan": None},
+                resource_type="target_plan",
+                resource_id=plan.id,
+                completed_at=now,
+                expires_at=now + timedelta(days=1),
+            )
+        )
+    session.commit()
+
+    response = client.post(
+        "/target-plans", json=body, headers=headers(key="ambiguous")
+    )
+    assert created.status_code == 201
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "IDEMPOTENCY_REPLAY_AMBIGUOUS"
+    assert len(session.exec(select(TargetPlan)).all()) == 1
+
+
+def test_legacy_snapshot_bridges_until_first_future_plan(target_plan_context) -> None:
+    client, session = target_plan_context
+    legacy = seed_legacy_profile(session, profile_payload(78))
+    effective = TODAY + timedelta(days=5)
+    plan = write_plan(
+        client, profile_payload(85), "transition", effective_from=effective
+    )
+    assert plan.status_code == 201
+    snapshot = session.exec(select(LegacyTargetTransitionSnapshot)).one()
+    assert snapshot.transition_date == TODAY
+
+    before = client.get(
+        f"/target-plans/current?date={(TODAY + timedelta(days=3)).isoformat()}",
+        headers=headers(),
+    ).json()
+    on_date = client.get(
+        f"/target-plans/current?date={effective.isoformat()}", headers=headers()
+    ).json()
+    assert before["target_source_detail"] == "legacy_transition_snapshot"
+    assert before["targets"]["target_calories"] == legacy["targets"]["target_calories"]
+    assert on_date["plan"]["id"] == plan.json()["plan"]["id"]
+
+
+def test_first_future_plan_creates_transition_snapshot_for_new_profile(
+    target_plan_context,
+) -> None:
+    client, session = target_plan_context
+    effective = TODAY + timedelta(days=5)
+
+    response = write_plan(
+        client, profile_payload(85), "new-profile-transition", effective_from=effective
+    )
+
+    assert response.status_code == 201
+    snapshot = session.exec(select(LegacyTargetTransitionSnapshot)).one()
+    assert snapshot.transition_date == TODAY
+    before = client.get(
+        f"/target-plans/current?date={(TODAY + timedelta(days=3)).isoformat()}",
+        headers=headers(),
+    ).json()
+    assert before["target_source_detail"] == "legacy_transition_snapshot"
+
+
+def test_legacy_profile_fallback_remains_date_bounded(target_plan_context) -> None:
+    _, session = target_plan_context
     seed_legacy_profile(session)
-    changed = profile_payload(weight=95)
-    result = preview(client, changed)
-    body = {**changed, "confirmed": True, "expected_preview_hash": result["preview_hash"]}
-    real_commit = session.commit
-
-    def fail_commit() -> None:
-        raise RuntimeError("injected transaction failure")
-
-    monkeypatch.setattr(session, "commit", fail_commit)
-    with pytest.raises(RuntimeError, match="injected transaction failure"):
-        client.post("/target-plans/activate", json=body, headers=headers("token-a", "fail"))
-    monkeypatch.setattr(session, "commit", real_commit)
-    session.expire_all()
-    assert float(session.exec(select(Profile)).one().weight_kg) == 80
-    assert session.exec(select(TargetPlan)).all() == []
-    assert session.exec(select(LegacyTargetTransitionSnapshot)).all() == []
-    assert session.exec(select(IdempotencyRecord)).all() == []
-
-
-def test_riyadh_midnight_is_the_authoritative_activation_boundary() -> None:
-    assert current_diary_date(datetime(2026, 7, 16, 20, 59, 59, tzinfo=timezone.utc)) == date(
-        2026, 7, 16
+    principal = PrincipalContext(PRINCIPAL_A)
+    today = resolve_target_binding(
+        session, principal, TODAY, authoritative_current_date=TODAY
     )
-    assert current_diary_date(datetime(2026, 7, 16, 21, 0, 0, tzinfo=timezone.utc)) == date(
-        2026, 7, 17
+    future = resolve_target_binding(
+        session,
+        principal,
+        TODAY + timedelta(days=1),
+        authoritative_current_date=TODAY,
     )
+    assert today.provenance == TargetProvenance.legacy_unversioned
+    assert today.profile is not None
+    assert future.provenance == TargetProvenance.no_target_source
+
+
+def test_week_context_uses_one_bounded_plan_query_and_canonical_revisions(
+    target_plan_context,
+) -> None:
+    client, session = target_plan_context
+    first = write_plan(client, profile_payload(80), "week-1").json()["plan"]
+    second = write_plan(client, profile_payload(82), "week-2").json()["plan"]
+    write_plan(
+        client,
+        profile_payload(85),
+        "week-next",
+        effective_from=TODAY + timedelta(days=3),
+    )
+    statements: list[str] = []
+
+    def capture(_connection, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    engine = session.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        context = resolve_week_target_context(
+            session,
+            PrincipalContext(PRINCIPAL_A),
+            TODAY,
+            TODAY + timedelta(days=6),
+            authoritative_current_date=TODAY,
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+    plan_queries = [
+        statement
+        for statement in statements
+        if "FROM target_plan" in statement and statement.lstrip().upper().startswith("SELECT")
+    ]
+    assert len(plan_queries) == 1
+    assert target_for_date(context, TODAY).plan.id == UUID(second["id"])
+    assert target_for_date(context, TODAY).plan.id != UUID(first["id"])
+
+
+def test_profile_current_and_week_reads_execute_no_dml_or_commit(
+    target_plan_context, monkeypatch
+) -> None:
+    client, session = target_plan_context
+    write_plan(client, profile_payload(), "read-only")
+    statements: list[str] = []
+
+    def capture(_connection, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement.strip().upper())
+
+    def forbidden_commit() -> None:
+        raise AssertionError("Target Plan read committed")
+
+    engine = session.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    monkeypatch.setattr(session, "commit", forbidden_commit)
+    try:
+        assert client.get("/profile", headers=headers()).status_code == 200
+        assert client.get("/target-plans/current", headers=headers()).status_code == 200
+        assert (
+            client.get(
+                f"/diary/week?start={TODAY.isoformat()}", headers=headers()
+            ).status_code
+            == 200
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+    assert not any(
+        statement.startswith(("INSERT", "UPDATE", "DELETE")) for statement in statements
+    )
+
+
+def test_history_is_revision_ordered_and_cursor_stable(target_plan_context) -> None:
+    client, _ = target_plan_context
+    write_plan(client, profile_payload(80), "history-1")
+    write_plan(client, profile_payload(82), "history-2")
+    write_plan(
+        client,
+        profile_payload(84),
+        "history-3",
+        effective_from=TODAY + timedelta(days=2),
+    )
+
+    first = client.get("/target-plans?limit=2", headers=headers())
+    second = client.get(
+        "/target-plans",
+        params={"limit": 2, "cursor": first.json()["next_cursor"]},
+        headers=headers(),
+    )
+    assert [item["effective_from"] for item in first.json()["items"]] == [
+        (TODAY + timedelta(days=2)).isoformat(),
+        TODAY.isoformat(),
+    ]
+    assert first.json()["items"][1]["revision"] == 2
+    assert second.json()["items"][0]["revision"] == 1
+    assert client.get(
+        "/target-plans", params={"cursor": "bad"}, headers=headers()
+    ).status_code == 422
+
+
+def test_target_plan_reads_are_principal_scoped(target_plan_context) -> None:
+    client, _ = target_plan_context
+    write_plan(client, profile_payload(), "private", token="token-a")
+    assert client.get("/target-plans", headers=headers("token-b")).json()["items"] == []
+    current = client.get("/target-plans/current", headers=headers("token-b")).json()
+    assert current["plan"] is None
+    assert current["targets"] is None
+
+
+def test_retired_routes_and_contract_fields_are_absent(target_plan_context) -> None:
+    client, _ = target_plan_context
+    for method, path in (
+        ("POST", "/target-plans/activate"),
+        ("POST", "/target-plans/pending/replace"),
+        ("GET", "/target-plans/pending"),
+    ):
+        response = client.request(method, path, headers=headers())
+        assert response.status_code == 404
+
+    schema = app.openapi()
+    assert "/target-plans/activate" not in schema["paths"]
+    assert "/target-plans/pending/replace" not in schema["paths"]
+    assert "/target-plans/pending" not in schema["paths"]
+    summary = schema["components"]["schemas"]["TargetPlanSummary"]["properties"]
+    assert set(summary) == {"id", "effective_from", "revision", "targets", "created_at"}
+    assert "targets" not in schema["components"]["schemas"]["WeekSummary"]["properties"]
+
+
+def test_profile_response_has_no_pending_plan(target_plan_context) -> None:
+    client, _ = target_plan_context
+    write_plan(client, profile_payload(), "profile-contract")
+    response = client.get("/profile", headers=headers())
+    assert response.status_code == 200
+    assert "pending_plan" not in response.json()
+    assert response.json()["effective_plan"]["revision"] == 1

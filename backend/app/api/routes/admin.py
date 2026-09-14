@@ -19,7 +19,7 @@ from app.schemas import (
 from app.services.diary import AdminDiaryCursorError, admin_diary_page
 from app.services.errors import resource_not_found
 from app.services.profile import to_profile_response
-from app.services.target_plans import pending_plan, plan_history, project_targets
+from app.services.target_plans import plan_history, resolve_targets
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -134,11 +134,15 @@ def user_detail(
     principal = _get_principal(session, principal_id)
     selected = _selected_context(principal)
     profile = session.exec(select(Profile).where(Profile.principal_id == principal.id)).first()
+    target = resolve_targets(session, selected, current_diary_date())
     return AdminUserDetail(
         account=_summary(session, principal),
-        profile=to_profile_response(profile) if profile else None,
-        current_target=project_targets(session, selected, current_diary_date()),
-        pending_plan=pending_plan(session, selected),
+        profile=(
+            to_profile_response(profile, resolved_targets=target.targets)
+            if profile
+            else None
+        ),
+        current_target=target,
         plan_history=plan_history(session, selected, 100, None),
     )
 

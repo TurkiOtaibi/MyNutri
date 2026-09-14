@@ -1,5 +1,12 @@
 # W1-CD-01 Approved Legacy Target Transition Snapshot
 
+> **PARTIALLY SUPERSEDED FOR CURRENT IMPLEMENTATION.** This document remains
+> historical evidence for the retained immutable transition snapshot. Its
+> activation, pending replacement, exact-one-day bridge, and lifecycle coupling
+> are superseded by the [Target Plan date-effective model](../v2/09_TARGET_PLAN_DATE_EFFECTIVE_MODEL.md).
+> The current snapshot bridges from `transition_date` until the first versioned
+> plan's `effective_from`, exclusive.
+
 ## Metadata
 
 | Field | Value |

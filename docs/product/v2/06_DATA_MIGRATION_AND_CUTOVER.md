@@ -12,6 +12,11 @@ Day Logging Status is removed by the coordinated hard-cutover revision:
 - revision: `a6c81e4f2d90`
 - parent: `f47a2c9d6e13`
 
+The Target Plan lifecycle is replaced by immutable date-effective revisions in:
+
+- revision: `b7d42e9a1c36`
+- parent: `a6c81e4f2d90`
+
 Historical revisions remain unchanged so the base-to-head chain is
 reconstructable. Their retired tables, columns, and guards are removed only by
 the new revision.
@@ -71,6 +76,29 @@ whose operation is `diary_day_complete` or `diary_day_reopen` and whose
 idempotency rows remain. No status data is exported or preserved. Historical
 Alembic files remain byte-for-byte unchanged.
 
+## Target Plan date-effective transition
+
+Revision `b7d42e9a1c36` fails closed unless every Target Plan has valid Principal
+and Profile ownership, calculation/version metadata, and an unambiguous
+same-date predecessor/superseder chain; every Diary binding is owner-safe; and
+every legacy Target Plan idempotency row can be replayed deterministically.
+
+The migration adds `revision`, maps each valid same-date chain root-to-final to
+revisions 1..N, then enforces positive revisions and uniqueness of
+`(principal_id, effective_from, revision)`. Existing single-row groups become
+revision 1. Today/future Diary rows are rebound to the canonical date-effective
+revision; past rows are not changed. The Target Plan guard is replaced with an
+UPDATE/DELETE rejection and the Diary guard admits only controlled canonical
+today/future rebinding.
+
+After validation, the migration removes Target Plan lifecycle constraints,
+partial indexes, period exclusion, self-referencing lifecycle foreign keys, and
+the lifecycle-only columns. It removes `btree_gist` only after catalog inspection
+proves there is no remaining application dependency. Calculation documents,
+Nutrition Versioning fields, legacy transition snapshots, Profile ownership,
+Diary Target Plan references/provenance, and all Target Plan idempotency rows are
+preserved.
+
 ## Cutover gates
 
 Before any release authorization:
@@ -86,6 +114,10 @@ Before any release authorization:
    status-specific idempotency rows are absent.
 9. Confirm future Diary create, update, and delete work without `If-Match`.
 10. Confirm historical migrations are byte-for-byte unchanged.
+11. Confirm Target Plan revisions, same-date canonical selection, future Diary
+    rebinding, past binding immutability, and legacy replay adaptation.
+12. Confirm all Target Plan GET paths produce no lifecycle DML, flush, commit, or
+    lifecycle lock and the three retired lifecycle operations are absent.
 
 ## Downgrade boundary
 
@@ -98,3 +130,7 @@ separately authorized operational work.
 Revision `a6c81e4f2d90` also fails closed on downgrade. Deleted status, history,
 and command-idempotency rows cannot be reconstructed faithfully. Roll forward
 or restore an approved backup with the matching application revision.
+
+Revision `b7d42e9a1c36` fails closed on downgrade. Removed lifecycle state cannot
+be reconstructed from immutable revisions without fabricating history. Recovery
+requires the matching pre-cutover database restore and old application revision.

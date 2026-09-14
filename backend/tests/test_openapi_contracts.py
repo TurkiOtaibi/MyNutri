@@ -168,6 +168,12 @@ def test_unused_routes_are_absent_and_protected_routes_remain() -> None:
         }
     )
     assert {
+        ("POST", "/target-plans"),
+        ("GET", "/target-plans"),
         ("GET", "/target-plans/current"),
-        ("GET", "/target-plans/pending"),
     } <= operations
+    assert {
+        ("POST", "/target-plans/activate"),
+        ("POST", "/target-plans/pending/replace"),
+        ("GET", "/target-plans/pending"),
+    }.isdisjoint(operations)

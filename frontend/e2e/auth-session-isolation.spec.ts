@@ -388,7 +388,7 @@ test("same browser context isolates cached profile and diary data across A to B 
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
-        items: [{ id: `plan-${suffix}`, status: "active", effective_from: historyMarkerA, effective_to: null, targets: { target_calories: 2100 } }],
+        items: [{ id: `plan-${suffix}`, effective_from: historyMarkerA, revision: 1, created_at: "2026-08-01T12:00:00Z", targets: { target_calories: 2100 } }],
         next_cursor: null
       })
     });

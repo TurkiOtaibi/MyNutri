@@ -9,7 +9,7 @@ type DeepRequired<T> = T extends readonly (infer Item)[]
 export type Sex = OpenApi.Sex;
 export type ActivityLevel = OpenApi.ActivityLevel;
 export type Goal = OpenApi.Goal;
-export type CutIntensity = NonNullable<OpenApi.ProfilePreview["selected_cut_intensity"]>;
+export type CutIntensity = NonNullable<OpenApi.TargetPlanPreviewRequest["selected_cut_intensity"]>;
 export type NutritionBasis = OpenApi.NutritionBasis;
 export type DefaultUnitType = OpenApi.DefaultUnitType;
 export type UnitBasis = OpenApi.UnitBasis;
@@ -29,23 +29,22 @@ export type CalendarAuthorityResponse = DeepRequired<OpenApi.CalendarAuthorityRe
 
 /** Editable Profile domain input mapped to the generated transport request. */
 export type ProfileInput = Required<
-  Pick<OpenApi.ProfilePreview, "protein_per_kg" | "fat_pct" | "selected_cut_intensity">
-> & Omit<OpenApi.ProfilePreview, "protein_per_kg" | "fat_pct" | "selected_cut_intensity">;
+  Pick<OpenApi.TargetPlanPreviewRequest, "protein_per_kg" | "fat_pct" | "selected_cut_intensity">
+> & Omit<OpenApi.TargetPlanPreviewRequest, "effective_from" | "protein_per_kg" | "fat_pct" | "selected_cut_intensity">;
 
 export type NutritionRegistryResponse = DeepRequired<OpenApi.NutritionRegistryResponse>;
 export type ProfileResponse = Omit<
   DeepRequired<OpenApi.ProfileResponse>,
-  "targets" | "effective_plan" | "pending_plan"
+  "targets" | "effective_plan"
 > & {
   targets: TargetResponse;
   effective_plan: TargetPlanSummary | null;
-  pending_plan: TargetPlanSummary | null;
 };
 export type TargetPlanSummary = Omit<DeepRequired<OpenApi.TargetPlanSummary>, "targets"> & {
   targets: TargetResponse;
 };
-export type TargetPlanActivationResponse = Omit<
-  DeepRequired<OpenApi.TargetPlanActivationResponse>,
+export type TargetPlanWriteResponse = Omit<
+  DeepRequired<OpenApi.TargetPlanWriteResponse>,
   "plan" | "replaced_plan"
 > & {
   plan: TargetPlanSummary;
@@ -87,8 +86,7 @@ export type DaySummary = Omit<DeepRequired<OpenApi.DaySummary>, "totals" | "targ
   targets: TargetResponse | null;
 };
 export type DiaryNutrientAggregate = DeepRequired<OpenApi.DiaryNutrientAggregate>;
-export type WeekSummary = Omit<DeepRequired<OpenApi.WeekSummary>, "weekly_totals" | "targets" | "days"> & {
+export type WeekSummary = Omit<DeepRequired<OpenApi.WeekSummary>, "weekly_totals" | "days"> & {
   weekly_totals: NutritionTotals;
-  targets: TargetResponse | null;
   days: DaySummary[];
 };

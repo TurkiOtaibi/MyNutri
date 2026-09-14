@@ -194,6 +194,7 @@ def test_header_kid_invalid_values_fail_before_fetch(token: str) -> None:
 @pytest.mark.parametrize(
     "algorithm",
     ["HS256", "none", "RS512", "", None, [], {}],
+    ids=["hs256", "none-string", "rs512", "empty-string", "none-value", "list", "dict"],
 )
 def test_header_unsupported_algorithm_fails_before_fetch(algorithm: Any) -> None:
     fetcher = FakeFetcher(_document(KEY_A))

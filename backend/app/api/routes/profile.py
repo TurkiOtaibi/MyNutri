@@ -7,9 +7,9 @@ from sqlmodel import Session
 from app.core.auth import PrincipalContext, get_principal_context
 from app.db.session import get_session
 from app.nutrition_rules.calculation import CalculationError
-from app.schemas import ProfilePreview, ProfileResponse, TargetResponse
+from app.schemas import ProfileResponse, TargetPlanPreviewRequest, TargetResponse
 from app.services.profile import get_profile, preview_targets, to_profile_response
-from app.core.calendar import diary_calendar_authority, following_diary_date
+from app.core.calendar import diary_calendar_authority
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -25,30 +25,28 @@ def read_profile(
 
         raise resource_not_found()
     authority = diary_calendar_authority()
-    response = to_profile_response(profile, authority.current_diary_date)
-    from app.services.target_plans import pending_plan, resolve_targets
+    from app.services.target_plans import resolve_targets
 
     source = resolve_targets(session, principal, authority.current_diary_date)
+    response = to_profile_response(
+        profile,
+        authority.current_diary_date,
+        resolved_targets=source.targets,
+    )
     if source.targets is not None:
-        response.targets = source.targets
         response.target_provenance = source.target_provenance
         response.effective_plan = source.plan
-    response.pending_plan = pending_plan(session, principal)
     return response
 
 
 @router.post("/preview", response_model=TargetResponse)
 def preview_profile(
-    payload: ProfilePreview,
+    payload: TargetPlanPreviewRequest,
     principal: PrincipalContext = Depends(get_principal_context),
     session: Session = Depends(get_session),
 ) -> TargetResponse | JSONResponse:
     try:
-        authority = diary_calendar_authority()
-        effective_date = authority.current_diary_date
-        if get_profile(session, principal) is not None:
-            effective_date = following_diary_date(effective_date)
-        return preview_targets(payload, effective_date)
+        return preview_targets(payload, payload.effective_from)
     except CalculationError as error:
         return JSONResponse(
             status_code=422,

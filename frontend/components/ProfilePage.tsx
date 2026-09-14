@@ -11,14 +11,14 @@ import {
   useState
 } from "react";
 
-import { ApiError, activateTargetPlan, getCalendarAuthority, getNutritionRegistry, getProfile, listTargetPlanHistory, previewProfile, replacePendingTargetPlan } from "@/lib/api";
-import type { ProfileResponse, Sex, TargetPlanActivationResponse, TargetResponse } from "@/lib/types";
+import { ApiError, getCalendarAuthority, getNutritionRegistry, getProfile, listTargetPlanHistory, previewProfile, writeTargetPlan } from "@/lib/api";
+import type { ProfileResponse, Sex, TargetPlanWriteResponse, TargetResponse } from "@/lib/types";
 import { useAuth } from "./AuthProvider";
 import { useSessionAbortSignal } from "./SessionQueryProvider";
 import { useUnsavedChanges } from "./UnsavedChangesProvider";
 import { ProfileLoadError, ProfileSkeleton } from "@/features/profile/profile-dialogs";
 import { ProfileView } from "@/features/profile/profile-view";
-import { FAT_DEFAULTS, blankDraft, formatArabicGregorianDate, isPreviewActivatable, mapProfileApiErrors, normalizeDraft, normalizeNumber, profileMatchesAcceptedActivation, toDraft, validateDraft, type ActivationPhase, type ActivationSubmission, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type ProfileField, type SheetKind } from "@/features/profile/profile-model";
+import { FAT_DEFAULTS, blankDraft, formatArabicGregorianDate, isPreviewActivatable, mapProfileApiErrors, normalizeDraft, normalizeNumber, profileMatchesAcceptedPlan, toDraft, validateDraft, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type ProfileField, type SheetKind, type TargetPlanSubmission, type TargetPlanWritePhase } from "@/features/profile/profile-model";
 
 export function ProfilePage() {
   const { session } = useAuth();
@@ -28,6 +28,8 @@ export function ProfilePage() {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<DraftProfile>(blankDraft);
   const [savedDraft, setSavedDraft] = useState<DraftProfile | null>(null);
+  const [effectiveFrom, setEffectiveFrom] = useState("");
+  const [savedEffectiveFrom, setSavedEffectiveFrom] = useState<string | null>(null);
   const [savedTargets, setSavedTargets] = useState<TargetResponse | null>(null);
   const [preview, setPreview] = useState<TargetResponse | null>(null);
   const [previewDraftHash, setPreviewDraftHash] = useState<string | null>(null);
@@ -37,10 +39,10 @@ export function ProfilePage() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [activeSheet, setActiveSheet] = useState<SheetKind>(null);
   const [restoreOpen, setRestoreOpen] = useState(false);
-  const [activationPhase, setActivationPhase] = useState<ActivationPhase>({ kind: "idle" });
+  const [writePhase, setWritePhase] = useState<TargetPlanWritePhase>({ kind: "idle" });
   const [pendingServerProfile, setPendingServerProfile] = useState<ProfileResponse | null | undefined>(undefined);
-  const [activationErrorCode, setActivationErrorCode] = useState<string | null>(null);
-  const [activationSafetyOutcome, setActivationSafetyOutcome] = useState<BlockingSafetyOutcome | null>(null);
+  const [writeErrorCode, setWriteErrorCode] = useState<string | null>(null);
+  const [writeSafetyOutcome, setWriteSafetyOutcome] = useState<BlockingSafetyOutcome | null>(null);
   const [safetyAttemptSequence, setSafetyAttemptSequence] = useState(0);
   const previewSequence = useRef(0);
   const heightRef = useRef<HTMLInputElement>(null);
@@ -49,14 +51,15 @@ export function ProfilePage() {
   const proteinRef = useRef<HTMLInputElement>(null);
   const fatRef = useRef<HTMLInputElement>(null);
   const safetyRef = useRef<HTMLDivElement>(null);
-  const restoreActivationFocusRef = useRef(true);
-  const activationPhaseRef = useRef<ActivationPhase>(activationPhase);
+  const effectiveFromRef = useRef<HTMLInputElement>(null);
+  const restoreWriteFocusRef = useRef(true);
+  const writePhaseRef = useRef<TargetPlanWritePhase>(writePhase);
   const mountedRef = useRef(true);
   const formSubjectRef = useRef(subjectId);
 
-  function transitionActivation(next: ActivationPhase) {
-    activationPhaseRef.current = next;
-    setActivationPhase(next);
+  function transitionWrite(next: TargetPlanWritePhase) {
+    writePhaseRef.current = next;
+    setWritePhase(next);
   }
 
   useEffect(() => () => {
@@ -81,14 +84,19 @@ export function ProfilePage() {
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined
   });
   const registryReady = registryQuery.data?.registry_schema_version === 4;
-  const dirty = savedDraft != null && normalizeDraft(draft) !== normalizeDraft(savedDraft);
-  const activationOwnsAuthority = ["reconciling", "recovery", "committed"].includes(activationPhase.kind);
+  const authoritativeDate = authorityQuery.data?.current_diary_date ?? null;
+  const selectedEffectiveFrom = effectiveFrom || authoritativeDate || "";
+  const dirty = savedDraft != null && (
+    normalizeDraft(draft) !== normalizeDraft(savedDraft) ||
+    (authoritativeDate != null && selectedEffectiveFrom !== (savedEffectiveFrom ?? authoritativeDate))
+  );
+  const writeOwnsAuthority = ["reconciling", "recovery", "committed"].includes(writePhase.kind);
 
   useEffect(() => {
     if (profileQuery.data === undefined) return;
-    if (["reconciling", "recovery"].includes(activationPhaseRef.current.kind)) return;
+    if (["reconciling", "recovery"].includes(writePhaseRef.current.kind)) return;
     const nextDraft = profileQuery.data ? toDraft(profileQuery.data) : blankDraft();
-    const responsePhaseOwnsAuthority = ["reconciling", "recovery", "committed"].includes(activationPhaseRef.current.kind);
+    const responsePhaseOwnsAuthority = ["reconciling", "recovery", "committed"].includes(writePhaseRef.current.kind);
     if (dirty && !responsePhaseOwnsAuthority) {
       if (normalizeDraft(nextDraft) !== normalizeDraft(savedDraft ?? blankDraft())) {
         // Preserve an in-progress draft when a newer server response arrives.
@@ -111,9 +119,10 @@ export function ProfilePage() {
   const { requestDiscard } = useUnsavedChanges({
     identity: "profile",
     dirty,
-    enabled: !activationOwnsAuthority,
+    enabled: !writeOwnsAuthority,
     discard: () => {
       setSavedDraft(draft);
+      setSavedEffectiveFrom(selectedEffectiveFrom);
       setPendingServerProfile(undefined);
     }
   });
@@ -123,18 +132,19 @@ export function ProfilePage() {
     formSubjectRef.current = subjectId;
     setDraft(blankDraft());
     setSavedDraft(null);
+    setEffectiveFrom("");
+    setSavedEffectiveFrom(null);
     setSavedTargets(null);
     setPendingServerProfile(undefined);
     setPreview(null);
     setPreviewDraftHash(null);
     setErrors({});
   }, [subjectId]);
-  const authoritativeDate = authorityQuery.data?.current_diary_date ?? null;
   const validation = useMemo(
-    () => validateDraft(draft, authoritativeDate),
-    [draft, authoritativeDate]
+    () => validateDraft(draft, authoritativeDate, selectedEffectiveFrom),
+    [draft, authoritativeDate, selectedEffectiveFrom]
   );
-  const currentDraftHash = normalizeDraft(draft);
+  const currentDraftHash = `${normalizeDraft(draft)}:${selectedEffectiveFrom}`;
   const currentPreview = previewDraftHash === currentDraftHash ? preview : null;
 
   const requestPreview = () => {
@@ -150,13 +160,13 @@ export function ProfilePage() {
     const requestedDraftHash = currentDraftHash;
     setPreviewPending(true);
     setPreviewFailed(false);
-    previewProfile(validation.payload, accessToken, sessionSignal)
+    previewProfile(validation.payload, selectedEffectiveFrom, accessToken, sessionSignal)
       .then((result) => {
         if (sessionSignal.aborted || sequence !== previewSequence.current) return;
         setPreview(result);
         setPreviewDraftHash(requestedDraftHash);
         setPreviewFailed(false);
-        setActivationSafetyOutcome(null);
+        setWriteSafetyOutcome(null);
         setSafetyAttemptSequence(0);
       })
       .catch((error) => {
@@ -179,124 +189,124 @@ export function ProfilePage() {
     return () => window.clearTimeout(timer);
     // requestPreview intentionally follows the normalized draft and saved baseline.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, normalizeDraft(draft), registryReady]);
+  }, [dirty, normalizeDraft(draft), selectedEffectiveFrom, registryReady]);
 
   useEffect(() => {
-    if (activationSafetyOutcome) return;
+    if (writeSafetyOutcome) return;
     // Reset the confirmation attempt when the authoritative preview changes.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSafetyAttemptSequence(0);
-    if (activationPhaseRef.current.kind === "confirming") {
-      transitionActivation({ kind: "idle" });
+    if (writePhaseRef.current.kind === "confirming") {
+      transitionWrite({ kind: "idle" });
     }
-  }, [activationSafetyOutcome, currentDraftHash, currentPreview?.preview_hash]);
+  }, [writeSafetyOutcome, currentDraftHash, currentPreview?.preview_hash]);
 
   useEffect(() => {
-    if (safetyAttemptSequence === 0 || ["confirming", "submitting"].includes(activationPhase.kind)) return;
+    if (safetyAttemptSequence === 0 || ["confirming", "submitting"].includes(writePhase.kind)) return;
     safetyRef.current?.focus();
-  }, [activationPhase.kind, activationSafetyOutcome, currentPreview?.safety_outcome, safetyAttemptSequence]);
+  }, [writePhase.kind, writeSafetyOutcome, currentPreview?.safety_outcome, safetyAttemptSequence]);
 
   useEffect(() => {
-    if (activationPhase.kind !== "committed") return;
-    const timer = window.setTimeout(() => transitionActivation({ kind: "idle" }), 2800);
+    if (writePhase.kind !== "committed") return;
+    const timer = window.setTimeout(() => transitionWrite({ kind: "idle" }), 2800);
     return () => window.clearTimeout(timer);
-  }, [activationPhase.kind]);
+  }, [writePhase.kind]);
 
-  async function reconcileAcceptedActivation(
-    submission: ActivationSubmission,
-    accepted: TargetPlanActivationResponse
+  async function reconcileAcceptedPlan(
+    submission: TargetPlanSubmission,
+    accepted: TargetPlanWriteResponse
   ) {
-    transitionActivation({ kind: "reconciling", submission, accepted });
+    transitionWrite({ kind: "reconciling", submission, accepted });
     try {
       const refreshed = await profileQuery.refetch();
       if (sessionSignal.aborted || !mountedRef.current) return;
       const profile = refreshed.data;
-      if (!profile || !profileMatchesAcceptedActivation(profile, submission, accepted)) {
-        transitionActivation({ kind: "recovery", submission, accepted });
+      if (!profile || !profileMatchesAcceptedPlan(profile, submission, accepted)) {
+        transitionWrite({ kind: "recovery", submission, accepted });
         return;
       }
       const confirmed = toDraft(profile);
       queryClient.setQueryData(["profile"], profile);
       setDraft(confirmed);
       setSavedDraft(confirmed);
-      setSavedTargets(profile.targets ?? accepted.plan.targets);
+      setEffectiveFrom(submission.effectiveFrom);
+      setSavedEffectiveFrom(submission.effectiveFrom);
+      setSavedTargets(profile.targets);
       setPendingServerProfile(undefined);
-      transitionActivation({ kind: "committed", accepted });
+      transitionWrite({ kind: "committed", accepted });
     } catch {
       if (!sessionSignal.aborted && mountedRef.current) {
-        transitionActivation({ kind: "recovery", submission, accepted });
+        transitionWrite({ kind: "recovery", submission, accepted });
       }
     }
   }
 
-  async function activateConfirmedPlan() {
-    const current = activationPhaseRef.current;
+  async function writeConfirmedPlan() {
+    const current = writePhaseRef.current;
     if (current.kind !== "confirming") return;
     const { submission } = current;
-    transitionActivation({ kind: "submitting", submission });
+    transitionWrite({ kind: "submitting", submission });
     try {
-      const accepted = submission.replacesPendingPlan
-        ? await replacePendingTargetPlan(
-          submission.payload,
-          submission.preview.preview_hash,
-          submission.idempotencyKey,
-          accessToken,
-          sessionSignal
-        )
-        : await activateTargetPlan(
-          submission.payload,
-          submission.preview.preview_hash,
-          submission.idempotencyKey,
-          accessToken,
-          sessionSignal
-        );
+      const accepted = await writeTargetPlan(
+        submission.payload,
+        submission.effectiveFrom,
+        submission.preview.preview_hash,
+        submission.idempotencyKey,
+        accessToken,
+        sessionSignal
+      );
       if (sessionSignal.aborted || !mountedRef.current) return;
       const committedDraft = toDraft(submission.payload);
       setDraft(committedDraft);
       setSavedDraft(committedDraft);
-      setSavedTargets(accepted.plan.targets);
+      setEffectiveFrom(submission.effectiveFrom);
+      setSavedEffectiveFrom(submission.effectiveFrom);
       setPendingServerProfile(undefined);
       setPreview(null);
       setPreviewDraftHash(null);
       setPreviewFailed(false);
       setErrors({});
-      setActivationErrorCode(null);
-      setActivationSafetyOutcome(null);
+      setWriteErrorCode(null);
+      setWriteSafetyOutcome(null);
       setSafetyAttemptSequence(0);
       void queryClient.invalidateQueries({ queryKey: ["target-plan-history"] });
-      await reconcileAcceptedActivation(submission, accepted);
+      await reconcileAcceptedPlan(submission, accepted);
     } catch (error) {
       if (sessionSignal.aborted || !mountedRef.current) return;
       const mapped = mapProfileApiErrors(error);
       if (Object.keys(mapped).length > 0) setErrors(mapped);
       else if (error instanceof ApiError && ["SPECIALIST_REVIEW_REQUIRED", "VERY_LOW_ENERGY_TARGET_BLOCKED"].includes(error.code ?? "")) {
-        restoreActivationFocusRef.current = false;
-        setActivationSafetyOutcome(
+        restoreWriteFocusRef.current = false;
+        setWriteSafetyOutcome(
           error.code === "SPECIALIST_REVIEW_REQUIRED"
             ? "specialist_review_required"
             : "very_low_energy_blocked"
         );
-        setActivationErrorCode(error.code ?? null);
+        setWriteErrorCode(error.code ?? null);
         setPreview(null);
         setPreviewDraftHash(null);
         setPreviewFailed(false);
         setSafetyAttemptSequence((sequence) => sequence + 1);
-        transitionActivation({ kind: "idle" });
+        transitionWrite({ kind: "idle" });
       }
-      else if (error instanceof ApiError && ["PREVIEW_RESULT_CHANGED", "IDEMPOTENCY_KEY_REUSED"].includes(error.code ?? "")) {
-        setActivationErrorCode(error.code ?? null);
+      else if (error instanceof ApiError && ["PREVIEW_RESULT_CHANGED", "IDEMPOTENCY_KEY_REUSED", "TARGET_PLAN_EFFECTIVE_DATE_PAST", "TARGET_PLAN_DATE_BOUNDARY_CHANGED"].includes(error.code ?? "")) {
+        setWriteErrorCode(error.code ?? null);
+        if (["TARGET_PLAN_EFFECTIVE_DATE_PAST", "TARGET_PLAN_DATE_BOUNDARY_CHANGED"].includes(error.code ?? "")) {
+          setErrors((currentErrors) => ({ ...currentErrors, effective_from: "اختر تاريخًا يبدأ من اليوم" }));
+          void authorityQuery.refetch();
+        }
         setPreview(null);
         setPreviewDraftHash(null);
-        transitionActivation({ kind: "idle" });
+        transitionWrite({ kind: "idle" });
         requestPreview();
       } else {
-        transitionActivation({ kind: "failed", submission });
+        transitionWrite({ kind: "failed", submission });
       }
     } finally {
-      if (activationPhaseRef.current.kind === "submitting") {
-        activationPhaseRef.current = { kind: "idle" };
+      if (writePhaseRef.current.kind === "submitting") {
+        writePhaseRef.current = { kind: "idle" };
         if (mountedRef.current) {
-          setActivationPhase({ kind: "idle" });
+          setWritePhase({ kind: "idle" });
         }
       }
     }
@@ -309,9 +319,9 @@ export function ProfilePage() {
       delete next[key];
       return next;
     });
-    transitionActivation({ kind: "idle" });
-    setActivationErrorCode(null);
-    setActivationSafetyOutcome(null);
+    transitionWrite({ kind: "idle" });
+    setWriteErrorCode(null);
+    setWriteSafetyOutcome(null);
     setSafetyAttemptSequence(0);
   }
 
@@ -326,15 +336,15 @@ export function ProfilePage() {
       };
     });
     setErrors((current) => { const next = { ...current }; delete next.sex; delete next.fat_percent; return next; });
-    transitionActivation({ kind: "idle" });
-    setActivationErrorCode(null);
-    setActivationSafetyOutcome(null);
+    transitionWrite({ kind: "idle" });
+    setWriteErrorCode(null);
+    setWriteSafetyOutcome(null);
     setSafetyAttemptSequence(0);
   }
 
   function submit(event?: FormEvent) {
     event?.preventDefault();
-    const result = validateDraft(draft, authoritativeDate);
+    const result = validateDraft(draft, authoritativeDate, selectedEffectiveFrom);
     setErrors(result.errors);
     if (!registryReady) return;
     if (!result.payload) {
@@ -343,6 +353,7 @@ export function ProfilePage() {
         ["protein_per_kg", proteinRef], ["fat_percent", fatRef]
       ];
       const invalid = order.find(([field]) => result.errors[field]);
+      if (result.errors.effective_from) effectiveFromRef.current?.focus();
       if (invalid?.[0] === "protein_per_kg" || invalid?.[0] === "fat_percent") setAdvancedOpen(true);
       window.setTimeout(() => invalid?.[1].current?.focus(), 0);
       return;
@@ -353,25 +364,26 @@ export function ProfilePage() {
     }
     if (!isPreviewActivatable(currentPreview)) {
       setSafetyAttemptSequence((current) => current + 1);
-      transitionActivation({ kind: "idle" });
+      transitionWrite({ kind: "idle" });
       return;
     }
-    restoreActivationFocusRef.current = true;
-    const failedSubmission = activationPhaseRef.current.kind === "failed"
-      ? activationPhaseRef.current.submission
+    restoreWriteFocusRef.current = true;
+    const failedSubmission = writePhaseRef.current.kind === "failed"
+      ? writePhaseRef.current.submission
       : null;
     const idempotencyKey = failedSubmission &&
       normalizeDraft(toDraft(failedSubmission.payload)) === normalizeDraft(toDraft(result.payload)) &&
+      failedSubmission.effectiveFrom === selectedEffectiveFrom &&
       failedSubmission.preview.preview_hash === currentPreview.preview_hash
       ? failedSubmission.idempotencyKey
       : crypto.randomUUID();
-    transitionActivation({
+    transitionWrite({
       kind: "confirming",
       submission: {
         payload: result.payload,
+        effectiveFrom: selectedEffectiveFrom,
         preview: currentPreview,
-        idempotencyKey,
-        replacesPendingPlan: Boolean(profileQuery.data?.pending_plan)
+        idempotencyKey
       }
     });
   }
@@ -397,6 +409,14 @@ export function ProfilePage() {
       setPreviewDraftHash={setPreviewDraftHash}
       setErrors={setErrors}
       draft={draft}
+      effectiveFrom={selectedEffectiveFrom}
+      setEffectiveFrom={(value) => {
+        setEffectiveFrom(value);
+        setErrors((current) => { const next = { ...current }; delete next.effective_from; return next; });
+        transitionWrite({ kind: "idle" });
+        setWriteErrorCode(null);
+      }}
+      effectiveFromRef={effectiveFromRef}
       activeSheet={activeSheet}
       updateSex={updateSex}
       setActiveSheet={setActiveSheet}
@@ -412,28 +432,27 @@ export function ProfilePage() {
       proteinRef={proteinRef}
       fatRef={fatRef}
       savedTargets={savedTargets}
-      profileQuery={profileQuery}
       registryQuery={registryQuery}
       registryReady={registryReady}
       planHistoryQuery={planHistoryQuery}
       currentPreview={currentPreview}
       previewPending={previewPending}
       previewFailed={previewFailed}
-      activationSafetyOutcome={activationSafetyOutcome}
+      writeSafetyOutcome={writeSafetyOutcome}
       safetyAttemptSequence={safetyAttemptSequence}
       safetyRef={safetyRef}
       requestPreview={requestPreview}
       validation={validation}
-      activationErrorCode={activationErrorCode}
-      activationPhase={activationPhase}
+      writeErrorCode={writeErrorCode}
+      writePhase={writePhase}
       submit={submit}
-      reconcileAcceptedActivation={reconcileAcceptedActivation}
+      reconcileAcceptedPlan={reconcileAcceptedPlan}
       restoreOpen={restoreOpen}
       setRestoreOpen={setRestoreOpen}
-      transitionActivation={transitionActivation}
-      activationPhaseRef={activationPhaseRef}
-      restoreActivationFocusRef={restoreActivationFocusRef}
-      activateConfirmedPlan={activateConfirmedPlan}
+      transitionWrite={transitionWrite}
+      writePhaseRef={writePhaseRef}
+      restoreWriteFocusRef={restoreWriteFocusRef}
+      writeConfirmedPlan={writeConfirmedPlan}
     />
   );
 }

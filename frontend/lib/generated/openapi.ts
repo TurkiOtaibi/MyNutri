@@ -98,7 +98,6 @@ export interface AdminDiaryPage {
 export interface AdminUserDetail {
   account: AdminUserSummary;
   current_target: TargetSourceResponse | null;
-  pending_plan: TargetPlanSummary | null;
   plan_history: TargetPlanHistoryResponse;
   profile: ProfileResponse | null;
 }
@@ -629,49 +628,6 @@ export type PrincipalRole = "user" | "admin";
 /** PrincipalStatus */
 export type PrincipalStatus = "active" | "disabled";
 
-/** ProfilePreview */
-export interface ProfilePreview {
-  activity_level: ActivityLevel;
-  /**
-   * Birth Date
-   * @format date
-   */
-  birth_date: string;
-  /**
-   * Fat Pct
-   * @min 0.15
-   * @max 0.4
-   * @default 0.25
-   */
-  fat_pct?: number;
-  goal: Goal;
-  /**
-   * Height Cm
-   * @min 100
-   * @max 250
-   */
-  height_cm: number;
-  /**
-   * Protein Per Kg
-   * @min 1
-   * @max 3
-   * @default 1.2
-   */
-  protein_per_kg?: number;
-  /**
-   * Selected Cut Intensity
-   * @default 0.2
-   */
-  selected_cut_intensity?: 0.15 | 0.2 | 0.25;
-  sex: Sex;
-  /**
-   * Weight Kg
-   * @min 20
-   * @max 300
-   */
-  weight_kg: number;
-}
-
 /** ProfileResponse */
 export interface ProfileResponse {
   activity_level: ActivityLevel;
@@ -700,7 +656,6 @@ export interface ProfileResponse {
    * @format uuid
    */
   id: string;
-  pending_plan?: TargetPlanSummary | null;
   /**
    * Protein Per Kg
    * @min 1
@@ -811,64 +766,6 @@ export interface RegistryPrimaryCategoryDefinition {
 /** Sex */
 export type Sex = "male" | "female";
 
-/** TargetPlanActivationRequest */
-export interface TargetPlanActivationRequest {
-  activity_level: ActivityLevel;
-  /**
-   * Birth Date
-   * @format date
-   */
-  birth_date: string;
-  /** Confirmed */
-  confirmed: true;
-  /**
-   * Expected Preview Hash
-   * @minLength 64
-   * @maxLength 64
-   * @pattern ^[0-9a-f]{64}$
-   */
-  expected_preview_hash: string;
-  /**
-   * Fat Pct
-   * @min 0.15
-   * @max 0.4
-   * @default 0.25
-   */
-  fat_pct?: number;
-  goal: Goal;
-  /**
-   * Height Cm
-   * @min 100
-   * @max 250
-   */
-  height_cm: number;
-  /**
-   * Protein Per Kg
-   * @min 1
-   * @max 3
-   * @default 1.2
-   */
-  protein_per_kg?: number;
-  /**
-   * Selected Cut Intensity
-   * @default 0.2
-   */
-  selected_cut_intensity?: 0.15 | 0.2 | 0.25;
-  sex: Sex;
-  /**
-   * Weight Kg
-   * @min 20
-   * @max 300
-   */
-  weight_kg: number;
-}
-
-/** TargetPlanActivationResponse */
-export interface TargetPlanActivationResponse {
-  plan: TargetPlanSummary;
-  replaced_plan?: TargetPlanSummary | null;
-}
-
 /** TargetPlanHistoryResponse */
 export interface TargetPlanHistoryResponse {
   /** Items */
@@ -877,8 +774,8 @@ export interface TargetPlanHistoryResponse {
   next_cursor?: string | null;
 }
 
-/** TargetPlanReplacementRequest */
-export interface TargetPlanReplacementRequest {
+/** TargetPlanPreviewRequest */
+export interface TargetPlanPreviewRequest {
   activity_level: ActivityLevel;
   /**
    * Birth Date
@@ -886,12 +783,10 @@ export interface TargetPlanReplacementRequest {
    */
   birth_date: string;
   /**
-   * Expected Preview Hash
-   * @minLength 64
-   * @maxLength 64
-   * @pattern ^[0-9a-f]{64}$
+   * Effective From
+   * @format date
    */
-  expected_preview_hash: string;
+  effective_from: string;
   /**
    * Fat Pct
    * @min 0.15
@@ -913,8 +808,6 @@ export interface TargetPlanReplacementRequest {
    * @default 1.2
    */
   protein_per_kg?: number;
-  /** Replace Confirmed */
-  replace_confirmed: true;
   /**
    * Selected Cut Intensity
    * @default 0.2
@@ -931,12 +824,6 @@ export interface TargetPlanReplacementRequest {
 
 /** TargetPlanSummary */
 export interface TargetPlanSummary {
-  /** Activated At */
-  activated_at: string | null;
-  /** Calendar Timezone */
-  calendar_timezone: string;
-  /** Closed At */
-  closed_at: string | null;
   /**
    * Created At
    * @format date-time
@@ -947,22 +834,77 @@ export interface TargetPlanSummary {
    * @format date
    */
   effective_from: string;
-  /** Effective To */
-  effective_to: string | null;
   /**
    * Id
    * @format uuid
    */
   id: string;
-  /** Predecessor Plan Id */
-  predecessor_plan_id: string | null;
-  /** Status */
-  status: "active" | "scheduled" | "closed" | "superseded_before_effective";
-  /** Superseded At */
-  superseded_at: string | null;
-  /** Superseded By Plan Id */
-  superseded_by_plan_id: string | null;
+  /** Revision */
+  revision: number;
   targets: TargetResponse;
+}
+
+/** TargetPlanWriteRequest */
+export interface TargetPlanWriteRequest {
+  activity_level: ActivityLevel;
+  /**
+   * Birth Date
+   * @format date
+   */
+  birth_date: string;
+  /** Confirmed */
+  confirmed: true;
+  /**
+   * Effective From
+   * @format date
+   */
+  effective_from: string;
+  /**
+   * Expected Preview Hash
+   * @minLength 64
+   * @maxLength 64
+   * @pattern ^[0-9a-f]{64}$
+   */
+  expected_preview_hash: string;
+  /**
+   * Fat Pct
+   * @min 0.15
+   * @max 0.4
+   * @default 0.25
+   */
+  fat_pct?: number;
+  goal: Goal;
+  /**
+   * Height Cm
+   * @min 100
+   * @max 250
+   */
+  height_cm: number;
+  /**
+   * Protein Per Kg
+   * @min 1
+   * @max 3
+   * @default 1.2
+   */
+  protein_per_kg?: number;
+  /**
+   * Selected Cut Intensity
+   * @default 0.2
+   */
+  selected_cut_intensity?: 0.15 | 0.2 | 0.25;
+  sex: Sex;
+  /**
+   * Weight Kg
+   * @min 20
+   * @max 300
+   */
+  weight_kg: number;
+}
+
+/** TargetPlanWriteResponse */
+export interface TargetPlanWriteResponse {
+  plan: TargetPlanSummary;
+  replaced_plan?: TargetPlanSummary | null;
 }
 
 /** TargetResponse */
@@ -1063,7 +1005,6 @@ export interface WeekSummary {
    * @format date
    */
   start: string;
-  targets?: TargetResponse | null;
   weekly_totals: NutritionTotals;
 }
 
@@ -1795,7 +1736,7 @@ export namespace Profile {
   export namespace PreviewProfileProfilePreviewPost {
     export type RequestParams = {};
     export type RequestQuery = {};
-    export type RequestBody = ProfilePreview;
+    export type RequestBody = TargetPlanPreviewRequest;
     export type RequestHeaders = {};
     export type ResponseBody = TargetResponse;
   }
@@ -1818,25 +1759,6 @@ export namespace Profile {
 }
 
 export namespace TargetPlans {
-  /**
-   * No description
-   * @tags target-plans
-   * @name ActivateTargetPlansActivatePost
-   * @summary Activate
-   * @request POST:/target-plans/activate
-   * @secure
-   */
-  export namespace ActivateTargetPlansActivatePost {
-    export type RequestParams = {};
-    export type RequestQuery = {};
-    export type RequestBody = TargetPlanActivationRequest;
-    export type RequestHeaders = {
-      /** Idempotency-Key */
-      "Idempotency-Key": string;
-    };
-    export type ResponseBody = TargetPlanActivationResponse;
-  }
-
   /**
    * No description
    * @tags target-plans
@@ -1885,35 +1807,19 @@ export namespace TargetPlans {
   /**
    * No description
    * @tags target-plans
-   * @name PendingTargetPlansPendingGet
-   * @summary Pending
-   * @request GET:/target-plans/pending
+   * @name WriteTargetPlansPost
+   * @summary Write
+   * @request POST:/target-plans
    * @secure
    */
-  export namespace PendingTargetPlansPendingGet {
+  export namespace WriteTargetPlansPost {
     export type RequestParams = {};
     export type RequestQuery = {};
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = TargetPlanSummary | null;
-  }
-
-  /**
-   * No description
-   * @tags target-plans
-   * @name ReplaceTargetPlansPendingReplacePost
-   * @summary Replace
-   * @request POST:/target-plans/pending/replace
-   * @secure
-   */
-  export namespace ReplaceTargetPlansPendingReplacePost {
-    export type RequestParams = {};
-    export type RequestQuery = {};
-    export type RequestBody = TargetPlanReplacementRequest;
+    export type RequestBody = TargetPlanWriteRequest;
     export type RequestHeaders = {
       /** Idempotency-Key */
       "Idempotency-Key": string;
     };
-    export type ResponseBody = TargetPlanActivationResponse;
+    export type ResponseBody = TargetPlanWriteResponse;
   }
 }
