@@ -18,14 +18,11 @@ from app.models import (
     DiaryEntry,
     IdempotencyRecord,
     IdempotencyState,
-    LegacyTargetTransitionSnapshot,
     Principal,
     Profile,
     TargetPlan,
-    TargetProvenance,
     utcnow,
 )
-from app.nutrition_rules.versions import VERSIONS
 from app.schemas import (
     ProfilePreview,
     TargetPlanHistoryResponse,
@@ -47,20 +44,8 @@ class TargetPlanError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
-class TargetBinding:
-    provenance: TargetProvenance
-    plan: TargetPlan | None = None
-    transition: LegacyTargetTransitionSnapshot | None = None
-    profile: Profile | None = None
-
-
-@dataclass(frozen=True, slots=True)
 class WeekTargetContext:
     plans: tuple[TargetPlan, ...]
-    transition: LegacyTargetTransitionSnapshot | None
-    profile: Profile | None
-    has_transition: bool
-    current_date: date
 
 
 def _canonical_hash(payload: TargetPlanWriteRequest) -> str:
@@ -87,9 +72,7 @@ def _legacy_hash(payload: TargetPlanWriteRequest, operation: str) -> str:
 
 
 def _profile_data(payload: ProfilePreview) -> dict[str, Any]:
-    data = payload.model_dump(
-        exclude={"confirmed", "expected_preview_hash", "effective_from"}
-    )
+    data = payload.model_dump(exclude={"confirmed", "expected_preview_hash", "effective_from"})
     data["cut_intensity"] = data.pop("selected_cut_intensity")
     return data
 
@@ -97,7 +80,6 @@ def _profile_data(payload: ProfilePreview) -> dict[str, Any]:
 def _target_document(payload: TargetPlanWriteRequest, targets: TargetResponse) -> dict[str, Any]:
     target_data = targets.model_dump(mode="json", exclude={"preview_hash"})
     return {
-        "schema_version": 1,
         "effective_from": payload.effective_from.isoformat(),
         "profile_inputs": payload.model_dump(
             mode="json",
@@ -111,28 +93,7 @@ def _target_document(payload: TargetPlanWriteRequest, targets: TargetResponse) -
         "protein_calculation": targets.protein_calculation.model_dump(mode="json"),
         "target_result": target_data,
         "carbohydrate_warning_codes": [item.code for item in targets.calculation_warnings],
-        "calculation_engine_version": VERSIONS.calculation_engine_version,
-        "nutrition_registry_version": VERSIONS.nutrition_registry_version,
         "calendar_timezone": "Asia/Riyadh",
-    }
-
-
-def _legacy_document(profile: Profile, targets: TargetResponse) -> dict[str, Any]:
-    return {
-        "schema_version": 1,
-        "source": "legacy_unversioned_transition",
-        "captured_profile_inputs": {
-            "sex": profile.sex.value,
-            "birth_date": profile.birth_date.isoformat(),
-            "height_cm": float(profile.height_cm),
-            "weight_kg": float(profile.weight_kg),
-            "activity_level": profile.activity_level.value,
-            "goal": profile.goal.value,
-            "protein_per_kg": float(profile.protein_per_kg),
-            "fat_pct": float(profile.fat_pct),
-            "cut_intensity": float(profile.cut_intensity),
-        },
-        "resolved_targets": targets.model_dump(mode="json", exclude={"preview_hash"}),
     }
 
 
@@ -157,9 +118,11 @@ def _database_riyadh_date(session: Session) -> date:
     bind = session.get_bind()
     if bind.dialect.name != "postgresql":
         return current_diary_date()
-    return session.connection().execute(
-        text("SELECT (clock_timestamp() AT TIME ZONE 'Asia/Riyadh')::date")
-    ).scalar_one()
+    return (
+        session.connection()
+        .execute(text("SELECT (clock_timestamp() AT TIME ZONE 'Asia/Riyadh')::date"))
+        .scalar_one()
+    )
 
 
 def _load_owned_plan(
@@ -235,13 +198,9 @@ def _replay_new_record(
     effective_from: date,
 ) -> TargetPlanWriteResponse:
     if record.request_hash != request_hash:
-        raise TargetPlanError(
-            "IDEMPOTENCY_KEY_REUSED", 409, "استُخدم مفتاح الطلب مع محتوى مختلف."
-        )
+        raise TargetPlanError("IDEMPOTENCY_KEY_REUSED", 409, "استُخدم مفتاح الطلب مع محتوى مختلف.")
     if record.state != IdempotencyState.completed:
-        raise TargetPlanError(
-            "IDEMPOTENCY_REQUEST_IN_PROGRESS", 409, "الطلب نفسه قيد التنفيذ."
-        )
+        raise TargetPlanError("IDEMPOTENCY_REQUEST_IN_PROGRESS", 409, "الطلب نفسه قيد التنفيذ.")
     return _response_from_record(session, principal_id, record, effective_from)
 
 
@@ -254,9 +213,7 @@ def _replay_legacy_record(
     records = session.exec(
         select(IdempotencyRecord).where(
             IdempotencyRecord.principal_id == principal_id,
-            IdempotencyRecord.operation.in_(
-                ["target_plan.activate", "target_plan.replace"]
-            ),
+            IdempotencyRecord.operation.in_(["target_plan.activate", "target_plan.replace"]),
             IdempotencyRecord.idempotency_key == idempotency_key,
         )
     ).all()
@@ -274,17 +231,11 @@ def _replay_legacy_record(
             "استُخدم مفتاح الطلب مع محتوى مختلف.",
         )
     if not matching:
-        raise TargetPlanError(
-            "IDEMPOTENCY_KEY_REUSED", 409, "استُخدم مفتاح الطلب مع محتوى مختلف."
-        )
+        raise TargetPlanError("IDEMPOTENCY_KEY_REUSED", 409, "استُخدم مفتاح الطلب مع محتوى مختلف.")
     record = matching[0]
     if record.state != IdempotencyState.completed:
-        raise TargetPlanError(
-            "IDEMPOTENCY_REQUEST_IN_PROGRESS", 409, "الطلب نفسه قيد التنفيذ."
-        )
-    return _response_from_record(
-        session, principal_id, record, payload.effective_from
-    )
+        raise TargetPlanError("IDEMPOTENCY_REQUEST_IN_PROGRESS", 409, "الطلب نفسه قيد التنفيذ.")
+    return _response_from_record(session, principal_id, record, payload.effective_from)
 
 
 def _validate_idempotency_key(idempotency_key: str) -> None:
@@ -314,14 +265,10 @@ def write_target_plan(
     request_hash = _canonical_hash(payload)
     try:
         session.exec(
-            select(Principal)
-            .where(Principal.id == principal.principal_id)
-            .with_for_update()
+            select(Principal).where(Principal.id == principal.principal_id).with_for_update()
         ).one()
         profile = session.exec(
-            select(Profile)
-            .where(Profile.principal_id == principal.principal_id)
-            .with_for_update()
+            select(Profile).where(Profile.principal_id == principal.principal_id).with_for_update()
         ).first()
         captured_date = _database_riyadh_date(session)
 
@@ -353,11 +300,6 @@ def write_target_plan(
         if payload.effective_from < captured_date:
             raise _date_conflict("TARGET_PLAN_EFFECTIVE_DATE_PAST")
 
-        any_plan = session.exec(
-            select(TargetPlan.id)
-            .where(TargetPlan.principal_id == principal.principal_id)
-            .limit(1)
-        ).first()
         previous_plan = session.exec(
             select(TargetPlan)
             .where(
@@ -381,9 +323,7 @@ def write_target_plan(
                 if targets.safety_outcome == "very_low_energy_blocked"
                 else "SPECIALIST_REVIEW_REQUIRED"
             )
-            raise TargetPlanError(
-                code, 422, "لا يمكن حفظ هذه النتيجة وفق سياسة السلامة."
-            )
+            raise TargetPlanError(code, 422, "لا يمكن حفظ هذه النتيجة وفق سياسة السلامة.")
 
         if profile is None:
             profile = Profile(
@@ -392,28 +332,6 @@ def write_target_plan(
             )
             session.add(profile)
             session.flush()
-
-        transition = session.exec(
-            select(LegacyTargetTransitionSnapshot).where(
-                LegacyTargetTransitionSnapshot.profile_id == profile.id
-            )
-        ).first()
-        if (
-            any_plan is None
-            and transition is None
-            and payload.effective_from > captured_date
-        ):
-            legacy_targets = to_target_response(profile, captured_date)
-            session.add(
-                LegacyTargetTransitionSnapshot(
-                    principal_id=principal.principal_id,
-                    profile_id=profile.id,
-                    transition_date=captured_date,
-                    calendar_timezone="Asia/Riyadh",
-                    target_document_schema_version=1,
-                    legacy_target_document=_legacy_document(profile, legacy_targets),
-                )
-            )
 
         for key, value in _profile_data(payload).items():
             setattr(profile, key, value)
@@ -427,9 +345,6 @@ def write_target_plan(
             effective_from=payload.effective_from,
             revision=(previous_plan.revision + 1) if previous_plan else 1,
             calculation_document=_target_document(payload, targets),
-            calculation_document_schema_version=1,
-            calculation_engine_version=VERSIONS.calculation_engine_version,
-            nutrition_registry_version=VERSIONS.nutrition_registry_version,
             created_at=now,
         )
         session.add(new_plan)
@@ -446,17 +361,11 @@ def write_target_plan(
             DiaryEntry.entry_date >= payload.effective_from,
         )
         if next_effective_from is not None:
-            entries_statement = entries_statement.where(
-                DiaryEntry.entry_date < next_effective_from
-            )
+            entries_statement = entries_statement.where(DiaryEntry.entry_date < next_effective_from)
         entries = session.exec(entries_statement.with_for_update()).all()
         for entry in entries:
-            if (
-                entry.target_plan_id != new_plan.id
-                or entry.target_provenance != TargetProvenance.versioned_plan
-            ):
+            if entry.target_plan_id != new_plan.id:
                 entry.target_plan_id = new_plan.id
-                entry.target_provenance = TargetProvenance.versioned_plan
                 session.add(entry)
 
         response = TargetPlanWriteResponse(
@@ -499,13 +408,12 @@ def write_target_plan(
         raise
 
 
-def _query_target_binding(
+def _query_target_plan(
     session: Session,
     principal: PrincipalContext,
     requested_date: date,
-    authoritative_current_date: date,
-) -> TargetBinding:
-    plan = session.exec(
+) -> TargetPlan | None:
+    return session.exec(
         select(TargetPlan)
         .where(
             TargetPlan.principal_id == principal.principal_id,
@@ -516,82 +424,27 @@ def _query_target_binding(
             TargetPlan.revision.desc(),
             TargetPlan.id.desc(),
         )
-    ).first()
-    if plan is not None:
-        return TargetBinding(provenance=TargetProvenance.versioned_plan, plan=plan)
-
-    transition = session.exec(
-        select(LegacyTargetTransitionSnapshot)
-        .where(
-            LegacyTargetTransitionSnapshot.principal_id == principal.principal_id,
-            LegacyTargetTransitionSnapshot.transition_date <= requested_date,
-        )
-        .order_by(LegacyTargetTransitionSnapshot.transition_date.desc())
-    ).first()
-    if transition is not None:
-        return TargetBinding(
-            provenance=TargetProvenance.legacy_unversioned,
-            transition=transition,
-        )
-
-    profile = session.exec(
-        select(Profile).where(Profile.principal_id == principal.principal_id)
-    ).first()
-    any_transition = session.exec(
-        select(LegacyTargetTransitionSnapshot.id)
-        .where(
-            LegacyTargetTransitionSnapshot.principal_id == principal.principal_id
-        )
         .limit(1)
     ).first()
-    if profile is not None and any_transition is None and requested_date <= authoritative_current_date:
-        return TargetBinding(
-            provenance=TargetProvenance.legacy_unversioned,
-            profile=profile,
-        )
-    return TargetBinding(provenance=TargetProvenance.no_target_source)
 
 
-def resolve_target_binding(
+def resolve_target_plan(
     session: Session,
     principal: PrincipalContext,
     requested_date: date,
-    *,
-    authoritative_current_date: date | None = None,
-) -> TargetBinding:
-    captured_date = authoritative_current_date or current_diary_date()
-    return _query_target_binding(session, principal, requested_date, captured_date)
+) -> TargetPlan | None:
+    return _query_target_plan(session, principal, requested_date)
 
 
 def _target_source_response(
-    binding: TargetBinding, requested_date: date
+    plan: TargetPlan | None,
 ) -> TargetSourceResponse:
-    if binding.plan is not None:
+    if plan is not None:
         return TargetSourceResponse(
-            target_provenance=binding.provenance.value,
-            target_source_detail="effective_target_plan",
-            plan=to_plan_summary(binding.plan),
-            targets=_targets_from_plan(binding.plan),
-        )
-    if binding.transition is not None:
-        return TargetSourceResponse(
-            target_provenance=binding.provenance.value,
-            target_source_detail="legacy_transition_snapshot",
-            plan=None,
-            targets=TargetResponse.model_validate(
-                binding.transition.legacy_target_document["resolved_targets"]
-            ),
-        )
-    if binding.profile is not None:
-        return TargetSourceResponse(
-            target_provenance=binding.provenance.value,
-            target_source_detail="no_preserved_target_source",
-            plan=None,
-            targets=to_target_response(binding.profile, requested_date),
+            plan=to_plan_summary(plan),
+            targets=_targets_from_plan(plan),
         )
     return TargetSourceResponse(
-        target_provenance=binding.provenance.value,
-        target_source_detail="no_preserved_target_source",
         plan=None,
         targets=None,
     )
@@ -602,7 +455,6 @@ def _load_week_target_context(
     principal: PrincipalContext,
     week_start: date,
     week_end: date,
-    current_date: date,
 ) -> WeekTargetContext:
     canonical_revisions = (
         select(
@@ -647,58 +499,15 @@ def _load_week_target_context(
             TargetPlan.id.desc(),
         )
     ).all()
-    transition = session.exec(
-        select(LegacyTargetTransitionSnapshot)
-        .where(
-            LegacyTargetTransitionSnapshot.principal_id == principal.principal_id,
-            LegacyTargetTransitionSnapshot.transition_date <= week_end,
-        )
-        .order_by(LegacyTargetTransitionSnapshot.transition_date.desc())
-    ).first()
-    profile = session.exec(
-        select(Profile).where(Profile.principal_id == principal.principal_id)
-    ).first()
-    return WeekTargetContext(
-        plans=tuple(plans),
-        transition=transition,
-        profile=profile,
-        has_transition=transition is not None,
-        current_date=current_date,
-    )
+    return WeekTargetContext(plans=tuple(plans))
 
 
-def target_for_date(
-    context: WeekTargetContext, requested_date: date
-) -> TargetSourceResponse:
+def target_for_date(context: WeekTargetContext, requested_date: date) -> TargetSourceResponse:
     plan = next(
         (item for item in context.plans if item.effective_from <= requested_date),
         None,
     )
-    if plan is not None:
-        binding = TargetBinding(
-            provenance=TargetProvenance.versioned_plan,
-            plan=plan,
-        )
-    elif (
-        context.transition is not None
-        and context.transition.transition_date <= requested_date
-    ):
-        binding = TargetBinding(
-            provenance=TargetProvenance.legacy_unversioned,
-            transition=context.transition,
-        )
-    elif (
-        context.profile is not None
-        and not context.has_transition
-        and requested_date <= context.current_date
-    ):
-        binding = TargetBinding(
-            provenance=TargetProvenance.legacy_unversioned,
-            profile=context.profile,
-        )
-    else:
-        binding = TargetBinding(provenance=TargetProvenance.no_target_source)
-    return _target_source_response(binding, requested_date)
+    return _target_source_response(plan)
 
 
 def resolve_week_target_context(
@@ -706,13 +515,8 @@ def resolve_week_target_context(
     principal: PrincipalContext,
     week_start: date,
     week_end: date,
-    *,
-    authoritative_current_date: date | None = None,
 ) -> WeekTargetContext:
-    current_date = authoritative_current_date or current_diary_date()
-    return _load_week_target_context(
-        session, principal, week_start, week_end, current_date
-    )
+    return _load_week_target_context(session, principal, week_start, week_end)
 
 
 def resolve_targets(
@@ -720,10 +524,7 @@ def resolve_targets(
     principal: PrincipalContext,
     requested_date: date,
 ) -> TargetSourceResponse:
-    return _target_source_response(
-        resolve_target_binding(session, principal, requested_date),
-        requested_date,
-    )
+    return _target_source_response(resolve_target_plan(session, principal, requested_date))
 
 
 def _encode_history_cursor(plan: TargetPlan) -> str:
@@ -759,9 +560,7 @@ def plan_history(
     limit: int,
     cursor: str | None = None,
 ) -> TargetPlanHistoryResponse:
-    statement = select(TargetPlan).where(
-        TargetPlan.principal_id == principal.principal_id
-    )
+    statement = select(TargetPlan).where(TargetPlan.principal_id == principal.principal_id)
     if cursor:
         effective_from, revision, plan_id = _decode_history_cursor(cursor)
         statement = statement.where(

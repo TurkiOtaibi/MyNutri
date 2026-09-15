@@ -2214,7 +2214,6 @@
     }
 }
 
-:global(.target-provenance-label) { display: inline-flex; align-items: center; width: fit-content; min-height: 26px; padding: 3px 8px; border-radius: 7px; background: #edf4f1; color: #0f766e; font-size: .75rem; font-weight: 700; }
 
 :global(.meal-macro-totals) { display: flex; flex-wrap: wrap; gap: 2px; color: var(--muted, #64726c); font-size: .72rem; line-height: 1.35; margin-top: 2px; }
 

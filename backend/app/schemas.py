@@ -39,6 +39,7 @@ from app.services.food_validation_errors import (
     TRANS_FAT_GT_FAT_MESSAGE,
 )
 
+
 class RegistryNutrientDefinition(BaseModel):
     key: str
     storage_field: str
@@ -65,9 +66,6 @@ class RegistryPrimaryCategoryDefinition(RegistryLabelDefinition):
 
 
 class NutritionRegistryResponse(BaseModel):
-    nutrition_registry_version: Literal["4.0.0"]
-    calculation_engine_version: Literal["2.0.0"]
-    registry_schema_version: Literal[4]
     rules_manifest_hash: str
     calculation_policy: dict[str, Any]
     nutrients: list[RegistryNutrientDefinition]
@@ -101,7 +99,6 @@ class ProteinCalculationResponse(BaseModel):
     target_g: float
     explanation_ar: str
     reference_weight_label_ar: str
-    calculation_engine_version: str
 
 
 class CalculationWarningResponse(BaseModel):
@@ -132,8 +129,6 @@ class TargetResponse(BaseModel):
     carb_clamped: bool = False
     calculation_warnings: list[CalculationWarningResponse] = Field(default_factory=list)
     additional_targets: list[AdditionalNutrientTarget] = Field(default_factory=list)
-    calculation_engine_version: str
-    nutrition_registry_version: str
     preview_hash: str | None = None
 
 
@@ -243,12 +238,14 @@ class TargetPlanSummary(BaseModel):
 
 
 class TargetSourceResponse(BaseModel):
-    target_provenance: Literal["versioned_plan", "legacy_unversioned", "no_target_source"]
-    target_source_detail: Literal[
-        "effective_target_plan", "legacy_transition_snapshot", "no_preserved_target_source"
-    ]
     plan: TargetPlanSummary | None
     targets: TargetResponse | None
+
+    @model_validator(mode="after")
+    def require_consistent_target_source(self):
+        if (self.plan is None) != (self.targets is None):
+            raise ValueError("plan and targets must both be present or both be null")
+        return self
 
 
 class TargetPlanPreviewRequest(ProfilePreview):
@@ -273,8 +270,7 @@ class TargetPlanHistoryResponse(BaseModel):
 class ProfileResponse(ProfileUpsert):
     id: UUID
     updated_at: datetime
-    targets: TargetResponse
-    target_provenance: Literal["versioned_plan", "legacy_unversioned"] = "legacy_unversioned"
+    targets: TargetResponse | None = None
     effective_plan: TargetPlanSummary | None = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -776,6 +772,7 @@ class DiaryEntryCreate(BaseModel):
     quantity: float = Field(gt=0, le=50)
     meal_type: MealType = MealType.unspecified
 
+
 class DiaryEntryUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -794,7 +791,6 @@ class DiaryEntryResponse(BaseModel):
     entry_date: date
     food_id: UUID
     target_plan_id: UUID | None
-    target_provenance: Literal["versioned_plan", "legacy_unversioned", "no_target_source"]
     quantity: float
     recorded_unit_type: DefaultUnitType
     recorded_unit_amount: float
@@ -823,7 +819,6 @@ class DaySummary(BaseModel):
     date: date
     totals: NutritionTotals
     targets: TargetResponse | None = None
-    target_provenance: Literal["versioned_plan", "legacy_unversioned", "no_target_source"]
     nutrient_aggregates: list["DiaryNutrientAggregate"]
     overall_nutrient_coverage_percent: float | None
 
@@ -836,7 +831,6 @@ class DiaryNutrientTarget(BaseModel):
     lower: float | None = None
     upper: float | None = None
     unit: str
-    source: Literal["versioned_plan", "legacy_unversioned"]
 
 
 class DiaryNutrientAggregate(BaseModel):

@@ -8,7 +8,6 @@ from typing import Any
 from app.core.calendar import current_diary_date
 from app.models import ActivityLevel, Goal, Sex
 from app.nutrition_rules.registry import NUTRIENTS
-from app.nutrition_rules.versions import VERSIONS
 
 D0 = Decimal("0")
 D1 = Decimal("0.1")
@@ -45,7 +44,6 @@ class ProteinCalculation:
     target_g: float
     explanation_ar: str
     reference_weight_label_ar: str = "وزن مرجعي للحساب"
-    calculation_engine_version: str = VERSIONS.calculation_engine_version
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,8 +76,6 @@ class TargetResult:
     carb_clamped: bool
     calculation_warnings: tuple[CalculationWarning, ...]
     additional_targets: tuple[dict[str, Any], ...]
-    calculation_engine_version: str = VERSIONS.calculation_engine_version
-    nutrition_registry_version: str = VERSIONS.nutrition_registry_version
 
 
 def decimal(value: object) -> Decimal:
@@ -271,7 +267,9 @@ def calculate_targets(profile: Any, today: date | None = None) -> TargetResult:
     bmr = calculate_bmr(profile.sex, weight, height_cm, age)
     tdee = bmr * ACTIVITY_FACTORS[profile.activity_level]
     intensity = decimal(
-        getattr(profile, "selected_cut_intensity", getattr(profile, "cut_intensity", Decimal("0.20")))
+        getattr(
+            profile, "selected_cut_intensity", getattr(profile, "cut_intensity", Decimal("0.20"))
+        )
     )
     requested, applied, cap_applied, final_calories = calculate_energy_target(
         tdee, profile.goal, intensity

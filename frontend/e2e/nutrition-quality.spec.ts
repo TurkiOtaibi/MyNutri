@@ -105,21 +105,16 @@ test.describe("@nutrition-quality", () => {
     await expect(page.getByText("اكتمال البيانات الغذائية")).toHaveCount(0);
   });
 
-  test("Diary renders the Backend target provenance as a compact semantic label", async ({ page, request }) => {
+  test("Diary omits retired target provenance from its API and UI", async ({ page, request }) => {
     await page.goto("/diary");
     const selectedDate = await page.getByLabel("اختيار تاريخ اليوميات").inputValue();
     const summaryResponse = await request.get(`${API_URL}/diary/week?start=${sundayStart(selectedDate)}`, {
       headers: { Authorization: `Bearer ${API_TOKEN}` }
     });
     expect(summaryResponse.status()).toBe(200);
-    const summary = await summaryResponse.json() as { days: Array<{ date: string; target_provenance: "versioned_plan" | "legacy_unversioned" | "no_target_source" }> };
-    const provenance = summary.days.find((day) => day.date === selectedDate)?.target_provenance ?? "no_target_source";
-    const expected = {
-      versioned_plan: "أهداف خطة محفوظة",
-      legacy_unversioned: "أهداف قديمة غير محدثة",
-      no_target_source: "دون مصدر هدف محفوظ"
-    }[provenance];
-    await expect(page.locator(".target-provenance-label")).toHaveText(expected);
+    const summary = await summaryResponse.json() as { days: Array<{ date: string }> };
+    expect(summary.days.find((day) => day.date === selectedDate)).not.toHaveProperty("target_provenance");
+    await expect(page.locator(".target-provenance-label")).toHaveCount(0);
   });
 
   test("Diary integrity errors suppress numeric summaries and expose a truthful recovery state", async ({ page }) => {
@@ -134,21 +129,22 @@ test.describe("@nutrition-quality", () => {
     await expect(page.getByText("المجاميع غير متاحة ولن تُعرض كقيم ناقصة")).toBeVisible();
   });
 
-  test("Food create and details expose an incompatible Registry without fallback metadata", async ({ page, foodsApi }) => {
+  test("Food create and details reject a structurally invalid Registry", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Registry compatibility") });
     await page.route("**/nutrition/registry", async (route) => {
       const response = await route.fetch();
       const registry = await response.json() as Record<string, unknown>;
-      await route.fulfill({ response, json: { ...registry, registry_schema_version: 99 } });
+      const nutrients = Array.isArray(registry.nutrients) ? registry.nutrients : [];
+      await route.fulfill({ response, json: { ...registry, nutrients: [...nutrients, nutrients[0]] } });
     });
 
     await page.goto("/foods/new");
-    await expect(page.getByRole("alert").filter({ hasText: "إصدار سجل التغذية غير متوافق" })).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: "تعذر تحميل البيانات الغذائية" })).toBeVisible();
     await expect(page.getByRole("button", { name: /حفظ/ })).toHaveCount(0);
 
     await page.goto(`/foods/${food.id}`);
     await expect(page.getByRole("heading", { name: food.name })).toBeVisible();
-    await expect(page.getByText("إصدار سجل التغذية غير متوافق", { exact: true })).toBeVisible();
+    await expect(page.getByText("تعذر تحميل البيانات الغذائية", { exact: true })).toBeVisible();
     await expect(page.getByRole("region", { name: /اكتمال البيانات الغذائية/ })).toHaveCount(0);
     await expect(page.getByRole("region", { name: "تفاصيل القيم الغذائية" })).toBeVisible();
   });

@@ -91,7 +91,6 @@ test.describe("@diary @page-refinement compact Diary page", () => {
           date: string;
           totals: { calories: number };
           targets: ({ target_calories: number } & Record<string, unknown>) | null;
-          target_provenance: string;
         }>;
       };
       const targetCalories = [1000, 2000, null, 4000, 400];
@@ -101,8 +100,7 @@ test.describe("@diary @page-refinement compact Diary page", () => {
             totals: { ...day.totals, calories: 500 },
             targets: targetCalories[index] === null
               ? null
-              : { ...day.targets!, target_calories: targetCalories[index] },
-            target_provenance: targetCalories[index] === null ? "no_target_source" : day.target_provenance
+              : { ...day.targets!, target_calories: targetCalories[index] }
           }
         : day);
       await route.fulfill({ response, json: week });

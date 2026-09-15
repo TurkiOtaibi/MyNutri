@@ -184,11 +184,6 @@ export interface DaySummary {
   nutrient_aggregates: DiaryNutrientAggregate[];
   /** Overall Nutrient Coverage Percent */
   overall_nutrient_coverage_percent: number | null;
-  /** Target Provenance */
-  target_provenance:
-    | "versioned_plan"
-    | "legacy_unversioned"
-    | "no_target_source";
   targets?: TargetResponse | null;
   totals: NutritionTotals;
 }
@@ -239,11 +234,6 @@ export interface DiaryEntryResponse {
   recorded_unit_type: DefaultUnitType;
   /** Target Plan Id */
   target_plan_id: string | null;
-  /** Target Provenance */
-  target_provenance:
-    | "versioned_plan"
-    | "legacy_unversioned"
-    | "no_target_source";
   totals: NutritionTotals;
 }
 
@@ -291,8 +281,6 @@ export interface DiaryNutrientAggregate {
 export interface DiaryNutrientTarget {
   /** Lower */
   lower?: number | null;
-  /** Source */
-  source: "versioned_plan" | "legacy_unversioned";
   /** Type */
   type:
     | "minimum"
@@ -525,8 +513,6 @@ export type NutritionDataSource = "official" | "estimated";
 
 /** NutritionRegistryResponse */
 export interface NutritionRegistryResponse {
-  /** Calculation Engine Version */
-  calculation_engine_version: "2.0.0";
   /** Calculation Policy */
   calculation_policy: Record<string, any>;
   /** Food Taxonomy */
@@ -535,12 +521,8 @@ export interface NutritionRegistryResponse {
   nutrients: RegistryNutrientDefinition[];
   /** Nutrition Data Sources */
   nutrition_data_sources: RegistryLabelDefinition[];
-  /** Nutrition Registry Version */
-  nutrition_registry_version: "4.0.0";
   /** Primary Categories */
   primary_categories: string[];
-  /** Registry Schema Version */
-  registry_schema_version: 4;
   /** Rules Manifest Hash */
   rules_manifest_hash: string;
   /** Target Types */
@@ -669,12 +651,7 @@ export interface ProfileResponse {
    */
   selected_cut_intensity?: 0.15 | 0.2 | 0.25;
   sex: Sex;
-  /**
-   * Target Provenance
-   * @default "legacy_unversioned"
-   */
-  target_provenance?: "versioned_plan" | "legacy_unversioned";
-  targets: TargetResponse;
+  targets?: TargetResponse | null;
   /**
    * Updated At
    * @format date-time
@@ -696,8 +673,6 @@ export interface ProteinCalculationResponse {
   basis: "actual_weight" | "adjusted_weight";
   /** Bmi Used */
   bmi_used: number;
-  /** Calculation Engine Version */
-  calculation_engine_version: string;
   /** Calculation Weight Kg */
   calculation_weight_kg: number;
   /** Explanation Ar */
@@ -915,8 +890,6 @@ export interface TargetResponse {
   applied_deficit_kcal: number;
   /** Bmr */
   bmr: number;
-  /** Calculation Engine Version */
-  calculation_engine_version: string;
   /** Calculation Warnings */
   calculation_warnings?: CalculationWarningResponse[];
   /** Calories */
@@ -936,8 +909,6 @@ export interface TargetResponse {
   fat_g: number;
   /** Final Target Calories */
   final_target_calories: number;
-  /** Nutrition Registry Version */
-  nutrition_registry_version: string;
   /** Preview Hash */
   preview_hash?: string | null;
   protein_calculation: ProteinCalculationResponse;
@@ -961,16 +932,6 @@ export interface TargetResponse {
 /** TargetSourceResponse */
 export interface TargetSourceResponse {
   plan: TargetPlanSummary | null;
-  /** Target Provenance */
-  target_provenance:
-    | "versioned_plan"
-    | "legacy_unversioned"
-    | "no_target_source";
-  /** Target Source Detail */
-  target_source_detail:
-    | "effective_target_plan"
-    | "legacy_transition_snapshot"
-    | "no_preserved_target_source";
   targets: TargetResponse | null;
 }
 

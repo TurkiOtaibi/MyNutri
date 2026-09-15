@@ -17,6 +17,11 @@ The Target Plan lifecycle is replaced by immutable date-effective revisions in:
 - revision: `b7d42e9a1c36`
 - parent: `a6c81e4f2d90`
 
+Nutrition semantic versioning and legacy Target compatibility are retired in:
+
+- revision: `c8e53f0b2d47`
+- parent: `b7d42e9a1c36`
+
 Historical revisions remain unchanged so the base-to-head chain is
 reconstructable. Their retired tables, columns, and guards are removed only by
 the new revision.
@@ -79,7 +84,7 @@ Alembic files remain byte-for-byte unchanged.
 ## Target Plan date-effective transition
 
 Revision `b7d42e9a1c36` fails closed unless every Target Plan has valid Principal
-and Profile ownership, calculation/version metadata, and an unambiguous
+and Profile ownership, the then-current calculation/version metadata, and an unambiguous
 same-date predecessor/superseder chain; every Diary binding is owner-safe; and
 every legacy Target Plan idempotency row can be replayed deterministically.
 
@@ -98,6 +103,22 @@ proves there is no remaining application dependency. Calculation documents,
 Nutrition Versioning fields, legacy transition snapshots, Profile ownership,
 Diary Target Plan references/provenance, and all Target Plan idempotency rows are
 preserved.
+
+## Nutrition versioning and legacy Target compatibility transition
+
+Revision `c8e53f0b2d47` fails closed unless Target Plan documents and ownership,
+revision canonicality, Diary bindings, legacy replay resources, and the empty
+legacy transition/provenance census are valid. It replaces the relational
+document-version check with a direct JSON-object/`target_result` shape check,
+then removes the three semantic version columns without rewriting historical
+calculation JSON.
+
+The same revision removes the empty transition snapshot table and its trigger,
+removes Diary target provenance, and replaces the Diary binding guard with
+`target_plan_id`-only canonicality. A null binding is the sole representation
+of no applicable Target Plan. Existing Target Plan and Diary rows, Profile
+ownership, immutable revision history, shared idempotency rows, Nutrition
+Registry content, and manifest/preview integrity are preserved.
 
 ## Cutover gates
 
@@ -118,6 +139,13 @@ Before any release authorization:
     rebinding, past binding immutability, and legacy replay adaptation.
 12. Confirm all Target Plan GET paths produce no lifecycle DML, flush, commit, or
     lifecycle lock and the three retired lifecycle operations are absent.
+13. Confirm new calculation documents and public contracts expose no semantic
+    nutrition versions while historical calculation JSON is unchanged.
+14. Confirm Registry structural validation and manifest/preview hash drift
+    protection fail closed without numeric compatibility gates.
+15. Confirm transition snapshots, legacy target provenance, and Profile-as-target
+    fallback are absent; no-plan dates return null plan/targets and Diary rows may
+    retain a null `target_plan_id`.
 
 ## Downgrade boundary
 
@@ -134,3 +162,7 @@ or restore an approved backup with the matching application revision.
 Revision `b7d42e9a1c36` fails closed on downgrade. Removed lifecycle state cannot
 be reconstructed from immutable revisions without fabricating history. Recovery
 requires the matching pre-cutover database restore and old application revision.
+
+Revision `c8e53f0b2d47` also fails closed on downgrade. Removed semantic version
+columns, provenance, and legacy transition schema cannot be synthesized. Recovery
+requires the matching pre-cutover database restore and application revision.

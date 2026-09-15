@@ -182,7 +182,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saveMutation.isPending || !registryQuery.data || registryQuery.data.registry_schema_version !== 4) return;
+    if (saveMutation.isPending || !registryQuery.data) return;
     const nextErrors = validateFoodForm(form);
     setErrors(nextErrors);
     if (hasFoodErrors(nextErrors)) {
@@ -229,18 +229,6 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     return (
       <section className="section-panel">
         <div className="state-note" role="alert">تعذر تحميل البيانات الغذائية. لا يمكن حفظ بيانات طعام دون السجل المعتمد.</div>
-        <div className="actions">
-          <button className="btn" type="button" onClick={() => registryQuery.refetch()}>إعادة المحاولة</button>
-          <Link className="btn" href="/foods"><ArrowRight size={18} />رجوع</Link>
-        </div>
-      </section>
-    );
-  }
-
-  if (registryQuery.data.registry_schema_version !== 4) {
-    return (
-      <section className="section-panel">
-        <div className="state-note" role="alert">إصدار سجل التغذية غير متوافق. يلزم تحديث التطبيق أو التواصل مع الدعم قبل حفظ الطعام.</div>
         <div className="actions">
           <button className="btn" type="button" onClick={() => registryQuery.refetch()}>إعادة المحاولة</button>
           <Link className="btn" href="/foods"><ArrowRight size={18} />رجوع</Link>

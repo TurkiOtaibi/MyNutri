@@ -91,12 +91,6 @@ async function expectHistoricalEmptyDiary(
   expect(transition.entries).toHaveLength(0);
   const selectedDay = selectedSummaryDay(transition.week, value);
   expectZeroTotals(selectedDay);
-  if (selectedDay.targets === null) {
-    expect(selectedDay.target_provenance).toBe("no_target_source");
-  } else {
-    expect(selectedDay.target_provenance).not.toBe("no_target_source");
-  }
-
   await expectStableSummary(page);
   await expect(page.getByLabel("اختيار تاريخ اليوميات")).toHaveValue(value);
   await expect(page.locator(".diary-entry-row")).toHaveCount(0);
@@ -106,16 +100,13 @@ async function expectHistoricalEmptyDiary(
 
   if (selectedDay.targets === null) {
     await expect(summary).toHaveAttribute("aria-label", "ملخص اليوم دون مصدر هدف");
-    await expect(summary.locator(".target-provenance-label")).toHaveText("دون مصدر هدف محفوظ");
+    await expect(summary.locator(".target-provenance-label")).toHaveCount(0);
     await expect(summary.getByText("لا يوجد مصدر هدف محفوظ لهذا اليوم.", { exact: true })).toBeVisible();
     await expect(summary.getByRole("progressbar")).toHaveCount(0);
     return;
   }
 
-  const provenanceLabel = selectedDay.target_provenance === "versioned_plan"
-    ? "أهداف خطة محفوظة"
-    : "أهداف قديمة غير محدثة";
-  await expect(summary.locator(".target-provenance-label")).toHaveText(provenanceLabel);
+  await expect(summary.locator(".target-provenance-label")).toHaveCount(0);
   await expect(summary.getByRole("progressbar")).toHaveCount(4);
 }
 
@@ -134,7 +125,6 @@ async function expectTargetBackedZeroDiary(
   expect(transition.entries).toHaveLength(0);
   const selectedDay = selectedSummaryDay(transition.week, value);
   expect(selectedDay.targets).not.toBeNull();
-  expect(selectedDay.target_provenance).not.toBe("no_target_source");
   expectZeroTotals(selectedDay);
 
   await expectStableSummary(page);
@@ -145,10 +135,7 @@ async function expectTargetBackedZeroDiary(
   await expect(summary).toHaveCount(1);
   await expect(summary).toBeVisible();
   await expect(summary.getByText("لا يوجد مصدر هدف محفوظ لهذا اليوم.", { exact: true })).toHaveCount(0);
-  const provenanceLabel = selectedDay.target_provenance === "versioned_plan"
-    ? "أهداف خطة محفوظة"
-    : "أهداف قديمة غير محدثة";
-  await expect(summary.locator(".target-provenance-label")).toHaveText(provenanceLabel);
+  await expect(summary.locator(".target-provenance-label")).toHaveCount(0);
   const progressbars = summary.getByRole("progressbar");
   await expect(progressbars).toHaveCount(4);
   await expect(summary.locator('[role="progressbar"][aria-valuenow="0"]')).toHaveCount(4);

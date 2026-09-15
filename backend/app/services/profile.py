@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 from app.core.auth import PrincipalContext
 from app.core.calendar import current_diary_date
 from app.models import Profile
+from app.nutrition_rules.manifest import rules_manifest_hash
 from app.schemas import (
     ProfileDomainValidationError,
     ProfilePreview,
@@ -19,9 +20,7 @@ from app.schemas import (
 from app.services.calc import calculate_targets
 
 
-def _validate_profile_domain(
-    profile: ProfileUpsert, calculation_date: date
-) -> None:
+def _validate_profile_domain(profile: ProfileUpsert, calculation_date: date) -> None:
     try:
         validate_profile_domain(profile, calculation_date)
     except ProfileDomainValidationError as error:
@@ -77,6 +76,7 @@ def to_target_response(
             ),
         },
         "result": result.model_dump(mode="json", exclude={"preview_hash"}),
+        "rules_manifest_hash": rules_manifest_hash(),
     }
     result.preview_hash = sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
@@ -86,7 +86,6 @@ def to_target_response(
 
 def to_profile_response(
     profile: Profile,
-    calculation_date: date | None = None,
     *,
     resolved_targets: TargetResponse | None = None,
 ) -> ProfileResponse:
@@ -103,7 +102,7 @@ def to_profile_response(
             "fat_pct": float(profile.fat_pct),
             "selected_cut_intensity": float(profile.cut_intensity),
             "updated_at": profile.updated_at,
-            "targets": resolved_targets or to_target_response(profile, calculation_date),
+            "targets": resolved_targets,
         }
     )
 
@@ -114,5 +113,7 @@ def get_profile(session: Session, principal: PrincipalContext) -> Profile | None
     ).first()
 
 
-def preview_targets(payload: ProfilePreview, calculation_date: date | None = None) -> TargetResponse:
+def preview_targets(
+    payload: ProfilePreview, calculation_date: date | None = None
+) -> TargetResponse:
     return to_target_response(payload, calculation_date)

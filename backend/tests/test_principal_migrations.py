@@ -94,6 +94,7 @@ NOVA_RETIREMENT_DOWNGRADE_ERROR = "NOVA_RETIREMENT_READER_FLOOR_REQUIRED"
 FOOD_SIMPLIFICATION_REVISION = "f47a2c9d6e13"
 DAY_STATUS_RETIREMENT_REVISION = "a6c81e4f2d90"
 TARGET_PLAN_DATE_EFFECTIVE_REVISION = "b7d42e9a1c36"
+TARGET_INTEGRITY_RETIREMENT_REVISION = "c8e53f0b2d47"
 PLAN023_CONSTRAINT = "ck_diary_entry_quantity_positive_finite"
 PLAN023_PREFLIGHT_ERROR = "PLAN023_DIARY_QUANTITY_PREFLIGHT_BLOCKED"
 PLAN023_PREFLIGHT_GUARD = "plan023_diary_quantity_positive_finite_preflight"
@@ -146,14 +147,6 @@ AUTHORITATIVE_HISTORICAL_CHECKS = {
     "profile": (
         "ck_profile_cut_intensity",
         "cut_intensity IN (0.150,0.200,0.250)",
-    ),
-    "legacy_target_transition_snapshots": (
-        "ck_legacy_transition_document_shape",
-        "jsonb_typeof(legacy_target_document)='object' AND "
-        "legacy_target_document->>'schema_version'='1' AND "
-        "legacy_target_document->>'source'='legacy_unversioned_transition' AND "
-        "jsonb_typeof(legacy_target_document->'captured_profile_inputs')='object' AND "
-        "jsonb_typeof(legacy_target_document->'resolved_targets')='object'",
     ),
 }
 
@@ -240,16 +233,6 @@ def test_plan033_migration_is_additive_owner_bound_and_fails_closed() -> None:
 
 
 POSTGRESQL_AUTHORITATIVE_CHECK_DEFINITIONS = {
-    "ck_legacy_transition_document_shape": (
-        "CHECK (jsonb_typeof(legacy_target_document) = 'object'::text AND "
-        "(legacy_target_document ->> 'schema_version'::text) = '1'::text AND "
-        "(legacy_target_document ->> 'source'::text) = "
-        "'legacy_unversioned_transition'::text AND "
-        "jsonb_typeof(legacy_target_document -> "
-        "'captured_profile_inputs'::text) = 'object'::text AND "
-        "jsonb_typeof(legacy_target_document -> "
-        "'resolved_targets'::text) = 'object'::text)"
-    ),
     "ck_profile_cut_intensity": ("CHECK (cut_intensity = ANY (ARRAY[0.150, 0.200, 0.250]))"),
 }
 PLAN009_GROUP_NAN_CONSTRAINTS = frozenset(
@@ -457,6 +440,7 @@ def _assert_immutable_revision_hashes(versions: Path) -> None:
         "f47a2c9d6e13_retire_food_and_analysis_features.py",
         "a6c81e4f2d90_retire_diary_day_status.py",
         "b7d42e9a1c36_simplify_target_plans.py",
+        "c8e53f0b2d47_retire_nutrition_versioning_and_legacy_targets.py",
     }
     actual = {name: _normalized_revision_hash(versions / name) for name in BASELINE_HASHES}
     assert actual == BASELINE_HASHES
@@ -513,11 +497,6 @@ def test_authoritative_historical_checks_are_in_metadata_and_sqlite_safe() -> No
     }
 
     assert sqlite_checks["profile"].count("ck_profile_cut_intensity") == 1
-    assert (
-        "ck_legacy_transition_document_shape"
-        not in sqlite_checks["legacy_target_transition_snapshots"]
-    )
-
     profile_insert = text(
         """
         INSERT INTO profile (
@@ -579,21 +558,20 @@ def test_authoritative_historical_checks_are_in_metadata_and_sqlite_safe() -> No
 def test_fresh_postgresql_upgrade_has_one_head_and_current_contract() -> None:
     url = _database_url()
     _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", TARGET_INTEGRITY_RETIREMENT_REVISION)
 
     engine = create_engine(url)
     inspector = inspect(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            TARGET_PLAN_DATE_EFFECTIVE_REVISION
+            TARGET_INTEGRITY_RETIREMENT_REVISION
         )
         authoritative_checks = connection.execute(
             text(
                 "SELECT conname, pg_get_constraintdef(oid, true) "
                 "FROM pg_constraint "
                 "WHERE conname IN "
-                "('ck_legacy_transition_document_shape', "
-                "'ck_profile_cut_intensity') "
+                "('ck_profile_cut_intensity') "
                 "ORDER BY conname"
             )
         ).all()
@@ -663,14 +641,11 @@ def test_fresh_postgresql_upgrade_has_one_head_and_current_contract() -> None:
         "behavior_goal_reminder_delivery",
         "diary_day_status_history",
         "diary_day_status",
+        "legacy_target_transition_snapshots",
     }
     assert retired_tables.isdisjoint(inspector.get_table_names())
-    assert {"legacy_target_transition_snapshots", "target_plan", "idempotency_record"}.issubset(
-        inspector.get_table_names()
-    )
-    target_plan_columns = {
-        column["name"] for column in inspector.get_columns("target_plan")
-    }
+    assert {"target_plan", "idempotency_record"}.issubset(inspector.get_table_names())
+    target_plan_columns = {column["name"] for column in inspector.get_columns("target_plan")}
     assert target_plan_columns == {
         "id",
         "principal_id",
@@ -678,22 +653,16 @@ def test_fresh_postgresql_upgrade_has_one_head_and_current_contract() -> None:
         "effective_from",
         "revision",
         "calculation_document",
-        "calculation_document_schema_version",
-        "calculation_engine_version",
-        "nutrition_registry_version",
         "created_at",
     }
     target_plan_uniques = {
-        constraint["name"]
-        for constraint in inspector.get_unique_constraints("target_plan")
+        constraint["name"] for constraint in inspector.get_unique_constraints("target_plan")
     }
     assert {
         "uq_target_plan_id_principal",
         "uq_target_plan_principal_effective_revision",
     } <= target_plan_uniques
-    target_plan_indexes = {
-        index["name"] for index in inspector.get_indexes("target_plan")
-    }
+    target_plan_indexes = {index["name"] for index in inspector.get_indexes("target_plan")}
     assert "ix_target_plan_principal_effective_revision" in target_plan_indexes
     assert {
         "ix_target_plan_principal_effective",
@@ -710,12 +679,15 @@ def test_fresh_postgresql_upgrade_has_one_head_and_current_contract() -> None:
             ).scalars()
         )
         assert trigger_names == {"target_plan_immutable_content_trigger"}
-        assert connection.execute(
-            text("SELECT 1 FROM pg_extension WHERE extname='btree_gist'")
-        ).scalar_one_or_none() is None
+        assert (
+            connection.execute(
+                text("SELECT 1 FROM pg_extension WHERE extname='btree_gist'")
+            ).scalar_one_or_none()
+            is None
+        )
     diary_columns = {column["name"]: column for column in inspector.get_columns("diary_entry")}
     assert diary_columns["target_plan_id"]["nullable"] is True
-    assert diary_columns["target_provenance"]["nullable"] is False
+    assert "target_provenance" not in diary_columns
     assert diary_columns["food_id"]["nullable"] is False
     for field in ("recorded_unit_type", "recorded_unit_amount", "recorded_unit_basis"):
         assert diary_columns[field]["nullable"] is False
@@ -872,18 +844,17 @@ def _seed_target_plan_revision_chain(url: str) -> tuple[UUID, UUID, UUID, UUID, 
 
 
 @pytest.mark.migration
-def test_target_plan_date_model_backfills_rebinds_and_preserves_legacy_replay() -> None:
+def test_target_plan_and_integrity_cutovers_preserve_history_and_legacy_replay() -> None:
     url = _database_url()
     _reset_database(url)
     _run_alembic(url, "upgrade", DAY_STATUS_RETIREMENT_REVISION)
-    principal_id, food_id, first_plan, final_plan, legacy_record = (
-        _seed_target_plan_revision_chain(url)
+    principal_id, food_id, first_plan, final_plan, legacy_record = _seed_target_plan_revision_chain(
+        url
     )
 
     _run_alembic(url, "upgrade", TARGET_PLAN_DATE_EFFECTIVE_REVISION)
     engine = create_engine(url)
-    inspector = inspect(engine)
-    target_columns = {column["name"] for column in inspector.get_columns("target_plan")}
+    target_columns = {column["name"] for column in inspect(engine).get_columns("target_plan")}
     assert {
         "status",
         "effective_to",
@@ -899,13 +870,17 @@ def test_target_plan_date_model_backfills_rebinds_and_preserves_legacy_replay() 
         today = connection.execute(
             text("SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Riyadh')::date")
         ).scalar_one()
-        revisions = connection.execute(
-            text(
-                "SELECT revision FROM target_plan WHERE principal_id=:principal "
-                "ORDER BY revision"
-            ),
-            {"principal": principal_id},
-        ).scalars().all()
+        revisions = (
+            connection.execute(
+                text(
+                    "SELECT revision FROM target_plan WHERE principal_id=:principal "
+                    "ORDER BY revision"
+                ),
+                {"principal": principal_id},
+            )
+            .scalars()
+            .all()
+        )
         assert revisions == [1, 2, 3]
         diary_bindings = connection.execute(
             text(
@@ -923,13 +898,63 @@ def test_target_plan_date_model_backfills_rebinds_and_preserves_legacy_replay() 
             {"id": legacy_record},
         ).one()
         assert record == ("target_plan.activate", final_plan, str(final_plan))
-        assert connection.execute(
-            text("SELECT 1 FROM pg_extension WHERE extname='btree_gist'")
-        ).scalar_one_or_none() is None
+        assert (
+            connection.execute(
+                text("SELECT 1 FROM pg_extension WHERE extname='btree_gist'")
+            ).scalar_one_or_none()
+            is None
+        )
+
+    with engine.connect() as connection:
+        historical_document = connection.execute(
+            text("SELECT calculation_document FROM target_plan WHERE id=:id"),
+            {"id": final_plan},
+        ).scalar_one()
+    engine.dispose()
+
+    _run_alembic(url, "upgrade", TARGET_INTEGRITY_RETIREMENT_REVISION)
+    engine = create_engine(url)
+    inspector = inspect(engine)
+    assert {column["name"] for column in inspector.get_columns("target_plan")} == {
+        "id",
+        "principal_id",
+        "profile_id",
+        "effective_from",
+        "revision",
+        "calculation_document",
+        "created_at",
+    }
+    assert "target_provenance" not in {
+        column["name"] for column in inspector.get_columns("diary_entry")
+    }
+    assert not inspector.has_table("legacy_target_transition_snapshots")
+    target_checks = {
+        constraint["name"] for constraint in inspector.get_check_constraints("target_plan")
+    }
+    assert "ck_target_plan_calculation_document_shape" in target_checks
+    assert "ck_target_plan_document_version" not in target_checks
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT calculation_document FROM target_plan WHERE id=:id"),
+                {"id": final_plan},
+            ).scalar_one()
+            == historical_document
+        )
+        assert connection.execute(text("SELECT count(*) FROM target_plan")).scalar_one() == 3
+        assert connection.execute(text("SELECT count(*) FROM diary_entry")).scalar_one() == 2
+        record = connection.execute(
+            text(
+                "SELECT operation,resource_id,response_document->'plan'->>'id' "
+                "FROM idempotency_record WHERE id=:id"
+            ),
+            {"id": legacy_record},
+        ).one()
+        assert record == ("target_plan.activate", final_plan, str(final_plan))
 
     for statement, parameters, message in (
         (
-            "UPDATE target_plan SET calculation_engine_version='changed' WHERE id=:id",
+            "UPDATE target_plan SET calculation_document=calculation_document WHERE id=:id",
             {"id": final_plan},
             "Target Plan revisions are immutable",
         ),
@@ -953,10 +978,10 @@ def test_target_plan_date_model_backfills_rebinds_and_preserves_legacy_replay() 
         (
             "INSERT INTO diary_entry "
             "(id,principal_id,entry_date,food_id,quantity,meal_type,target_plan_id,"
-            "target_provenance,recorded_unit_type,recorded_unit_amount,"
+            "recorded_unit_type,recorded_unit_amount,"
             "recorded_unit_basis,created_at) VALUES "
             "(:entry,:principal,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Riyadh')::date,"
-            ":food,1,'unspecified',:first,'versioned_plan','serving',100,'g',now())",
+            ":food,1,'unspecified',:first,'serving',100,'g',now())",
             {
                 "entry": uuid4(),
                 "principal": principal_id,
@@ -968,10 +993,10 @@ def test_target_plan_date_model_backfills_rebinds_and_preserves_legacy_replay() 
         (
             "INSERT INTO diary_entry "
             "(id,principal_id,entry_date,food_id,quantity,meal_type,target_plan_id,"
-            "target_provenance,recorded_unit_type,recorded_unit_amount,"
+            "recorded_unit_type,recorded_unit_amount,"
             "recorded_unit_basis,created_at) VALUES "
             "(:entry,:principal,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Riyadh')::date,"
-            ":food,1,'unspecified',NULL,'no_target_source','serving',100,'g',now())",
+            ":food,1,'unspecified',NULL,'serving',100,'g',now())",
             {
                 "entry": uuid4(),
                 "principal": principal_id,
@@ -1001,6 +1026,19 @@ def test_target_plan_date_model_downgrade_is_forward_only() -> None:
     assert "TARGET_PLAN_DATE_MODEL_DOWNGRADE_BLOCKED" in output
     assert "offline downgrade SQL is intentionally unavailable" in output
     assert "ADD COLUMN status" not in result.stdout
+
+    retirement = _run_alembic(
+        "postgresql+psycopg://offline:offline@127.0.0.1:5432/mynutri_test_offline",
+        "downgrade",
+        f"{TARGET_INTEGRITY_RETIREMENT_REVISION}:{TARGET_PLAN_DATE_EFFECTIVE_REVISION}",
+        "--sql",
+        check=False,
+    )
+    retirement_output = retirement.stdout + retirement.stderr
+    assert retirement.returncode != 0
+    assert "TARGET_INTEGRITY_RETIREMENT_DOWNGRADE_BLOCKED" in retirement_output
+    assert "offline downgrade SQL is intentionally unavailable" in retirement_output
+    assert "ADD COLUMN target_provenance" not in retirement.stdout
 
 
 @pytest.mark.migration
@@ -1047,28 +1085,27 @@ def test_target_plan_date_model_preflight_rejects_invalid_legacy_replay_atomical
         )
     engine.dispose()
 
-    result = _run_alembic(
-        url, "upgrade", TARGET_PLAN_DATE_EFFECTIVE_REVISION, check=False
-    )
+    result = _run_alembic(url, "upgrade", TARGET_PLAN_DATE_EFFECTIVE_REVISION, check=False)
 
     assert result.returncode != 0
     assert "incompatible legacy idempotency record" in result.stderr
     engine = create_engine(url)
     with engine.connect() as connection:
-        assert connection.execute(
-            text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == DAY_STATUS_RETIREMENT_REVISION
+        assert (
+            connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            == DAY_STATUS_RETIREMENT_REVISION
+        )
         assert "revision" not in {
             column["name"] for column in inspect(connection).get_columns("target_plan")
         }
-        assert connection.execute(
-            text("SELECT count(*) FROM idempotency_record")
-        ).scalar_one() == 1
+        assert connection.execute(text("SELECT count(*) FROM idempotency_record")).scalar_one() == 1
     engine.dispose()
 
 
 @pytest.mark.migration
-def test_target_plan_date_model_preserves_btree_gist_when_an_application_dependency_exists() -> None:
+def test_target_plan_date_model_preserves_btree_gist_when_an_application_dependency_exists() -> (
+    None
+):
     url = _database_url()
     _reset_database(url)
     _run_alembic(url, "upgrade", DAY_STATUS_RETIREMENT_REVISION)
@@ -1083,23 +1120,25 @@ def test_target_plan_date_model_preserves_btree_gist_when_an_application_depende
         )
     engine.dispose()
 
-    result = _run_alembic(
-        url, "upgrade", TARGET_PLAN_DATE_EFFECTIVE_REVISION, check=False
-    )
+    result = _run_alembic(url, "upgrade", TARGET_PLAN_DATE_EFFECTIVE_REVISION, check=False)
 
     assert result.returncode != 0
     assert "btree_gist still has application dependencies" in result.stderr
     engine = create_engine(url)
     with engine.connect() as connection:
-        assert connection.execute(
-            text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == DAY_STATUS_RETIREMENT_REVISION
+        assert (
+            connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            == DAY_STATUS_RETIREMENT_REVISION
+        )
         assert "revision" not in {
             column["name"] for column in inspect(connection).get_columns("target_plan")
         }
-        assert connection.execute(
-            text("SELECT 1 FROM pg_extension WHERE extname='btree_gist'")
-        ).scalar_one() == 1
+        assert (
+            connection.execute(
+                text("SELECT 1 FROM pg_extension WHERE extname='btree_gist'")
+            ).scalar_one()
+            == 1
+        )
         assert inspect(connection).has_table("btree_gist_dependency_probe")
     engine.dispose()
 
@@ -1180,18 +1219,13 @@ def test_day_status_retirement_is_selective_and_forward_only(
     _run_alembic(url, "upgrade", DAY_STATUS_RETIREMENT_REVISION)
     engine = create_engine(url)
     inspector = inspect(engine)
-    assert {"diary_day_status", "diary_day_status_history"}.isdisjoint(
-        inspector.get_table_names()
-    )
+    assert {"diary_day_status", "diary_day_status_history"}.isdisjoint(inspector.get_table_names())
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
             DAY_STATUS_RETIREMENT_REVISION
         )
         remaining = connection.execute(
-            text(
-                "SELECT operation,resource_type FROM idempotency_record "
-                "ORDER BY idempotency_key"
-            )
+            text("SELECT operation,resource_type FROM idempotency_record ORDER BY idempotency_key")
         ).all()
     engine.dispose()
     assert set(remaining) == {
@@ -1200,13 +1234,9 @@ def test_day_status_retirement_is_selective_and_forward_only(
         ("unrelated_operation", "diary_day_status"),
     }
 
-    blocked = _run_alembic(
-        url, "downgrade", FOOD_SIMPLIFICATION_REVISION, check=False
-    )
+    blocked = _run_alembic(url, "downgrade", FOOD_SIMPLIFICATION_REVISION, check=False)
     assert blocked.returncode != 0
-    assert "DIARY_DAY_STATUS_RETIREMENT_DOWNGRADE_BLOCKED" in (
-        blocked.stdout + blocked.stderr
-    )
+    assert "DIARY_DAY_STATUS_RETIREMENT_DOWNGRADE_BLOCKED" in (blocked.stdout + blocked.stderr)
 
 
 @pytest.mark.migration
@@ -1565,9 +1595,7 @@ def test_plan021_populated_upgrade_preserves_plan_and_ledger_rows() -> None:
     _run_alembic(url, "upgrade", "5294eff9a956")
     _seed_plan021_profile(url)
     engine = create_engine(url)
-    plan_id = _seed_plan021_operation(
-        engine, "plan021-populated-upgrade", "target_plan.activate"
-    )
+    plan_id = _seed_plan021_operation(engine, "plan021-populated-upgrade", "target_plan.activate")
     engine.dispose()
     before = _plan021_data_signature(url)
     assert before[0][0][0] == plan_id
@@ -1766,6 +1794,20 @@ def test_transition_snapshot_constraints_and_immutability() -> None:
             {"id": snapshot_id},
         ).scalar_one() == date(2026, 7, 16)
         assert connection.execute(text("SELECT 1")).scalar_one() == 1
+
+    retirement = _run_alembic(url, "upgrade", TARGET_INTEGRITY_RETIREMENT_REVISION, check=False)
+    assert retirement.returncode != 0
+    assert "legacy transition data exists" in retirement.stderr
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            TRANSITION_SNAPSHOT_REVISION
+        )
+        assert (
+            connection.execute(
+                text("SELECT count(*) FROM legacy_target_transition_snapshots")
+            ).scalar_one()
+            == 1
+        )
     engine.dispose()
 
 
@@ -1778,7 +1820,7 @@ def test_populated_backfill_fails_closed_then_reconciles_without_history_change(
     engine = create_engine(url)
     _run_alembic(url, "upgrade", "0004_principal_expand")
 
-    absent = _run_alembic(url, "upgrade", "head", check=False)
+    absent = _run_alembic(url, "upgrade", TARGET_PLAN_DATE_EFFECTIVE_REVISION, check=False)
     assert absent.returncode != 0
     assert "exactly one explicitly provisioned active Principal" in absent.stderr
 
@@ -1789,7 +1831,7 @@ def test_populated_backfill_fails_closed_then_reconciles_without_history_change(
             ),
             {"id": DEPLOYMENT_PRINCIPAL},
         )
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", TARGET_PLAN_DATE_EFFECTIVE_REVISION)
 
     with engine.connect() as connection:
         owner_columns = {
@@ -1864,6 +1906,17 @@ def test_populated_backfill_fails_closed_then_reconciles_without_history_change(
                 text("UPDATE diary_entry SET principal_id = :other WHERE id = :entry_id"),
                 {"other": other_principal, "entry_id": identifiers["diary"]},
             )
+
+    retirement = _run_alembic(url, "upgrade", TARGET_INTEGRITY_RETIREMENT_REVISION, check=False)
+    assert retirement.returncode != 0
+    assert "Diary provenance cannot be represented by target_plan_id alone" in retirement.stderr
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            TARGET_PLAN_DATE_EFFECTIVE_REVISION
+        )
+        assert "target_provenance" in {
+            column["name"] for column in inspect(connection).get_columns("diary_entry")
+        }
     engine.dispose()
 
 
@@ -2001,11 +2054,11 @@ def test_ambiguous_principal_backfill_is_rejected() -> None:
     with cleanup_engine.begin() as connection:
         connection.execute(text("DELETE FROM principal WHERE id = :id"), {"id": other_principal})
     cleanup_engine.dispose()
-    _run_alembic(url, "upgrade", "head")
+    _run_alembic(url, "upgrade", TARGET_PLAN_DATE_EFFECTIVE_REVISION)
 
 
 @pytest.mark.migration
-def test_concurrent_first_future_writes_create_one_snapshot_and_two_revisions() -> None:
+def test_concurrent_first_future_writes_create_two_revisions_without_snapshot() -> None:
     url = _database_url()
     _reset_database(url)
     _run_alembic(url, "upgrade", "0004_principal_expand")
@@ -2054,12 +2107,7 @@ def test_concurrent_first_future_writes_create_one_snapshot_and_two_revisions() 
     assert len({plan_id for plan_id, _ in results}) == 2
     assert {revision for _, revision in results} == {1, 2}
     with engine.connect() as connection:
-        assert (
-            connection.execute(
-                text("SELECT count(*) FROM legacy_target_transition_snapshots")
-            ).scalar_one()
-            == 1
-        )
+        assert not inspect(connection).has_table("legacy_target_transition_snapshots")
         assert connection.execute(text("SELECT count(*) FROM target_plan")).scalar_one() == 2
         assert connection.execute(text("SELECT count(*) FROM idempotency_record")).scalar_one() == 2
     engine.dispose()
@@ -2136,13 +2184,10 @@ def test_concurrent_plan_and_future_diary_creation_finish_with_canonical_binding
 
     with engine.connect() as connection:
         binding = connection.execute(
-            text(
-                "SELECT target_plan_id::text,target_provenance FROM diary_entry "
-                "WHERE id=:entry"
-            ),
+            text("SELECT target_plan_id::text FROM diary_entry WHERE id=:entry"),
             {"entry": diary_id},
-        ).one()
-        assert binding == (plan_id, "versioned_plan")
+        ).scalar_one()
+        assert binding == plan_id
     engine.dispose()
 
 
@@ -2205,7 +2250,9 @@ def test_concurrent_write_key_reuse_with_different_payload_fails_closed() -> Non
         connect_args={"options": "-c lock_timeout=10000 -c statement_timeout=20000"},
     )
     first_request = _current_target_write_request(82)
-    conflicting_request = _current_target_write_request(84, current_diary_date() + timedelta(days=1))
+    conflicting_request = _current_target_write_request(
+        84, current_diary_date() + timedelta(days=1)
+    )
     shared_key = "target-plan-write-payload-race"
     start_barrier = Barrier(2)
     activation_commit_ready = Event()
@@ -2264,10 +2311,13 @@ def test_concurrent_write_key_reuse_with_different_payload_fails_closed() -> Non
     with engine.connect() as connection:
         assert connection.execute(text("SELECT count(*) FROM target_plan")).scalar_one() == 1
         assert connection.execute(text("SELECT count(*) FROM idempotency_record")).scalar_one() == 1
-        assert connection.execute(
-            text("SELECT operation FROM idempotency_record WHERE idempotency_key=:key"),
-            {"key": shared_key},
-        ).scalar_one() == "target_plan.write"
+        assert (
+            connection.execute(
+                text("SELECT operation FROM idempotency_record WHERE idempotency_key=:key"),
+                {"key": shared_key},
+            ).scalar_one()
+            == "target_plan.write"
+        )
     engine.dispose()
 
 
@@ -3694,9 +3744,7 @@ def test_food_simplification_maps_ambiguous_dairy_primary_to_other(
     engine = create_engine(url)
     with engine.begin() as connection:
         connection.execute(
-            text(
-                "UPDATE food SET food_category_key='dairy_fortified_alternatives' WHERE id=:id"
-            ),
+            text("UPDATE food SET food_category_key='dairy_fortified_alternatives' WHERE id=:id"),
             {"id": food_id},
         )
     engine.dispose()

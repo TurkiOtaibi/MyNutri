@@ -38,7 +38,6 @@ def _target(target_type: str, value: float | None = None, **bounds) -> DiaryNutr
         type=target_type,
         value=value,
         unit="g",
-        source="versioned_plan",
         **bounds,
     )
 
@@ -61,7 +60,6 @@ def test_golden_coverage_states_preserve_null_and_known_zero() -> None:
             "lower": None,
             "upper": None,
             "unit": "g",
-            "source": "versioned_plan",
         },
         "evaluation": "indeterminate_partial_coverage",
         "progress_percent": None,
@@ -91,7 +89,9 @@ def test_golden_partial_evaluation_is_asymmetric() -> None:
     fiber = DEFINITIONS["fiber_g"]
     sodium = DEFINITIONS["sodium_mg"]
 
-    assert aggregate_nutrient(fiber, [32, None], _target("minimum", 30)).evaluation == "met_at_least"
+    assert (
+        aggregate_nutrient(fiber, [32, None], _target("minimum", 30)).evaluation == "met_at_least"
+    )
     below = aggregate_nutrient(fiber, [20, None], _target("minimum", 30))
     assert below.evaluation == "indeterminate_partial_coverage"
     assert below.remaining is None
@@ -123,9 +123,7 @@ def test_complete_evaluation_never_returns_negative_remaining_or_available() -> 
     assert exceeded.evaluation == "exceeded"
     assert exceeded.available == 0
 
-    monitor = aggregate_nutrient(
-        DEFINITIONS["cholesterol_mg"], [100], _target("monitor_only")
-    )
+    monitor = aggregate_nutrient(DEFINITIONS["cholesterol_mg"], [100], _target("monitor_only"))
     assert monitor.evaluation is None
     assert monitor.progress_percent is None
     assert monitor.remaining is None
@@ -240,9 +238,7 @@ def test_current_food_truth_preserves_optional_unknown_and_explicit_zero() -> No
 def _capture_selects(engine: Engine):
     statements: list[str] = []
 
-    def capture(
-        _connection, _cursor, statement, _parameters, _context, _executemany
-    ) -> None:
+    def capture(_connection, _cursor, statement, _parameters, _context, _executemany) -> None:
         normalized = " ".join(statement.split())
         if normalized.lower().startswith("select "):
             statements.append(normalized)
@@ -264,7 +260,7 @@ def _seed_plan015_entries(session: Session, count: int, week_start: date) -> Non
 
 
 @pytest.mark.parametrize("entry_count", [0, 1, 7])
-def test_plan015_owner_week_resolves_targets_without_committing(
+def test_week_resolves_targets_without_legacy_queries_or_committing(
     monkeypatch, entry_count: int
 ) -> None:
     engine = create_engine(
@@ -278,35 +274,21 @@ def test_plan015_owner_week_resolves_targets_without_committing(
         session.commit()
         week_start = date(2026, 7, 12)
         _seed_plan015_entries(session, entry_count, week_start)
-        authority_calls = 0
         commit_calls = 0
-        from app.services import aggregation as aggregation_service
-
-        real_authority = aggregation_service.diary_calendar_authority
         real_commit = session.commit
-
-        def capture_authority():
-            nonlocal authority_calls
-            authority_calls += 1
-            return real_authority()
 
         def capture_commit() -> None:
             nonlocal commit_calls
             commit_calls += 1
             real_commit()
 
-        monkeypatch.setattr(
-            "app.services.aggregation.diary_calendar_authority",
-            capture_authority,
-        )
         monkeypatch.setattr(session, "commit", capture_commit)
 
         with _capture_selects(engine) as statements:
             weekly_summary(session, PRINCIPAL, week_start)
 
-    assert authority_calls == 1
     assert commit_calls == 0
-    assert len(statements) == 4
+    assert len(statements) == 2
 
 
 @pytest.fixture
@@ -357,4 +339,4 @@ def test_plan015_postgresql_owner_week_query_budget_is_fixed(
             week_start,
         )
     # The entry-derived weekly projection remains fixed as entry volume changes.
-    assert len(statements) == 4
+    assert len(statements) == 2

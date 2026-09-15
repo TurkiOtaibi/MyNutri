@@ -53,8 +53,9 @@ results and revision history under the current V2 date-effective authority.
 | Relationships | Owned by Principal/Profile; referenced by DiaryEntry through an owner-consistent foreign key. |
 
 Current fields are `id`, `principal_id`, `profile_id`, `effective_from`,
-`revision`, `calculation_document`, `calculation_document_schema_version`,
-`calculation_engine_version`, `nutrition_registry_version`, and `created_at`.
+`revision`, `calculation_document`, and `created_at`. Semantic Nutrition version
+columns are absent; calculation documents retain immutable calculated targets
+and are protected by direct JSON-shape plus application validation.
 Plans have no active, scheduled, pending, closed, or superseded lifecycle state.
 For each effective date, the greatest immutable revision is canonical. Writes are
 permitted only for Riyadh today or the future; reads may resolve any date. Past
@@ -174,7 +175,6 @@ Current fields:
 - `log_mode` (required v1 field: `servings` or `grams`)
 - `quantity`
 - `target_plan_id`
-- `target_provenance`
 - recorded measurement fields
 - `created_at`
 
@@ -184,6 +184,9 @@ Required v1 behavior:
 - If `log_mode="grams"`, `quantity` means grams and must be 1-5000, and the selected current-catalog Food must have nutrition basis/default-unit data that supports an unambiguous gram calculation.
 - A separate persisted `grams` field is not part of v1.
 - Past, current, and future dates are allowed.
+- When no Target Plan applies, `target_plan_id` is null and Diary totals remain
+  available without target-dependent evaluation. No Profile fallback or target
+  provenance field is stored.
 - Edit payload is `{ quantity }` only.
 - `log_mode`, Food, date, and per-serving snapshot values are not editable after creation.
 - Edit recalculates `serving_multiplier` and `nutrition_snapshot.calculated_totals` from the original snapshot and new mode-specific quantity.

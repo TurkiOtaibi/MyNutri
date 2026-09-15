@@ -5,8 +5,8 @@ production mutation.
 
 ## Release identity
 
-The current migration head is Target Plan date-effective revision
-`b7d42e9a1c36`, with parent `a6c81e4f2d90`. Confirm the intended application
+The current migration head is combined retirement revision `c8e53f0b2d47`,
+with parent Target Plan date-effective revision `b7d42e9a1c36`. Confirm the intended application
 commit, generated contract, single Alembic head, and approved environment before
 any rollout action.
 
@@ -28,6 +28,12 @@ any rollout action.
 - Target Plan same-date writes insert immutable revisions, reject backdated
   dates, preserve legacy replay, and atomically rebind only today/future Diary
   rows in the affected interval.
+- Nutrition Registry payloads are structurally validated; rules-manifest drift
+  changes preview hashes even when calculated numbers do not change.
+- New calculation documents and public contracts contain no semantic nutrition
+  versions, while historical calculation JSON remains readable and unchanged.
+- No-plan dates return null plan/targets, Diary null bindings remain valid, and
+  transition snapshots/Profile target fallback/target provenance are absent.
 - Diary create, update, and delete accept future dates without `If-Match` and
   do not read or write Day Logging Status state or history.
 - Target Plan and unrelated idempotency rows survive the selective cleanup.
@@ -53,6 +59,10 @@ is granted, perform read-only counts first for:
   replacement-chain integrity; Diary binding invariants; legacy transition
   snapshots; legacy Target Plan idempotency response shapes; and `btree_gist`
   application dependencies.
+- Target Plan semantic-version column validity and document shape; transition
+  snapshot count; legacy Diary provenance count; deterministic target-plan-only
+  bindings; and legacy Target Plan idempotency resource integrity for the
+  combined retirement.
 
 Any non-zero blocking count stops the rollout. Do not delete, rewrite, or infer
 production data during preflight.
@@ -66,11 +76,14 @@ Only after a separately approved release window:
    compatibility window.
 3. Stop Target Plan lifecycle writers and other incompatible application
    instances; the Target Plan schema cutover also has no compatibility window.
-4. Apply the reviewed migration to the explicitly identified environment.
-5. Deploy backend and frontend artifacts built from the same approved revision.
-6. Verify health, authentication, Food reads, Diary reads, and Target Plan history.
-7. Confirm archived Foods referenced by Diary history remain resolvable.
-8. Confirm generated-contract and migration-head identities from runtime evidence.
+4. Stop application instances that write semantic Target Plan versions,
+   transition snapshots, or Diary provenance; the combined cutover has no
+   compatibility window.
+5. Apply the reviewed migration to the explicitly identified environment.
+6. Deploy backend and frontend artifacts built from the same approved revision.
+7. Verify health, authentication, Food reads, Diary reads, and Target Plan history.
+8. Confirm archived Foods referenced by Diary history remain resolvable.
+9. Confirm generated-contract and migration-head identities from runtime evidence.
 
 ## Smoke checks
 
@@ -90,17 +103,22 @@ Only after a separately approved release window:
   binding remains unchanged.
 - Confirm the final Target Plan API contains only POST/list/current and exposes no
   lifecycle status, pending plan, or lifecycle timestamps.
+- Confirm Registry responses pass structural validation and manifest/ETag
+  integrity without numeric schema/version fields.
+- Confirm a date before the first applicable plan returns null plan/targets and a
+  Diary entry for that date stores a null target-plan binding.
 - Create, update, and delete a future-dated Diary entry without `If-Match`.
 - Confirm all four retired status routes return `404` and week summaries contain
   no status, version, completion timestamp, or entry-count presence field.
 
 ## Rollback
 
-Do not downgrade below `b7d42e9a1c36`. The Target Plan lifecycle cannot be
-faithfully synthesized from immutable revisions, and the preceding Day Logging
-Status and Food cutovers also removed data/schema. Stop writes and either roll
-forward with an approved corrective revision or restore the pre-migration
-database backup together with the matching application release.
+Do not downgrade below `c8e53f0b2d47`. Retired semantic version columns,
+provenance, and transition schema cannot be faithfully synthesized, and the
+preceding Target Plan lifecycle, Day Logging Status, and Food cutovers also
+removed data/schema. Stop writes and either roll forward with an approved
+corrective revision or restore the pre-migration database backup together with
+the matching application release.
 
 Rollback is not permission to delete production data, rewrite historical
 migrations, revive retired features, or deploy without a separate authorization.

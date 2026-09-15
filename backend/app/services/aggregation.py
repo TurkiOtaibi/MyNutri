@@ -4,7 +4,6 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
-from app.core.calendar import diary_calendar_authority
 from app.models import DiaryEntry, Food
 from app.nutrition_rules.registry import NUTRIENTS, NutrientDefinition
 from app.schemas import (
@@ -33,9 +32,8 @@ def _rounded(value: float) -> float:
 def _target_for(
     definition: NutrientDefinition,
     targets: TargetResponse | None,
-    provenance: str,
 ) -> DiaryNutrientTarget | None:
-    if targets is None or provenance == "no_target_source":
+    if targets is None:
         return None
     resolved = next(
         (item for item in targets.additional_targets if item.key == definition.key),
@@ -50,7 +48,6 @@ def _target_for(
         lower=rule.get("lower") if isinstance(rule, dict) else None,
         upper=rule.get("upper") if isinstance(rule, dict) else None,
         unit=resolved.unit,
-        source=provenance,
     )
 
 
@@ -66,7 +63,9 @@ def _complete_evaluation(
             None,
         )
     if target.type == "maximum" and value is not None:
-        evaluation = "exceeded" if amount > value else "at_limit" if amount == value else "within_limit"
+        evaluation = (
+            "exceeded" if amount > value else "at_limit" if amount == value else "within_limit"
+        )
         return (
             evaluation,
             _rounded(amount / value * 100) if value > 0 else None,
@@ -122,11 +121,21 @@ def aggregate_nutrient(
         evaluation = None
         if target is not None:
             if target.type in {"minimum", "recommended", "adequate"} and target.value is not None:
-                evaluation = "met_at_least" if amount >= target.value else "indeterminate_partial_coverage"
+                evaluation = (
+                    "met_at_least" if amount >= target.value else "indeterminate_partial_coverage"
+                )
             elif target.type == "maximum" and target.value is not None:
-                evaluation = "exceeded_at_least" if amount > target.value else "indeterminate_partial_coverage"
+                evaluation = (
+                    "exceeded_at_least"
+                    if amount > target.value
+                    else "indeterminate_partial_coverage"
+                )
             elif target.type == "range" and target.upper is not None:
-                evaluation = "above_range_at_least" if amount > target.upper else "indeterminate_partial_coverage"
+                evaluation = (
+                    "above_range_at_least"
+                    if amount > target.upper
+                    else "indeterminate_partial_coverage"
+                )
         return DiaryNutrientAggregate(
             key=definition.key,
             amount=amount,
@@ -159,7 +168,9 @@ def aggregate_nutrient(
 
 
 def _summary_integrity_error(entry: DiaryEntry, error: HTTPException) -> HTTPException:
-    cause = error.detail.get("code") if isinstance(error.detail, dict) else "INVALID_DIARY_FOOD_DATA"
+    cause = (
+        error.detail.get("code") if isinstance(error.detail, dict) else "INVALID_DIARY_FOOD_DATA"
+    )
     return HTTPException(
         status_code=409,
         detail={
@@ -191,7 +202,7 @@ def _day_summary(
         if not definition.diary_coverage_participation:
             continue
         values = [getattr(item, definition.storage_field) for item in entry_totals]
-        target = _target_for(definition, source.targets, source.target_provenance)
+        target = _target_for(definition, source.targets)
         aggregates.append(aggregate_nutrient(definition, values, target))
     overall = (
         None
@@ -202,7 +213,6 @@ def _day_summary(
         date=current,
         totals=totals,
         targets=source.targets,
-        target_provenance=source.target_provenance,
         nutrient_aggregates=aggregates,
         overall_nutrient_coverage_percent=overall,
     )
@@ -215,16 +225,16 @@ def _weekly_summary(
 ) -> WeekSummary:
     week_start = sunday_start(start)
     week_end = week_start + timedelta(days=6)
-    authority = diary_calendar_authority()
     target_context = resolve_week_target_context(
         session,
         principal,
         week_start,
         week_end,
-        authoritative_current_date=authority.current_diary_date,
     )
     entries = session.exec(
-        select(DiaryEntry, Food).join(Food, Food.id == DiaryEntry.food_id).where(
+        select(DiaryEntry, Food)
+        .join(Food, Food.id == DiaryEntry.food_id)
+        .where(
             DiaryEntry.principal_id == principal.principal_id,
             DiaryEntry.entry_date >= week_start,
             DiaryEntry.entry_date <= week_end,

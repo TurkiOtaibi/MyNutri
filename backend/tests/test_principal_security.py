@@ -27,7 +27,6 @@ from app.models import (
     PrincipalStatus,
     Profile,
     TargetPlan,
-    TargetProvenance,
 )
 from app.schemas import ProfileUpsert
 
@@ -135,9 +134,7 @@ def _seed_profile(session: Session, principal_id: UUID, payload: dict) -> Profil
     return profile
 
 
-def _write_target(
-    client: TestClient, payload: dict, idempotency_key: str
-) -> dict:
+def _write_target(client: TestClient, payload: dict, idempotency_key: str) -> dict:
     effective_from = current_diary_date().isoformat()
     preview = client.post(
         "/profile/preview",
@@ -159,14 +156,10 @@ def _write_target(
     return response.json()
 
 
-def _seed_current_target_revisions(
-    client: TestClient, session: Session
-) -> tuple[dict, dict]:
+def _seed_current_target_revisions(client: TestClient, session: Session) -> tuple[dict, dict]:
     _write_target(client, profile_payload(70), "target-revision-1")
     current_response = _write_target(client, profile_payload(67), "target-revision-2")
-    plans = session.exec(
-        select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_B)
-    ).all()
+    plans = session.exec(select(TargetPlan).where(TargetPlan.principal_id == PRINCIPAL_B)).all()
     plan_state = {
         plan.id: (
             plan.effective_from,
@@ -183,13 +176,8 @@ def _install_admin_read_guards(monkeypatch, session: Session):
     engine = session.get_bind()
     statements: list[str] = []
 
-    def reject_writes(
-        _conn, clauseelement, _multiparams, _params, _execution_options
-    ) -> None:
-        if (
-            isinstance(clauseelement, Select)
-            and clauseelement._for_update_arg is not None
-        ):
+    def reject_writes(_conn, clauseelement, _multiparams, _params, _execution_options) -> None:
+        if isinstance(clauseelement, Select) and clauseelement._for_update_arg is not None:
             raise AssertionError("admin monitoring issued SELECT FOR UPDATE")
         if isinstance(clauseelement, (Insert, Update, Delete)):
             raise AssertionError("admin monitoring issued DML")
@@ -197,9 +185,7 @@ def _install_admin_read_guards(monkeypatch, session: Session):
         if normalized.startswith(("insert ", "update ", "delete ")):
             raise AssertionError("admin monitoring issued textual DML")
 
-    def capture_cursor(
-        _conn, _cursor, statement, _parameters, _context, _executemany
-    ) -> None:
+    def capture_cursor(_conn, _cursor, statement, _parameters, _context, _executemany) -> None:
         statements.append(" ".join(statement.split()))
 
     def reject_flush(*_args, **_kwargs) -> None:
@@ -303,7 +289,10 @@ def test_shared_catalog_and_admin_only_mutations(security_context) -> None:
     food_id = created.json()["id"]
     assert client.get("/foods", headers=headers("user-b")).json()[0]["id"] == food_id
     assert client.get(f"/foods/{food_id}", headers=headers("user-b")).status_code == 200
-    assert client.put(f"/foods/{food_id}", json={"name": "No"}, headers=headers("user-b")).status_code == 403
+    assert (
+        client.put(f"/foods/{food_id}", json={"name": "No"}, headers=headers("user-b")).status_code
+        == 403
+    )
 
 
 def test_admin_archive_restore_and_history_safe_delete(security_context) -> None:
@@ -326,10 +315,10 @@ def test_admin_archive_restore_and_history_safe_delete(security_context) -> None
     assert deletion.status_code == 200
     assert deletion.json()["disposition"] == "archived"
     assert client.get(f"/foods/{created['id']}", headers=headers("user-b")).status_code == 404
-    assert client.get(f"/admin/foods/{created['id']}", headers=headers("admin-a")).status_code == 200
-    restored = client.post(
-        f"/admin/foods/{created['id']}/restore", headers=headers("admin-a")
+    assert (
+        client.get(f"/admin/foods/{created['id']}", headers=headers("admin-a")).status_code == 200
     )
+    restored = client.post(f"/admin/foods/{created['id']}/restore", headers=headers("admin-a"))
     assert restored.status_code == 200
     assert restored.json()["archived_at"] is None
 
@@ -354,13 +343,17 @@ def test_future_diary_crud_without_if_match_preserves_replay_and_isolation(
     replayed = client.post("/diary/entries", json=payload, headers=headers("user-b"))
     assert created.status_code == replayed.status_code == 201
     assert created.json()["id"] == replayed.json()["id"] == entry_id
-    assert created.json()["target_provenance"] == "no_target_source"
+    assert created.json()["target_plan_id"] is None
+    assert "target_provenance" not in created.json()
 
-    assert client.patch(
-        f"/diary/entries/{entry_id}",
-        json={"quantity": 2},
-        headers=headers("admin-a"),
-    ).status_code == 404
+    assert (
+        client.patch(
+            f"/diary/entries/{entry_id}",
+            json={"quantity": 2},
+            headers=headers("admin-a"),
+        ).status_code
+        == 404
+    )
     updated = client.patch(
         f"/diary/entries/{entry_id}",
         json={"quantity": 2},
@@ -368,9 +361,7 @@ def test_future_diary_crud_without_if_match_preserves_replay_and_isolation(
     )
     assert updated.status_code == 200
     assert updated.json()["quantity"] == 2
-    assert client.delete(
-        f"/diary/entries/{entry_id}", headers=headers("user-b")
-    ).status_code == 204
+    assert client.delete(f"/diary/entries/{entry_id}", headers=headers("user-b")).status_code == 204
 
 
 def test_legacy_completed_row_does_not_block_or_receive_diary_crud_writes(
@@ -429,14 +420,15 @@ def test_legacy_completed_row_does_not_block_or_receive_diary_crud_writes(
     )
     assert created.status_code == 201, created.text
     entry_id = created.json()["id"]
-    assert client.patch(
-        f"/diary/entries/{entry_id}",
-        json={"quantity": 2},
-        headers=headers("user-b"),
-    ).status_code == 200
-    assert client.delete(
-        f"/diary/entries/{entry_id}", headers=headers("user-b")
-    ).status_code == 204
+    assert (
+        client.patch(
+            f"/diary/entries/{entry_id}",
+            json={"quantity": 2},
+            headers=headers("user-b"),
+        ).status_code
+        == 200
+    )
+    assert client.delete(f"/diary/entries/{entry_id}", headers=headers("user-b")).status_code == 204
     assert session.exec(text("SELECT count(*) FROM diary_day_status")).scalar_one() == 1
     assert session.exec(text("SELECT count(*) FROM diary_day_status_history")).scalar_one() == 1
 
@@ -444,12 +436,7 @@ def test_legacy_completed_row_does_not_block_or_receive_diary_crud_writes(
 def test_admin_monitoring_is_authorized_and_read_only(security_context) -> None:
     client, _ = security_context
     assert client.get("/admin/users", headers=headers("user-b")).status_code == 403
-    assert (
-        client.get(
-            f"/admin/users/{PRINCIPAL_B}", headers=headers("user-b")
-        ).status_code
-        == 403
-    )
+    assert client.get(f"/admin/users/{PRINCIPAL_B}", headers=headers("user-b")).status_code == 403
     listing = client.get("/admin/users", headers=headers("admin-a"))
     detail = client.get(f"/admin/users/{PRINCIPAL_B}", headers=headers("admin-a"))
     assert listing.status_code == detail.status_code == 200
@@ -466,9 +453,7 @@ def test_admin_monitoring_is_authorized_and_read_only(security_context) -> None:
     "endpoint",
     ["detail", "diary", "diary_invalid"],
 )
-def test_admin_monitoring_gets_execute_no_dml(
-    security_context, monkeypatch, endpoint: str
-) -> None:
+def test_admin_monitoring_gets_execute_no_dml(security_context, monkeypatch, endpoint: str) -> None:
     client, session = security_context
     current_response, plan_state = _seed_current_target_revisions(client, session)
     current_plan = current_response["plan"]
@@ -486,7 +471,6 @@ def test_admin_monitoring_gets_execute_no_dml(
                 recorded_unit_type=food["default_unit_type"],
                 recorded_unit_amount=food["unit_amount"],
                 recorded_unit_basis=food["unit_basis"],
-                target_provenance=TargetProvenance.no_target_source,
             ),
             DiaryEntry(
                 principal_id=PRINCIPAL_B,
@@ -496,7 +480,6 @@ def test_admin_monitoring_gets_execute_no_dml(
                 recorded_unit_type=food["default_unit_type"],
                 recorded_unit_amount=food["unit_amount"],
                 recorded_unit_basis=food["unit_basis"],
-                target_provenance=TargetProvenance.no_target_source,
             ),
         ]
     )
@@ -519,7 +502,9 @@ def test_admin_monitoring_gets_execute_no_dml(
             if endpoint == "detail":
                 assert response.json()["current_target"]["plan"]["id"] == current_plan["id"]
             elif endpoint == "diary":
-                assert [item["entry_date"] for item in response.json()["items"]] == [today.isoformat()]
+                assert [item["entry_date"] for item in response.json()["items"]] == [
+                    today.isoformat()
+                ]
             elif endpoint == "diary_invalid":
                 assert response.json()["detail"]["code"] == "INVALID_CURSOR"
             _assert_plans_unchanged(engine, plan_state)
@@ -529,8 +514,7 @@ def test_admin_monitoring_gets_execute_no_dml(
 
     normalized = [statement.lower() for statement in statements]
     assert not any(
-        statement.startswith(("insert ", "update ", "delete "))
-        for statement in normalized
+        statement.startswith(("insert ", "update ", "delete ")) for statement in normalized
     )
     assert not any(" for update" in statement for statement in normalized)
 
@@ -553,7 +537,9 @@ def test_plan025_admin_diary_service_failure_executes_no_dml(security_context, m
         cleanup()
 
     normalized = [statement.lower() for statement in statements]
-    assert not any(statement.startswith(("insert ", "update ", "delete ")) for statement in normalized)
+    assert not any(
+        statement.startswith(("insert ", "update ", "delete ")) for statement in normalized
+    )
     assert not any(" for update" in statement for statement in normalized)
 
 
@@ -563,7 +549,10 @@ def test_client_authoritative_identity_and_role_are_rejected(security_context) -
         payload = profile_payload()
         payload[field] = "admin"
         payload["effective_from"] = current_diary_date().isoformat()
-        assert client.post("/profile/preview", json=payload, headers=headers("user-b")).status_code == 422
+        assert (
+            client.post("/profile/preview", json=payload, headers=headers("user-b")).status_code
+            == 422
+        )
 
 
 def test_openapi_declares_http_bearer_security() -> None:

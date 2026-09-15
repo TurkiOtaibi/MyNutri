@@ -25,6 +25,7 @@ import type {
   FoodDeleteResponse
 } from "./generated/openapi";
 import { createClient } from "./supabase/client";
+import { parseNutritionRegistry } from "./nutrients";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/+$/, "");
 
@@ -145,8 +146,8 @@ export function writeTargetPlan(
   }));
 }
 
-export function getNutritionRegistry(): Promise<NutritionRegistryResponse> {
-  return apiFetch<NutritionRegistryResponse>("/nutrition/registry");
+export async function getNutritionRegistry(): Promise<NutritionRegistryResponse> {
+  return parseNutritionRegistry(await apiFetch<unknown>("/nutrition/registry"));
 }
 
 export function listTargetPlanHistory(cursor?: string | null, limit = 20): Promise<TargetPlanHistoryResponse> {
