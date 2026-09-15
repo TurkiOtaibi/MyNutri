@@ -15,7 +15,6 @@ from app.core.calendar import current_diary_date
 from app.main import app
 from app.models import Principal
 from app.nutrition_rules.manifest import canonical_manifest_bytes, rules_manifest_hash
-from app.nutrition_rules.versions import VERSIONS
 
 PRINCIPAL_ID = UUID("00000000-0000-0000-0000-000000000001")
 
@@ -43,13 +42,12 @@ def client() -> Generator[TestClient, None, None]:
     app.dependency_overrides.clear()
 
 
-def test_registry_exposes_exact_version_bundle_and_authoritative_metadata(
+def test_registry_exposes_authoritative_content_and_integrity_hash(
     client: TestClient,
 ) -> None:
     response = client.get("/nutrition/registry")
     assert response.status_code == 200
     body = response.json()
-    assert {key: body[key] for key in VERSIONS.as_dict()} == VERSIONS.as_dict()
     assert body["rules_manifest_hash"] == rules_manifest_hash()
     assert len(body["nutrients"]) == 16
     assert len(body["target_types"]) == 7
@@ -78,6 +76,9 @@ def test_registry_exposes_exact_version_bundle_and_authoritative_metadata(
         "snapshot_schema_version",
         "nova",
         "nova_rules_version",
+        "nutrition_registry_version",
+        "calculation_engine_version",
+        "registry_schema_version",
     }
     assert retired_keys.isdisjoint(body)
     assert response.headers["cache-control"] == "private, max-age=300, must-revalidate"
@@ -104,29 +105,32 @@ def test_registry_etag_and_manifest_are_deterministic(client: TestClient) -> Non
     assert cached.content == b""
 
 
-def test_released_manifest_content_matches_version_lock() -> None:
+def test_released_manifest_content_matches_integrity_lock() -> None:
     lock = json.loads(
         files("app.nutrition_rules").joinpath("rules_manifest.lock.json").read_text("utf-8")
     )
-    assert lock["version_bundle"] == VERSIONS.as_dict()
+    assert set(lock) == {"sha256"}
     assert lock["sha256"] == rules_manifest_hash()
 
 
-def test_profile_preview_exposes_calculation_provenance(client: TestClient) -> None:
+def test_profile_preview_exposes_calculation_detail_without_semantic_versions(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = {
+        "effective_from": current_diary_date().isoformat(),
+        "sex": "male",
+        "birth_date": "1996-01-01",
+        "height_cm": 180,
+        "weight_kg": 80,
+        "activity_level": "moderate",
+        "goal": "maintain",
+        "protein_per_kg": 1.2,
+        "fat_pct": 0.25,
+        "selected_cut_intensity": 0.2,
+    }
     response = client.post(
         "/profile/preview",
-        json={
-            "effective_from": current_diary_date().isoformat(),
-            "sex": "male",
-            "birth_date": "1996-01-01",
-            "height_cm": 180,
-            "weight_kg": 80,
-            "activity_level": "moderate",
-            "goal": "maintain",
-            "protein_per_kg": 1.2,
-            "fat_pct": 0.25,
-            "selected_cut_intensity": 0.2,
-        },
+        json=payload,
     )
     assert response.status_code == 200
     body = response.json()
@@ -134,9 +138,14 @@ def test_profile_preview_exposes_calculation_provenance(client: TestClient) -> N
     assert body["protein_calculation"]["target_g"] == body["protein_g"]
     assert "وزنك الحالي" in body["protein_calculation"]["explanation_ar"]
     assert body["carb_clamped"] is False
-    assert body["calculation_engine_version"] == "2.0.0"
-    assert body["nutrition_registry_version"] == "4.0.0"
+    assert "calculation_engine_version" not in body
+    assert "nutrition_registry_version" not in body
+    assert "calculation_engine_version" not in body["protein_calculation"]
     assert len(body["additional_targets"]) == 16
+    monkeypatch.setattr("app.services.profile.rules_manifest_hash", lambda: "b" * 64)
+    changed_manifest = client.post("/profile/preview", json=payload).json()
+    assert body["target_calories"] == changed_manifest["target_calories"]
+    assert body["preview_hash"] != changed_manifest["preview_hash"]
 
 
 def test_profile_preview_rejects_non_positive_carbohydrate(client: TestClient) -> None:

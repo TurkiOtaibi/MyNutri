@@ -117,6 +117,25 @@ def test_day_logging_status_contract_is_absent() -> None:
         ("GET", "/admin/users/00000000-0000-0000-0000-000000000001/diary-days"),
     ):
         assert client.request(method, url, json={} if method == "PUT" else None).status_code == 404
+    schemas = app.openapi()["components"]["schemas"]
+    serialized = str(schemas)
+    for retired in (
+        "calculation_document_schema_version",
+        "calculation_engine_version",
+        "nutrition_registry_version",
+        "registry_schema_version",
+        "target_provenance",
+        "target_source_detail",
+        "legacy_unversioned",
+    ):
+        assert retired not in serialized
+
+    assert "source" not in schemas["DiaryNutrientTarget"]["properties"]
+    assert "target_provenance" not in schemas["DiaryEntryResponse"]["properties"]
+    assert "target_provenance" not in schemas["DaySummary"]["properties"]
+    assert "target_provenance" not in schemas["ProfileResponse"]["properties"]
+    for name in ("plan", "targets"):
+        assert {"type": "null"} in schemas["TargetSourceResponse"]["properties"][name]["anyOf"]
 
 
 def test_retired_analysis_priority_and_snapshot_contracts_are_absent() -> None:

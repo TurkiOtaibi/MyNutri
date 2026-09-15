@@ -30,7 +30,6 @@ from app.models import (
     PrincipalRole,
     Profile,
     Sex,
-    TargetProvenance,
 )
 from app.services.diary import AdminDiaryCursorError, _encode_admin_diary_cursor
 
@@ -159,7 +158,6 @@ def _seed_diary(session: Session, principal_id: UUID, count: int) -> list[DiaryE
             recorded_unit_type="serving",
             recorded_unit_amount=100,
             recorded_unit_basis="g",
-            target_provenance=TargetProvenance.no_target_source,
             created_at=created_at,
         )
         for index in range(count)
@@ -654,7 +652,7 @@ def test_plan025_migration_rehearsal_catalog_and_reversibility(
     plan025_postgresql_database: str,
 ) -> None:
     heads = _run_alembic(plan025_postgresql_database, "heads")
-    assert heads.stdout.strip() == "b7d42e9a1c36 (head)"
+    assert heads.stdout.strip() == "c8e53f0b2d47 (head)"
     _run_alembic(plan025_postgresql_database, "upgrade", "9f2a1b6c3d05")
     engine = sa_create_engine(plan025_postgresql_database)
     try:

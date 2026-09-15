@@ -99,7 +99,7 @@ function plan011WrittenPlan(profile: ProfileResponse, targets: TargetResponse) {
 
 async function mockPlan011Preview(page: Page, originalProfile: ProfileResponse): Promise<TargetResponse> {
   const targets: TargetResponse = {
-    ...originalProfile.targets,
+    ...originalProfile.targets!,
     calories: 1777,
     target_calories: 1777,
     final_target_calories: 1777,
@@ -661,7 +661,7 @@ test.describe("@profile Profile and targets redesign", () => {
   test("@p0 cut intensity survives edits and plan write payloads", async ({ page, originalProfile }) => {
     let currentProfile = structuredClone(originalProfile);
     let expectedIntensity: 0.15 | 0.25 = 0.15;
-    let latestTargets = originalProfile.targets;
+    let latestTargets = originalProfile.targets!;
     const previewPayloads: ProfileInput[] = [];
     const activationPayloads: Array<ProfileInput & { expected_preview_hash: string }> = [];
 
@@ -705,7 +705,7 @@ test.describe("@profile Profile and targets redesign", () => {
           ...currentProfile,
           goal: "cut",
           selected_cut_intensity: intensity,
-          targets: { ...currentProfile.targets, selected_cut_intensity: intensity }
+          targets: { ...currentProfile.targets!, selected_cut_intensity: intensity }
         };
         await page.goto(`/profile?cut-payload=${index}`);
         const cutGroup = page.getByRole("radiogroup", { name: "شدة خفض الوزن" });
@@ -886,7 +886,7 @@ test.describe("@profile Profile and targets redesign", () => {
   test("@p0 preview discloses cap and server calculation warnings", async ({ page, originalProfile }) => {
     let adjustedBasis = true;
     let activationPosts = 0;
-    let latestTargets = originalProfile.targets;
+    let latestTargets = originalProfile.targets!;
     await page.route(previewPath, (route) => fulfillPreview(route, (targets) => {
       latestTargets = {
         ...targets,
@@ -1214,7 +1214,7 @@ test.describe("@profile Profile and targets redesign", () => {
   test("@p1 calculation sheet is user-facing and targets are unified read-only values", async ({ page, originalProfile }) => {
     await page.goto("/profile");
     const targets = page.getByRole("region", { name: "الأهداف اليومية" });
-    await expect(targets.locator(".profile-calorie-target")).toContainText(String(originalProfile.targets.target_calories));
+    await expect(targets.locator(".profile-calorie-target")).toContainText(String(originalProfile.targets!.target_calories));
     await expect(targets.locator(".profile-macro-targets > div")).toHaveCount(3);
     await expect(targets.locator("input, [role='progressbar']")).toHaveCount(0);
     await expect(page.locator(".metric-tile")).toHaveCount(0);
@@ -1286,7 +1286,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await errorPage.close();
   });
 
-  test("@p1 Registry unavailable and incompatible states block writes without fabricated metadata", async ({ page, originalProfile }) => {
+  test("@p1 unavailable and structurally invalid Registry responses block writes", async ({ page, originalProfile }) => {
     await page.route("**/nutrition/registry", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "unavailable" }) }));
     await page.goto("/profile?registry-unavailable=1");
     await expect(page.getByRole("alert").filter({ hasText: "تعذر تحميل البيانات الغذائية" })).toBeVisible();
@@ -1297,10 +1297,11 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.route("**/nutrition/registry", async (route) => {
       const response = await route.fetch();
       const registry = await response.json() as Record<string, unknown>;
-      await route.fulfill({ response, json: { ...registry, registry_schema_version: 99 } });
+      const nutrients = Array.isArray(registry.nutrients) ? registry.nutrients : [];
+      await route.fulfill({ response, json: { ...registry, nutrients: [...nutrients, nutrients[0]] } });
     });
-    await page.goto("/profile?registry-incompatible=1");
-    await expect(page.getByRole("alert").filter({ hasText: "إصدار سجل التغذية غير متوافق" })).toBeVisible();
+    await page.goto("/profile?registry-invalid=1");
+    await expect(page.getByRole("alert").filter({ hasText: "تعذر تحميل البيانات الغذائية" })).toBeVisible();
     await page.getByLabel("الوزن").fill(String(originalProfile.weight_kg + 1));
     await expect(page.getByRole("button", { name: "مراجعة وتأكيد" })).toBeDisabled();
   });

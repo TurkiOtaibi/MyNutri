@@ -51,7 +51,6 @@ async function routeNoTargetWeek(page: Page): Promise<void> {
           days: week.days.map((day) => ({
             ...day,
             targets: null,
-            target_provenance: "no_target_source",
             nutrient_aggregates: day.nutrient_aggregates.map((aggregate) => ({
               ...aggregate,
               target: null,
@@ -160,6 +159,9 @@ test.describe("critical visual regression", () => {
     await page.goto("/diary?visual=populated");
     await expect(page.getByText(food.name, { exact: true })).toBeVisible();
     const diary = page.locator(".diary-page");
+    await expect(
+      diary.getByText("لا يوجد مصدر هدف محفوظ لهذا اليوم.", { exact: true })
+    ).toBeVisible();
     await stableRendering(page);
 
     await expect(diary).toHaveScreenshot("diary-populated-week.png");

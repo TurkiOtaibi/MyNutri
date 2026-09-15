@@ -289,7 +289,7 @@ export function ProfileView({
         </section>
 
         <TargetsCard title="الأهداف اليومية" badge="محسوبة تلقائيًا" targets={savedTargets} />
-        {registryQuery.isPending ? <RegistryState kind="loading" /> : registryQuery.isError ? <RegistryState kind="unavailable" onRetry={() => registryQuery.refetch()} /> : !registryReady ? <RegistryState kind="incompatible" onRetry={() => registryQuery.refetch()} /> : <AdditionalTargetsCard targets={savedTargets} registry={registryQuery.data!} />}
+        {registryQuery.isPending ? <RegistryState kind="loading" /> : registryQuery.isError ? <RegistryState kind="unavailable" onRetry={() => registryQuery.refetch()} /> : registryReady ? <AdditionalTargetsCard targets={savedTargets} registry={registryQuery.data!} /> : null}
         <TargetPlanHistory
           plans={planHistoryQuery.data?.pages.flatMap((page) => page.items) ?? []}
           pending={planHistoryQuery.isPending}

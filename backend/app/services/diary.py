@@ -22,7 +22,7 @@ from app.schemas import (
     NutritionTotals,
 )
 from app.services.food import get_active_food_for_logging, lock_food_namespace_for_logging
-from app.services.target_plans import resolve_target_binding
+from app.services.target_plans import resolve_target_plan
 
 DETAIL_FIELDS = (
     "fiber_g",
@@ -55,9 +55,7 @@ class AdminDiaryCursorError(ValueError):
 
 def _lock_owner_for_target_binding(session: Session, principal: PrincipalContext) -> None:
     session.exec(
-        select(Principal)
-        .where(Principal.id == principal.principal_id)
-        .with_for_update()
+        select(Principal).where(Principal.id == principal.principal_id).with_for_update()
     ).one()
 
 
@@ -115,7 +113,6 @@ def to_entry_response(entry: DiaryEntry, food: Food) -> DiaryEntryResponse:
         entry_date=entry.entry_date,
         food_id=entry.food_id,
         target_plan_id=entry.target_plan_id,
-        target_provenance=entry.target_provenance,
         quantity=float(entry.quantity),
         recorded_unit_type=entry.recorded_unit_type,
         recorded_unit_amount=float(entry.recorded_unit_amount),
@@ -196,15 +193,17 @@ def admin_diary_page(
     cursor: str | None = None,
     entry_date: date | None = None,
 ) -> AdminDiaryPage:
-    statement = select(
-        DiaryEntry.id,
-        DiaryEntry.entry_date,
-        DiaryEntry.meal_type,
-        DiaryEntry.quantity,
-        Food.name.label("food_name"),
-        DiaryEntry.created_at,
-    ).join(Food, Food.id == DiaryEntry.food_id).where(
-        DiaryEntry.principal_id == principal.principal_id
+    statement = (
+        select(
+            DiaryEntry.id,
+            DiaryEntry.entry_date,
+            DiaryEntry.meal_type,
+            DiaryEntry.quantity,
+            Food.name.label("food_name"),
+            DiaryEntry.created_at,
+        )
+        .join(Food, Food.id == DiaryEntry.food_id)
+        .where(DiaryEntry.principal_id == principal.principal_id)
     )
     if entry_date is not None:
         statement = statement.where(DiaryEntry.entry_date == entry_date)
@@ -290,14 +289,11 @@ def create_entry(
                     "message_ar": "معرف اليومية مستخدم لمدخل مختلف.",
                 },
             )
-    authority = calendar_authority or diary_calendar_authority()
+    # Retain the injected calendar boundary for route/test compatibility; target
+    # resolution itself is now date-derived and independent of "today".
+    _ = calendar_authority or diary_calendar_authority()
     _lock_owner_for_target_binding(session, principal)
-    binding = resolve_target_binding(
-        session,
-        principal,
-        payload.entry_date,
-        authoritative_current_date=authority.current_diary_date,
-    )
+    plan = resolve_target_plan(session, principal, payload.entry_date)
     lock_food_namespace_for_logging(session)
     food = get_active_food_for_logging(session, principal, payload.food_id)
     entry_data = {
@@ -310,8 +306,7 @@ def create_entry(
         "recorded_unit_basis": food.unit_basis,
         "recorded_unit_label": None,
         "meal_type": payload.meal_type,
-        "target_plan_id": binding.plan.id if binding.plan else None,
-        "target_provenance": binding.provenance,
+        "target_plan_id": plan.id if plan else None,
     }
     if payload.id is not None:
         entry_data["id"] = payload.id

@@ -219,7 +219,7 @@ export function DiaryPage() {
               compact
             />
           ) : (
-            <DailyProgressSummary totals={totals} targets={targets} targetProvenance={selectedDay?.target_provenance ?? "no_target_source"} pending={weekQuery.isPending || entriesQuery.isPending} failed={entriesQuery.isError} onOpenNutrition={() => setNutritionDetailsOpen(true)} />
+            <DailyProgressSummary totals={totals} targets={targets} pending={weekQuery.isPending || entriesQuery.isPending} failed={entriesQuery.isError} onOpenNutrition={() => setNutritionDetailsOpen(true)} />
           )}
         </aside>
       </div>

@@ -242,12 +242,6 @@ class MealType(str, Enum):
     unspecified = "unspecified"
 
 
-class TargetProvenance(str, Enum):
-    versioned_plan = "versioned_plan"
-    legacy_unversioned = "legacy_unversioned"
-    no_target_source = "no_target_source"
-
-
 class NutritionDataSource(str, Enum):
     official = "official"
     estimated = "estimated"
@@ -342,49 +336,6 @@ class Profile(SQLModel, table=True):
     )
 
 
-class LegacyTargetTransitionSnapshot(SQLModel, table=True):
-    __tablename__ = "legacy_target_transition_snapshots"
-    __table_args__ = (
-        ForeignKeyConstraint(
-            ["profile_id", "principal_id"],
-            ["profile.id", "profile.principal_id"],
-            name="fk_legacy_transition_profile_owner",
-            ondelete="RESTRICT",
-        ),
-        UniqueConstraint("profile_id", name="uq_legacy_transition_profile"),
-        UniqueConstraint("id", "principal_id", name="uq_legacy_transition_id_principal"),
-        UniqueConstraint("principal_id", "transition_date", name="uq_legacy_transition_date"),
-        CheckConstraint("calendar_timezone = 'Asia/Riyadh'", name="ck_legacy_transition_timezone"),
-        CheckConstraint(
-            "target_document_schema_version = 1", name="ck_legacy_transition_schema_version"
-        ),
-        CheckConstraint(
-            "jsonb_typeof(legacy_target_document)='object' AND "
-            "legacy_target_document->>'schema_version'='1' AND "
-            "legacy_target_document->>'source'='legacy_unversioned_transition' AND "
-            "jsonb_typeof(legacy_target_document->'captured_profile_inputs')='object' AND "
-            "jsonb_typeof(legacy_target_document->'resolved_targets')='object'",
-            name="ck_legacy_transition_document_shape",
-        ).ddl_if(dialect="postgresql"),
-        Index("ix_legacy_transition_principal_date", "principal_id", "transition_date"),
-    )
-
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    principal_id: uuid.UUID = Field(
-        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
-    )
-    profile_id: uuid.UUID = Field(nullable=False)
-    transition_date: date = Field(nullable=False)
-    calendar_timezone: str = Field(sa_column=Column(String(64), nullable=False))
-    target_document_schema_version: int = Field(sa_column=Column(SmallInteger(), nullable=False))
-    legacy_target_document: dict[str, Any] = Field(
-        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
-    )
-    created_at: datetime = Field(
-        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
-    )
-
-
 class TargetPlan(SQLModel, table=True):
     __tablename__ = "target_plan"
     __table_args__ = (
@@ -396,8 +347,10 @@ class TargetPlan(SQLModel, table=True):
             ondelete="RESTRICT",
         ),
         CheckConstraint(
-            "calculation_document_schema_version > 0", name="ck_target_plan_document_version"
-        ),
+            "jsonb_typeof(calculation_document)='object' AND "
+            "jsonb_typeof(calculation_document->'target_result')='object'",
+            name="ck_target_plan_calculation_document_shape",
+        ).ddl_if(dialect="postgresql"),
         CheckConstraint("revision >= 1", name="ck_target_plan_revision_positive"),
         UniqueConstraint(
             "principal_id",
@@ -424,11 +377,6 @@ class TargetPlan(SQLModel, table=True):
     calculation_document: dict[str, Any] = Field(
         sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
     )
-    calculation_document_schema_version: int = Field(
-        sa_column=Column(SmallInteger(), nullable=False)
-    )
-    calculation_engine_version: str = Field(sa_column=Column(String(32), nullable=False))
-    nutrition_registry_version: str = Field(sa_column=Column(String(32), nullable=False))
     created_at: datetime = Field(
         default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
     )
@@ -651,15 +599,6 @@ class DiaryEntry(SQLModel, table=True):
             ondelete="RESTRICT",
         ),
         CheckConstraint(
-            "target_provenance IN ('versioned_plan','legacy_unversioned','no_target_source')",
-            name="ck_diary_entry_target_provenance",
-        ),
-        CheckConstraint(
-            "(target_provenance = 'versioned_plan' AND target_plan_id IS NOT NULL) OR "
-            "(target_provenance IN ('legacy_unversioned','no_target_source') AND target_plan_id IS NULL)",
-            name="ck_diary_entry_target_binding",
-        ),
-        CheckConstraint(
             "quantity > 0 AND quantity NOT IN ('NaN', 'Infinity', '-Infinity')",
             name="ck_diary_entry_quantity_positive_finite",
         ),
@@ -705,10 +644,6 @@ class DiaryEntry(SQLModel, table=True):
         sa_column=Column(ForeignKey("food.id", ondelete="RESTRICT"), index=True, nullable=False),
     )
     target_plan_id: uuid.UUID | None = Field(default=None, nullable=True)
-    target_provenance: TargetProvenance = Field(
-        default=TargetProvenance.legacy_unversioned,
-        sa_column=Column(Text(), nullable=False),
-    )
     quantity: float = Field(sa_column=Column(Numeric(8, 3), nullable=False))
     recorded_unit_type: DefaultUnitType = Field(sa_column=Column(Text(), nullable=False))
     recorded_unit_amount: float = Field(sa_column=Column(Numeric(10, 4), nullable=False))

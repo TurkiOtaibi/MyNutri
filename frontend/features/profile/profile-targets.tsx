@@ -10,7 +10,7 @@ export function TargetsCard({ title, badge, targets }: { title: string; badge: s
       <header><div><h2>{title}</h2><p>تتحدث بعد حفظ بياناتك.</p></div><span>{badge}</span></header>
       {targets ? (
         <><div className="profile-calorie-target"><strong><bdi>{targets.target_calories}</bdi></strong><span>سعرة حرارية يوميًا</span></div><div className="profile-macro-targets"><TargetValue label="البروتين" value={targets.protein_g} /><TargetValue label="الكارب" value={targets.carb_g} /><TargetValue label="الدهون" value={targets.fat_g} /></div></>
-      ) : <div className="profile-incomplete"><strong>أكمل بياناتك لحساب أهدافك اليومية</strong><span>أدخل تاريخ الميلاد والطول والوزن.</span></div>}
+      ) : <div className="profile-incomplete"><strong>لا يوجد مصدر هدف محفوظ لهذا اليوم.</strong></div>}
     </section>
   );
 }
@@ -41,12 +41,10 @@ export function AdditionalTargetsCard({ targets, registry }: { targets: TargetRe
   );
 }
 
-export function RegistryState({ kind, onRetry }: { kind: "loading" | "unavailable" | "incompatible"; onRetry?: () => void }) {
+export function RegistryState({ kind, onRetry }: { kind: "loading" | "unavailable"; onRetry?: () => void }) {
   const copy = kind === "loading"
     ? "جارٍ تحميل البيانات الغذائية"
-    : kind === "unavailable"
-      ? "تعذر تحميل البيانات الغذائية"
-      : "إصدار سجل التغذية غير متوافق. يلزم تحديث التطبيق أو التواصل مع الدعم.";
+    : "تعذر تحميل البيانات الغذائية";
   return (
     <section className="profile-registry-state" role={kind === "loading" ? "status" : "alert"} aria-live="polite">
       <strong>{copy}</strong>

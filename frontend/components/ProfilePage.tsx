@@ -90,7 +90,7 @@ export function ProfilePage() {
     enabled: Boolean(accessToken),
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined
   });
-  const registryReady = registryQuery.data?.registry_schema_version === 4;
+  const registryReady = Boolean(registryQuery.data);
   const authoritativeDate = authorityQuery.data?.current_diary_date ?? null;
   const selectedEffectiveFrom = effectiveFrom || authoritativeDate || "";
   const dirty = savedDraft != null && (

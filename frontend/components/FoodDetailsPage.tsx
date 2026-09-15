@@ -119,8 +119,7 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
   }
 
   const food = foodQuery.data;
-  const registryCompatible = registryQuery.data?.registry_schema_version === 4;
-  const registry = registryCompatible ? registryQuery.data : undefined;
+  const registry = registryQuery.data;
   const servingNutrition = calculateServingNutrition(food);
   const basisNutrition = perBasisNutrition(food);
   const displayedNutrition = mode === "serving" ? servingNutrition : basisNutrition;
@@ -184,8 +183,8 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
         <NutritionCompleteness food={food} nutrients={registryNutrients} open={completenessOpen} onToggle={() => setCompletenessOpen((value) => !value)} />
       ) : (
         <section className="catalog-state" role={registryQuery.isError ? "alert" : "status"}>
-          <strong>{registryQuery.isError ? "تعذر تحميل البيانات الغذائية" : registryQuery.data && !registryCompatible ? "إصدار سجل التغذية غير متوافق" : "جارٍ تحميل سجل المغذيات"}</strong>
-          {registryQuery.isError || (registryQuery.data && !registryCompatible) ? <button className="btn" type="button" onClick={() => registryQuery.refetch()}><RotateCcw size={18} /> إعادة المحاولة</button> : null}
+          <strong>{registryQuery.isError ? "تعذر تحميل البيانات الغذائية" : "جارٍ تحميل سجل المغذيات"}</strong>
+          {registryQuery.isError ? <button className="btn" type="button" onClick={() => registryQuery.refetch()}><RotateCcw size={18} /> إعادة المحاولة</button> : null}
         </section>
       )}
 

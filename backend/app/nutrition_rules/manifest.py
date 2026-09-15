@@ -12,12 +12,10 @@ from app.nutrition_rules.registry import (
     PRIMARY_CATEGORIES,
     TARGET_TYPES,
 )
-from app.nutrition_rules.versions import VERSIONS
 
 
 def rules_manifest() -> dict[str, Any]:
     return {
-        "versions": VERSIONS.as_dict(),
         "calculation_policy": CALCULATION_POLICY,
         "nutrients": [item.as_dict() for item in NUTRIENTS],
         "target_types": list(TARGET_TYPES),
@@ -27,8 +25,7 @@ def rules_manifest() -> dict[str, Any]:
                 "key": item["key"],
                 "label_ar": item["label_ar"],
                 "subcategories": [
-                    {"key": key, "label_ar": label_ar}
-                    for key, label_ar in item["subcategories"]
+                    {"key": key, "label_ar": label_ar} for key, label_ar in item["subcategories"]
                 ],
             }
             for item in FOOD_TAXONOMY
@@ -50,7 +47,6 @@ def rules_manifest_hash() -> str:
 def registry_response() -> dict[str, Any]:
     manifest = rules_manifest()
     return {
-        **manifest["versions"],
         "rules_manifest_hash": rules_manifest_hash(),
         "calculation_policy": manifest["calculation_policy"],
         "nutrients": manifest["nutrients"],

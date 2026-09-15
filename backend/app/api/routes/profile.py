@@ -30,11 +30,9 @@ def read_profile(
     source = resolve_targets(session, principal, authority.current_diary_date)
     response = to_profile_response(
         profile,
-        authority.current_diary_date,
         resolved_targets=source.targets,
     )
     if source.targets is not None:
-        response.target_provenance = source.target_provenance
         response.effective_plan = source.plan
     return response
 

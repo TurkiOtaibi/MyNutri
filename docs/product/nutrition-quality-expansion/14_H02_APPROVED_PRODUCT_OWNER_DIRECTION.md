@@ -1,5 +1,13 @@
 # H02 Approved Product Owner Direction
 
+> **Authority update — nutrition semantic versioning and legacy Target compatibility retired.**
+> Semantic engine/Registry/document version numbers, legacy transition snapshots,
+> Profile target fallback, and Diary target provenance are superseded by the
+> [V2 retirement authority](../v2/10_NUTRITION_VERSIONING_AND_LEGACY_TARGET_COMPATIBILITY_RETIREMENT.md).
+> Nutrition Registry content, formulas, safety, rules-manifest/preview integrity,
+> immutable dated Target Plans, and legacy API idempotency replay remain current
+> where they are not otherwise superseded.
+
 ## 1. Issue Identity
 
 | Field | Value |

@@ -37,7 +37,7 @@ export type ProfileResponse = Omit<
   DeepRequired<OpenApi.ProfileResponse>,
   "targets" | "effective_plan"
 > & {
-  targets: TargetResponse;
+  targets: TargetResponse | null;
   effective_plan: TargetPlanSummary | null;
 };
 export type TargetPlanSummary = Omit<DeepRequired<OpenApi.TargetPlanSummary>, "targets"> & {

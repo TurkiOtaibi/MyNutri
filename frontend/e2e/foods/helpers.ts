@@ -100,7 +100,6 @@ type DiaryRecord = {
   id: string;
   entry_date: string;
   target_plan_id: string | null;
-  target_provenance: "versioned_plan" | "legacy_unversioned" | "no_target_source";
   food: { id: string; name: string; brand: string | null };
   quantity: number;
   recorded_unit_type: FoodPayload["default_unit_type"];

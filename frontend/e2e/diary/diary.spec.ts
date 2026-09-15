@@ -106,7 +106,6 @@ test.describe("@diary daily-use redesign", () => {
       expect(reboundFirst.target_plan_id).toBe(revisedFirstPlan.plan.id);
       expect(reboundSecond.target_plan_id).toBe(secondPlan.plan.id);
       expect(unchangedPast.target_plan_id).toBe(pastEntry.target_plan_id);
-      expect(unchangedPast.target_provenance).toBe(pastEntry.target_provenance);
     } finally {
       await applyProfileThroughTargetPlan(request, API_TOKEN, originalInput);
     }
