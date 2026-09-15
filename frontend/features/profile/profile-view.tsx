@@ -1,11 +1,11 @@
 import { Activity, CalendarDays, Check, ChevronDown, ChevronLeft, Info, LoaderCircle, RotateCcw, Ruler, Scale, SlidersHorizontal, Target, UserRound } from "lucide-react";
 import type { Dispatch, FormEvent, RefObject, SetStateAction } from "react";
 import { activityLabels, goalLabels, sexLabels } from "@/lib/labels";
-import type { ActivityLevel, Goal, NutritionRegistryResponse, ProfileInput, ProfileResponse, Sex, TargetPlanActivationResponse, TargetPlanHistoryResponse, TargetResponse } from "@/lib/types";
+import type { ActivityLevel, Goal, NutritionRegistryResponse, ProfileInput, ProfileResponse, Sex, TargetPlanHistoryResponse, TargetPlanWriteResponse, TargetResponse } from "@/lib/types";
 import { NumericSettingsRow, OptionList, SelectionCard, SettingsButton, CutIntensitySelector } from "./profile-controls";
-import { AdditionalTargetsCard, ExpectedTargetsCard, RegistryState, ScheduledPlanCard, TargetPlanHistory, TargetsCard } from "./profile-targets";
+import { AdditionalTargetsCard, ExpectedTargetsCard, RegistryState, TargetPlanHistory, TargetsCard } from "./profile-targets";
 import { ProfileConfirm, ProfileSheet } from "./profile-dialogs";
-import { FAT_DEFAULTS, PROFILE_LIMITS, PROTEIN_DEFAULT, activityDescriptions, activityDisplayLabels, blankDraft, goalDescriptions, goalDisplayLabels, normalizeNumber, toDraft, type ActivationPhase, type ActivationSubmission, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type SheetKind } from "./profile-model";
+import { FAT_DEFAULTS, PROFILE_LIMITS, PROTEIN_DEFAULT, activityDescriptions, activityDisplayLabels, blankDraft, goalDescriptions, goalDisplayLabels, normalizeNumber, toDraft, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type SheetKind, type TargetPlanSubmission, type TargetPlanWritePhase } from "./profile-model";
 import "./profile.module.css";
 
 const PROFILE_WRITE_ERROR = "تعذر حفظ التغييرات";
@@ -22,6 +22,9 @@ type ProfileViewProps = {
   setPreviewDraftHash: Dispatch<SetStateAction<string | null>>;
   setErrors: Dispatch<SetStateAction<FieldErrors>>;
   draft: DraftProfile;
+  effectiveFrom: string;
+  setEffectiveFrom: (value: string) => void;
+  effectiveFromRef: RefObject<HTMLInputElement | null>;
   activeSheet: SheetKind;
   updateSex: (sex: Sex) => void;
   setActiveSheet: Dispatch<SetStateAction<SheetKind>>;
@@ -37,28 +40,27 @@ type ProfileViewProps = {
   proteinRef: RefObject<HTMLInputElement | null>;
   fatRef: RefObject<HTMLInputElement | null>;
   savedTargets: TargetResponse | null;
-  profileQuery: { data: ProfileResponse | null | undefined };
   registryQuery: { isPending: boolean; isError: boolean; data: NutritionRegistryResponse | undefined; refetch: () => unknown };
   registryReady: boolean;
   planHistoryQuery: { data: { pages: TargetPlanHistoryResponse[] } | undefined; isPending: boolean; isError: boolean; hasNextPage: boolean; isFetchingNextPage: boolean; refetch: () => unknown; fetchNextPage: () => unknown };
   currentPreview: TargetResponse | null;
   previewPending: boolean;
   previewFailed: boolean;
-  activationSafetyOutcome: BlockingSafetyOutcome | null;
+  writeSafetyOutcome: BlockingSafetyOutcome | null;
   safetyAttemptSequence: number;
   safetyRef: RefObject<HTMLDivElement | null>;
   requestPreview: () => void;
   validation: { payload: ProfileInput | null };
-  activationErrorCode: string | null;
-  activationPhase: ActivationPhase;
+  writeErrorCode: string | null;
+  writePhase: TargetPlanWritePhase;
   submit: (event?: FormEvent) => void;
-  reconcileAcceptedActivation: (submission: ActivationSubmission, accepted: TargetPlanActivationResponse) => Promise<void>;
+  reconcileAcceptedPlan: (submission: TargetPlanSubmission, accepted: TargetPlanWriteResponse) => Promise<void>;
   restoreOpen: boolean;
   setRestoreOpen: Dispatch<SetStateAction<boolean>>;
-  transitionActivation: (next: ActivationPhase) => void;
-  activationPhaseRef: RefObject<ActivationPhase>;
-  restoreActivationFocusRef: RefObject<boolean>;
-  activateConfirmedPlan: () => Promise<void>;
+  transitionWrite: (next: TargetPlanWritePhase) => void;
+  writePhaseRef: RefObject<TargetPlanWritePhase>;
+  restoreWriteFocusRef: RefObject<boolean>;
+  writeConfirmedPlan: () => Promise<void>;
 };
 
 export function ProfileView({
@@ -73,6 +75,9 @@ export function ProfileView({
   setPreviewDraftHash,
   setErrors,
   draft,
+  effectiveFrom,
+  setEffectiveFrom,
+  effectiveFromRef,
   activeSheet,
   updateSex,
   setActiveSheet,
@@ -88,28 +93,27 @@ export function ProfileView({
   proteinRef,
   fatRef,
   savedTargets,
-  profileQuery,
   registryQuery,
   registryReady,
   planHistoryQuery,
   currentPreview,
   previewPending,
   previewFailed,
-  activationSafetyOutcome,
+  writeSafetyOutcome,
   safetyAttemptSequence,
   safetyRef,
   requestPreview,
   validation,
-  activationErrorCode,
-  activationPhase,
+  writeErrorCode,
+  writePhase,
   submit,
-  reconcileAcceptedActivation,
+  reconcileAcceptedPlan,
   restoreOpen,
   setRestoreOpen,
-  transitionActivation,
-  activationPhaseRef,
-  restoreActivationFocusRef,
-  activateConfirmedPlan,
+  transitionWrite,
+  writePhaseRef,
+  restoreWriteFocusRef,
+  writeConfirmedPlan,
 }: ProfileViewProps) {
   return (
     <main className={`profile-page ${dirty ? "is-dirty" : ""}`}>
@@ -264,8 +268,27 @@ export function ProfileView({
           </div>
         </section>
 
+        <section className="profile-settings-card" aria-labelledby="target-effective-date-title">
+          <h2 id="target-effective-date-title">تاريخ سريان الأهداف</h2>
+          <label className={`profile-setting-row profile-date-row ${errors.effective_from ? "has-error" : ""}`}>
+            <CalendarDays size={19} aria-hidden="true" />
+            <span className="profile-setting-copy"><strong>تاريخ السريان</strong><bdi dir="ltr">{effectiveFrom || "غير محدد"}</bdi></span>
+            <ChevronLeft size={18} aria-hidden="true" />
+            <input
+              ref={effectiveFromRef}
+              type="date"
+              value={effectiveFrom}
+              min={authoritativeDate ?? undefined}
+              onChange={(event) => setEffectiveFrom(event.target.value)}
+              aria-label="تاريخ سريان الأهداف"
+              aria-invalid={Boolean(errors.effective_from)}
+              aria-describedby={errors.effective_from ? "effective-from-error" : undefined}
+            />
+            {errors.effective_from ? <small id="effective-from-error" className="profile-field-error">{errors.effective_from}</small> : null}
+          </label>
+        </section>
+
         <TargetsCard title="الأهداف اليومية" badge="محسوبة تلقائيًا" targets={savedTargets} />
-        {profileQuery.data?.pending_plan ? <ScheduledPlanCard plan={profileQuery.data.pending_plan} /> : null}
         {registryQuery.isPending ? <RegistryState kind="loading" /> : registryQuery.isError ? <RegistryState kind="unavailable" onRetry={() => registryQuery.refetch()} /> : !registryReady ? <RegistryState kind="incompatible" onRetry={() => registryQuery.refetch()} /> : <AdditionalTargetsCard targets={savedTargets} registry={registryQuery.data!} />}
         <TargetPlanHistory
           plans={planHistoryQuery.data?.pages.flatMap((page) => page.items) ?? []}
@@ -284,7 +307,7 @@ export function ProfileView({
             goal={draft.goal}
             pending={previewPending}
             failed={previewFailed}
-            recoveryOutcome={activationSafetyOutcome}
+            recoveryOutcome={writeSafetyOutcome}
             safetyAttemptSequence={safetyAttemptSequence}
             safetyRef={safetyRef}
             onRetry={requestPreview}
@@ -295,19 +318,19 @@ export function ProfileView({
 
       {dirty ? (
         <div className="profile-save-bar" role="region" aria-label="حفظ تغييرات الملف الشخصي">
-          <span>{Object.keys(errors).length > 0 ? "صحح الحقول المعلّمة للمتابعة" : activationSafetyOutcome ? "راجع قرار السلامة وحدّث المعاينة قبل المتابعة" : activationErrorCode ? "تغيّرت المعاينة. راجع الأهداف المحدثة ثم أكد مجددًا" : activationPhase.kind === "failed" ? PROFILE_WRITE_ERROR : !registryReady ? "سجل التغذية غير جاهز" : "تغييرات غير محفوظة"}</span>
-          {activationPhase.kind === "failed" ? <small>تحقق من الاتصال ثم أعد المحاولة</small> : null}
-          <button className="btn primary" type="button" onClick={() => submit()} disabled={!registryReady || activationPhase.kind === "submitting" || previewPending || (Boolean(validation.payload) && !currentPreview?.preview_hash && !activationSafetyOutcome)}>
-            {activationPhase.kind === "submitting" ? <><LoaderCircle className="spin" size={17} /> جارٍ تفعيل الخطة…</> : activationSafetyOutcome ? "تحديث المعاينة" : activationErrorCode ? "مراجعة المعاينة" : activationPhase.kind === "failed" ? <><RotateCcw size={17} /> إعادة المحاولة</> : "مراجعة وتأكيد"}
+          <span>{Object.keys(errors).length > 0 ? "صحح الحقول المعلّمة للمتابعة" : writeSafetyOutcome ? "راجع قرار السلامة وحدّث المعاينة قبل المتابعة" : writeErrorCode ? "تغيّرت المعاينة. راجع الأهداف المحدثة ثم أكد مجددًا" : writePhase.kind === "failed" ? PROFILE_WRITE_ERROR : !registryReady ? "سجل التغذية غير جاهز" : "تغييرات غير محفوظة"}</span>
+          {writePhase.kind === "failed" ? <small>تحقق من الاتصال ثم أعد المحاولة</small> : null}
+          <button className="btn primary" type="button" onClick={() => submit()} disabled={!registryReady || writePhase.kind === "submitting" || previewPending || (Boolean(validation.payload) && !currentPreview?.preview_hash && !writeSafetyOutcome)}>
+            {writePhase.kind === "submitting" ? <><LoaderCircle className="spin" size={17} /> جارٍ حفظ الخطة…</> : writeSafetyOutcome ? "تحديث المعاينة" : writeErrorCode ? "مراجعة المعاينة" : writePhase.kind === "failed" ? <><RotateCcw size={17} /> إعادة المحاولة</> : "مراجعة وتأكيد"}
           </button>
         </div>
       ) : null}
 
-      {["reconciling", "committed"].includes(activationPhase.kind) ? <div className="profile-save-status" role="status"><Check size={17} /> تم حفظ التغييرات</div> : null}
-      {activationPhase.kind === "recovery" ? (
+      {["reconciling", "committed"].includes(writePhase.kind) ? <div className="profile-save-status" role="status"><Check size={17} /> تم حفظ التغييرات</div> : null}
+      {writePhase.kind === "recovery" ? (
         <div className="profile-reconciliation-status" role="status">
           <div><Check size={17} /><span><strong>تم حفظ التغييرات</strong><small>تعذر تحديث البيانات المعروضة. الأهداف المحفوظة أدناه ما زالت معتمدة.</small></span></div>
-          <button className="btn" type="button" onClick={() => void reconcileAcceptedActivation(activationPhase.submission, activationPhase.accepted)}>
+          <button className="btn" type="button" onClick={() => void reconcileAcceptedPlan(writePhase.submission, writePhase.accepted)}>
             <RotateCcw size={17} /> إعادة تحديث البيانات
           </button>
         </div>
@@ -366,20 +389,18 @@ export function ProfileView({
         />
       ) : null}
 
-      {(activationPhase.kind === "confirming" || activationPhase.kind === "submitting") ? (
+      {(writePhase.kind === "confirming" || writePhase.kind === "submitting") ? (
         <ProfileConfirm
-          title={activationPhase.submission.replacesPendingPlan ? "استبدال الخطة المجدولة؟" : "تأكيد الأهداف الجديدة؟"}
-          description={activationPhase.submission.replacesPendingPlan
-            ? "سيتم الاحتفاظ بالخطة المجدولة السابقة في السجل، وتبدأ الخطة البديلة في التاريخ المعروض."
-            : `المعاينة وحدها لا تحفظ الأهداف. ستبدأ الخطة في ${profileQuery.data ? "اليوم التالي" : "اليوم"}.`}
+          title="تأكيد الأهداف الجديدة؟"
+          description={`المعاينة وحدها لا تحفظ الأهداف. تاريخ السريان ${writePhase.submission.effectiveFrom}.`}
           safeLabel="متابعة المراجعة"
-          confirmLabel={activationPhase.submission.replacesPendingPlan ? "استبدال الخطة" : "تفعيل الخطة"}
-          restoreFocusRef={restoreActivationFocusRef}
-          pending={activationPhase.kind === "submitting"}
+          confirmLabel="حفظ الخطة"
+          restoreFocusRef={restoreWriteFocusRef}
+          pending={writePhase.kind === "submitting"}
           onClose={() => {
-            if (activationPhaseRef.current.kind === "confirming") transitionActivation({ kind: "idle" });
+            if (writePhaseRef.current.kind === "confirming") transitionWrite({ kind: "idle" });
           }}
-          onConfirm={() => void activateConfirmedPlan()}
+          onConfirm={() => void writeConfirmedPlan()}
         />
       ) : null}
 

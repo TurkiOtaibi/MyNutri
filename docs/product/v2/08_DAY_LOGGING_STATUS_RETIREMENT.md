@@ -46,6 +46,7 @@ The revision is forward-only and fails closed on downgrade because deleted data
 cannot be reconstructed faithfully.
 
 Historical Alembic migrations remain immutable so clean databases can reproduce
-the full base-to-head chain. Migration-history re-baselining, Target Plan
-lifecycle changes, Nutrition Versioning changes, deployment, and production
-mutation are outside this implementation authority.
+the full base-to-head chain. Target Plan lifecycle behavior is now governed by
+[the date-effective model](09_TARGET_PLAN_DATE_EFFECTIVE_MODEL.md). Migration-history
+re-baselining, Nutrition Versioning changes, deployment, and production mutation
+remain outside this implementation authority.

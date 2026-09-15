@@ -47,7 +47,7 @@ export function ProfileSheet({ title, children, onClose, restoreFocusRef, dismis
 }
 
 export function ProfileConfirm({ title, description, safeLabel, confirmLabel, destructive = false, pending = false, onClose, onConfirm, restoreFocusRef }: { title: string; description: string; safeLabel: string; confirmLabel: string; destructive?: boolean; pending?: boolean; onClose: () => void; onConfirm: () => void; restoreFocusRef?: RefObject<boolean> }) {
-  return <ProfileSheet title={title} onClose={onClose} restoreFocusRef={restoreFocusRef} dismissible={!pending} busy={pending}><div className="profile-confirm"><p>{description}</p><button className="btn primary" type="button" onClick={onClose} disabled={pending}>{safeLabel}</button><button className={destructive ? "btn danger" : "btn"} type="button" onClick={onConfirm} disabled={pending}>{pending ? <><LoaderCircle className="spin" size={17} /> جارٍ التفعيل…</> : confirmLabel}</button></div></ProfileSheet>;
+  return <ProfileSheet title={title} onClose={onClose} restoreFocusRef={restoreFocusRef} dismissible={!pending} busy={pending}><div className="profile-confirm"><p>{description}</p><button className="btn primary" type="button" onClick={onClose} disabled={pending}>{safeLabel}</button><button className={destructive ? "btn danger" : "btn"} type="button" onClick={onConfirm} disabled={pending}>{pending ? <><LoaderCircle className="spin" size={17} /> جارٍ الحفظ…</> : confirmLabel}</button></div></ProfileSheet>;
 }
 
 export function ProfileSkeleton() {

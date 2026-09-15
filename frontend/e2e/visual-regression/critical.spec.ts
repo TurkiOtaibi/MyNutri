@@ -48,7 +48,6 @@ async function routeNoTargetWeek(page: Page): Promise<void> {
         response,
         json: {
           ...week,
-          targets: null,
           days: week.days.map((day) => ({
             ...day,
             targets: null,

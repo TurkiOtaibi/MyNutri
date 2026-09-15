@@ -26,7 +26,6 @@ from app.services.aggregation import (
     weekly_summary,
 )
 from app.services.diary import add_totals, empty_totals, totals_for_entry
-from app.services import target_plans as target_plan_service
 
 
 PRINCIPAL_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -182,22 +181,14 @@ def test_week_summary_uses_current_food_truth_and_preserves_recorded_amount(
         entry = _entry(food, date(2026, 7, 12), quantity=200)
         session.add(entry)
         session.commit()
-        advance_calls = 0
         commit_calls = 0
         real_commit = session.commit
-
-        def capture_advance(*_args, **_kwargs) -> None:
-            nonlocal advance_calls
-            advance_calls += 1
 
         def capture_commit() -> None:
             nonlocal commit_calls
             commit_calls += 1
             real_commit()
 
-        monkeypatch.setattr(
-            "app.services.target_plans._advance_lifecycle", capture_advance
-        )
         monkeypatch.setattr(session, "commit", capture_commit)
 
         first = weekly_summary(session, PRINCIPAL, date(2026, 7, 12))
@@ -214,8 +205,7 @@ def test_week_summary_uses_current_food_truth_and_preserves_recorded_amount(
 
         second = weekly_summary(session, PRINCIPAL, date(2026, 7, 12))
 
-    assert advance_calls == 2
-    assert commit_calls == 3
+    assert commit_calls == 1
     assert second.weekly_totals.calories == 280
     assert second.weekly_totals.protein_g == 24
     assert second.weekly_totals.carb_g == 36
@@ -274,7 +264,7 @@ def _seed_plan015_entries(session: Session, count: int, week_start: date) -> Non
 
 
 @pytest.mark.parametrize("entry_count", [0, 1, 7])
-def test_plan015_owner_week_advances_and_commits_once(
+def test_plan015_owner_week_resolves_targets_without_committing(
     monkeypatch, entry_count: int
 ) -> None:
     engine = create_engine(
@@ -288,19 +278,12 @@ def test_plan015_owner_week_advances_and_commits_once(
         session.commit()
         week_start = date(2026, 7, 12)
         _seed_plan015_entries(session, entry_count, week_start)
-        advance_calls = 0
         authority_calls = 0
         commit_calls = 0
-        real_advance = target_plan_service._advance_lifecycle
         from app.services import aggregation as aggregation_service
 
         real_authority = aggregation_service.diary_calendar_authority
         real_commit = session.commit
-
-        def capture_advance(*args, **kwargs) -> None:
-            nonlocal advance_calls
-            advance_calls += 1
-            real_advance(*args, **kwargs)
 
         def capture_authority():
             nonlocal authority_calls
@@ -313,9 +296,6 @@ def test_plan015_owner_week_advances_and_commits_once(
             real_commit()
 
         monkeypatch.setattr(
-            "app.services.target_plans._advance_lifecycle", capture_advance
-        )
-        monkeypatch.setattr(
             "app.services.aggregation.diary_calendar_authority",
             capture_authority,
         )
@@ -324,10 +304,9 @@ def test_plan015_owner_week_advances_and_commits_once(
         with _capture_selects(engine) as statements:
             weekly_summary(session, PRINCIPAL, week_start)
 
-    assert advance_calls == 1
     assert authority_calls == 1
-    assert commit_calls == 1
-    assert len(statements) == 6
+    assert commit_calls == 0
+    assert len(statements) == 4
 
 
 @pytest.fixture
@@ -378,4 +357,4 @@ def test_plan015_postgresql_owner_week_query_budget_is_fixed(
             week_start,
         )
     # The entry-derived weekly projection remains fixed as entry volume changes.
-    assert len(statements) == 6
+    assert len(statements) == 4

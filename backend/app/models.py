@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    Integer,
     Numeric,
     SmallInteger,
     String,
@@ -252,13 +253,6 @@ class NutritionDataSource(str, Enum):
     estimated = "estimated"
 
 
-class TargetPlanStatus(str, Enum):
-    active = "active"
-    scheduled = "scheduled"
-    closed = "closed"
-    superseded_before_effective = "superseded_before_effective"
-
-
 class IdempotencyState(str, Enum):
     in_progress = "in_progress"
     completed = "completed"
@@ -401,56 +395,23 @@ class TargetPlan(SQLModel, table=True):
             name="fk_target_plan_profile_owner",
             ondelete="RESTRICT",
         ),
-        ForeignKeyConstraint(
-            ["predecessor_plan_id", "principal_id"],
-            ["target_plan.id", "target_plan.principal_id"],
-            name="fk_target_plan_predecessor_owner",
-            ondelete="RESTRICT",
-        ),
-        ForeignKeyConstraint(
-            ["superseded_by_plan_id", "principal_id"],
-            ["target_plan.id", "target_plan.principal_id"],
-            name="fk_target_plan_superseding_owner",
-            ondelete="RESTRICT",
-            deferrable=True,
-            initially="DEFERRED",
-        ),
-        CheckConstraint(
-            "status IN ('active','scheduled','closed','superseded_before_effective')",
-            name="ck_target_plan_status",
-        ),
-        CheckConstraint(
-            "effective_to IS NULL OR effective_to > effective_from", name="ck_target_plan_period"
-        ),
-        CheckConstraint("calendar_timezone = 'Asia/Riyadh'", name="ck_target_plan_timezone"),
         CheckConstraint(
             "calculation_document_schema_version > 0", name="ck_target_plan_document_version"
         ),
-        CheckConstraint(
-            "(status IN ('active','closed') AND activated_at IS NOT NULL) OR "
-            "(status IN ('scheduled','superseded_before_effective') AND activated_at IS NULL)",
-            name="ck_target_plan_activation_state",
-        ),
-        CheckConstraint(
-            "status <> 'superseded_before_effective' OR "
-            "(superseded_at IS NOT NULL AND superseded_by_plan_id IS NOT NULL)",
-            name="ck_target_plan_supersession_state",
+        CheckConstraint("revision >= 1", name="ck_target_plan_revision_positive"),
+        UniqueConstraint(
+            "principal_id",
+            "effective_from",
+            "revision",
+            name="uq_target_plan_principal_effective_revision",
         ),
         Index(
-            "uq_target_plan_one_active",
+            "ix_target_plan_principal_effective_revision",
             "principal_id",
-            unique=True,
-            postgresql_where=sa_text("status = 'active' AND effective_to IS NULL"),
-            sqlite_where=sa_text("status = 'active' AND effective_to IS NULL"),
+            desc("effective_from"),
+            desc("revision"),
+            desc("id"),
         ),
-        Index(
-            "uq_target_plan_one_scheduled",
-            "principal_id",
-            unique=True,
-            postgresql_where=sa_text("status = 'scheduled'"),
-            sqlite_where=sa_text("status = 'scheduled'"),
-        ),
-        Index("ix_target_plan_principal_effective", "principal_id", "effective_from"),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -458,13 +419,8 @@ class TargetPlan(SQLModel, table=True):
         sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
     )
     profile_id: uuid.UUID = Field(nullable=False)
-    status: TargetPlanStatus = Field(sa_column=Column(Text(), nullable=False))
     effective_from: date = Field(nullable=False)
-    effective_to: date | None = Field(default=None)
-    calendar_timezone: str = Field(sa_column=Column(String(64), nullable=False))
-    predecessor_plan_id: uuid.UUID | None = Field(default=None)
-    superseded_by_plan_id: uuid.UUID | None = Field(default=None)
-    activation_idempotency_key: str = Field(sa_column=Column(String(128), nullable=False))
+    revision: int = Field(sa_column=Column(Integer(), nullable=False))
     calculation_document: dict[str, Any] = Field(
         sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
     )
@@ -476,9 +432,6 @@ class TargetPlan(SQLModel, table=True):
     created_at: datetime = Field(
         default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
     )
-    activated_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
-    closed_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
-    superseded_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
 
 
 class IdempotencyRecord(SQLModel, table=True):

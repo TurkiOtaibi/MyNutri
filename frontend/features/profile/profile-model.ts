@@ -1,8 +1,8 @@
 import { ApiError } from "@/lib/api";
-import type { ActivityLevel, CutIntensity, Goal, ProfileInput, ProfileResponse, Sex, TargetPlanActivationResponse, TargetResponse } from "@/lib/types";
+import type { ActivityLevel, CutIntensity, Goal, ProfileInput, ProfileResponse, Sex, TargetPlanWriteResponse, TargetResponse } from "@/lib/types";
 
-const SPECIALIST_REVIEW_MESSAGE = "لا يمكن تفعيل هذا الهدف لأنه غير مناسب لحالتك الحالية. إذا رغبت في اتباع هذا الهدف، فاستشر أخصائي تغذية قبل اعتماده.";
-const VERY_LOW_ENERGY_MESSAGE = "لا يمكن تفعيل هذا الهدف لأن السعرات المستهدفة منخفضة جدًا ولا تحقق الحد الأدنى الآمن المعتمد في النظام.";
+const SPECIALIST_REVIEW_MESSAGE = "لا يمكن حفظ هذا الهدف لأنه غير مناسب لحالتك الحالية. إذا رغبت في اتباع هذا الهدف، فاستشر أخصائي تغذية قبل اعتماده.";
+const VERY_LOW_ENERGY_MESSAGE = "لا يمكن حفظ هذا الهدف لأن السعرات المستهدفة منخفضة جدًا ولا تحقق الحد الأدنى الآمن المعتمد في النظام.";
 
 export const PROTEIN_DEFAULT = 1.2;
 export const FAT_DEFAULTS: Record<Sex, number> = { male: 0.25, female: 0.3 };
@@ -58,22 +58,22 @@ export type DraftProfile = {
 };
 
 export type ProfileField = keyof DraftProfile;
-export type FieldErrors = Partial<Record<ProfileField, string>>;
+export type FieldErrors = Partial<Record<ProfileField | "effective_from", string>>;
 export type SheetKind = "sex" | "activity" | "goal" | "calculation" | null;
-export type ActivationSubmission = {
+export type TargetPlanSubmission = {
   payload: ProfileInput;
+  effectiveFrom: string;
   preview: TargetResponse & { preview_hash: string };
   idempotencyKey: string;
-  replacesPendingPlan: boolean;
 };
-export type ActivationPhase =
+export type TargetPlanWritePhase =
   | { kind: "idle" }
-  | { kind: "confirming"; submission: ActivationSubmission }
-  | { kind: "submitting"; submission: ActivationSubmission }
-  | { kind: "reconciling"; submission: ActivationSubmission; accepted: TargetPlanActivationResponse }
-  | { kind: "committed"; accepted: TargetPlanActivationResponse }
-  | { kind: "recovery"; submission: ActivationSubmission; accepted: TargetPlanActivationResponse }
-  | { kind: "failed"; submission: ActivationSubmission };
+  | { kind: "confirming"; submission: TargetPlanSubmission }
+  | { kind: "submitting"; submission: TargetPlanSubmission }
+  | { kind: "reconciling"; submission: TargetPlanSubmission; accepted: TargetPlanWriteResponse }
+  | { kind: "committed"; accepted: TargetPlanWriteResponse }
+  | { kind: "recovery"; submission: TargetPlanSubmission; accepted: TargetPlanWriteResponse }
+  | { kind: "failed"; submission: TargetPlanSubmission };
 
 export function toDraft(profile: ProfileInput): DraftProfile {
   return {
@@ -125,15 +125,17 @@ export function normalizeDraft(draft: DraftProfile): string {
   return JSON.stringify(normalized);
 }
 
-export function validateDraft(draft: DraftProfile, authoritativeDate: string | null): { errors: FieldErrors; payload: ProfileInput | null } {
+export function validateDraft(draft: DraftProfile, authoritativeDate: string | null, effectiveFrom: string): { errors: FieldErrors; payload: ProfileInput | null } {
   const errors: FieldErrors = {};
   const height = normalizeNumber(draft.height_cm);
   const weight = normalizeNumber(draft.weight_kg);
   const protein = normalizeNumber(draft.protein_per_kg);
   const fatPercent = normalizeNumber(draft.fat_percent);
   const validBirthDate = /^\d{4}-\d{2}-\d{2}$/.test(draft.birth_date);
+  const validEffectiveDate = /^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom);
 
   if (!validBirthDate || !authoritativeDate || draft.birth_date > authoritativeDate) errors.birth_date = "اختر تاريخ ميلاد صحيحًا";
+  if (!validEffectiveDate || !authoritativeDate || effectiveFrom < authoritativeDate) errors.effective_from = "اختر تاريخًا يبدأ من اليوم";
   if (height == null || height < PROFILE_LIMITS.heightMin || height > PROFILE_LIMITS.heightMax) errors.height_cm = "أدخل طولًا صحيحًا";
   if (weight == null || weight < PROFILE_LIMITS.weightMin || weight > PROFILE_LIMITS.weightMax) errors.weight_kg = "أدخل وزنًا صحيحًا";
   if (protein == null || protein < PROFILE_LIMITS.proteinMin || protein > PROFILE_LIMITS.proteinMax) {
@@ -170,7 +172,7 @@ export type BlockingSafetyOutcome = "specialist_review_required" | "very_low_ene
 export function blockingSafetyMessage(outcome: string): string | null {
   if (outcome === "specialist_review_required") return SPECIALIST_REVIEW_MESSAGE;
   if (outcome === "very_low_energy_blocked") return VERY_LOW_ENERGY_MESSAGE;
-  if (outcome !== "normal") return "تعذر التحقق من إمكانية تفعيل هذا الهدف. حدّث المعاينة قبل المتابعة.";
+  if (outcome !== "normal") return "تعذر التحقق من إمكانية حفظ هذا الهدف. حدّث المعاينة قبل المتابعة.";
   return null;
 }
 
@@ -182,13 +184,13 @@ export function isPreviewActivatable(targets: TargetResponse | null): targets is
   );
 }
 
-export function profileMatchesAcceptedActivation(
+export function profileMatchesAcceptedPlan(
   profile: ProfileResponse,
-  submission: ActivationSubmission,
-  activation: TargetPlanActivationResponse
+  submission: TargetPlanSubmission,
+  response: TargetPlanWriteResponse
 ): boolean {
-  const containsPlan = profile.effective_plan?.id === activation.plan.id || profile.pending_plan?.id === activation.plan.id;
-  return containsPlan && normalizeDraft(toDraft(profile)) === normalizeDraft(toDraft(submission.payload));
+  return response.plan.effective_from === submission.effectiveFrom &&
+    normalizeDraft(toDraft(profile)) === normalizeDraft(toDraft(submission.payload));
 }
 
 export function formatArabicGregorianDate(input: string): string {
@@ -211,6 +213,7 @@ export function mapProfileApiErrors(error: unknown): FieldErrors {
     if (field === "weight_kg") mapped.weight_kg = "أدخل وزنًا صحيحًا";
     if (field === "protein_per_kg") mapped.protein_per_kg = "أدخل قيمة صحيحة للبروتين لكل كجم";
     if (field === "fat_pct") mapped.fat_percent = "أدخل نسبة دهون صحيحة";
+    if (field === "effective_from") mapped.effective_from = "اختر تاريخًا يبدأ من اليوم";
   }
   return mapped;
 }

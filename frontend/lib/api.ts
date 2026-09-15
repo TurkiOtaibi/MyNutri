@@ -12,7 +12,7 @@ import type {
   ProfileResponse,
   NutritionRegistryResponse,
   TargetResponse,
-  TargetPlanActivationResponse,
+  TargetPlanWriteResponse,
   TargetPlanHistoryResponse,
   WeekSummary
 } from "./types";
@@ -123,38 +123,25 @@ export async function getProfile(): Promise<ProfileResponse | null> {
   }
 }
 
-export function previewProfile(payload: ProfileInput, accessToken: string | null | undefined, signal?: AbortSignal): Promise<TargetResponse> {
+export function previewProfile(payload: ProfileInput, effectiveFrom: string, accessToken: string | null | undefined, signal?: AbortSignal): Promise<TargetResponse> {
   return apiFetch<TargetResponse>("/profile/preview", authorizedInit(accessToken, signal, {
     method: "POST",
-    body: JSON.stringify(payload)
+    body: JSON.stringify({ ...payload, effective_from: effectiveFrom })
   }));
 }
 
-export function activateTargetPlan(
+export function writeTargetPlan(
   payload: ProfileInput,
+  effectiveFrom: string,
   expectedPreviewHash: string,
   idempotencyKey: string,
   accessToken: string | null | undefined,
   signal?: AbortSignal
-): Promise<TargetPlanActivationResponse> {
-  return apiFetch<TargetPlanActivationResponse>("/target-plans/activate", authorizedInit(accessToken, signal, {
+): Promise<TargetPlanWriteResponse> {
+  return apiFetch<TargetPlanWriteResponse>("/target-plans", authorizedInit(accessToken, signal, {
     method: "POST",
     headers: { "Idempotency-Key": idempotencyKey },
-    body: JSON.stringify({ ...payload, confirmed: true, expected_preview_hash: expectedPreviewHash })
-  }));
-}
-
-export function replacePendingTargetPlan(
-  payload: ProfileInput,
-  expectedPreviewHash: string,
-  idempotencyKey: string,
-  accessToken: string | null | undefined,
-  signal?: AbortSignal
-): Promise<TargetPlanActivationResponse> {
-  return apiFetch<TargetPlanActivationResponse>("/target-plans/pending/replace", authorizedInit(accessToken, signal, {
-    method: "POST",
-    headers: { "Idempotency-Key": idempotencyKey },
-    body: JSON.stringify({ ...payload, replace_confirmed: true, expected_preview_hash: expectedPreviewHash })
+    body: JSON.stringify({ ...payload, effective_from: effectiveFrom, confirmed: true, expected_preview_hash: expectedPreviewHash })
   }));
 }
 

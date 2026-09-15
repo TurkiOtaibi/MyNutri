@@ -41,20 +41,24 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
       activity_level: "moderate", goal: "maintain", protein_per_kg: 1.2,
       fat_pct: 0.25, selected_cut_intensity: 0.2
     };
+    const calendar = await fetch(`${API_URL}/account/calendar`, { headers });
+    await ensureSuccessful(calendar, "Calendar authority read");
+    const { current_diary_date: effectiveFrom } = await calendar.json() as { current_diary_date: string };
     const preview = await fetch(`${API_URL}/profile/preview`, {
-      method: "POST", headers, body: JSON.stringify(payload)
+      method: "POST", headers, body: JSON.stringify({ ...payload, effective_from: effectiveFrom })
     });
     await ensureSuccessful(preview, "Profile seed preview");
     const previewBody = await preview.json() as { preview_hash: string };
-    await ensureSuccessful(await fetch(`${API_URL}/target-plans/activate`, {
+    await ensureSuccessful(await fetch(`${API_URL}/target-plans`, {
       method: "POST",
       headers: { ...headers, "Idempotency-Key": `e2e-global-profile-${randomUUID()}` },
       body: JSON.stringify({
         ...payload,
+        effective_from: effectiveFrom,
         confirmed: true,
         expected_preview_hash: previewBody.preview_hash
       })
-    }), "Profile seed activation");
+    }), "Profile seed Target Plan write");
   } else {
     await ensureSuccessful(profile, "Profile read");
   }

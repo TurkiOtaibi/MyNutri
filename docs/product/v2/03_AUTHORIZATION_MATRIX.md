@@ -3,7 +3,7 @@
 | Capability | User | Admin |
 | --- | --- | --- |
 | Read/update own Profile | Yes | Yes |
-| Preview/activate own Target Plans | Yes | Yes |
+| Preview/write/read own dated Target Plans | Yes | Yes |
 | Read own Diary and summaries | Yes | Yes |
 | Read active shared Foods | Yes | Yes |
 | Add shared Food to own Diary | Yes | Yes |
@@ -21,4 +21,7 @@
 - Shared Food reads are global and active-only by default.
 - Food writes require an explicit admin dependency in FastAPI.
 - Cross-owner private lookups are non-enumerating.
+- Target Plan writes are Principal-scoped, require idempotency, and accept only
+  effective dates on or after the database-derived Riyadh Diary date. Target
+  Plan history and date resolution never expose another Principal's plans.
 - Authorization is tested with User A, User B, and Admin fixtures.

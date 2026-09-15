@@ -12,30 +12,31 @@ export async function applyProfileThroughTargetPlan(
   payload: ProfileInput
 ): Promise<APIResponse> {
   const headers = { Authorization: `Bearer ${accessToken}` };
-  const preview = await request.post(`${API_URL}/profile/preview`, { headers, data: payload });
+  const calendar = await request.get(`${API_URL}/account/calendar`, { headers });
+  if (!calendar.ok()) {
+    throw new Error(`Calendar authority failed with ${calendar.status()}: ${await calendar.text()}`);
+  }
+  const { current_diary_date: effectiveFrom } = await calendar.json() as { current_diary_date: string };
+  const preview = await request.post(`${API_URL}/profile/preview`, {
+    headers,
+    data: { ...payload, effective_from: effectiveFrom }
+  });
   if (!preview.ok()) {
     throw new Error(`Profile preview failed with ${preview.status()}: ${await preview.text()}`);
   }
   const previewBody = await preview.json() as { preview_hash: string };
 
-  const current = await request.get(`${API_URL}/profile`, { headers });
-  if (current.status() !== 404 && !current.ok()) {
-    throw new Error(`Profile read failed with ${current.status()}: ${await current.text()}`);
-  }
-  const hasPendingPlan = current.ok()
-    && ((await current.json()) as { pending_plan?: unknown }).pending_plan != null;
-  const path = hasPendingPlan ? "/target-plans/pending/replace" : "/target-plans/activate";
-  const confirmation = hasPendingPlan ? { replace_confirmed: true } : { confirmed: true };
-  const response = await request.post(`${API_URL}${path}`, {
+  const response = await request.post(`${API_URL}/target-plans`, {
     headers: { ...headers, "Idempotency-Key": `e2e-profile-${randomUUID()}` },
     data: {
       ...payload,
-      ...confirmation,
+      effective_from: effectiveFrom,
+      confirmed: true,
       expected_preview_hash: previewBody.preview_hash
     }
   });
   if (!response.ok()) {
-    throw new Error(`Profile activation failed with ${response.status()}: ${await response.text()}`);
+    throw new Error(`Target Plan write failed with ${response.status()}: ${await response.text()}`);
   }
   return response;
 }

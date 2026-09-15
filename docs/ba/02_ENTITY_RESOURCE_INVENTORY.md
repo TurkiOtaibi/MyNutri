@@ -9,7 +9,7 @@ This inventory separates v1 requirements from current implementation evidence an
 | v1 status | Confirmed |
 | Purpose | Store the single user's stats and goal for target calculation. |
 | Evidence | `backend/app/models.py`, `backend/app/schemas.py`, `frontend/components/ProfilePage.tsx` |
-| API routes | `GET /profile`, `POST /profile/preview`, `POST /target-plans/activate`, `POST /target-plans/pending/replace` |
+| API routes | `GET /profile`, `POST /profile/preview`, `POST /target-plans`, `GET /target-plans`, `GET /target-plans/current?date=` |
 | Relationships | Used by target preview and weekly target display. |
 | Current implementation gap | Validation ranges in code are looser/different than D-009 and D-012. |
 
@@ -37,6 +37,29 @@ v1 requirements:
 - Fat percentage must be 15%-40%.
 - Save succeeds only after API success.
 - Failed save is not queued or saved locally.
+
+Profile stores the latest confirmed preferences and inputs. It does not claim to
+be the plan effective today. Target Plans preserve immutable dated calculation
+results and revision history under the current V2 date-effective authority.
+
+## TargetPlan
+
+| Attribute | Value |
+|---|---|
+| v1 status | Confirmed by current V2 authority |
+| Purpose | Preserve immutable dated target calculations and revisions. |
+| Evidence | `backend/app/models.py`, `backend/app/services/target_plans.py`, `frontend/components/ProfilePage.tsx` |
+| API routes | `POST /target-plans`, `GET /target-plans`, `GET /target-plans/current?date=` |
+| Relationships | Owned by Principal/Profile; referenced by DiaryEntry through an owner-consistent foreign key. |
+
+Current fields are `id`, `principal_id`, `profile_id`, `effective_from`,
+`revision`, `calculation_document`, `calculation_document_schema_version`,
+`calculation_engine_version`, `nutrition_registry_version`, and `created_at`.
+Plans have no active, scheduled, pending, closed, or superseded lifecycle state.
+For each effective date, the greatest immutable revision is canonical. Writes are
+permitted only for Riyadh today or the future; reads may resolve any date. Past
+Diary bindings remain stable, while today/future entries follow the canonical
+plan for their date.
 
 ## TargetResponse
 
@@ -141,8 +164,8 @@ v1 lifecycle:
 | Purpose | Store what was eaten on a date. |
 | Evidence | `backend/app/models.py`, `backend/app/schemas.py`, `frontend/components/DiaryPage.tsx` |
 | API routes | `GET /diary/entries`, `POST /diary/entries`, `PATCH /diary/entries/{id}`, `DELETE /diary/entries/{id}`, `GET /diary/week` |
-| Relationships | Has nullable `food_id`; owns `nutrition_snapshot`. |
-| Current implementation gap | Current create uses serving quantity only and lacks D-021 `log_mode`; update API allows food/date changes, but v1 permits quantity-only edit. |
+| Relationships | Has non-null `food_id`, recorded measurement fields, and nullable owner-safe `target_plan_id`. |
+| Current implementation gap | None in the current simplified Diary contract. |
 
 Current fields:
 - `id`
@@ -150,7 +173,9 @@ Current fields:
 - `food_id`
 - `log_mode` (required v1 field: `servings` or `grams`)
 - `quantity`
-- `nutrition_snapshot`
+- `target_plan_id`
+- `target_provenance`
+- recorded measurement fields
 - `created_at`
 
 Required v1 behavior:
@@ -158,7 +183,7 @@ Required v1 behavior:
 - If `log_mode="servings"`, `quantity` means serving count and must be 0.01-50.
 - If `log_mode="grams"`, `quantity` means grams and must be 1-5000, and the selected current-catalog Food must have nutrition basis/default-unit data that supports an unambiguous gram calculation.
 - A separate persisted `grams` field is not part of v1.
-- Future dates are blocked.
+- Past, current, and future dates are allowed.
 - Edit payload is `{ quantity }` only.
 - `log_mode`, Food, date, and per-serving snapshot values are not editable after creation.
 - Edit recalculates `serving_multiplier` and `nutrition_snapshot.calculated_totals` from the original snapshot and new mode-specific quantity.
@@ -169,10 +194,10 @@ Required v1 behavior:
 | Attribute | Value |
 |---|---|
 | v1 status | Confirmed / needs gram-mode implementation alignment |
-| Purpose | Freeze nutrition values at log time so history does not change after Food edits or permanent Food deletion. |
+| Purpose | Historical evidence for the retired nutrition-snapshot design. |
 | Evidence | `backend/app/services/diary.py`, `backend/tests/test_diary_snapshot.py` |
 
-v1 behavior:
+Historical behavior (superseded by current Food/Diary authority):
 - Snapshot stores food identity at log time, `log_mode`, `logged_quantity`, per-serving nutrition values, `serving_multiplier`, and calculated totals.
 - Serving-mode snapshot uses `serving_multiplier = quantity`.
 - Legacy superseded by D-025: earlier gram snapshots used `serving_grams`; v1 now calculates from nutrition basis/default-unit snapshot data.
@@ -184,12 +209,14 @@ v1 behavior:
 | Attribute | Value |
 |---|---|
 | v1 status | Confirmed |
-| Purpose | Aggregate Diary totals Sunday through Saturday. |
+| Purpose | Aggregate Diary totals and authoritative per-day targets Sunday through Saturday. |
 | Evidence | `backend/app/services/aggregation.py`, `frontend/components/DiaryPage.tsx` |
 
 v1 behavior:
 - Week is Sunday through Saturday.
-- Future Diary creation is blocked, but viewing a week containing future days is allowed with zero/future-day totals as applicable.
+- Future Diary creation and future-week viewing are allowed.
+- `DaySummary.targets` is authoritative for each date; no redundant top-level
+  `WeekSummary.targets` field exists.
 - API read failures use exact D-022 weekly summary copy: `طھط¹ط°ط± طھط­ظ…ظٹظ„ ظ…ظ„ط®طµ ط§ظ„ط£ط³ط¨ظˆط¹. طھط­ظ‚ظ‚ ظ…ظ† ط§ظ„ط§طھطµط§ظ„ ظˆط­ط§ظˆظ„ ظ…ط±ط© ط£ط®ط±ظ‰.`
 
 ## Auth Token

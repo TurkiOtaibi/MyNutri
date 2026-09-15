@@ -34,8 +34,11 @@ catalog. Food taxonomy and provenance are intentionally small and stable.
 - Food snapshots and snapshot version machinery are absent.
 - Archived Foods remain resolvable by Diary history. Referenced Foods cannot be
   hard-deleted; the foreign key uses `RESTRICT`.
-- Target Plans remain immutable, effective-dated historical truth. A later plan
-  does not rewrite the target bound to an earlier Diary date.
+- Target Plans have no lifecycle status. They are immutable revisions selected
+  by date: the canonical revision at the greatest `effective_from` not later
+  than the requested date. Writes are limited to Riyadh today or the future.
+- Past Diary Target Plan bindings remain immutable. Today/future bindings are
+  recomputed when a new canonical plan changes their effective interval.
 - Required core nutrients remain calories, protein, carbohydrates, and fat.
   Optional nutrients remain nullable; unknown never means zero.
 - `normalized_name` remains system-generated and is not user-editable.
@@ -43,15 +46,17 @@ catalog. Food taxonomy and provenance are intentionally small and stable.
 ## Preserved behavior
 
 Authentication, authorization, private Principal isolation, Target Plan
-versioning, Arabic-first RTL behavior, responsive behavior, accessibility, PWA
+revision history, legacy target compatibility, Arabic-first RTL behavior,
+responsive behavior, accessibility, PWA
 isolation, audit principals, archival timestamps, measurement/serving fields,
 notes, and nutrient representation fields remain active unless another approved
 decision says otherwise.
 
 ## Retired concepts
 
-NOVA, Day Logging Status, Pattern Analysis, Weekly Priority, Food Group
-Contributions, Food Analytical Traits, and Food nutrition snapshots are retired product history.
+NOVA, Day Logging Status, the Target Plan lifecycle state machine, Pattern
+Analysis, Weekly Priority, Food Group Contributions, Food Analytical Traits,
+and Food nutrition snapshots are retired product history.
 Historical Alembic revisions that introduced them remain immutable technical
 history so clean and supported databases can reproduce the migration chain.
 

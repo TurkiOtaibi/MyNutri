@@ -11,6 +11,7 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from app.db.session import get_session
 from app.core.auth import PrincipalContext, get_principal_context, get_token_verifier
+from app.core.calendar import current_diary_date
 from app.main import app
 from app.models import Principal
 from app.nutrition_rules.manifest import canonical_manifest_bytes, rules_manifest_hash
@@ -115,6 +116,7 @@ def test_profile_preview_exposes_calculation_provenance(client: TestClient) -> N
     response = client.post(
         "/profile/preview",
         json={
+            "effective_from": current_diary_date().isoformat(),
             "sex": "male",
             "birth_date": "1996-01-01",
             "height_cm": 180,
@@ -141,6 +143,7 @@ def test_profile_preview_rejects_non_positive_carbohydrate(client: TestClient) -
     response = client.post(
         "/profile/preview",
         json={
+            "effective_from": current_diary_date().isoformat(),
             "sex": "female",
             "birth_date": "1926-01-01",
             "height_cm": 100,
@@ -163,6 +166,7 @@ def test_profile_preview_returns_blocked_safety_outcome_without_override(
     response = client.post(
         "/profile/preview",
         json={
+            "effective_from": current_diary_date().isoformat(),
             "sex": "female",
             "birth_date": "1946-01-01",
             "height_cm": 160,

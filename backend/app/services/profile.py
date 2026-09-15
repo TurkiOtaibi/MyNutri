@@ -62,6 +62,7 @@ def to_target_response(
     _validate_profile_domain(validation_payload, effective_date)
     result = TargetResponse.model_validate(asdict(calculate_targets(profile, effective_date)))
     payload = {
+        "effective_date": effective_date.isoformat(),
         "inputs": {
             "sex": profile.sex.value,
             "birth_date": profile.birth_date.isoformat(),
@@ -84,7 +85,10 @@ def to_target_response(
 
 
 def to_profile_response(
-    profile: Profile, calculation_date: date | None = None
+    profile: Profile,
+    calculation_date: date | None = None,
+    *,
+    resolved_targets: TargetResponse | None = None,
 ) -> ProfileResponse:
     return ProfileResponse.model_validate(
         {
@@ -99,7 +103,7 @@ def to_profile_response(
             "fat_pct": float(profile.fat_pct),
             "selected_cut_intensity": float(profile.cut_intensity),
             "updated_at": profile.updated_at,
-            "targets": to_target_response(profile, calculation_date),
+            "targets": resolved_targets or to_target_response(profile, calculation_date),
         }
     )
 

@@ -11,7 +11,8 @@ const output = resolve(process.cwd(), "test-results", "manual-capture", "profile
 const headers = { Authorization: `Bearer ${API_TOKEN}` };
 const API_ORIGIN = new URL(API_URL).origin;
 const profileApiPattern = (url: URL) => url.origin === API_ORIGIN && url.pathname === "/profile";
-const targetPlanApiPattern = "**/target-plans/**";
+const targetPlanApiPattern = (url: URL) =>
+  url.origin === API_ORIGIN && url.pathname === "/target-plans";
 
 function inputFrom(profile: ProfileResponse): ProfileInput {
   return {
@@ -66,8 +67,8 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
       return route.fulfill({ response });
     });
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
-    await expect(page.getByText("جارٍ تفعيل الخطة…")).toBeVisible();
+    await page.getByRole("dialog").getByRole("button", { name: "حفظ الخطة" }).click();
+    await expect(page.getByText("جارٍ حفظ الخطة…")).toBeVisible();
     await page.screenshot({ path: resolve(output, "10-saving-state-390.png") });
     await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
     await page.screenshot({ path: resolve(output, "12-successful-saved-state-390.png") });
@@ -76,7 +77,7 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
     await page.getByLabel("الوزن").fill(String(original.weight_kg + 2));
     await page.route(targetPlanApiPattern, (route) => route.request().method() === "POST" ? route.abort("failed") : route.continue());
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: /^(تفعيل الخطة|استبدال الخطة)$/ }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "حفظ الخطة" }).click();
     await expect(page.getByText("تعذر حفظ التغييرات")).toBeVisible();
     await page.screenshot({ path: resolve(output, "11-save-failure-retry-390.png") });
     await page.unroute(targetPlanApiPattern);

@@ -16,12 +16,12 @@ const featureSource = (domain: string) => walk(`features/${domain}`)
 
 const manifests = {
   "features/profile/profile-model.ts": [
-    "DraftProfile", "ProfileField", "FieldErrors", "SheetKind", "ActivationSubmission",
-    "ActivationPhase", "BlockingSafetyOutcome", "PROTEIN_DEFAULT", "FAT_DEFAULTS",
+    "DraftProfile", "ProfileField", "FieldErrors", "SheetKind", "TargetPlanSubmission",
+    "TargetPlanWritePhase", "BlockingSafetyOutcome", "PROTEIN_DEFAULT", "FAT_DEFAULTS",
     "PROFILE_LIMITS", "activityDescriptions", "activityDisplayLabels", "goalDescriptions",
     "goalDisplayLabels", "toDraft", "blankDraft", "formatEditableNumber", "normalizeNumber",
     "normalizeDraft", "validateDraft", "blockingSafetyMessage", "isPreviewActivatable",
-    "profileMatchesAcceptedActivation", "formatArabicGregorianDate", "formatTargetNumber",
+    "profileMatchesAcceptedPlan", "formatArabicGregorianDate", "formatTargetNumber",
     "mapProfileApiErrors",
   ],
   "features/profile/profile-controls.tsx": [
@@ -30,7 +30,7 @@ const manifests = {
   ],
   "features/profile/profile-targets.tsx": [
     "TargetsCard", "TargetValue", "AdditionalTargetsCard", "RegistryState",
-    "TargetPlanHistory", "ScheduledPlanCard", "ExpectedTargetsCard",
+    "TargetPlanHistory", "ExpectedTargetsCard",
   ],
   "features/profile/profile-dialogs.tsx": [
     "ProfileSheet", "ProfileConfirm", "ProfileSkeleton", "ProfileLoadError",
@@ -70,6 +70,9 @@ function expectTransportBoundary(source: string) {
   expect(source).toContain('headers: { "Idempotency-Key": idempotencyKey }');
   expect(source).toContain('apiFetch<ProfileResponse>("/profile"');
   expect(source).toContain('apiFetch<TargetResponse>("/profile/preview"');
+  expect(source).toContain('apiFetch<TargetPlanWriteResponse>("/target-plans"');
+  expect(source).not.toContain("/target-plans/activate");
+  expect(source).not.toContain("/target-plans/pending");
   expect(source).toContain('apiFetch<FoodPickerResponse>');
   expect(source).toContain('`/admin/users/${principalId}/diary?${params.toString()}`');
   expect(source).toContain('apiFetch<DiaryEntryResponse>("/diary/entries"');
@@ -161,15 +164,15 @@ describe("domain boundaries", () => {
       featureSource("diary"), featureSource("foods"),
     ].join("\n");
     for (const key of [
-      '["profile"]', '["calendar-authority"]', '["nutrition-registry"]',
-      '["target-plan-history"]', '["week", session?.user.id, weekStart]',
+      '["profile", subjectId]', '["calendar-authority", subjectId]', '["nutrition-registry"]',
+      '["target-plan-history", subjectId]', '["week", session?.user.id, weekStart]',
       '["entries", session?.user.id, activeDate]',
       '["diary-food-picker", session?.user.id, normalizedSearch]',
       '["food", foodId]', '["foods"]',
     ]) expect(sources).toContain(key);
     for (const copy of [
       "تعذر تحميل بياناتك",
-      "لا يمكن تفعيل هذا الهدف لأنه غير مناسب لحالتك الحالية",
+      "لا يمكن حفظ هذا الهدف لأنه غير مناسب لحالتك الحالية",
       "تعذر تحميل تفاصيل الطعام. تحقق من الاتصال وحاول مرة أخرى.",
       "راجع الحقول المحددة ثم حاول مرة أخرى.",
     ]) expect(sources).toContain(copy);

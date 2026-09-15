@@ -1,4 +1,8 @@
-import { diaryDate as localDate, expect, offsetIsoDate, test, uniqueName } from "../foods/helpers";
+import { randomUUID } from "node:crypto";
+
+import type { ProfileInput, ProfileResponse, TargetPlanWriteResponse } from "../../lib/types";
+import { API_TOKEN, API_URL, diaryDate as localDate, expect, offsetIsoDate, test, uniqueName } from "../foods/helpers";
+import { applyProfileThroughTargetPlan } from "../profile-api";
 
 test.describe("@diary daily-use redesign", () => {
   test("@p0 mobile page uses compact date, week, summary, log order without duplicate goals", async ({ page }) => {
@@ -37,6 +41,75 @@ test.describe("@diary daily-use redesign", () => {
       quantity: 1
     });
     expect(response.status()).toBe(201);
+  });
+
+  test("@p0 future Diary bindings follow immutable revisions while past bindings stay fixed", async ({ request, foodsApi }) => {
+    const headers = { Authorization: `Bearer ${API_TOKEN}` };
+    const profileResponse = await request.get(`${API_URL}/profile`, { headers });
+    expect(profileResponse.status(), await profileResponse.text()).toBe(200);
+    const originalProfile = await profileResponse.json() as ProfileResponse;
+    const originalInput: ProfileInput = {
+      sex: originalProfile.sex,
+      birth_date: originalProfile.birth_date,
+      height_cm: originalProfile.height_cm,
+      weight_kg: originalProfile.weight_kg,
+      activity_level: originalProfile.activity_level,
+      goal: originalProfile.goal,
+      protein_per_kg: originalProfile.protein_per_kg,
+      fat_pct: originalProfile.fat_pct,
+      selected_cut_intensity: originalProfile.selected_cut_intensity
+    };
+    const writePlan = async (effectiveFrom: string, weightOffset: number): Promise<TargetPlanWriteResponse> => {
+      const payload = { ...originalInput, weight_kg: originalInput.weight_kg + weightOffset };
+      const preview = await request.post(`${API_URL}/profile/preview`, {
+        headers,
+        data: { ...payload, effective_from: effectiveFrom }
+      });
+      expect(preview.status(), await preview.text()).toBe(200);
+      const { preview_hash: previewHash } = await preview.json() as { preview_hash: string };
+      const response = await request.post(`${API_URL}/target-plans`, {
+        headers: { ...headers, "Idempotency-Key": `e2e-date-plan-${randomUUID()}` },
+        data: {
+          ...payload,
+          effective_from: effectiveFrom,
+          confirmed: true,
+          expected_preview_hash: previewHash
+        }
+      });
+      expect(response.status(), await response.text()).toBe(201);
+      return response.json() as Promise<TargetPlanWriteResponse>;
+    };
+
+    const food = await foodsApi.create({ name: uniqueName("Target binding") });
+    const pastDate = localDate(-1);
+    const firstEffectiveDate = localDate(370);
+    const firstIntervalDate = localDate(375);
+    const secondEffectiveDate = localDate(380);
+    const secondIntervalDate = localDate(385);
+    const pastEntry = await foodsApi.createDiary(food.id, pastDate);
+    await foodsApi.createDiary(food.id, firstIntervalDate);
+    await foodsApi.createDiary(food.id, secondIntervalDate);
+
+    try {
+      const firstPlan = await writePlan(firstEffectiveDate, 1);
+      const secondPlan = await writePlan(secondEffectiveDate, 2);
+      const revisedFirstPlan = await writePlan(firstEffectiveDate, 3);
+
+      expect(firstPlan.plan.revision).toBe(1);
+      expect(secondPlan.plan.revision).toBe(1);
+      expect(revisedFirstPlan.plan.revision).toBe(2);
+      expect(revisedFirstPlan.replaced_plan?.id).toBe(firstPlan.plan.id);
+
+      const reboundFirst = (await foodsApi.listDiary(firstIntervalDate))[0];
+      const reboundSecond = (await foodsApi.listDiary(secondIntervalDate))[0];
+      const unchangedPast = (await foodsApi.listDiary(pastDate))[0];
+      expect(reboundFirst.target_plan_id).toBe(revisedFirstPlan.plan.id);
+      expect(reboundSecond.target_plan_id).toBe(secondPlan.plan.id);
+      expect(unchangedPast.target_plan_id).toBe(pastEntry.target_plan_id);
+      expect(unchangedPast.target_provenance).toBe(pastEntry.target_provenance);
+    } finally {
+      await applyProfileThroughTargetPlan(request, API_TOKEN, originalInput);
+    }
   });
 
   test("@p0 week strip starts on Sunday and selecting a past day updates Diary", async ({ page }) => {
