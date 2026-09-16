@@ -21,8 +21,7 @@ import type {
   AdminUserDetail,
   AdminUserListResponse,
   AdminUserSummary as GeneratedAdminUserSummary,
-  CalendarAuthorityResponse,
-  FoodDeleteResponse
+  CalendarAuthorityResponse
 } from "./generated/openapi";
 import { createClient } from "./supabase/client";
 import { parseNutritionRegistry } from "./nutrients";
@@ -185,19 +184,6 @@ export interface FoodListOptions {
   sort?: FoodSort;
   page?: number;
   pageSize?: number;
-  archived?: boolean;
-}
-
-export async function listAdminFoodsPage(options: FoodListOptions = {}): Promise<FoodListResponse> {
-  const params = new URLSearchParams({
-    page: String(options.page ?? 1),
-    page_size: String(options.pageSize ?? 20),
-    sort: options.sort ?? "name"
-  });
-  if (options.search?.trim()) params.set("search", options.search.trim());
-  if (options.category) params.set("category", options.category);
-  if (options.archived !== undefined) params.set("archived", String(options.archived));
-  return apiFetch<FoodListResponse>(`/admin/foods?${params.toString()}`);
 }
 
 export async function listFoodsPage(options: FoodListOptions = {}): Promise<FoodListResponse> {
@@ -230,10 +216,6 @@ export function getFood(foodId: string): Promise<FoodResponse> {
   return apiFetch<FoodResponse>(`/foods/${foodId}`);
 }
 
-export function getAdminFood(foodId: string): Promise<FoodResponse> {
-  return apiFetch<FoodResponse>(`/admin/foods/${foodId}`);
-}
-
 export function createFood(payload: FoodInput & { id?: string }, accessToken: string | null | undefined, signal?: AbortSignal): Promise<FoodResponse> {
   return apiFetch<FoodResponse>("/foods", authorizedInit(accessToken, signal, {
     method: "POST",
@@ -248,16 +230,8 @@ export function updateFood(foodId: string, payload: Partial<FoodInput>, accessTo
   }));
 }
 
-export function deleteFood(foodId: string, accessToken: string | null | undefined, signal?: AbortSignal): Promise<FoodDeleteResponse> {
-  return apiFetch<FoodDeleteResponse>(`/admin/foods/${foodId}`, authorizedInit(accessToken, signal, { method: "DELETE" }));
-}
-
-export function archiveFood(foodId: string, accessToken: string | null | undefined, signal?: AbortSignal): Promise<FoodResponse> {
-  return apiFetch<FoodResponse>(`/admin/foods/${foodId}/archive`, authorizedInit(accessToken, signal, { method: "POST" }));
-}
-
-export function restoreFood(foodId: string, accessToken: string | null | undefined, signal?: AbortSignal): Promise<FoodResponse> {
-  return apiFetch<FoodResponse>(`/admin/foods/${foodId}/restore`, authorizedInit(accessToken, signal, { method: "POST" }));
+export function deleteFood(foodId: string, accessToken: string | null | undefined, signal?: AbortSignal): Promise<void> {
+  return apiFetch<void>(`/foods/${foodId}`, authorizedInit(accessToken, signal, { method: "DELETE" }));
 }
 
 export type AdminUserSummary = GeneratedAdminUserSummary;

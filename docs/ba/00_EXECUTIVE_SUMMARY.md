@@ -1,5 +1,7 @@
 # BA Executive Summary
 
+> Current Food Catalog authority: [V2 Shared Food Catalog](../product/v2/04_SHARED_FOOD_CATALOG.md) supersedes contrary Food archive, snapshot-after-delete, separate Admin Food UI, owner-scoped delete, and `ON DELETE RESTRICT` requirements in this BA record. The current contract has one `/foods` UI, admin-only mutations, no archive state, and permanent global Food deletion that cascades to all referencing Diary entries across Principals.
+
 Mode: requirements update from confirmed product decisions D-001 through D-026.
 
 Scope:

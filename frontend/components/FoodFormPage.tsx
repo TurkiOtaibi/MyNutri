@@ -5,7 +5,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { createFood, getAdminFood, getNutritionRegistry, updateFood } from "@/lib/api";
+import { createFood, getFood, getNutritionRegistry, updateFood } from "@/lib/api";
 import {
   defaultUnitLabels,
   defaultUnitOptions,
@@ -54,7 +54,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
 
   const foodQuery = useQuery({
     queryKey: ["food", foodId],
-    queryFn: () => getAdminFood(foodId ?? ""),
+    queryFn: () => getFood(foodId ?? ""),
     enabled: isEdit && Boolean(foodId) && account?.role === "admin"
   });
   const registryQuery = useQuery({

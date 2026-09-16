@@ -475,10 +475,6 @@ a {
   gap: 10px;
 }
 
-.foods-admin-status-control select {
-  min-width: 120px;
-}
-
 .compact-control {
   display: grid;
   gap: 5px;
@@ -775,31 +771,6 @@ a {
 
 .food-actions-popover .danger-menu-item {
   color: var(--danger);
-}
-
-.food-lifecycle-error {
-  display: grid;
-  gap: 8px;
-  border-top: 1px solid var(--line);
-  background: var(--danger-soft);
-  padding: 10px 12px;
-  color: var(--danger);
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.food-lifecycle-error:focus-visible {
-  outline: 3px solid var(--accent-soft);
-  outline-offset: -3px;
-}
-
-.food-actions-popover .food-lifecycle-error button {
-  justify-content: center;
-  border: 1px solid currentColor;
-  border-radius: var(--radius);
-  background: white;
-  color: var(--danger);
-  font-weight: 800;
 }
 
 .foods-pagination {
@@ -1520,10 +1491,6 @@ a {
 
   .foods-controls {
     display: block;
-  }
-
-  .foods-admin-status-control select {
-    width: 100%;
   }
 
   .foods-mobile-filters {

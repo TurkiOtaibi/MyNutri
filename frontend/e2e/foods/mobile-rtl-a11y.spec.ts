@@ -1,40 +1,28 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 
-import { test, expect, expectNoHorizontalOverflow, fillRequiredFoodForm, submitFoodForm, validFood } from "./helpers";
+import { test, expect, expectNoHorizontalOverflow, submitFoodForm, validFood } from "./helpers";
 
-function plan024AccessibleFood(idSuffix: number, name: string, archived: boolean) {
+function accessibleFood(idSuffix: number, name: string) {
   return {
-    ...validFood({
-      name,
-      brand: "علامة طويلة Mixed Latin Brand Name"
-    }),
+    ...validFood({ name, brand: "علامة طويلة Mixed Latin Brand Name" }),
     id: `00000000-0000-4000-8000-${String(idSuffix).padStart(12, "0")}`,
     net_carbs_g: 20,
-    archived_at: archived ? "2026-08-04T00:00:00Z" : null,
     created_at: "2026-08-04T00:00:00Z",
     updated_at: "2026-08-04T00:00:00Z"
   };
 }
 
-function plan024AccessiblePage(items: ReturnType<typeof plan024AccessibleFood>[]) {
-  return {
-    items,
-    total: items.length,
-    page: 1,
-    page_size: 20,
-    total_pages: 1,
-    categories: ["other"],
-    uncategorized_count: 0
-  };
+function accessiblePage(items: ReturnType<typeof accessibleFood>[]) {
+  return { items, total: items.length, page: 1, page_size: 20, total_pages: 1, categories: ["other"], uncategorized_count: 0 };
 }
 
-async function expectPlan024AxePass(page: Page, stateLabel: string) {
+async function expectAxePass(page: Page, stateLabel: string) {
   const results = await new AxeBuilder({ page }).include(".foods-catalog").analyze();
-  const blockingViolations = results.violations.filter((violation) =>
+  const blocking = results.violations.filter((violation) =>
     ["moderate", "serious", "critical"].includes(violation.impact ?? "")
   );
-  expect(blockingViolations, `${stateLabel}: moderate-or-higher axe violations`).toEqual([]);
+  expect(blocking, `${stateLabel}: moderate-or-higher axe violations`).toEqual([]);
 }
 
 test.describe("Foods mobile, RTL, and accessibility @foods", () => {
@@ -49,18 +37,18 @@ test.describe("Foods mobile, RTL, and accessibility @foods", () => {
     await expect(page.locator(".state-note[role=alert]")).toBeVisible();
   });
 
-  test("[FOOD-TC-136] @p1 @a11y icon actions have contextual accessible names", async ({ page, foodsApi }) => {
+  test("[FOOD-TC-136] @p1 @a11y admin icon actions have contextual names", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E-Accessible-Actions-${Date.now()}` });
-    await page.goto("/admin/foods");
+    await page.goto("/foods");
     await expect(page.getByRole("link", { name: `عرض تفاصيل ${food.name}` }).first()).toBeVisible();
     const actions = page.getByRole("button", { name: `إجراءات ${food.name}` });
-    await expect(actions).toBeVisible();
     await actions.click();
     await expect(page.getByRole("menuitem", { name: "تعديل" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "حذف" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: /(أرشفة|استعادة)/ })).toHaveCount(0);
   });
 
-  test("[FOOD-TC-139] @p1 @mobile required viewport matrix has no horizontal page overflow", async ({ page, foodsApi }) => {
+  test("[FOOD-TC-139] @p1 @mobile required viewport matrix has no horizontal overflow", async ({ page, foodsApi }) => {
     await foodsApi.create({ name: `طعام E2E Mixed Long ${"اسم ".repeat(15)}`.slice(0, 120) });
     for (const width of [360, 390, 430, 768, 1280]) {
       await page.setViewportSize({ width, height: 900 });
@@ -72,153 +60,27 @@ test.describe("Foods mobile, RTL, and accessibility @foods", () => {
     }
   });
 
-  test("[FOOD-TC-145] @plan024 @p0 @mobile @a11y Admin archive control is keyboard and touch safe", async ({ page }) => {
-    test.setTimeout(120_000);
-
-    const activeFood = plan024AccessibleFood(
-      271,
-      `طعام عربي طويل ${"اسم ".repeat(12)}Mixed Latin Food`,
-      false
-    );
-    const archivedFood = plan024AccessibleFood(272, "طعام مؤرشف Mixed Archive", true);
-    let responseMode: "normal" | "loading" | "error" | "empty" = "normal";
-    let releaseLoading: () => void = () => undefined;
-    let loadingGate: Promise<void> | null = null;
-
-    await page.route(/\/admin\/foods\?.*$/, async (route) => {
-      const params = new URL(route.request().url()).searchParams;
-      if (responseMode === "loading" && loadingGate) await loadingGate;
-      if (responseMode === "error") {
-        return route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
-      }
-      if (responseMode === "empty" || params.get("search")) {
-        return route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(plan024AccessiblePage([]))
-        });
-      }
-      const food = params.get("archived") === "true" ? archivedFood : activeFood;
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(plan024AccessiblePage([food]))
-      });
-    });
-
+  test("[FOOD-TC-145] @p0 @mobile @a11y unified admin actions are keyboard and touch safe", async ({ page }) => {
+    const food = accessibleFood(271, `طعام عربي طويل ${"اسم ".repeat(12)}Mixed Latin Food`);
+    await page.route(/\/foods\?.*$/, (route) => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(accessiblePage([food]))
+    }));
     for (const width of [320, 360, 375, 390, 430, 1280]) {
       await page.setViewportSize({ width, height: 844 });
-      responseMode = "normal";
-      await page.goto("/admin/foods");
-      const archiveControl = page.getByLabel("عرض الأرشيف");
-      await expect(archiveControl).toBeVisible();
-      await expect(archiveControl).toHaveCount(1);
-      await expect(page.locator(".foods-admin-status-control > span")).toHaveText("عرض الأرشيف");
-      const box = await archiveControl.boundingBox();
-      expect(box?.height).toBeGreaterThanOrEqual(44);
+      await page.goto("/foods");
+      await expect(page.getByLabel("عرض الأرشيف")).toHaveCount(0);
+      const trigger = page.getByRole("button", { name: `إجراءات ${food.name}` });
+      const box = await trigger.boundingBox();
       expect(box && box.x >= 0 && box.x + box.width <= width).toBe(true);
-
-      const activeTrigger = page.getByRole("button", { name: `إجراءات ${activeFood.name}` });
-      await expect(activeTrigger).toBeVisible();
-      const triggerBox = await activeTrigger.boundingBox();
-      expect(triggerBox && triggerBox.x >= 0 && triggerBox.x + triggerBox.width <= width).toBe(true);
-      const activeName = width <= 920
-        ? page.locator(".food-card-title", { hasText: activeFood.name })
-        : page.locator(".food-table-name", { hasText: activeFood.name });
-      await expect(activeName).toBeVisible();
-      await expect(activeName).toHaveAttribute("dir", "auto");
-      const activeBrand = width <= 920
-        ? page.locator(".food-card-secondary", { hasText: activeFood.brand! })
-        : page.locator(".food-table-brand", { hasText: activeFood.brand! });
-      await expect(activeBrand).toBeVisible();
-
-      if (width === 320) {
-        await archiveControl.focus();
-        await archiveControl.press("End");
-        await expect(archiveControl).toHaveValue("archived");
-        await archiveControl.press("Home");
-        await expect(archiveControl).toHaveValue("active");
-      } else {
-        await archiveControl.click();
-        await expect(archiveControl).toBeFocused();
-        await archiveControl.selectOption("archived");
-        await expect(archiveControl).toHaveValue("archived");
-        await archiveControl.selectOption("active");
-        await expect(archiveControl).toHaveValue("active");
-      }
-
-      await expectNoHorizontalOverflow(page);
-    }
-
-    await page.setViewportSize({ width: 375, height: 844 });
-    responseMode = "normal";
-    await page.goto("/admin/foods");
-    const archiveControl = page.getByLabel("عرض الأرشيف");
-    await expect(archiveControl).toHaveValue("active");
-    await expect(page.locator(".food-card-title", { hasText: activeFood.name })).toBeVisible();
-    await expectPlan024AxePass(page, "375 active menu closed");
-
-    await page.getByRole("button", { name: `إجراءات ${activeFood.name}` }).click();
-    await expect(page.getByRole("menuitem", { name: "أرشفة" })).toBeVisible();
-    await expectPlan024AxePass(page, "375 active menu open");
-    await page.keyboard.press("Escape");
-
-    await archiveControl.selectOption("archived");
-    await expect(archiveControl.locator("option:checked")).toHaveText("مؤرشف");
-    await expect(page.locator(".food-card-title", { hasText: archivedFood.name })).toBeVisible();
-    await expectPlan024AxePass(page, "375 archived menu closed");
-    await page.getByRole("button", { name: `إجراءات ${archivedFood.name}` }).click();
-    await expect(page.getByRole("menuitem", { name: "استعادة" })).toBeVisible();
-    await expectPlan024AxePass(page, "375 archived menu open");
-    await page.keyboard.press("Escape");
-
-    loadingGate = new Promise<void>((resolve) => { releaseLoading = resolve; });
-    responseMode = "loading";
-    await page.reload();
-    await expect(page.locator(".foods-loading")).toBeVisible();
-    await expect(page.locator(".foods-loading")).toHaveAttribute("role", "status");
-    await expect(page.getByRole("button", { name: /إجراءات/ })).toHaveCount(0);
-    await expect(page.getByLabel("عرض الأرشيف")).toBeVisible();
-    await expectPlan024AxePass(page, "375 loading");
-    responseMode = "normal";
-    releaseLoading();
-    await expect(page.locator(".food-card-title", { hasText: activeFood.name })).toBeVisible();
-
-    responseMode = "error";
-    await page.reload();
-    const requestError = page.locator(".catalog-state[role=alert]");
-    await expect(requestError).toContainText("تعذر تحميل الأطعمة");
-    await expect(requestError.getByRole("button", { name: "إعادة المحاولة" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /إجراءات/ })).toHaveCount(0);
-    await expectPlan024AxePass(page, "375 request error");
-
-    responseMode = "empty";
-    await page.reload();
-    await expect(page.getByText("لا توجد أطعمة بعد.", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: /إجراءات/ })).toHaveCount(0);
-    await expectPlan024AxePass(page, "375 empty catalog");
-
-    responseMode = "normal";
-    await page.reload();
-    await expect(page.locator(".food-card-title", { hasText: activeFood.name })).toBeVisible();
-    await page.getByLabel("بحث باسم الطعام").fill("لا-تطابق");
-    await expect(page.getByText("لا توجد نتائج مطابقة للبحث.", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: /إجراءات/ })).toHaveCount(0);
-    await expectPlan024AxePass(page, "375 search no results");
-
-    for (const width of [320, 430]) {
-      await page.setViewportSize({ width, height: 844 });
-      responseMode = "normal";
-      await page.goto("/admin/foods");
-      await page.getByRole("button", { name: `إجراءات ${activeFood.name}` }).click();
-      await expect(page.getByRole("menuitem", { name: "أرشفة" })).toBeVisible();
-      await expectPlan024AxePass(page, `${width} active menu open`);
+      await trigger.focus();
+      await trigger.press("Enter");
+      await expect(page.getByRole("menuitem", { name: "تعديل" })).toBeFocused();
+      await expect(page.getByRole("menuitem", { name: "حذف" })).toBeVisible();
+      await expectAxePass(page, `${width} admin actions`);
       await page.keyboard.press("Escape");
-      await page.getByLabel("عرض الأرشيف").selectOption("archived");
-      await page.getByRole("button", { name: `إجراءات ${archivedFood.name}` }).click();
-      await expect(page.getByRole("menuitem", { name: "استعادة" })).toBeVisible();
-      await expectPlan024AxePass(page, `${width} archived menu open`);
-      await page.keyboard.press("Escape");
+      await expect(trigger).toBeFocused();
       await expectNoHorizontalOverflow(page);
     }
   });

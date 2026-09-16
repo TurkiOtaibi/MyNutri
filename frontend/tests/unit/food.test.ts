@@ -63,8 +63,7 @@ describe("food normalization and presentation", () => {
       net_carbs_g: null,
       legacy_nutrition: { folate_mcg: null, vitamin_a_mcg: null, meaning_ar: "قديم" },
       created_at: "2026-09-01T00:00:00Z",
-      updated_at: "2026-09-01T00:00:00Z",
-      archived_at: null
+      updated_at: "2026-09-01T00:00:00Z"
     } as FoodResponse);
 
     expect(nutrition?.net_carbs_g).toBeNull();

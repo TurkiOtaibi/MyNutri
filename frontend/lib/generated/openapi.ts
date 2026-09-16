@@ -298,12 +298,6 @@ export interface DiaryNutrientTarget {
   value?: number | null;
 }
 
-/** FoodDeleteResponse */
-export interface FoodDeleteResponse {
-  /** Disposition */
-  disposition: "deleted" | "archived";
-}
-
 /** FoodListResponse */
 export interface FoodListResponse {
   /** Categories */
@@ -367,8 +361,6 @@ export interface FoodResponseV3 {
   vitamin_b12_mcg?: number | null;
   /** Added Sugar G */
   added_sugar_g?: number | null;
-  /** Archived At */
-  archived_at: string | null;
   /** Brand */
   brand?: string | null;
   /** Calcium Mg */
@@ -1006,50 +998,6 @@ export namespace Account {
 export namespace Admin {
   /**
    * No description
-   * @tags admin-foods
-   * @name ArchiveAdminFoodAdminFoodsFoodIdArchivePost
-   * @summary Archive Admin Food
-   * @request POST:/admin/foods/{food_id}/archive
-   * @secure
-   */
-  export namespace ArchiveAdminFoodAdminFoodsFoodIdArchivePost {
-    export type RequestParams = {
-      /**
-       * Food Id
-       * @format uuid
-       */
-      foodId: string;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = FoodResponseV3;
-  }
-
-  /**
-   * No description
-   * @tags admin-foods
-   * @name DeleteAdminFoodAdminFoodsFoodIdDelete
-   * @summary Delete Admin Food
-   * @request DELETE:/admin/foods/{food_id}
-   * @secure
-   */
-  export namespace DeleteAdminFoodAdminFoodsFoodIdDelete {
-    export type RequestParams = {
-      /**
-       * Food Id
-       * @format uuid
-       */
-      foodId: string;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = FoodDeleteResponse;
-  }
-
-  /**
-   * No description
    * @tags admin
    * @name ListUsersAdminUsersGet
    * @summary List Users
@@ -1078,94 +1026,6 @@ export namespace Admin {
     export type RequestBody = never;
     export type RequestHeaders = {};
     export type ResponseBody = AdminUserListResponse;
-  }
-
-  /**
-   * No description
-   * @tags admin-foods
-   * @name ReadAdminFoodAdminFoodsFoodIdGet
-   * @summary Read Admin Food
-   * @request GET:/admin/foods/{food_id}
-   * @secure
-   */
-  export namespace ReadAdminFoodAdminFoodsFoodIdGet {
-    export type RequestParams = {
-      /**
-       * Food Id
-       * @format uuid
-       */
-      foodId: string;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = FoodResponseV3;
-  }
-
-  /**
-   * No description
-   * @tags admin-foods
-   * @name ReadAdminFoodsAdminFoodsGet
-   * @summary Read Admin Foods
-   * @request GET:/admin/foods
-   * @secure
-   */
-  export namespace ReadAdminFoodsAdminFoodsGet {
-    export type RequestParams = {};
-    export type RequestQuery = {
-      /**
-       * Archived
-       * @default false
-       */
-      archived?: boolean | null;
-      /** Category */
-      category?: string | null;
-      /**
-       * Page
-       * @min 1
-       * @default 1
-       */
-      page?: number;
-      /**
-       * Page Size
-       * @min 1
-       * @max 100
-       * @default 20
-       */
-      page_size?: number;
-      /** Search */
-      search?: string | null;
-      /**
-       * Sort
-       * @default "name"
-       */
-      sort?: "name" | "recent" | "calories" | "protein";
-    };
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = FoodListResponse;
-  }
-
-  /**
-   * No description
-   * @tags admin-foods
-   * @name RestoreAdminFoodAdminFoodsFoodIdRestorePost
-   * @summary Restore Admin Food
-   * @request POST:/admin/foods/{food_id}/restore
-   * @secure
-   */
-  export namespace RestoreAdminFoodAdminFoodsFoodIdRestorePost {
-    export type RequestParams = {
-      /**
-       * Food Id
-       * @format uuid
-       */
-      foodId: string;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = FoodResponseV3;
   }
 
   /**
@@ -1461,6 +1321,28 @@ export namespace Foods {
     };
     export type RequestHeaders = {};
     export type ResponseBody = FoodResponseV3;
+  }
+
+  /**
+   * No description
+   * @tags foods
+   * @name DeleteFoodDocumentedFoodsFoodIdDelete
+   * @summary Delete Food Documented
+   * @request DELETE:/foods/{food_id}
+   * @secure
+   */
+  export namespace DeleteFoodDocumentedFoodsFoodIdDelete {
+    export type RequestParams = {
+      /**
+       * Food Id
+       * @format uuid
+       */
+      foodId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = void;
   }
 
   /**

@@ -1,5 +1,7 @@
 ﻿# Acceptance Criteria
 
+> Current Food Catalog authority: [V2 Shared Food Catalog](../product/v2/04_SHARED_FOOD_CATALOG.md) supersedes contrary Food archive, snapshot-after-delete, separate Admin Food UI, owner-scoped delete, and `ON DELETE RESTRICT` requirements in this BA record. The current contract has one `/foods` UI, admin-only mutations, no archive state, and permanent global Food deletion that cascades to all referencing Diary entries across Principals.
+
 This file consolidates v1 Given/When/Then acceptance criteria after product decisions D-001 through D-023.
 
 ## App Shell, RTL, and Mobile

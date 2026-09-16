@@ -1,23 +1,22 @@
 import { test, expect } from "./helpers";
 
 test.describe("Food permanent delete @foods", () => {
-  test("[FOOD-TC-118] @p0 confirmation dialog shows Food name and permanent wording", async ({ page, foodsApi }) => {
+  test("[FOOD-TC-118] @p0 confirmation dialog uses the approved global permanent-delete warning", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E-Delete-Dialog-${Date.now()}` });
-    await page.goto("/admin/foods");
+    await page.goto("/foods");
     await openDeleteFromList(page, food.name);
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText(food.name);
-    await expect(dialog).toContainText("نهائيًا");
+    await expect(dialog.getByRole("heading")).toHaveText("حذف الطعام؟");
+    await expect(dialog).toContainText("سيتم حذف هذا الطعام نهائيًا، كما سيتم حذف جميع سجلات اليوميات المرتبطة به لجميع المستخدمين. لا يمكن التراجع عن هذا الإجراء.");
   });
 
   test("[FOOD-TC-119] @p0 cancel closes dialog and keeps Food", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E-Delete-Cancel-${Date.now()}` });
-    await page.goto("/admin/foods");
+    await page.goto("/foods");
     await openDeleteFromList(page, food.name);
     const dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText("فستتم أرشفته بدلًا من ذلك");
-    await expect(dialog).toContainText("بيانات الطعام الحالية");
+    await expect(dialog).toContainText("لا يمكن التراجع عن هذا الإجراء");
     await dialog.getByRole("button", { name: "إلغاء" }).click();
     await expect(dialog).toHaveCount(0);
     expect((await foodsApi.list()).some((item) => item.id === food.id)).toBeTruthy();
@@ -25,7 +24,7 @@ test.describe("Food permanent delete @foods", () => {
 
   test("[FOOD-TC-120] @p0 confirm permanently deletes Food", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E-Delete-Confirm-${Date.now()}` });
-    await page.goto("/admin/foods");
+    await page.goto("/foods");
     await openDeleteFromList(page, food.name);
     await page.getByRole("dialog").getByRole("button", { name: "حذف نهائي" }).click();
     await expect(page.getByText(food.name, { exact: true })).toHaveCount(0);
@@ -41,7 +40,7 @@ test.describe("Food permanent delete @foods", () => {
 
   test("[FOOD-TC-123] @p0 failed delete keeps Food and queues nothing", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E-Delete-Fail-${Date.now()}` });
-    await page.goto("/admin/foods");
+    await page.goto("/foods");
     await openDeleteFromList(page, food.name);
     await page.route(`**/foods/${food.id}`, async (route) => {
       if (route.request().method() === "DELETE") return route.abort("failed");
@@ -59,7 +58,7 @@ test.describe("Food permanent delete @foods", () => {
     page.on("request", (request) => {
       if (request.method() === "DELETE" && request.url().endsWith(`/foods/${food.id}`)) deletes += 1;
     });
-    await page.goto("/admin/foods");
+    await page.goto("/foods");
     await openDeleteFromList(page, food.name);
     await page.getByRole("dialog").getByRole("button", { name: "حذف نهائي" }).dblclick();
     await expect(page.getByText(food.name, { exact: true })).toHaveCount(0);
@@ -69,7 +68,7 @@ test.describe("Food permanent delete @foods", () => {
   test("[FOOD-TC-125] @p0 unused active Food is eligible for permanent deletion", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E-No-Archive-${Date.now()}` });
     const record = await foodsApi.get(food.id);
-    expect(record.archived_at).toBeNull();
+    expect("archived_at" in record).toBe(false);
     await page.goto(`/foods/${food.id}`);
     for (const text of ["مؤرشف", "غير نشط", "استعادة", "is_active", "archived_at"]) {
       await expect(page.getByText(text, { exact: false })).toHaveCount(0);
@@ -78,7 +77,7 @@ test.describe("Food permanent delete @foods", () => {
 
   test("[FOOD-TC-126] @p0 @a11y dialog supports focus, Escape, and focus restoration", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E-Delete-A11y-${Date.now()}` });
-    await page.goto("/admin/foods");
+    await page.goto("/foods");
     const trigger = page.locator("tbody tr", { hasText: food.name }).locator(".icon-button");
     await trigger.focus();
     await trigger.press("Enter");
@@ -93,10 +92,10 @@ test.describe("Food permanent delete @foods", () => {
 
   test("[FOOD-TC-127] @p0 unauthorized delete leaves Food unchanged", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E-Delete-Unauthorized-${Date.now()}` });
-    await page.goto("/admin/foods");
+    await page.goto("/foods");
     await openDeleteFromList(page, food.name);
     await page.route(`**/foods/${food.id}`, async (route) => {
-      if (route.request().method() === "DELETE") return route.fulfill({ status: 401, body: "unauthorized" });
+      if (route.request().method() === "DELETE") return route.fulfill({ status: 403, body: "forbidden" });
       return route.continue();
     });
     await page.getByRole("dialog").getByRole("button", { name: "حذف نهائي" }).click();

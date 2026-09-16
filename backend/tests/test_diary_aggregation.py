@@ -26,6 +26,7 @@ from app.services.aggregation import (
     weekly_summary,
 )
 from app.services.diary import add_totals, empty_totals, totals_for_entry
+from app.services.food import delete_food
 
 
 PRINCIPAL_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -340,3 +341,27 @@ def test_plan015_postgresql_owner_week_query_budget_is_fixed(
         )
     # The entry-derived weekly projection remains fixed as entry volume changes.
     assert len(statements) == 2
+
+
+def test_food_cascade_removes_only_referencing_entries_from_week_totals(
+    plan015_postgresql_session: Session,
+) -> None:
+    week_start = date(2026, 7, 12)
+    deleted_food = _food(calories=100)
+    retained_food = _food(calories=40)
+    plan015_postgresql_session.add(deleted_food)
+    plan015_postgresql_session.add(retained_food)
+    plan015_postgresql_session.flush()
+    plan015_postgresql_session.add(_entry(deleted_food, week_start, quantity=100))
+    retained_entry = _entry(retained_food, week_start, quantity=100)
+    plan015_postgresql_session.add(retained_entry)
+    plan015_postgresql_session.commit()
+
+    before = weekly_summary(plan015_postgresql_session, PRINCIPAL, week_start)
+    assert before.weekly_totals.calories == 140
+
+    delete_food(plan015_postgresql_session, PRINCIPAL, deleted_food.id)
+
+    after = weekly_summary(plan015_postgresql_session, PRINCIPAL, week_start)
+    assert after.weekly_totals.calories == 40
+    assert plan015_postgresql_session.get(DiaryEntry, retained_entry.id) is not None

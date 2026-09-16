@@ -182,10 +182,10 @@ def test_unused_routes_are_absent_and_protected_routes_remain() -> None:
             ("PUT", "/diary/days/{diary_date}/complete"),
             ("PUT", "/diary/days/{diary_date}/reopen"),
             ("GET", "/admin/users/{principal_id}/diary-days"),
-            ("DELETE", "/foods/{food_id}"),
             ("PUT", "/profile"),
         }
     )
+    assert ("DELETE", "/foods/{food_id}") in operations
     assert {
         ("POST", "/target-plans"),
         ("GET", "/target-plans"),
@@ -196,3 +196,31 @@ def test_unused_routes_are_absent_and_protected_routes_remain() -> None:
         ("POST", "/target-plans/pending/replace"),
         ("GET", "/target-plans/pending"),
     }.isdisjoint(operations)
+
+
+def test_food_catalog_contract_has_one_surface_without_archive_state() -> None:
+    schema = app.openapi()
+    paths = schema["paths"]
+    schemas = schema["components"]["schemas"]
+
+    assert {
+        ("get", "/foods"),
+        ("post", "/foods"),
+        ("get", "/foods/picker"),
+        ("get", "/foods/{food_id}"),
+        ("put", "/foods/{food_id}"),
+        ("delete", "/foods/{food_id}"),
+    } == {
+        (method, path)
+        for path, definition in paths.items()
+        if path == "/foods" or path.startswith("/foods/")
+        for method in definition
+        if method in {"get", "post", "put", "delete"}
+    }
+    assert not any(path.startswith("/admin/foods") for path in paths)
+    assert paths["/foods/{food_id}"]["delete"]["responses"]["204"]["description"]
+    assert "FoodDeleteResponse" not in schemas
+    assert "archived_at" not in schemas["FoodResponseV3"]["properties"]
+    assert "archived" not in {
+        parameter["name"] for parameter in paths["/foods"]["get"].get("parameters", [])
+    }

@@ -23,7 +23,15 @@ export function useFoodDelete({
     mutationFn: (foodId: string) => deleteFood(foodId, accessToken, sessionSignal),
     onSuccess: async () => {
       if (sessionSignal.aborted) return;
-      await queryClient.invalidateQueries({ queryKey: ["foods"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["foods"] }),
+        queryClient.invalidateQueries({ queryKey: ["food"] }),
+        queryClient.invalidateQueries({ queryKey: ["food-picker"] }),
+        queryClient.invalidateQueries({ queryKey: ["diary"] }),
+        queryClient.invalidateQueries({ queryKey: ["week"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-user"] })
+      ]);
       if (sessionSignal.aborted) return;
       onDeleted?.();
     },

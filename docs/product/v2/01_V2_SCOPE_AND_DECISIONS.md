@@ -32,8 +32,9 @@ catalog. Food taxonomy and provenance are intentionally small and stable.
 - A Diary entry stores the historical consumed quantity and captured measurement
   basis. Later Food serving-default edits cannot change what was consumed.
 - Food snapshots and snapshot version machinery are absent.
-- Archived Foods remain resolvable by Diary history. Referenced Foods cannot be
-  hard-deleted; the foreign key uses `RESTRICT`.
+- Food Archive is retired. Admin deletion permanently removes the Food and all
+  referencing Diary entries across all Principals through the database cascade.
+  Target Plans remain unchanged.
 - Target Plans have no lifecycle status or semantic Nutrition version columns.
   They are immutable revisions selected by date: the canonical revision at the
   greatest `effective_from` not later than the requested date. Writes are

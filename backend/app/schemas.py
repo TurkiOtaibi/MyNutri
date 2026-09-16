@@ -624,7 +624,6 @@ class FoodResponse(FoodBase):
     net_carbs_g: float | None
     created_at: datetime
     updated_at: datetime
-    archived_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -676,10 +675,6 @@ class FoodListResponse(BaseModel):
     total_pages: int
     categories: list[str]
     uncategorized_count: int
-
-
-class FoodDeleteResponse(BaseModel):
-    disposition: Literal["deleted", "archived"]
 
 
 class AccountResponse(BaseModel):

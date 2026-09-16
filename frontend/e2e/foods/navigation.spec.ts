@@ -5,10 +5,10 @@ const API_ORIGIN = new URL(API_URL).origin;
 test.describe("Foods navigation and standalone pages @foods", () => {
   test("[FOOD-TC-001] @p0 navigates list, add, details, and edit routes", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: "E2E Navigation Rice" });
-    await page.goto("/admin/foods");
+    await page.goto("/foods");
     await page.getByRole("link", { name: "إضافة طعام" }).click();
     await expect(page).toHaveURL(/\/foods\/new$/);
-    await page.goto("/admin/foods");
+    await page.goto("/foods");
     await page.getByRole("link", { name: `عرض تفاصيل ${food.name}` }).first().click();
     await expect(page).toHaveURL(new RegExp(`/foods/${food.id}$`));
     await page.getByRole("link", { name: "تعديل" }).click();
@@ -75,7 +75,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
 
   test("[FOOD-TC-008] @plan016 dirty edit keeps draft across refetch and loads server only after discard", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: "E2E Plan016 Original" });
-    const foodApiPath = `/admin/foods/${food.id}`;
+    const foodApiPath = `/foods/${food.id}`;
     let reads = 0;
     await page.route((url) => url.origin === API_ORIGIN && url.pathname === foodApiPath, async (route) => {
       if (route.request().method() !== "GET") return route.continue();
@@ -144,9 +144,9 @@ test.describe("Foods navigation and standalone pages @foods", () => {
       if (pathname === "/foods/new") {
         createDocumentRequests += 1;
       }
-      if (pathname === "/admin/foods") destinationDocumentRequests += 1;
+      if (pathname === "/foods") destinationDocumentRequests += 1;
     });
-    await page.goto("/admin/foods");
+    await page.goto("/foods");
     const initialDestinationDocumentRequests = destinationDocumentRequests;
     await page.getByRole("link", { name: "إضافة طعام" }).click();
     await expect(page).toHaveURL(/\/foods\/new$/);
@@ -192,7 +192,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
       const pathname = new URL(frame.url()).pathname;
       if (pathname === lastObservedPathname) return;
       lastObservedPathname = pathname;
-      if (pathname === "/admin/foods") destinationPathnameTransitions += 1;
+      if (pathname === "/foods") destinationPathnameTransitions += 1;
     });
     for (let attempt = 0; attempt < 2; attempt += 1) {
       await page.goBack();
@@ -222,7 +222,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
       return probe?.mounts ?? -1;
     })).toBe(0);
     await dialog.getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
-    await expect(page).toHaveURL(/\/admin\/foods$/);
+    await expect(page).toHaveURL(/\/foods$/);
     await expect(page.getByRole("heading", { name: "الأطعمة", exact: true })).toBeVisible();
     await expect(page.getByRole("region", { name: "كتالوج الأطعمة" })).toBeVisible();
     await expect(page.getByRole("link", { name: "إضافة طعام" })).toBeVisible();
@@ -256,7 +256,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
         createDocumentRequests += 1;
       }
     });
-    await page.goto("/admin/foods");
+    await page.goto("/foods");
     await page.getByRole("link", { name: "إضافة طعام" }).click();
     await expect(page).toHaveURL(/\/foods\/new$/);
     expect(createDocumentRequests).toBe(0);
@@ -335,5 +335,38 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     await page.goto("/foods");
     await expect(page.getByRole("alert")).toBeVisible();
     await expect(page.locator("tbody tr")).toHaveCount(0);
+  });
+
+  test("[FOOD-TC-003A] @p0 normal user sees the catalog without admin controls", async ({ page }) => {
+    await page.route(`${API_URL}/account/me`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        json: {
+          auth_user_id: "10000000-0000-0000-0000-000000000002",
+          display_name: "مستخدم الاختبار",
+          email: "user.e2e@example.test",
+          principal_id: "00000000-0000-0000-0000-000000000002",
+          role: "user",
+          status: "active"
+        }
+      });
+    });
+    await page.goto("/foods");
+    await expect(page.getByRole("heading", { name: "الأطعمة" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "إضافة طعام" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /إجراءات/ })).toHaveCount(0);
+  });
+
+  test("[FOOD-TC-003B] @p0 Admin home has no duplicate Food Management tile", async ({ page }) => {
+    await page.goto("/admin");
+    await expect(page.getByRole("link", { name: /إدارة الأطعمة/ })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /المستخدمون/ })).toBeVisible();
+  });
+
+  test("[FOOD-TC-013] @p0 legacy Admin Food URL permanently redirects to the unified catalog", async ({ request }) => {
+    const response = await request.get("/admin/foods", { maxRedirects: 0 });
+    expect(response.status()).toBe(308);
+    expect(response.headers().location).toBe("/foods");
   });
 });

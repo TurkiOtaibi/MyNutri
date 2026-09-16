@@ -196,7 +196,6 @@ export function foodToForm(food: FoodResponse): FoodFormValues {
     net_carbs_g: _netCarbs,
     created_at: _createdAt,
     updated_at: _updatedAt,
-    archived_at: _archivedAt,
     legacy_nutrition: _legacyNutrition,
     ...editable
   } = food;

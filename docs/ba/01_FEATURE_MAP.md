@@ -1,5 +1,7 @@
 # Feature Map
 
+> Current Food Catalog authority: [V2 Shared Food Catalog](../product/v2/04_SHARED_FOOD_CATALOG.md) supersedes contrary Food archive, snapshot-after-delete, separate Admin Food UI, owner-scoped delete, and `ON DELETE RESTRICT` requirements in this BA record. The current contract has one `/foods` UI, admin-only mutations, no archive state, and permanent global Food deletion that cascades to all referencing Diary entries across Principals.
+
 Status values:
 - Confirmed: directly implemented or documented.
 - Required / needs alignment: v1 requirement is now decided, but current code does not fully match.
@@ -46,7 +48,7 @@ Status values:
 | F-019 | Standalone Food create | Add Food on `/foods/new` using grouped sections: basic info, nutrition basis, core nutrition, default unit, collapsed optional nutrients, notes/data source. | Required / current code needs route/form alignment | `foods.py`, `FoodsPage.tsx` | D-024, D-025 |
 | F-020 | Food edit | Edit Food on `/foods/:id/edit` using the Add Food structure in edit mode; historical diary snapshots do not change; stale food edits are rejected. | Required / current code needs route, duplicate, stale, and error alignment | `FoodsPage.tsx`, `food.py` | D-006, D-013, D-023, D-024, D-025 |
 | F-021 | Food details | View Food details on `/foods/:id`, including full long Food name and optional nutrients; show exact read-failure copy if fresh details cannot load. | Required / current code needs route/read-error alignment | `FoodsPage.tsx` | D-022, D-024, D-025 |
-| F-022 | Food permanent delete | Delete Food permanently after confirmation that shows the Food name and permanent-delete warning; deleted foods disappear from list/search/future Diary selection. | Required / current code needs confirmation/snapshot alignment | `food.py`, `FoodsPage.tsx` | D-025, D-013, D-023 |
+| F-022 | Food permanent delete | Admin deletes Food permanently after the exact governed confirmation; all referencing Diary entries across Principals are deleted atomically, while unrelated entries and Target Plans remain. | Required | `food.py`, `FoodsPage.tsx` | D-025, current V2 Food authority |
 | F-023 | No Food archive state | Do not use `is_active`, `archived_at`, archived status, status column, or Active/Archived filters in v1. | Required / supersedes earlier BA archive model | BA D-025 | D-003, D-004, D-005, D-025 |
 | F-024 | Duplicate food prevention | Block current-catalog duplicates by normalized `name`, `nutrition_basis`, `default_unit_type`, `unit_amount`, and `unit_basis`. Deleted foods do not block duplicate creation. | Required / missing in current code | No duplicate check | D-006, D-025 |
 | F-025 | Net carbs and optional nutrient validation | Compute net carbs as carbs minus optional fiber; block `fiber_g > carb_g`; enforce D-026 optional nutrient ranges and cross-field rules. | Required / current code needs alignment | `services/food.py`, `schemas.py` | D-011, D-012, D-025, D-026 |
@@ -63,7 +65,7 @@ Status values:
 | F-031 | Diary quantity edit | Edit only `{ quantity }` for the original mode; food/date/log_mode/per-serving snapshot values are immutable. | Required / current code needs alignment | Backend update supports more; UI lacks edit | D-010, D-021, D-023 |
 | F-032 | Delete diary entry | Confirm deletion, then remove a diary entry online only after successful API response; reject stale entry deletes and repeated confirms. | Confirmed / needs confirmation and error alignment | `DiaryPage.tsx`, `diary.py` | D-001, D-013, D-018, D-023 |
 | F-033 | Future date block | Block diary entries and edits for future dates. | Required / missing in current code | `DiaryEntryCreate` accepts date | D-008 |
-| F-034 | Nutrition snapshot | Freeze Food name, nutrition basis, nutrition values, log mode, logged quantity, and calculated totals at logging time so history remains readable after Food edit or deletion. | Confirmed / needs D-025 snapshot extension | `services/diary.py`, `test_diary_snapshot.py` | D-007, D-021, D-025 |
+| F-034 | Recorded Diary measurement | Preserve the consumed unit/amount/basis for ordinary Food edits; permanent Food deletion removes the referencing Diary row. | Required | `services/diary.py` | Current V2 Food authority |
 | F-035 | Weekly summary | Aggregate Sunday-to-Saturday totals and targets from snapshot calculated totals; show exact read-failure copy when fresh summary cannot load. | Confirmed / needs read-error alignment | `aggregation.py`, `DiaryPage.tsx` | D-008, D-013, D-022 |
 
 ## Online Data, Errors, Accessibility, and Tests

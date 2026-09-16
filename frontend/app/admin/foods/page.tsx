@@ -1,5 +1,5 @@
-import { FoodsPage } from "@/components/FoodsPage";
+import { permanentRedirect } from "next/navigation";
 
 export default function AdminFoodsPage() {
-  return <FoodsPage adminMode />;
+  permanentRedirect("/foods");
 }

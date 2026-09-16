@@ -59,7 +59,10 @@ reference, when its recorded measurement cannot be derived safely, or when its
 recorded mass/volume dimension conflicts with the current referenced Food. It
 never guesses Food identity or a mass/volume conversion.
 
-The final Diary-to-Food foreign key is non-null and `ON DELETE RESTRICT`.
+The Food Catalog unification revision changes the final Diary-to-Food foreign
+key to non-null `ON DELETE CASCADE`, removes archive columns/constraints/index,
+and revokes direct Food mutation from `PUBLIC`, `anon`, and `authenticated`.
+The migration itself deletes no Food or Diary data.
 Current Diary totals are calculated from current Food nutrition and the stored
 historical consumed measurement.
 
