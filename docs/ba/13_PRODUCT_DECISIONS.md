@@ -1,5 +1,7 @@
 ﻿# Product Decisions
 
+> Current Food Catalog authority: [V2 Shared Food Catalog](../product/v2/04_SHARED_FOOD_CATALOG.md) supersedes contrary Food archive, snapshot-after-delete, separate Admin Food UI, owner-scoped delete, and `ON DELETE RESTRICT` requirements in this BA record. The current contract has one `/foods` UI, admin-only mutations, no archive state, and permanent global Food deletion that cascades to all referencing Diary entries across Principals.
+
 This file is the v1 product decision record for myNutri. It applies to the BA package under `docs/ba/` and supersedes unresolved decision questions from the QA audits under `docs/qa/user-story-audit/` and `docs/qa/user-story-audit-v2/`.
 
 Product scope:
@@ -938,7 +940,7 @@ Final decision:
 Food deletion in myNutri v1 is permanent hard delete, not archive/inactive.
 
 Rationale:
-For a personal-use v1, permanent deletion is simpler than archive state, status filtering, and inactive catalog lifecycle. Diary history remains safe because Diary entries must use frozen nutrition snapshots.
+Permanent deletion is simpler than archive state, status filtering, and inactive catalog lifecycle. Because Food is global, deletion intentionally removes every referencing Diary entry across all Principals; no historical snapshot substitutes for the deleted Food.
 
 Impacted features:
 - Food delete.
@@ -964,7 +966,7 @@ Implementation impact:
 - Do not show Archived status in the Foods page.
 - Do not show Active/Archived filters.
 - Delete Food must require confirmation.
-- Confirmation dialog must show the Food name and clearly state deletion is permanent.
+- Confirmation dialog must use the exact governed title/body/buttons in the current V2 Shared Food Catalog authority and clearly state the cross-user Diary deletion.
 - Cancel makes no changes.
 - Confirm permanently deletes the Food from the Food catalog after successful API response.
 - Deleted Foods disappear from Foods list, Food search results, and future Diary food selection.
@@ -1008,9 +1010,8 @@ Foods list requirements:
 - Mixed Arabic/English text remains readable in RTL layout.
 
 Diary snapshot requirements:
-- Diary entries must not depend on the Food record remaining available.
-- Snapshot must preserve at minimum: Food name at logging time, nutrition basis at logging time, nutrition values at logging time, logged quantity, log mode, and calculated totals.
-- If current implementation still depends on `food_id` for historical display, document it as an implementation alignment item.
+- Diary entries depend on the non-null Food FK and are deleted by cascade when that Food is deleted.
+- Target Plans remain immutable and are never deleted as a consequence of Food deletion.
 
 Duplicate handling:
 - Duplicate checks apply only to Foods currently in the catalog.

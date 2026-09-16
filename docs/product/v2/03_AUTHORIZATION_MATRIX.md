@@ -5,9 +5,9 @@
 | Read/update own Profile | Yes | Yes |
 | Preview/write/read own dated Target Plans | Yes | Yes |
 | Read own Diary and summaries | Yes | Yes |
-| Read active shared Foods | Yes | Yes |
+| Read shared Foods | Yes | Yes |
 | Add shared Food to own Diary | Yes | Yes |
-| Create/update/archive/restore/delete Food | No | Yes |
+| Create/update/permanently delete Food | No | Yes |
 | List users | No | Yes |
 | Read another user's monitored data | No | Yes, read-only |
 | Mutate another user's Profile/Diary/Plans | No | No |
@@ -18,8 +18,9 @@
 - Normal services infer ownership from `PrincipalContext`; they accept no user ID.
 - Admin monitoring has dedicated `/admin/users/...` read routes.
 - Admin-selected IDs never replace the caller's `PrincipalContext`.
-- Shared Food reads are global and active-only by default.
+- Shared Food reads are global; no archive state exists.
 - Food writes require an explicit admin dependency in FastAPI.
+- Permanent Food deletion cascades to every referencing Diary entry across all Principals.
 - Cross-owner private lookups are non-enumerating.
 - Target Plan writes are Principal-scoped, require idempotency, and accept only
   effective dates on or after the database-derived Riyadh Diary date. Target

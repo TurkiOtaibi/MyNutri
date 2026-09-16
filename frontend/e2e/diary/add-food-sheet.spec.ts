@@ -240,24 +240,18 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     await expect(dialog.getByRole("button", { name: "إضافة الطعام", exact: true })).toHaveCount(0);
   });
 
-  test("@plan014 @p0 recents de-duplicate repeated entries and exclude archived and deleted Foods", async ({ page, request, foodsApi }) => {
+  test("@plan014 @p0 recents de-duplicate repeated entries and exclude permanently deleted Foods", async ({ page, request, foodsApi }) => {
     const repeated = await foodsApi.create({ name: uniqueName("Repeated recent") });
-    const archived = await foodsApi.create({ name: uniqueName("Archived recent") });
     const deleted = await foodsApi.create({ name: uniqueName("Deleted picker") });
     await foodsApi.createDiary(repeated.id, localDate(), 1, "snack");
     await foodsApi.createDiary(repeated.id, localDate(), 2, "lunch");
-    await foodsApi.createDiary(archived.id, localDate(), 1, "snack");
+    await foodsApi.createDiary(deleted.id, localDate(), 1, "snack");
     const headers = { Authorization: `Bearer ${API_TOKEN}` };
-    const archivedResponse = await request.delete(`${API_URL}/admin/foods/${archived.id}`, { headers });
-    expect(archivedResponse.status()).toBe(200);
-    expect((await archivedResponse.json()).disposition).toBe("archived");
-    const deletedResponse = await request.delete(`${API_URL}/admin/foods/${deleted.id}`, { headers });
-    expect(deletedResponse.status()).toBe(200);
-    expect((await deletedResponse.json()).disposition).toBe("deleted");
+    const deletedResponse = await request.delete(`${API_URL}/foods/${deleted.id}`, { headers });
+    expect(deletedResponse.status()).toBe(204);
 
     const dialog = await openGeneral(page);
     await expect(dialog.getByRole("button", { name: new RegExp(repeated.name) })).toHaveCount(1);
-    await expect(dialog.getByRole("button", { name: new RegExp(archived.name) })).toHaveCount(0);
     const search = dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية");
     await search.fill(deleted.name);
     await expect(dialog.getByRole("button", { name: new RegExp(deleted.name) })).toHaveCount(0);

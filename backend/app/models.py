@@ -474,11 +474,6 @@ class Food(SQLModel, table=True):
             name="ck_food_taxonomy_pair",
         ),
         CheckConstraint(
-            "(archived_at IS NULL AND archived_by_principal_id IS NULL) OR "
-            "(archived_at IS NOT NULL AND archived_by_principal_id IS NOT NULL)",
-            name="ck_food_archive_state",
-        ),
-        CheckConstraint(
             "nutrition_data_source IN ('official','estimated')",
             name="ck_food_nutrition_data_source",
         ),
@@ -500,7 +495,7 @@ class Food(SQLModel, table=True):
         ),
         Index("ix_food_catalog_lower_name", sa_text("lower(name)")),
         Index("ix_food_catalog_created_desc", sa_text("created_at DESC")),
-        Index("ix_food_catalog_primary_archived", "primary_category", "archived_at"),
+        Index("ix_food_catalog_primary_category", "primary_category"),
         UniqueConstraint(
             "normalized_name",
             "nutrition_basis",
@@ -519,10 +514,6 @@ class Food(SQLModel, table=True):
         ),
     )
     updated_by_principal_id: uuid.UUID | None = Field(
-        default=None,
-        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=True),
-    )
-    archived_by_principal_id: uuid.UUID | None = Field(
         default=None,
         sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=True),
     )
@@ -583,11 +574,6 @@ class Food(SQLModel, table=True):
         default_factory=utcnow,
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )
-    archived_at: datetime | None = Field(
-        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
-    )
-
-
 class DiaryEntry(SQLModel, table=True):
     __tablename__ = "diary_entry"
     __table_args__ = (
@@ -641,7 +627,7 @@ class DiaryEntry(SQLModel, table=True):
     )
     entry_date: date = Field(index=True)
     food_id: uuid.UUID = Field(
-        sa_column=Column(ForeignKey("food.id", ondelete="RESTRICT"), index=True, nullable=False),
+        sa_column=Column(ForeignKey("food.id", ondelete="CASCADE"), index=True, nullable=False),
     )
     target_plan_id: uuid.UUID | None = Field(default=None, nullable=True)
     quantity: float = Field(sa_column=Column(Numeric(8, 3), nullable=False))

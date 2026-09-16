@@ -111,7 +111,7 @@ test.describe("Foods serving-first catalog and details @foods", () => {
   test("[SERVING-007] @p0 @mobile card opens details and menu exposes secondary actions", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E Card Menu ${Date.now()}` });
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/admin/foods");
+    await page.goto("/foods");
 
     await page.getByRole("button", { name: `إجراءات ${food.name}` }).click();
     await expect(page.getByRole("menuitem", { name: "تعديل" })).toBeVisible();
@@ -152,7 +152,6 @@ function mockFoods(count: number): FoodRecord[] {
     net_carbs_g: 20,
     created_at: "2026-07-10T00:00:00Z",
     updated_at: "2026-07-10T00:00:00Z",
-    archived_at: null,
   }));
 }
 

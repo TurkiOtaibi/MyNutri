@@ -21,7 +21,7 @@ any rollout action.
   the applicable Playwright projects pass.
 - OpenAPI and generated TypeScript reproduce deterministically with no drift.
 - Current Food correction tests prove historical Diary nutrition recalculates.
-- Diary quantity, recorded measurement, archived-Food resolution, hard-delete
+- Diary quantity, recorded measurement, Food cascade deletion, hard-delete
   restriction, and mass/volume dimension safety tests pass.
 - Target Plan date resolution selects the greatest applicable effective date and
   highest revision without a read-triggered write.
@@ -82,7 +82,7 @@ Only after a separately approved release window:
 5. Apply the reviewed migration to the explicitly identified environment.
 6. Deploy backend and frontend artifacts built from the same approved revision.
 7. Verify health, authentication, Food reads, Diary reads, and Target Plan history.
-8. Confirm archived Foods referenced by Diary history remain resolvable.
+8. Confirm the Food archive schema is absent and the Diary Food FK is `ON DELETE CASCADE`.
 9. Confirm generated-contract and migration-head identities from runtime evidence.
 
 ## Smoke checks
@@ -91,9 +91,9 @@ Only after a separately approved release window:
 - Confirm only `official` and `estimated` are accepted for nutrition provenance.
 - Record a Diary amount, edit current Food nutrition, and verify the old date
   recalculates while its consumed amount remains unchanged.
-- Archive a referenced Food and verify the Diary still reads and calculates it.
-- Verify an unreferenced Food can be deleted and a referenced Food cannot be
-  hard-deleted.
+- In a disposable environment, delete a referenced Food and verify all of its
+  cross-Principal Diary entries are deleted while unrelated Diary entries and
+  Target Plans remain.
 - Verify an incompatible mass/volume basis edit is rejected for a referenced Food.
 - Verify historical/current/future Target Plan reads select the canonical plan by
   date and revision without writing lifecycle state.

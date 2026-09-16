@@ -18,12 +18,11 @@ from app.schemas import (
 )
 from app.services.aggregation import weekly_summary
 from app.services.diary import (
-    create_entry,
+    create_entry_response,
     delete_entry,
-    get_food_for_entry,
     list_entries,
     to_entry_response,
-    update_entry,
+    update_entry_response,
 )
 from app.services.diary_validation_errors import validate_diary_payload
 
@@ -58,13 +57,12 @@ def _add_entry(
 ) -> DiaryEntryResponse:
     authority = diary_calendar_authority()
     validated_payload = validate_diary_payload(DiaryEntryCreate, payload)
-    entry = create_entry(
+    return create_entry_response(
         session,
         principal,
         validated_payload,
         calendar_authority=authority,
     )
-    return to_entry_response(entry, get_food_for_entry(session, entry))
 
 
 @router.post("/entries", response_model=DiaryEntryResponse, status_code=status.HTTP_201_CREATED)
@@ -82,13 +80,12 @@ def _edit_entry(
     principal: PrincipalContext,
     session: Session,
 ) -> DiaryEntryResponse:
-    entry = update_entry(
+    return update_entry_response(
         session,
         principal,
         entry_id,
         validate_diary_payload(DiaryEntryUpdate, payload),
     )
-    return to_entry_response(entry, get_food_for_entry(session, entry))
 
 
 @router.patch("/entries/{entry_id}", response_model=DiaryEntryResponse)

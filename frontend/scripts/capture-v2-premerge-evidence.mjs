@@ -56,7 +56,7 @@ try {
     await adminPage.locator(".selected-user-banner").waitFor();
     await adminPage.evaluate(() => scrollTo(0, 0));
     await capture(adminPage, "admin-user-detail", width);
-    await adminPage.goto(`${baseURL}/admin/foods`);
+    await adminPage.goto(`${baseURL}/foods`);
     await adminPage.getByRole("heading", { name: "الأطعمة" }).waitFor();
     await adminPage.evaluate(() => scrollTo(0, 0));
     await capture(adminPage, "admin-food-management", width);

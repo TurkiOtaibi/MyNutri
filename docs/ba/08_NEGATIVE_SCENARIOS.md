@@ -1,5 +1,7 @@
 # Negative and Edge Scenarios
 
+> Current Food Catalog authority: [V2 Shared Food Catalog](../product/v2/04_SHARED_FOOD_CATALOG.md) supersedes contrary Food archive, snapshot-after-delete, separate Admin Food UI, owner-scoped delete, and `ON DELETE RESTRICT` requirements in this BA record. The current contract has one `/foods` UI, admin-only mutations, no archive state, and permanent global Food deletion that cascades to all referencing Diary entries across Principals.
+
 This file lists required v1 negative and edge behavior after D-001 through D-023.
 
 ## Auth and Permissions
@@ -62,7 +64,7 @@ These scenarios supersede older Food scenarios that depend on archive/inactive s
 | Delete API fails | Food remains visible; no local delete is queued; show write/network/server error. | Required |
 | Food deleted before edit submit | Reject with stale Food message and do not update locally. | Required by D-023/D-025 |
 | Food deleted before Diary log submit | Reject with stale Food message and do not create a local Diary entry. | Required by D-023/D-025 |
-| Deleted Food used by old Diary entries | Historical Diary display and totals remain through snapshot. | Required |
+| Deleted Food used by Diary entries | Every referencing Diary entry across all Principals is deleted atomically; unrelated entries remain. | Required |
 | Active/Archived filter appears | Defect; archive filters are not v1 requirements. | Required by D-025 |
 | `is_active` or `archived_at` appears in Food UI/API requirements | Defect in BA/implementation planning; those fields are superseded by D-025. | Required by D-025 |
 | Long Food name in list/card | Show up to two lines then truncate with ellipsis; no action overlap or horizontal scroll. | Required per D-020 |
@@ -97,7 +99,7 @@ The legacy scenarios below are retained for traceability. If they conflict with 
 | Food deleted before Diary log submit | Reject with `هذا الطعام لم يعد متاحًا. حدّث القائمة وحاول مرة أخرى.` and do not create a local Diary entry. | Required by D-023/D-025 |
 | Food changed before Diary submit and API accepts | Snapshot uses server-confirmed Food values from the successful API response. | Required by D-023 |
 | Food changed before Diary submit and API rejects | Show `تم تغيير بيانات الطعام قبل الحفظ. حدّث البيانات وحاول مرة أخرى.` and do not create a local Diary entry. | Required by D-023 |
-| Deleted food used by Diary | Historical Diary nutrition remains through snapshot. | Required by D-025 |
+| Deleted food used by Diary | All referencing Diary rows are permanently deleted across Principals. | Required by current V2 Food authority |
 | Long food name in list/card | Show up to two lines then truncate with ellipsis; do not overlap actions or cause horizontal scrolling. | Required per D-020 |
 | HTML/script in food text | Store/display submitted text as plain text only; never execute or render it as markup. | Required security/a11y baseline |
 

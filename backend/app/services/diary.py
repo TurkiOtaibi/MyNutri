@@ -21,7 +21,7 @@ from app.schemas import (
     AdminDiaryPage,
     NutritionTotals,
 )
-from app.services.food import get_active_food_for_logging, lock_food_namespace_for_logging
+from app.services.food import get_food_for_logging, lock_food_namespace_for_logging
 from app.services.target_plans import resolve_target_plan
 
 DETAIL_FIELDS = (
@@ -257,15 +257,24 @@ def get_entry(session: Session, principal: PrincipalContext, entry_id: UUID) -> 
     return entry
 
 
-def create_entry(
+def _create_entry_uncommitted(
     session: Session,
     principal: PrincipalContext,
     payload: DiaryEntryCreate,
     *,
     calendar_authority: DiaryCalendarAuthority | None = None,
-) -> DiaryEntry:
+) -> tuple[DiaryEntry, Food]:
+    # Retain the injected calendar boundary for route/test compatibility; target
+    # resolution itself is now date-derived and independent of "today".
+    _ = calendar_authority or diary_calendar_authority()
+    _lock_owner_for_target_binding(session, principal)
+    plan = resolve_target_plan(session, principal, payload.entry_date)
+    lock_food_namespace_for_logging(session)
+    food = get_food_for_logging(session, principal, payload.food_id)
     if payload.id is not None:
-        existing = session.get(DiaryEntry, payload.id)
+        existing = session.exec(
+            select(DiaryEntry).where(DiaryEntry.id == payload.id).with_for_update()
+        ).first()
         if existing is not None:
             if existing.principal_id != principal.principal_id:
                 from app.services.errors import resource_not_found
@@ -277,11 +286,9 @@ def create_entry(
                 and float(existing.quantity) == float(payload.quantity)
                 and existing.meal_type == payload.meal_type
             ):
-                session.rollback()
-                return existing
+                return existing, food
             from fastapi import HTTPException
 
-            session.rollback()
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -289,13 +296,6 @@ def create_entry(
                     "message_ar": "معرف اليومية مستخدم لمدخل مختلف.",
                 },
             )
-    # Retain the injected calendar boundary for route/test compatibility; target
-    # resolution itself is now date-derived and independent of "today".
-    _ = calendar_authority or diary_calendar_authority()
-    _lock_owner_for_target_binding(session, principal)
-    plan = resolve_target_plan(session, principal, payload.entry_date)
-    lock_food_namespace_for_logging(session)
-    food = get_active_food_for_logging(session, principal, payload.food_id)
     entry_data = {
         "principal_id": principal.principal_id,
         "entry_date": payload.entry_date,
@@ -313,9 +313,83 @@ def create_entry(
     entry = DiaryEntry(**entry_data)
     session.add(entry)
     session.flush()
-    session.commit()
-    session.refresh(entry)
-    return entry
+    return entry, food
+
+
+def create_entry(
+    session: Session,
+    principal: PrincipalContext,
+    payload: DiaryEntryCreate,
+    *,
+    calendar_authority: DiaryCalendarAuthority | None = None,
+) -> DiaryEntry:
+    try:
+        entry, _food = _create_entry_uncommitted(
+            session,
+            principal,
+            payload,
+            calendar_authority=calendar_authority,
+        )
+        session.commit()
+        session.refresh(entry)
+        return entry
+    except Exception:
+        session.rollback()
+        raise
+
+
+def create_entry_response(
+    session: Session,
+    principal: PrincipalContext,
+    payload: DiaryEntryCreate,
+    *,
+    calendar_authority: DiaryCalendarAuthority | None = None,
+) -> DiaryEntryResponse:
+    try:
+        entry, food = _create_entry_uncommitted(
+            session,
+            principal,
+            payload,
+            calendar_authority=calendar_authority,
+        )
+        response = to_entry_response(entry, food)
+        response.model_dump_json()
+        session.commit()
+        return response
+    except Exception:
+        session.rollback()
+        raise
+
+
+def _update_entry_uncommitted(
+    session: Session,
+    principal: PrincipalContext,
+    entry_id: UUID,
+    payload: DiaryEntryUpdate,
+) -> tuple[DiaryEntry, Food]:
+    _lock_owner_for_target_binding(session, principal)
+    lock_food_namespace_for_logging(session)
+    existing = get_entry(session, principal, entry_id)
+    food = get_food_for_logging(session, principal, existing.food_id)
+    entry = session.exec(
+        select(DiaryEntry)
+        .where(
+            DiaryEntry.id == entry_id,
+            DiaryEntry.principal_id == principal.principal_id,
+        )
+        .with_for_update()
+    ).first()
+    if entry is None:
+        from app.services.errors import resource_not_found
+
+        raise resource_not_found()
+    if payload.quantity is not None:
+        entry.quantity = payload.quantity
+    if payload.meal_type is not None:
+        entry.meal_type = payload.meal_type
+    session.add(entry)
+    session.flush()
+    return entry, food
 
 
 def update_entry(
@@ -324,23 +398,31 @@ def update_entry(
     entry_id: UUID,
     payload: DiaryEntryUpdate,
 ) -> DiaryEntry:
-    entry = get_entry(session, principal, entry_id)
-    entry = session.exec(
-        select(DiaryEntry)
-        .where(
-            DiaryEntry.id == entry_id,
-            DiaryEntry.principal_id == principal.principal_id,
-        )
-        .with_for_update()
-    ).one()
-    if payload.quantity is not None:
-        entry.quantity = payload.quantity
-    if payload.meal_type is not None:
-        entry.meal_type = payload.meal_type
-    session.add(entry)
-    session.commit()
-    session.refresh(entry)
-    return entry
+    try:
+        entry, _food = _update_entry_uncommitted(session, principal, entry_id, payload)
+        session.commit()
+        session.refresh(entry)
+        return entry
+    except Exception:
+        session.rollback()
+        raise
+
+
+def update_entry_response(
+    session: Session,
+    principal: PrincipalContext,
+    entry_id: UUID,
+    payload: DiaryEntryUpdate,
+) -> DiaryEntryResponse:
+    try:
+        entry, food = _update_entry_uncommitted(session, principal, entry_id, payload)
+        response = to_entry_response(entry, food)
+        response.model_dump_json()
+        session.commit()
+        return response
+    except Exception:
+        session.rollback()
+        raise
 
 
 def delete_entry(
@@ -348,17 +430,26 @@ def delete_entry(
     principal: PrincipalContext,
     entry_id: UUID,
 ) -> None:
-    entry = get_entry(session, principal, entry_id)
-    entry = session.exec(
-        select(DiaryEntry)
-        .where(
-            DiaryEntry.id == entry_id,
-            DiaryEntry.principal_id == principal.principal_id,
-        )
-        .with_for_update()
-    ).one()
-    session.delete(entry)
-    session.commit()
+    try:
+        _lock_owner_for_target_binding(session, principal)
+        lock_food_namespace_for_logging(session)
+        entry = session.exec(
+            select(DiaryEntry)
+            .where(
+                DiaryEntry.id == entry_id,
+                DiaryEntry.principal_id == principal.principal_id,
+            )
+            .with_for_update()
+        ).first()
+        if entry is None:
+            from app.services.errors import resource_not_found
+
+            raise resource_not_found()
+        session.delete(entry)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
 
 
 def empty_totals() -> NutritionTotals:

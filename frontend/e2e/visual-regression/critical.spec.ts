@@ -87,12 +87,11 @@ async function fulfillBlockedPreview(route: Route): Promise<void> {
   });
 }
 
-function adminFood(idSuffix: number, name: string, archived = false) {
+function adminFood(idSuffix: number, name: string) {
   return {
     ...validFood({ name }),
     id: `00000000-0000-4000-8000-${String(idSuffix).padStart(12, "0")}`,
     net_carbs_g: 20,
-    archived_at: archived ? FIXED_VISUAL_TIME : null,
     created_at: FIXED_VISUAL_TIME,
     updated_at: FIXED_VISUAL_TIME
   };
@@ -194,29 +193,30 @@ test.describe("critical visual regression", () => {
     await expect(sheet).toHaveScreenshot("diary-add-food-open.png");
   });
 
-  test("Admin Food lifecycle on mobile", async ({ page }) => {
-    const food = adminFood(280, "Plan028 lifecycle visual");
+  test("Foods admin actions on mobile", async ({ page }) => {
+    test.setTimeout(120_000);
+    const food = adminFood(280, "Plan028 admin actions visual");
     await page.route(
-      (url) => isExactApiPath(url, "/admin/foods"),
+      (url) => isExactApiPath(url, "/foods"),
       async (route) => {
         if (route.request().method() !== "GET") return route.continue();
-        const archived = new URL(route.request().url()).searchParams.get("archived") === "true";
         await route.fulfill({
           status: 200,
           contentType: "application/json",
-          json: adminPage(archived ? [{ ...food, archived_at: FIXED_VISUAL_TIME }] : [food])
+          json: adminPage([food])
         });
       }
     );
 
-    await page.goto("/admin/foods?visual=lifecycle");
-    await page.getByLabel("عرض الأرشيف").selectOption("archived");
-    await page.getByRole("button", { name: `إجراءات ${food.name}` }).click();
-    const lifecycle = page.locator("main");
-    await expect(page.getByRole("menuitem", { name: "استعادة" })).toBeVisible();
+    await page.goto("/foods?visual=admin-actions");
     await stableRendering(page);
+    await page.getByRole("button", { name: `إجراءات ${food.name}` }).click();
+    await expect(page.getByRole("menuitem", { name: "تعديل" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "حذف" })).toBeVisible();
 
-    await expect(lifecycle).toHaveScreenshot("admin-food-lifecycle-mobile.png");
+    await expect(page).toHaveScreenshot("foods-admin-actions-mobile.png", {
+      timeout: 20_000
+    });
   });
 
 });

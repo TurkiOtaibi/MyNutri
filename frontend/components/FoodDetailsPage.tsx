@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { ApiError, getAdminFood, getFood, getNutritionRegistry } from "@/lib/api";
+import { ApiError, getFood, getNutritionRegistry } from "@/lib/api";
 import {
   calculateServingNutrition,
   defaultServingText,
@@ -80,7 +80,7 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
   const { account } = useAuth();
   const foodQuery = useQuery({
     queryKey: ["food", foodId],
-    queryFn: () => account?.role === "admin" ? getAdminFood(foodId) : getFood(foodId),
+    queryFn: () => getFood(foodId),
     enabled: account !== null
   });
   const registryQuery = useQuery({

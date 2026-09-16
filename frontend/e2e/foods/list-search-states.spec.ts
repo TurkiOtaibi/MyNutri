@@ -109,12 +109,11 @@ async function establishInitialPublicCatalog(page: Page, foods: FoodIdentity[] =
   return initialFoods;
 }
 
-function plan024Food(idSuffix: number, name: string, archived = false) {
+function plan024Food(idSuffix: number, name: string) {
   return {
     ...validFood({ name }),
     id: `00000000-0000-4000-8000-${String(idSuffix).padStart(12, "0")}`,
     net_carbs_g: 20,
-    archived_at: archived ? "2026-08-04T00:00:00Z" : null,
     created_at: "2026-08-04T00:00:00Z",
     updated_at: "2026-08-04T00:00:00Z"
   };
@@ -211,7 +210,7 @@ test.describe("Foods list, search, and states @foods", () => {
 
   test("[FOOD-TC-014] @p0 saved Food exposes View, Edit, and Delete actions", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E-Actions-${Date.now()}` });
-    await page.goto("/admin/foods");
+    await page.goto("/foods");
     await expect(page.getByRole("link", { name: `عرض تفاصيل ${food.name}` }).first()).toBeVisible();
     await page.getByRole("button", { name: `إجراءات ${food.name}` }).click();
     await expect(page.getByRole("menuitem", { name: "تعديل" })).toBeVisible();
@@ -458,17 +457,13 @@ test.describe("Foods list, search, and states @foods", () => {
   test("[FOOD-TC-142] @plan024 @p0 @mobile collection-shaping controls clear accumulated rows", async ({ page }) => {
     const activeFirst = plan024Food(241, "Plan024 active first");
     const activeSecond = plan024Food(242, "Plan024 active second");
-    const archived = plan024Food(243, "Plan024 archived", true);
     const searched = plan024Food(244, "Plan024 searched");
     const categorized = plan024Food(245, "Plan024 categorized");
     const sorted = plan024Food(246, "Plan024 sorted");
 
-    await page.route(/\/admin\/foods\?.*$/, async (route) => {
+    await page.route(/\/foods\?.*$/, async (route) => {
       const params = new URL(route.request().url()).searchParams;
       const requestedPage = Number(params.get("page") ?? "1");
-      if (params.get("archived") === "true") {
-        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan024Page([archived])) });
-      }
       if (params.get("search")) {
         return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan024Page([searched])) });
       }
@@ -483,20 +478,10 @@ test.describe("Foods list, search, and states @foods", () => {
     });
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/admin/foods");
+    await page.goto("/foods");
     await expect(plan024VisibleRowTrigger(page, activeFirst)).toBeVisible();
     await page.getByRole("button", { name: "عرض المزيد" }).click();
     await expect(plan024VisibleRowTrigger(page, activeSecond)).toBeVisible();
-
-    const archiveControl = page.getByLabel("عرض الأرشيف");
-    await archiveControl.selectOption("archived");
-    await expect(plan024VisibleRowTrigger(page, archived)).toBeVisible();
-    await expect(plan024VisibleRowTrigger(page, activeFirst)).toHaveCount(0);
-    await expect(plan024VisibleRowTrigger(page, activeSecond)).toHaveCount(0);
-
-    await archiveControl.selectOption("active");
-    await expect(plan024VisibleRowTrigger(page, activeFirst)).toBeVisible();
-    await expect(plan024VisibleRowTrigger(page, activeSecond)).toHaveCount(0);
 
     await page.getByLabel("بحث باسم الطعام").fill("needle");
     await expect(plan024VisibleRowTrigger(page, searched)).toBeVisible();
@@ -516,7 +501,7 @@ test.describe("Foods list, search, and states @foods", () => {
     await expect(allCategories).toBeVisible();
     await allCategories.click();
     await expect(plan024VisibleRowTrigger(page, activeFirst)).toBeVisible();
-    for (const food of [activeSecond, searched, categorized, archived]) {
+    for (const food of [activeSecond, searched, categorized]) {
       await expect(plan024VisibleRowTrigger(page, food)).toHaveCount(0);
     }
     const mobileSort = plan024MobileSort(page);
@@ -524,155 +509,27 @@ test.describe("Foods list, search, and states @foods", () => {
     await expect(mobileSort).toBeVisible();
     await mobileSort.selectOption("recent");
     await expect(plan024VisibleRowTrigger(page, sorted)).toBeVisible();
-    for (const food of [activeFirst, activeSecond, searched, categorized, archived]) {
+    for (const food of [activeFirst, activeSecond, searched, categorized]) {
       await expect(plan024VisibleRowTrigger(page, food)).toHaveCount(0);
     }
   });
 
-  test("[FOOD-TC-143] @plan024 @p0 lifecycle failures remain authoritative and retry exactly once", async ({ page }) => {
-    const cases = [
-      { label: "network", status: null },
-      { label: "unauthorized", status: 401 },
-      { label: "forbidden", status: 403 },
-      { label: "server", status: 500 }
-    ] as const;
-    const foods = cases.map((item, index) => plan024Food(250 + index, `Plan024 ${item.label}`));
-    const archivedIds = new Set<string>();
-
-    await page.route(/\/admin\/foods\?.*$/, async (route) => {
-      const archived = new URL(route.request().url()).searchParams.get("archived") === "true";
-      const items = foods.filter((food) => archived ? archivedIds.has(food.id) : !archivedIds.has(food.id));
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan024Page(items)) });
-    });
-
+  test("[FOOD-TC-143] @plan024 @p0 admin action menu has no lifecycle actions and restores focus", async ({ page }) => {
+    const food = plan024Food(250, "Plan024 unified actions");
+    await page.route(/\/foods\?.*$/, (route) => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(plan024Page([food]))
+    }));
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/admin/foods");
-
-    const firstFocusFood = foods[0];
-    const firstFocusOpener = page.getByRole("button", { name: `إجراءات ${firstFocusFood.name}` });
-    await firstFocusOpener.focus();
-    await firstFocusOpener.press("Enter");
+    await page.goto("/foods");
+    const opener = plan024VisibleRowTrigger(page, food);
+    await opener.focus();
+    await opener.press("Enter");
     await expect(page.getByRole("menuitem", { name: "تعديل" })).toBeFocused();
+    await expect(page.getByRole("menuitem", { name: "حذف" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: /(أرشفة|استعادة)/ })).toHaveCount(0);
     await page.keyboard.press("Escape");
-    await expect(firstFocusOpener).toBeFocused();
-    await expect(firstFocusOpener).toHaveAttribute("aria-expanded", "false");
-
-    const secondFocusFood = foods[1];
-    const secondFocusOpener = page.getByRole("button", { name: `إجراءات ${secondFocusFood.name}` });
-    await secondFocusOpener.focus();
-    await secondFocusOpener.press("Enter");
-    await expect(page.getByRole("menuitem", { name: "تعديل" })).toBeFocused();
-    await page.keyboard.press("Escape");
-    await expect(secondFocusOpener).toBeFocused();
-    await expect(firstFocusOpener).not.toBeFocused();
-
-    const rerenderResponse = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return url.pathname === "/admin/foods" && url.searchParams.get("sort") === "recent";
-    });
-    const mobileSort = plan024MobileSort(page);
-    await expect(mobileSort).toHaveCount(1);
-    await expect(mobileSort).toBeVisible();
-    await mobileSort.selectOption("recent");
-    await rerenderResponse;
-    const currentSecondFocusOpener = page.getByRole("button", { name: `إجراءات ${secondFocusFood.name}` });
-    await currentSecondFocusOpener.focus();
-    await currentSecondFocusOpener.press("Enter");
-    await expect(page.getByRole("menuitem", { name: "تعديل" })).toBeFocused();
-    await page.keyboard.press("Escape");
-    await expect(currentSecondFocusOpener).toBeFocused();
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
-
-    for (const [index, failure] of cases.entries()) {
-      const food = foods[index];
-      let requestCount = 0;
-      let releaseFailure!: () => void;
-      let markFirstRequest!: () => void;
-      const firstRequest = new Promise<void>((resolve) => { markFirstRequest = resolve; });
-      const failureBarrier = new Promise<void>((resolve) => { releaseFailure = resolve; });
-      const endpoint = new RegExp(`/admin/foods/${food.id}/archive$`);
-      await page.route(endpoint, async (route) => {
-        requestCount += 1;
-        if (requestCount === 1) {
-          markFirstRequest();
-          await failureBarrier;
-          if (failure.status === null) return route.abort("failed");
-          return route.fulfill({ status: failure.status, contentType: "application/json", body: "{}" });
-        }
-        archivedIds.add(food.id);
-        return route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ ...food, archived_at: "2026-08-04T00:00:00Z" })
-        });
-      });
-
-      await page.getByRole("button", { name: `إجراءات ${food.name}` }).click();
-      const archive = page.getByRole("menuitem", { name: "أرشفة" });
-      await archive.click();
-      await firstRequest;
-      await expect(archive).toBeDisabled();
-      expect(requestCount).toBe(1);
-      releaseFailure();
-
-      const alert = page.locator(".food-lifecycle-error[role=alert]");
-      await expect(alert).toBeVisible();
-      await expect(alert).not.toHaveText("");
-      await expect(alert).toBeFocused();
-      await expect(plan024VisibleRowTrigger(page, food)).toBeVisible();
-      expect(requestCount).toBe(1);
-
-      await alert.getByRole("button", { name: "إعادة المحاولة" }).click();
-      await expect(plan024VisibleRowTrigger(page, food)).toHaveCount(0);
-      expect(requestCount).toBe(2);
-      await page.unroute(endpoint);
-    }
-  });
-
-  test("[FOOD-TC-144] @plan024 @p0 mobile Admin can archive and restore through archive collections", async ({ page }) => {
-    const food = plan024Food(260, "Plan024 lifecycle success");
-    let archived = false;
-
-    await page.route(/\/admin\/foods\?.*$/, async (route) => {
-      const requestsArchived = new URL(route.request().url()).searchParams.get("archived") === "true";
-      const items = requestsArchived === archived ? [{ ...food, archived_at: archived ? "2026-08-04T00:00:00Z" : null }] : [];
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan024Page(items)) });
-    });
-    await page.route(new RegExp(`/admin/foods/${food.id}/(archive|restore)$`), async (route) => {
-      archived = !route.request().url().endsWith("/restore");
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ ...food, archived_at: archived ? "2026-08-04T00:00:00Z" : null })
-      });
-    });
-
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/admin/foods");
-    const archiveControl = page.getByLabel("عرض الأرشيف");
-    const activeTrigger = page.getByRole("button", { name: `إجراءات ${food.name}` });
-    await activeTrigger.focus();
-    await activeTrigger.press("Enter");
-    await page.getByRole("menuitem", { name: "أرشفة" }).click();
-    await expect(plan024VisibleRowTrigger(page, food)).toHaveCount(0);
-    await expect(archiveControl).toBeFocused();
-    await expect(activeTrigger).toHaveCount(0);
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
-
-    await archiveControl.press("End");
-    await expect(archiveControl).toHaveValue("archived");
-    await expect(plan024VisibleRowTrigger(page, food)).toBeVisible();
-    const archivedTrigger = page.getByRole("button", { name: `إجراءات ${food.name}` });
-    await archivedTrigger.focus();
-    await archivedTrigger.press("Enter");
-    await page.getByRole("menuitem", { name: "استعادة" }).click();
-    await expect(plan024VisibleRowTrigger(page, food)).toHaveCount(0);
-    await expect(archiveControl).toBeFocused();
-    await expect(archivedTrigger).toHaveCount(0);
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
-
-    await archiveControl.press("Home");
-    await expect(archiveControl).toHaveValue("active");
-    await expect(plan024VisibleRowTrigger(page, food)).toBeVisible();
+    await expect(opener).toBeFocused();
   });
 });

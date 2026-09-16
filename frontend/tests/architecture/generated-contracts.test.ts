@@ -46,11 +46,17 @@ describe("generated OpenAPI contracts", () => {
       "export namespace Progress",
       "nutrition_snapshot",
       "snapshot_schema_version",
+      "FoodDeleteResponse",
+      "archived_at",
+      "ArchiveFoodAdminFoods",
+      "RestoreFoodAdminFoods",
+      "export namespace AdminFoods",
     ]) {
       expect(source).not.toContain(retiredContract);
     }
     expect(source).not.toMatch(/class (?:Api|HttpClient)|\bfetch\(|\baxios\b|request</);
     expect(source).not.toMatch(/[A-Z]:\\|\/home\/|\/Users\//);
+    expect(source).toContain("DeleteFoodDocumentedFoodsFoodIdDelete");
   });
 
   it("is semantically valid under the repository TypeScript compiler", () => {

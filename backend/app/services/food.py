@@ -148,9 +148,7 @@ def list_food_picker(
 ) -> FoodPickerResponse:
     normalized_search = search.strip()
     normalized_name = func.lower(Food.name)
-    catalog = select(normalized_name.label("sort_name"), *PICKER_COLUMNS).where(
-        Food.archived_at.is_(None)
-    )
+    catalog = select(normalized_name.label("sort_name"), *PICKER_COLUMNS)
     if normalized_search:
         pattern = f"%{normalized_search}%"
         catalog = catalog.where(or_(Food.name.ilike(pattern), Food.brand.ilike(pattern)))
@@ -190,7 +188,7 @@ def list_food_picker(
         recent_rows = session.exec(
             select(*PICKER_COLUMNS)
             .join(ranked, ranked.c.food_id == Food.id)
-            .where(ranked.c.recent_rank == 1, Food.archived_at.is_(None))
+            .where(ranked.c.recent_rank == 1)
             .order_by(ranked.c.created_at.desc(), ranked.c.entry_id.desc())
             .limit(5)
         ).all()
@@ -250,7 +248,6 @@ def _build_food_response(food: Food) -> FoodResponse:
             net_carbs_g=net_carbs(food),
             created_at=food.created_at,
             updated_at=food.updated_at,
-            archived_at=food.archived_at,
         )
     except ValidationError as error:
         raise HTTPException(
@@ -365,7 +362,7 @@ def _persistence_data(payload: FoodCreate) -> dict[str, Any]:
 def list_foods(
     session: Session, principal: PrincipalContext, query: str | None = None
 ) -> list[Food]:
-    statement = select(Food).where(Food.archived_at.is_(None)).order_by(Food.name)
+    statement = select(Food).order_by(Food.name)
     if query and query.strip():
         pattern = f"%{query.strip()}%"
         statement = statement.where(or_(Food.name.ilike(pattern), Food.brand.ilike(pattern)))
@@ -381,15 +378,8 @@ def list_foods_page(
     sort: FoodSort = "name",
     page: int = 1,
     page_size: int = 20,
-    archived: bool | None = False,
 ) -> FoodPage:
-    conditions = (
-        [Food.archived_at.is_not(None)]
-        if archived is True
-        else [Food.archived_at.is_(None)]
-        if archived is False
-        else []
-    )
+    conditions = []
     normalized_search = search.strip() if search else ""
     if normalized_search:
         pattern = f"%{normalized_search}%"
@@ -421,10 +411,6 @@ def list_foods_page(
     items = list(session.exec(statement).all())
 
     category_statement = select(Food.primary_category).distinct()
-    if archived is True:
-        category_statement = category_statement.where(Food.archived_at.is_not(None))
-    elif archived is False:
-        category_statement = category_statement.where(Food.archived_at.is_(None))
     category_rows = session.exec(category_statement).all()
     categories = sorted(
         {value.strip() for value in category_rows if value and value.strip()}, key=str.casefold
@@ -446,12 +432,8 @@ def get_food(
     session: Session,
     principal: PrincipalContext,
     food_id: UUID,
-    *,
-    include_archived: bool = False,
 ) -> Food:
     statement = select(Food).where(Food.id == food_id)
-    if not include_archived:
-        statement = statement.where(Food.archived_at.is_(None))
     food = session.exec(statement).first()
     if food is None:
         from app.services.errors import resource_not_found
@@ -460,13 +442,13 @@ def get_food(
     return food
 
 
-def get_active_food_for_logging(
+def get_food_for_logging(
     session: Session, principal: PrincipalContext, food_id: UUID
 ) -> Food:
-    """Load an active Food and preserve its measurement definition for the entry."""
+    """Load a Food and preserve its measurement definition for the entry."""
     food = session.exec(
         select(Food)
-        .where(Food.id == food_id, Food.archived_at.is_(None))
+        .where(Food.id == food_id)
         .execution_options(populate_existing=True)
         .with_for_update(read=True)
     ).first()
@@ -481,8 +463,6 @@ def get_food_for_update(
     session: Session,
     principal: PrincipalContext,
     food_id: UUID,
-    *,
-    include_archived: bool = False,
 ) -> Food:
     """Load a visible Food while holding its exclusive writer lock."""
     statement = (
@@ -491,8 +471,6 @@ def get_food_for_update(
         .execution_options(populate_existing=True)
         .with_for_update()
     )
-    if not include_archived:
-        statement = statement.where(Food.archived_at.is_(None))
     food = session.exec(statement).first()
     if food is None:
         from app.services.errors import resource_not_found
@@ -570,7 +548,7 @@ def _update_food_uncommitted(
 ) -> Food:
     if food is None:
         _lock_food_namespace(session, principal)
-        food = get_food_for_update(session, principal, food_id, include_archived=True)
+        food = get_food_for_update(session, principal, food_id)
     validated = _validated_update_data(session, principal, food, payload)
     data = _persistence_data(validated)
     if validated.nutrition_basis != food.nutrition_basis:
@@ -624,99 +602,12 @@ def update_food_response(
         raise
 
 
-def _archive_food_uncommitted(session: Session, principal: PrincipalContext, food_id: UUID) -> Food:
-    _lock_food_namespace(session, principal)
-    food = get_food_for_update(session, principal, food_id, include_archived=True)
-    _archive_locked_food(principal, food)
-    session.add(food)
-    session.flush()
-    return food
-
-
-def archive_food(session: Session, principal: PrincipalContext, food_id: UUID) -> Food:
+def delete_food(session: Session, principal: PrincipalContext, food_id: UUID) -> None:
     try:
-        food = _archive_food_uncommitted(session, principal, food_id)
+        _lock_food_namespace(session, principal)
+        food = get_food_for_update(session, principal, food_id)
+        session.delete(food)
         session.commit()
-        session.refresh(food)
-        return food
     except Exception:
         session.rollback()
         raise
-
-
-def archive_food_response(
-    session: Session, principal: PrincipalContext, food_id: UUID
-) -> FoodResponse:
-    try:
-        food = _archive_food_uncommitted(session, principal, food_id)
-        response = to_food_response(session, principal, food)
-        response.model_dump_json()
-        session.commit()
-        return response
-    except Exception:
-        session.rollback()
-        raise
-
-
-def _archive_locked_food(principal: PrincipalContext, food: Food) -> None:
-    """Mutate a Food whose exclusive row lock is held; never commit here."""
-    if food.archived_at is not None:
-        return
-    food.archived_at = utcnow()
-    food.archived_by_principal_id = principal.principal_id
-    food.updated_by_principal_id = principal.principal_id
-    food.updated_at = utcnow()
-
-
-def _restore_food_uncommitted(session: Session, principal: PrincipalContext, food_id: UUID) -> Food:
-    _lock_food_namespace(session, principal)
-    food = get_food_for_update(session, principal, food_id, include_archived=True)
-    if food.archived_at is None:
-        return food
-    food.archived_at = None
-    food.archived_by_principal_id = None
-    food.updated_by_principal_id = principal.principal_id
-    food.updated_at = utcnow()
-    session.add(food)
-    session.flush()
-    return food
-
-
-def restore_food(session: Session, principal: PrincipalContext, food_id: UUID) -> Food:
-    try:
-        food = _restore_food_uncommitted(session, principal, food_id)
-        session.commit()
-        session.refresh(food)
-        return food
-    except Exception:
-        session.rollback()
-        raise
-
-
-def restore_food_response(
-    session: Session, principal: PrincipalContext, food_id: UUID
-) -> FoodResponse:
-    try:
-        food = _restore_food_uncommitted(session, principal, food_id)
-        response = to_food_response(session, principal, food)
-        response.model_dump_json()
-        session.commit()
-        return response
-    except Exception:
-        session.rollback()
-        raise
-
-
-def delete_food(session: Session, principal: PrincipalContext, food_id: UUID) -> bool:
-    _lock_food_namespace(session, principal)
-    food = get_food_for_update(session, principal, food_id, include_archived=True)
-    used = session.exec(select(DiaryEntry.id).where(DiaryEntry.food_id == food.id).limit(1)).first()
-    if used is not None:
-        _archive_locked_food(principal, food)
-        session.add(food)
-        session.commit()
-        session.refresh(food)
-        return False
-    session.delete(food)
-    session.commit()
-    return True

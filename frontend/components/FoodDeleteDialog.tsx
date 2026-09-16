@@ -101,10 +101,10 @@ export function FoodDeleteDialog({
       >
         <div className="dialog-title-row">
           <AlertTriangle size={22} aria-hidden="true" />
-          <h2 id="delete-food-title">حذف الطعام نهائيًا</h2>
+          <h2 id="delete-food-title">حذف الطعام؟</h2>
         </div>
         <p id="delete-food-description" className="page-kicker">
-          سيتم حذف {food.name} نهائيًا إذا لم يكن مستخدمًا. إذا كان مرتبطًا بيوميات سابقة فستتم أرشفته بدلًا من ذلك، لتبقى اليوميات قادرة على قراءة بيانات الطعام الحالية.
+          سيتم حذف هذا الطعام نهائيًا، كما سيتم حذف جميع سجلات اليوميات المرتبطة به لجميع المستخدمين. لا يمكن التراجع عن هذا الإجراء.
         </p>
         <div className="actions">
           <button ref={cancelRef} className="btn" type="button" onClick={onCancel} disabled={deleting}>

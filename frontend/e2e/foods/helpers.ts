@@ -93,7 +93,6 @@ export type FoodRecord = FoodPayload & {
   net_carbs_g: number | null;
   created_at: string;
   updated_at: string;
-  archived_at: string | null;
 };
 
 type DiaryRecord = {
@@ -199,8 +198,8 @@ export class FoodsApi {
   }
 
   async remove(id: string): Promise<void> {
-    const response = await this.request.delete(`${API_URL}/admin/foods/${id}`, { headers: this.headers() });
-    expect([200, 404]).toContain(response.status());
+    const response = await this.request.delete(`${API_URL}/foods/${id}`, { headers: this.headers() });
+    expect([204, 404]).toContain(response.status());
     this.foodIds.delete(id);
   }
 
@@ -260,7 +259,7 @@ export class FoodsApi {
       await this.removeDiary(id);
     }
     for (const id of this.foodIds) {
-      await this.request.delete(`${API_URL}/admin/foods/${id}`, { headers: this.headers() });
+      await this.request.delete(`${API_URL}/foods/${id}`, { headers: this.headers() });
     }
     this.diaryIds.clear();
     this.foodIds.clear();

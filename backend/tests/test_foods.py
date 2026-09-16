@@ -36,9 +36,7 @@ from app.schemas import (
     FoodResponse,
     FoodUpdate,
 )
-from app.services.diary import to_entry_response
 from app.services.food import (
-    archive_food_response,
     create_food,
     create_food_response,
     delete_food,
@@ -75,6 +73,11 @@ def session_fixture() -> Session:
         "sqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
+    )
+    event.listen(
+        engine,
+        "connect",
+        lambda connection, _: connection.execute("PRAGMA foreign_keys=ON"),
     )
     SQLModel.metadata.create_all(engine)
     session = Session(engine)
@@ -197,19 +200,18 @@ def create_plan013_representative_foods(session: Session) -> list[Food]:
             )
         ),
     )
-    archived = create_food(
+    third = create_food(
         session,
         TEST_PRINCIPAL,
         FoodCreate.model_validate(
             food_payload(
-                name="Gamma Archived",
+                name="Gamma Catalog",
                 primary_category="sweets_and_sugars",
                 subcategory="other",
             )
         ),
     )
-    archive_food_response(session, TEST_PRINCIPAL, archived.id)
-    return [zero, multiple, archived]
+    return [zero, multiple, third]
 
 
 def create_plan014_food(session: Session, name: str, **overrides) -> Food:
@@ -286,8 +288,8 @@ def test_plan014_picker_closed_dto_search_and_stable_casefold_pagination() -> No
         first = create_plan014_food(session, "ALPHA", brand="First Brand")
         second = create_plan014_food(session, "alpha", brand="Second Brand", unit_amount=171)
         create_plan014_food(session, "Beta", brand="Needle Brand")
-        archived = create_plan014_food(session, "Archived Needle")
-        archive_food_response(session, TEST_PRINCIPAL, archived.id)
+        deleted = create_plan014_food(session, "Deleted Needle")
+        delete_food(session, TEST_PRINCIPAL, deleted.id)
 
         page_one = list_food_picker(session, TEST_PRINCIPAL, limit=1)
         page_two = list_food_picker(session, TEST_PRINCIPAL, limit=1, cursor=page_one.next_cursor)
@@ -336,13 +338,13 @@ def test_plan014_picker_cursor_uses_database_normalized_sort_key() -> None:
 
 
 @pytest.mark.plan014
-def test_plan014_picker_recents_are_latest_unique_owner_scoped_and_active_only() -> None:
+def test_plan014_picker_recents_are_latest_unique_owner_scoped_and_deleted_food_free() -> None:
     with session_fixture() as session:
         session.add(Principal(id=OTHER_PRINCIPAL_ID))
         session.commit()
         older = create_plan014_food(session, "Older")
         newest = create_plan014_food(session, "Newest")
-        archived = create_plan014_food(session, "Archived recent")
+        deleted = create_plan014_food(session, "Deleted recent")
         other_owner = create_plan014_food(session, "Other owner recent")
         base = datetime(2026, 7, 30, tzinfo=timezone.utc)
         create_plan014_entry(session, older, created_at=base)
@@ -354,8 +356,8 @@ def test_plan014_picker_recents_are_latest_unique_owner_scoped_and_active_only()
             principal_id=OTHER_PRINCIPAL_ID,
             created_at=base + timedelta(minutes=4),
         )
-        create_plan014_entry(session, archived, created_at=base + timedelta(minutes=3))
-        archive_food_response(session, TEST_PRINCIPAL, archived.id)
+        create_plan014_entry(session, deleted, created_at=base + timedelta(minutes=3))
+        delete_food(session, TEST_PRINCIPAL, deleted.id)
         result = list_food_picker(session, TEST_PRINCIPAL)
 
         assert [item.id for item in result.recent_items] == [older.id, newest.id]
@@ -408,7 +410,7 @@ def test_plan013_batch_responses_preserve_single_item_semantics() -> None:
         foods = create_plan013_representative_foods(session)
 
         public_foods = list_foods(session, TEST_PRINCIPAL)
-        admin_foods = list_foods_page(session, TEST_PRINCIPAL, archived=None).items
+        paged_foods = list_foods_page(session, TEST_PRINCIPAL).items
         expected = [
             to_food_response(session, TEST_PRINCIPAL, food).model_dump(mode="json")
             for food in foods
@@ -416,21 +418,24 @@ def test_plan013_batch_responses_preserve_single_item_semantics() -> None:
         with capture_application_selects(session) as statements:
             responses = to_food_responses(session, TEST_PRINCIPAL, foods)
 
-        assert [food.name for food in public_foods] == ["Alpha Zero", "Beta Multiple"]
-        assert [food.name for food in admin_foods] == [
+        assert [food.name for food in public_foods] == [
             "Alpha Zero",
             "Beta Multiple",
-            "Gamma Archived",
+            "Gamma Catalog",
+        ]
+        assert [food.name for food in paged_foods] == [
+            "Alpha Zero",
+            "Beta Multiple",
+            "Gamma Catalog",
         ]
         assert [response.name for response in responses] == [
             "Alpha Zero",
             "Beta Multiple",
-            "Gamma Archived",
+            "Gamma Catalog",
         ]
         assert responses[0].sugar_g is None
         assert responses[1].primary_category == "vegetables"
         assert responses[1].subcategory == "other"
-        assert responses[2].archived_at is not None
         assert [response.model_dump(mode="json") for response in responses] == expected
         assert statements == []
 
@@ -455,7 +460,7 @@ def test_plan013_batch_response_query_budget(size: int) -> None:
         assert statements == []
 
 
-def test_plan013_category_metadata_is_distinct_status_scoped_and_empty_safe() -> None:
+def test_plan013_category_metadata_is_distinct_and_empty_safe() -> None:
     with session_fixture() as session:
         empty = list_foods_page(session, TEST_PRINCIPAL)
         assert empty.categories == []
@@ -473,21 +478,17 @@ def test_plan013_category_metadata_is_distinct_status_scoped_and_empty_safe() ->
                     )
                 ),
             )
-        archived = create_food(
+        create_food(
             session,
             TEST_PRINCIPAL,
             FoodCreate.model_validate(
-                food_payload(name="Gamma Archived Category", primary_category="other")
+                food_payload(name="Gamma Category", primary_category="other")
             ),
         )
-        archive_food_response(session, TEST_PRINCIPAL, archived.id)
 
         with capture_application_selects(session) as statements:
-            active = list_foods_page(session, TEST_PRINCIPAL)
-        all_foods = list_foods_page(session, TEST_PRINCIPAL, archived=None)
+            all_foods = list_foods_page(session, TEST_PRINCIPAL)
 
-        assert active.categories == ["sweets_and_sugars"]
-        assert active.uncategorized_count == 0
         assert all_foods.categories == ["other", "sweets_and_sugars"]
         assert all_foods.uncategorized_count == 0
         assert any(
@@ -506,12 +507,8 @@ def assert_plan013_list_route_query_budgets(session: Session, size: int) -> None
 
     routes = {
         "legacy": ("/foods", 1),
-        "public_page": (
+        "paged": (
             "/foods?page=1&page_size=100",
-            3,
-        ),
-        "admin_page": (
-            "/admin/foods?page=1&page_size=100",
             3,
         ),
     }
@@ -990,7 +987,7 @@ def test_optional_nutrient_max_ranges() -> None:
         FoodCreate.model_validate(food_payload(sodium_mg=50001))
 
 
-def test_referenced_food_is_archived_and_remains_current_diary_truth() -> None:
+def test_referenced_food_delete_cascades_diary_entry() -> None:
     with session_fixture() as session:
         food = create_food(
             session,
@@ -1009,19 +1006,12 @@ def test_referenced_food_is_archived_and_remains_current_diary_truth() -> None:
         session.add(entry)
         session.commit()
         session.refresh(entry)
+        entry_id = entry.id
 
-        disposition = delete_food(session, TEST_PRINCIPAL, food.id)
-        food.calories = 140
-        session.add(food)
-        session.commit()
-        response = to_entry_response(entry, food)
+        delete_food(session, TEST_PRINCIPAL, food.id)
 
-        assert disposition is False
-        assert food.archived_at is not None
-        assert response.food.name == "Greek Yogurt"
-        assert response.quantity == 2
-        assert response.recorded_unit_amount == 100
-        assert response.totals.calories == 280
+        assert session.get(Food, food.id) is None
+        assert session.get(DiaryEntry, entry_id) is None
 
 
 def test_referenced_food_rejects_measurement_dimension_change() -> None:

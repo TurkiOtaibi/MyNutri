@@ -15,6 +15,7 @@ from threading import Barrier, Event
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import HTTPException
 from psycopg.errors import CheckViolation, NumericValueOutOfRange
 from sqlalchemy import (
     CheckConstraint,
@@ -28,7 +29,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
-from sqlmodel import SQLModel, Session
+from sqlmodel import SQLModel, Session, select
 
 from app.core.auth import PrincipalContext
 from app.core.calendar import current_diary_date
@@ -44,10 +45,18 @@ from app.models import (
 )
 from app.schemas import (
     DiaryEntryCreate,
+    DiaryEntryUpdate,
+    FoodUpdate,
     ProfilePreview,
     TargetPlanWriteRequest,
 )
-from app.services.diary import create_entry
+from app.services.diary import (
+    create_entry,
+    create_entry_response,
+    delete_entry,
+    update_entry_response,
+)
+from app.services.food import delete_food, lock_food_namespace_for_logging, update_food_response
 from app.services.profile import to_target_response
 from app.services.target_plans import TargetPlanError, write_target_plan
 
@@ -95,6 +104,7 @@ FOOD_SIMPLIFICATION_REVISION = "f47a2c9d6e13"
 DAY_STATUS_RETIREMENT_REVISION = "a6c81e4f2d90"
 TARGET_PLAN_DATE_EFFECTIVE_REVISION = "b7d42e9a1c36"
 TARGET_INTEGRITY_RETIREMENT_REVISION = "c8e53f0b2d47"
+FOOD_CATALOG_UNIFICATION_REVISION = "d9f64a1c3e58"
 PLAN023_CONSTRAINT = "ck_diary_entry_quantity_positive_finite"
 PLAN023_PREFLIGHT_ERROR = "PLAN023_DIARY_QUANTITY_PREFLIGHT_BLOCKED"
 PLAN023_PREFLIGHT_GUARD = "plan023_diary_quantity_positive_finite_preflight"
@@ -441,6 +451,7 @@ def _assert_immutable_revision_hashes(versions: Path) -> None:
         "a6c81e4f2d90_retire_diary_day_status.py",
         "b7d42e9a1c36_simplify_target_plans.py",
         "c8e53f0b2d47_retire_nutrition_versioning_and_legacy_targets.py",
+        "d9f64a1c3e58_unify_food_catalog_and_cascade_diary_deletion.py",
     }
     actual = {name: _normalized_revision_hash(versions / name) for name in BASELINE_HASHES}
     assert actual == BASELINE_HASHES
@@ -703,10 +714,127 @@ def test_fresh_postgresql_upgrade_has_one_head_and_current_contract() -> None:
     assert diary_food_foreign_keys[0]["options"].get("ondelete") == "RESTRICT"
     engine.dispose()
 
+@pytest.mark.migration
+def test_food_catalog_unification_current_head_schema_and_security() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "head")
+
+    engine = create_engine(url)
+    inspector = inspect(engine)
+    food_columns = {column["name"] for column in inspector.get_columns("food")}
+    assert {"archived_at", "archived_by_principal_id"}.isdisjoint(food_columns)
+    food_indexes = {index["name"] for index in inspector.get_indexes("food")}
+    assert "ix_food_catalog_primary_category" in food_indexes
+    assert "ix_food_catalog_primary_archived" not in food_indexes
+    diary_food_fks = [
+        foreign_key
+        for foreign_key in inspector.get_foreign_keys("diary_entry")
+        if foreign_key["referred_table"] == "food"
+    ]
+    assert len(diary_food_fks) == 1
+    assert diary_food_fks[0]["options"].get("ondelete") == "CASCADE"
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            FOOD_CATALOG_UNIFICATION_REVISION
+        )
+        assert connection.execute(
+            text("SELECT has_table_privilege(current_user, 'food', 'SELECT,INSERT,UPDATE,DELETE')")
+        ).scalar_one()
+        assert connection.execute(
+            text(
+                "SELECT count(*) FROM information_schema.role_table_grants "
+                "WHERE table_schema='public' AND table_name='food' AND grantee='PUBLIC' "
+                "AND privilege_type IN ('INSERT','UPDATE','DELETE')"
+            )
+        ).scalar_one() == 0
+    engine.dispose()
+
     check_result = _run_alembic(url, "check")
     check_output = check_result.stdout + check_result.stderr
     assert "alembic.autogenerate.checkconstraint_byname" in check_output
     assert "No new upgrade operations detected." in check_output
+
+
+@pytest.mark.migration
+def test_food_catalog_unification_revokes_data_api_food_mutation_and_preserves_backend() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", TARGET_INTEGRITY_RETIREMENT_REVISION)
+    engine = create_engine(url, isolation_level="AUTOCOMMIT")
+    with engine.begin() as connection:
+        for role in ("anon", "authenticated", "service_role"):
+            connection.execute(
+                text(
+                    f"DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='{role}') "
+                    f"THEN CREATE ROLE {role}; END IF; END $$"
+                )
+            )
+        connection.execute(text("GRANT ALL PRIVILEGES ON TABLE food TO PUBLIC"))
+        connection.execute(text("GRANT ALL PRIVILEGES ON TABLE food TO anon, authenticated"))
+        connection.execute(text("GRANT ALL PRIVILEGES ON TABLE food TO service_role"))
+    engine.dispose()
+
+    _run_alembic(url, "upgrade", "head")
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        for role in ("anon", "authenticated"):
+            assert not connection.execute(
+                text("SELECT has_table_privilege(:role, 'food', 'INSERT,UPDATE,DELETE')"),
+                {"role": role},
+            ).scalar_one()
+        assert connection.execute(
+            text("SELECT has_table_privilege('service_role', 'food', 'SELECT,INSERT,UPDATE,DELETE')")
+        ).scalar_one()
+        assert connection.execute(
+            text("SELECT has_table_privilege(current_user, 'food', 'SELECT,INSERT,UPDATE,DELETE')")
+        ).scalar_one()
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_food_catalog_unification_rejects_archived_data_atomically() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", TARGET_INTEGRITY_RETIREMENT_REVISION)
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO principal (id,role,status,created_at,updated_at) "
+                "VALUES (:id,'admin','active',now(),now())"
+            ),
+            {"id": DEPLOYMENT_PRINCIPAL},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO food "
+                "(id,created_by_principal_id,updated_by_principal_id,name,normalized_name,"
+                "primary_category,subcategory,nutrition_basis,default_unit_type,unit_amount,"
+                "unit_basis,calories,protein_g,carb_g,fat_g,nutrition_data_source,created_at,"
+                "updated_at,archived_at,archived_by_principal_id) VALUES "
+                "(:id,:principal,:principal,'Archived preflight','archived preflight','other',"
+                "'other','per_100g','g',100,'g',100,1,2,3,'estimated',now(),now(),now(),:principal)"
+            ),
+            {"id": uuid4(), "principal": DEPLOYMENT_PRINCIPAL},
+        )
+    engine.dispose()
+
+    result = _run_alembic(url, "upgrade", "head", check=False)
+    assert result.returncode != 0
+    assert "FOOD_CATALOG_SIMPLIFICATION_PREFLIGHT: archived Food data exists" in (
+        result.stdout + result.stderr
+    )
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            TARGET_INTEGRITY_RETIREMENT_REVISION
+        )
+        assert connection.execute(text("SELECT count(*) FROM food")).scalar_one() == 1
+        assert "archived_at" in {
+            column["name"] for column in inspect(connection).get_columns("food")
+        }
+    engine.dispose()
 
 
 def _seed_target_plan_revision_chain(url: str) -> tuple[UUID, UUID, UUID, UUID, UUID]:
@@ -1363,6 +1491,32 @@ def _seed_plan021_profile(url: str) -> None:
             {"id": uuid4(), "principal": DEPLOYMENT_PRINCIPAL},
         )
     engine.dispose()
+
+
+def _add_current_food(engine, name: str) -> UUID:
+    food_id = uuid4()
+    with Session(engine) as session:
+        session.add(
+            Food(
+                id=food_id,
+                principal_id=DEPLOYMENT_PRINCIPAL,
+                name=name,
+                normalized_name=name.casefold(),
+                primary_category="other",
+                subcategory="other",
+                nutrition_basis=NutritionBasis.per_100g,
+                default_unit_type=DefaultUnitType.g,
+                unit_amount=1,
+                unit_basis=UnitBasis.g,
+                calories=100,
+                protein_g=1,
+                carb_g=2,
+                fat_g=3,
+                nutrition_data_source=NutritionDataSource.estimated,
+            )
+        )
+        session.commit()
+    return food_id
 
 
 def _plan021_draft(weight: float) -> ProfilePreview:
@@ -2188,6 +2342,251 @@ def test_concurrent_plan_and_future_diary_creation_finish_with_canonical_binding
             {"entry": diary_id},
         ).scalar_one()
         assert binding == plan_id
+    engine.dispose()
+
+
+@pytest.mark.migration
+@pytest.mark.parametrize("mutation", ("create", "update", "delete"))
+def test_food_delete_serializes_with_diary_mutations_and_keeps_responses_atomic(
+    mutation: str,
+) -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "head")
+    _seed_plan021_profile(url)
+    engine = create_engine(
+        url,
+        connect_args={"options": "-c lock_timeout=10000 -c statement_timeout=20000"},
+    )
+    food_id = _add_current_food(engine, f"Diary race {mutation}")
+    principal = PrincipalContext(principal_id=DEPLOYMENT_PRINCIPAL)
+    entry_id: UUID | None = None
+    if mutation != "create":
+        with Session(engine) as session:
+            entry_id = create_entry(
+                session,
+                principal,
+                DiaryEntryCreate(
+                    entry_date=current_diary_date(),
+                    food_id=food_id,
+                    quantity=1,
+                ),
+            ).id
+
+    delete_started = Event()
+
+    def concurrent_delete() -> int:
+        delete_started.set()
+        with Session(engine) as session:
+            delete_food(session, principal, food_id)
+        return 204
+
+    with Session(engine) as mutation_session:
+        mutation_session.exec(
+            select(Principal)
+            .where(Principal.id == DEPLOYMENT_PRINCIPAL)
+            .with_for_update()
+        ).one()
+        lock_food_namespace_for_logging(mutation_session)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            pending_delete = executor.submit(concurrent_delete)
+            assert delete_started.wait(timeout=10)
+            if mutation == "create":
+                response = create_entry_response(
+                    mutation_session,
+                    principal,
+                    DiaryEntryCreate(
+                        entry_date=current_diary_date(),
+                        food_id=food_id,
+                        quantity=1,
+                    ),
+                )
+                assert response.food.id == food_id
+            elif mutation == "update":
+                assert entry_id is not None
+                response = update_entry_response(
+                    mutation_session,
+                    principal,
+                    entry_id,
+                    DiaryEntryUpdate(quantity=2),
+                )
+                assert response.quantity == 2
+                assert response.food.id == food_id
+            else:
+                assert entry_id is not None
+                delete_entry(mutation_session, principal, entry_id)
+            assert pending_delete.result(timeout=30) == 204
+
+    with engine.connect() as connection:
+        assert connection.execute(
+            text("SELECT count(*) FROM food WHERE id=:food"), {"food": food_id}
+        ).scalar_one() == 0
+        assert connection.execute(
+            text("SELECT count(*) FROM diary_entry WHERE food_id=:food"), {"food": food_id}
+        ).scalar_one() == 0
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_concurrent_duplicate_food_delete_has_one_success_and_one_not_found() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "head")
+    _seed_plan021_profile(url)
+    engine = create_engine(
+        url,
+        connect_args={"options": "-c lock_timeout=10000 -c statement_timeout=20000"},
+    )
+    food_id = _add_current_food(engine, "Duplicate delete race")
+    principal = PrincipalContext(principal_id=DEPLOYMENT_PRINCIPAL)
+    barrier = Barrier(2)
+
+    def concurrent_delete() -> int:
+        with Session(engine) as session:
+            barrier.wait(timeout=10)
+            try:
+                delete_food(session, principal, food_id)
+            except HTTPException as error:
+                return error.status_code
+            return 204
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = sorted(executor.map(lambda _: concurrent_delete(), range(2)))
+
+    assert results == [204, 404]
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_food_delete_rolls_back_food_and_diary_cascade_when_database_rejects_delete() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "head")
+    _seed_plan021_profile(url)
+    engine = create_engine(url)
+    food_id = _add_current_food(engine, "Atomic delete rollback")
+    principal = PrincipalContext(principal_id=DEPLOYMENT_PRINCIPAL)
+    with Session(engine) as session:
+        entry_id = create_entry(
+            session,
+            principal,
+            DiaryEntryCreate(
+                entry_date=current_diary_date(),
+                food_id=food_id,
+                quantity=1,
+            ),
+        ).id
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE FUNCTION test_reject_food_delete() RETURNS trigger LANGUAGE plpgsql "
+                "AS $$ BEGIN RAISE EXCEPTION 'injected delete failure'; END $$"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE TRIGGER test_reject_food_delete BEFORE DELETE ON food "
+                "FOR EACH ROW EXECUTE FUNCTION test_reject_food_delete()"
+            )
+        )
+    try:
+        with Session(engine) as session, pytest.raises(DBAPIError, match="injected delete failure"):
+            delete_food(session, principal, food_id)
+        with engine.connect() as connection:
+            assert connection.execute(
+                text("SELECT count(*) FROM food WHERE id=:food"), {"food": food_id}
+            ).scalar_one() == 1
+            assert connection.execute(
+                text("SELECT count(*) FROM diary_entry WHERE id=:entry"), {"entry": entry_id}
+            ).scalar_one() == 1
+    finally:
+        with engine.begin() as connection:
+            connection.execute(text("DROP TRIGGER test_reject_food_delete ON food"))
+            connection.execute(text("DROP FUNCTION test_reject_food_delete()"))
+        engine.dispose()
+
+
+@pytest.mark.migration
+def test_food_delete_serializes_with_food_update_and_target_rebind_without_deleting_plan() -> None:
+    url = _database_url()
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "head")
+    _seed_plan021_profile(url)
+    engine = create_engine(
+        url,
+        connect_args={"options": "-c lock_timeout=10000 -c statement_timeout=20000"},
+    )
+    food_id = _add_current_food(engine, "Food update and target race")
+    principal = PrincipalContext(principal_id=DEPLOYMENT_PRINCIPAL)
+    _write_current_target(engine, _current_target_write_request(80), "delete-race-current-plan")
+    with Session(engine) as update_session:
+        update_session.exec(
+            select(Principal)
+            .where(Principal.id == DEPLOYMENT_PRINCIPAL)
+            .with_for_update()
+        ).one()
+        delete_started = Event()
+
+        def concurrent_delete() -> None:
+            delete_started.set()
+            with Session(engine) as session:
+                delete_food(session, principal, food_id)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            pending_delete = executor.submit(concurrent_delete)
+            assert delete_started.wait(timeout=10)
+            updated = update_food_response(
+                update_session,
+                principal,
+                food_id,
+                FoodUpdate(notes="serialized update"),
+            )
+            assert updated.notes == "serialized update"
+            pending_delete.result(timeout=30)
+
+    future_date = current_diary_date() + timedelta(days=1)
+    rebound_food_id = _add_current_food(engine, "Target rebind race")
+    with Session(engine) as session:
+        create_entry(
+            session,
+            principal,
+            DiaryEntryCreate(entry_date=future_date, food_id=rebound_food_id, quantity=1),
+        )
+    barrier = Barrier(2)
+
+    def concurrent_target_write():
+        barrier.wait(timeout=10)
+        return _write_current_target(
+            engine,
+            _current_target_write_request(84, future_date),
+            "delete-race-future-plan",
+        )
+
+    def concurrent_rebound_food_delete() -> None:
+        barrier.wait(timeout=10)
+        with Session(engine) as session:
+            delete_food(session, principal, rebound_food_id)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        plan_future = executor.submit(concurrent_target_write)
+        delete_future = executor.submit(concurrent_rebound_food_delete)
+        plan_id, replayed = plan_future.result(timeout=30)
+        delete_future.result(timeout=30)
+
+    assert replayed is False
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM target_plan")).scalar_one() == 2
+        assert connection.execute(
+            text("SELECT revision FROM target_plan WHERE id=:plan"), {"plan": plan_id}
+        ).scalar_one() == 1
+        assert connection.execute(
+            text("SELECT count(*) FROM food WHERE id IN (:food, :rebound_food)"),
+            {"food": food_id, "rebound_food": rebound_food_id},
+        ).scalar_one() == 0
+        assert connection.execute(
+            text("SELECT count(*) FROM diary_entry WHERE food_id IN (:food, :rebound_food)"),
+            {"food": food_id, "rebound_food": rebound_food_id},
+        ).scalar_one() == 0
     engine.dispose()
 
 

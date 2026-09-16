@@ -85,6 +85,11 @@ def security_context():
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
+    event.listen(
+        engine,
+        "connect",
+        lambda connection, _: connection.execute("PRAGMA foreign_keys=ON"),
+    )
     SQLModel.metadata.create_all(engine)
     session = Session(engine)
     session.add(
@@ -295,32 +300,41 @@ def test_shared_catalog_and_admin_only_mutations(security_context) -> None:
     )
 
 
-def test_admin_archive_restore_and_history_safe_delete(security_context) -> None:
-    client, _ = security_context
+def test_admin_food_delete_cascades_cross_principal_diary_entries(security_context) -> None:
+    client, session = security_context
     created = client.post(
-        "/foods", json=food_payload("Historically used"), headers=headers("admin-a")
+        "/foods", json=food_payload("Globally used"), headers=headers("admin-a")
     ).json()
-    diary = client.post(
-        "/diary/entries",
-        json={
-            "food_id": created["id"],
-            "entry_date": current_diary_date().isoformat(),
-            "quantity": 1,
-            "meal_type": "breakfast",
-        },
-        headers=headers("user-b"),
-    )
-    assert diary.status_code == 201, diary.text
-    deletion = client.delete(f"/admin/foods/{created['id']}", headers=headers("admin-a"))
-    assert deletion.status_code == 200
-    assert deletion.json()["disposition"] == "archived"
+    for token, meal_type in (("admin-a", "breakfast"), ("user-b", "lunch")):
+        diary = client.post(
+            "/diary/entries",
+            json={
+                "food_id": created["id"],
+                "entry_date": current_diary_date().isoformat(),
+                "quantity": 1,
+                "meal_type": meal_type,
+            },
+            headers=headers(token),
+        )
+        assert diary.status_code == 201, diary.text
+
+    denied = client.delete(f"/foods/{created['id']}", headers=headers("user-b"))
+    assert denied.status_code == 403
+
+    deletion = client.delete(f"/foods/{created['id']}", headers=headers("admin-a"))
+    assert deletion.status_code == 204
+    assert deletion.content == b""
     assert client.get(f"/foods/{created['id']}", headers=headers("user-b")).status_code == 404
-    assert (
-        client.get(f"/admin/foods/{created['id']}", headers=headers("admin-a")).status_code == 200
-    )
-    restored = client.post(f"/admin/foods/{created['id']}/restore", headers=headers("admin-a"))
-    assert restored.status_code == 200
-    assert restored.json()["archived_at"] is None
+    assert session.exec(select(DiaryEntry).where(DiaryEntry.food_id == UUID(created["id"]))).all() == []
+    assert client.delete(f"/foods/{created['id']}", headers=headers("admin-a")).status_code == 404
+    for method, path in (
+        ("GET", "/admin/foods"),
+        ("GET", f"/admin/foods/{created['id']}"),
+        ("DELETE", f"/admin/foods/{created['id']}"),
+        ("POST", f"/admin/foods/{created['id']}/archive"),
+        ("POST", f"/admin/foods/{created['id']}/restore"),
+    ):
+        assert client.request(method, path, headers=headers("admin-a")).status_code == 404
 
 
 def test_future_diary_crud_without_if_match_preserves_replay_and_isolation(

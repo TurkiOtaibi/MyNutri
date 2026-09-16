@@ -197,12 +197,12 @@ def create_diary_entry(
 
 
 def test_diary_create_preserves_principal_then_target_then_food_lock_order() -> None:
-    source = inspect.getsource(diary_service.create_entry)
+    source = inspect.getsource(diary_service._create_entry_uncommitted)
     symbols = [
         "_lock_owner_for_target_binding(",
         "resolve_target_plan(",
         "lock_food_namespace_for_logging(",
-        "get_active_food_for_logging(",
+        "get_food_for_logging(",
     ]
     offsets = [source.index(symbol) for symbol in symbols]
     assert offsets == sorted(offsets)

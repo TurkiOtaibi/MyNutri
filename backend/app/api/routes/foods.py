@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import SkipValidation
 from sqlmodel import Session
@@ -11,7 +11,6 @@ from app.db.session import get_session
 from app.schemas import (
     FoodCreate,
     FoodCreateV3,
-    FoodDeleteResponse,
     FoodListResponse,
     FoodPickerResponse,
     FoodResponse,
@@ -21,14 +20,12 @@ from app.schemas import (
     FoodUpdateV3,
 )
 from app.services.food import (
-    archive_food_response,
     create_food_response,
     delete_food,
     get_food,
     list_foods,
     list_food_picker,
     list_foods_page,
-    restore_food_response,
     to_food_response,
     to_food_responses,
     update_food_response,
@@ -135,75 +132,11 @@ def edit_food(
     return update_food_response(session, principal, food_id, food_payload)
 
 
-admin_router = APIRouter(prefix="/admin/foods", tags=["admin-foods"])
-
-
-@admin_router.get("", response_model=FoodListResponse)
-def read_admin_foods(
-    search: str | None = None,
-    category: str | None = None,
-    archived: bool | None = Query(default=False),
-    sort: FoodSort = "name",
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
-    principal: PrincipalContext = Depends(require_admin),
-    session: Session = Depends(get_session),
-) -> FoodListResponse:
-    result = list_foods_page(
-        session,
-        principal,
-        search=search,
-        category=category,
-        archived=archived,
-        sort=sort,
-        page=page,
-        page_size=page_size,
-    )
-    return FoodListResponse(
-        items=to_food_responses(session, principal, result.items),
-        total=result.total,
-        page=result.page,
-        page_size=result.page_size,
-        total_pages=result.total_pages,
-        categories=result.categories,
-        uncategorized_count=result.uncategorized_count,
-    )
-
-
-@admin_router.get("/{food_id}", response_model=FoodResponseV3)
-def read_admin_food(
+@router.delete("/{food_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_food_documented(
     food_id: UUID,
     principal: PrincipalContext = Depends(require_admin),
     session: Session = Depends(get_session),
-) -> FoodResponse:
-    return to_food_response(
-        session, principal, get_food(session, principal, food_id, include_archived=True)
-    )
-
-
-@admin_router.delete("/{food_id}", response_model=FoodDeleteResponse)
-def delete_admin_food(
-    food_id: UUID,
-    principal: PrincipalContext = Depends(require_admin),
-    session: Session = Depends(get_session),
-) -> FoodDeleteResponse:
-    deleted = delete_food(session, principal, food_id)
-    return FoodDeleteResponse(disposition="deleted" if deleted else "archived")
-
-
-@admin_router.post("/{food_id}/archive", response_model=FoodResponseV3)
-def archive_admin_food(
-    food_id: UUID,
-    principal: PrincipalContext = Depends(require_admin),
-    session: Session = Depends(get_session),
-) -> FoodResponse:
-    return archive_food_response(session, principal, food_id)
-
-
-@admin_router.post("/{food_id}/restore", response_model=FoodResponseV3)
-def restore_admin_food(
-    food_id: UUID,
-    principal: PrincipalContext = Depends(require_admin),
-    session: Session = Depends(get_session),
-) -> FoodResponse:
-    return restore_food_response(session, principal, food_id)
+) -> Response:
+    delete_food(session, principal, food_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
