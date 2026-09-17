@@ -52,11 +52,6 @@ export async function proxy(request: NextRequest) {
     redirect.searchParams.set("next", `${path}${request.nextUrl.search}`);
     return redirectWithCookies(redirect, response);
   }
-  if (authenticated && path === "/admin/foods") {
-    const redirect = NextResponse.redirect(new URL("/foods", request.url), { status: 308 });
-    response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
-    return redirect;
-  }
   if (authenticated && publicAuth) {
     return redirectWithCookies(new URL("/diary", request.url), response);
   }

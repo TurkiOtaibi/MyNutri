@@ -26,7 +26,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
   test("[FOOD-TC-003] @p0 list page does not contain the Add Food form", async ({ page }) => {
     await page.goto("/foods");
     await expect(page.getByRole("heading", { name: "الأطعمة" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "إضافة طعام" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "إضافة طعام" })).toBeVisible();
     await expect(page.getByRole("button", { name: "حفظ الطعام" })).toHaveCount(0);
     await expect(page.locator("form.food-form-layout")).toHaveCount(0);
   });
@@ -364,9 +364,8 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     await expect(page.getByRole("link", { name: /المستخدمون/ })).toBeVisible();
   });
 
-  test("[FOOD-TC-013] @p0 legacy Admin Food URL permanently redirects to the unified catalog", async ({ request }) => {
+  test("[FOOD-TC-013] @p0 retired Admin Food URL is absent", async ({ request }) => {
     const response = await request.get("/admin/foods", { maxRedirects: 0 });
-    expect(response.status()).toBe(308);
-    expect(response.headers().location).toBe("/foods");
+    expect(response.status()).toBe(404);
   });
 });

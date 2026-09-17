@@ -34,6 +34,7 @@ from app.services.food_validation_errors import (
     duplicate_food_detail,
     food_validation_http_exception,
 )
+from app.services.errors import resource_not_found
 
 FOOD_FIELDS = (
     "name",
@@ -75,9 +76,6 @@ FOOD_FIELDS = (
     "ingredients",
 )
 
-UNCATEGORIZED_CATEGORY = "__uncategorized__"
-
-
 @dataclass(frozen=True)
 class FoodPage:
     items: list[Food]
@@ -86,7 +84,6 @@ class FoodPage:
     page_size: int
     total_pages: int
     categories: list[str]
-    uncategorized_count: int
 
 
 PICKER_COLUMNS = (
@@ -259,15 +256,11 @@ def _build_food_response(food: Food) -> FoodResponse:
         ) from error
 
 
-def to_food_responses(
-    session: Session, principal: PrincipalContext, foods: Sequence[Food]
-) -> list[FoodResponse]:
-    del session, principal
+def to_food_responses(foods: Sequence[Food]) -> list[FoodResponse]:
     return [_build_food_response(food) for food in foods]
 
 
-def to_food_response(session: Session, principal: PrincipalContext, food: Food) -> FoodResponse:
-    del session, principal
+def to_food_response(food: Food) -> FoodResponse:
     return _build_food_response(food)
 
 
@@ -285,10 +278,6 @@ def duplicate_key(data: dict[str, Any]) -> tuple[str, str, str, float, str]:
     )
 
 
-def _duplicate_detail() -> list[dict[str, Any]]:
-    return duplicate_food_detail()
-
-
 def ensure_not_duplicate(
     session: Session, data: dict[str, Any], food_id: UUID | None = None
 ) -> None:
@@ -298,7 +287,7 @@ def ensure_not_duplicate(
         if food_id is not None and food.id == food_id:
             continue
         if duplicate_key(_food_data(food)) == target_key:
-            raise HTTPException(status_code=422, detail=_duplicate_detail())
+            raise HTTPException(status_code=422, detail=duplicate_food_detail())
 
 
 _FOOD_NAMESPACE_ADVISORY_KEY = 4_666_663_031
@@ -341,10 +330,7 @@ def lock_food_namespace_for_logging(session: Session) -> None:
     _food_namespace_lock(session, shared=True)
 
 
-def _validated_update_data(
-    session: Session, principal: PrincipalContext, food: Food, payload: FoodUpdate
-) -> FoodCreate:
-    del session, principal
+def _validated_update_data(food: Food, payload: FoodUpdate) -> FoodCreate:
     current = _food_data(food)
     updates = payload.model_dump(exclude_unset=True)
     current.update(updates)
@@ -360,9 +346,7 @@ def _persistence_data(payload: FoodCreate) -> dict[str, Any]:
     return data
 
 
-def list_foods(
-    session: Session, principal: PrincipalContext, query: str | None = None
-) -> list[Food]:
+def list_foods(session: Session, query: str | None = None) -> list[Food]:
     statement = select(Food).order_by(Food.name)
     if query and query.strip():
         pattern = f"%{query.strip()}%"
@@ -372,7 +356,6 @@ def list_foods(
 
 def list_foods_page(
     session: Session,
-    principal: PrincipalContext,
     *,
     search: str | None = None,
     category: str | None = None,
@@ -386,7 +369,7 @@ def list_foods_page(
         pattern = f"%{normalized_search}%"
         conditions.append(or_(Food.name.ilike(pattern), Food.brand.ilike(pattern)))
 
-    if category and category != UNCATEGORIZED_CATEGORY:
+    if category:
         conditions.append(Food.primary_category == category)
 
     count_statement = select(func.count()).select_from(Food)
@@ -416,8 +399,6 @@ def list_foods_page(
     categories = sorted(
         {value.strip() for value in category_rows if value and value.strip()}, key=str.casefold
     )
-    uncategorized_count = 0
-
     return FoodPage(
         items=items,
         total=total,
@@ -425,20 +406,16 @@ def list_foods_page(
         page_size=page_size,
         total_pages=ceil(total / page_size) if total else 0,
         categories=categories,
-        uncategorized_count=uncategorized_count,
     )
 
 
 def get_food(
     session: Session,
-    principal: PrincipalContext,
     food_id: UUID,
 ) -> Food:
     statement = select(Food).where(Food.id == food_id)
     food = session.exec(statement).first()
     if food is None:
-        from app.services.errors import resource_not_found
-
         raise resource_not_found()
     return food
 
@@ -454,8 +431,6 @@ def get_food_for_logging(
         .with_for_update(read=True)
     ).first()
     if food is None:
-        from app.services.errors import resource_not_found
-
         raise resource_not_found()
     return food
 
@@ -474,8 +449,6 @@ def get_food_for_update(
     )
     food = session.exec(statement).first()
     if food is None:
-        from app.services.errors import resource_not_found
-
         raise resource_not_found()
     return food
 
@@ -530,7 +503,7 @@ def create_food_response(
 ) -> FoodResponse:
     try:
         food = _create_food_uncommitted(session, principal, payload)
-        response = to_food_response(session, principal, food)
+        response = to_food_response(food)
         response.model_dump_json()
         session.commit()
         return response
@@ -550,7 +523,7 @@ def _update_food_uncommitted(
     if food is None:
         _lock_food_namespace(session, principal)
         food = get_food_for_update(session, principal, food_id)
-    validated = _validated_update_data(session, principal, food, payload)
+    validated = _validated_update_data(food, payload)
     data = _persistence_data(validated)
     if validated.nutrition_basis != food.nutrition_basis:
         referenced = session.exec(
@@ -581,7 +554,7 @@ def update_food_response(
 ) -> FoodResponse:
     try:
         food = _update_food_uncommitted(session, principal, food_id, payload)
-        response = to_food_response(session, principal, food)
+        response = to_food_response(food)
         response.model_dump_json()
         session.commit()
         return response

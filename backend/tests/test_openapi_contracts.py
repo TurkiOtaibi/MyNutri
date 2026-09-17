@@ -231,7 +231,12 @@ def test_food_catalog_contract_has_one_surface_without_archive_state() -> None:
     assert not any(path.startswith("/admin/foods") for path in paths)
     assert paths["/foods/{food_id}"]["delete"]["responses"]["204"]["description"]
     assert "FoodDeleteResponse" not in schemas
-    assert "archived_at" not in schemas["FoodResponseV3"]["properties"]
+    assert "archived_at" not in schemas["FoodResponse"]["properties"]
+    assert not {"FoodCreateV3", "FoodUpdateV3", "FoodResponseV3"} & schemas.keys()
+    assert "uncategorized_count" not in schemas["FoodListResponse"]["properties"]
+    assert paths["/foods"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/FoodListResponse"}
     assert "archived" not in {
         parameter["name"] for parameter in paths["/foods"]["get"].get("parameters", [])
     }

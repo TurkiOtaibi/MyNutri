@@ -48,12 +48,10 @@ function waitForPublicFoodsResponse(
 }
 
 function foodsFromBody(body: unknown): FoodIdentity[] {
-  const items = Array.isArray(body)
-    ? body
-    : body && typeof body === "object" && "items" in body && Array.isArray(body.items)
-      ? body.items
-      : null;
-  if (!items) throw new Error("Public Foods response must be an array or a paginated items object.");
+  const items = body && typeof body === "object" && "items" in body && Array.isArray(body.items)
+    ? body.items
+    : null;
+  if (!items) throw new Error("Public Foods response must be a paginated items object.");
 
   return items.map((item, index) => {
     if (
@@ -126,8 +124,7 @@ function plan024Page(items: ReturnType<typeof plan024Food>[], page = 1, totalPag
     page,
     page_size: 20,
     total_pages: totalPages,
-    categories: ["other"],
-    uncategorized_count: 0
+    categories: ["other"]
   };
 }
 
@@ -346,7 +343,7 @@ test.describe("Foods list, search, and states @foods", () => {
     await page.route(/\/foods(?:\?.*)?$/, async (route) => {
       if (route.request().resourceType() === "document") return route.continue();
       await pending;
-      await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan024Page([])) });
     });
     await page.goto("/foods");
     await expect(page.getByText("جاري تحميل الأطعمة.", { exact: true })).toBeVisible();
@@ -357,7 +354,7 @@ test.describe("Foods list, search, and states @foods", () => {
   test("[FOOD-TC-028] @p0 empty catalog state links to Add Food", async ({ page }) => {
     await page.route(/\/foods(?:\?.*)?$/, async (route) => {
       if (route.request().resourceType() === "document") return route.continue();
-      await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan024Page([])) });
     });
     await page.goto("/foods");
     await expect(page.getByText("لا توجد أطعمة بعد.", { exact: true })).toBeVisible();
@@ -383,7 +380,7 @@ test.describe("Foods list, search, and states @foods", () => {
     await page.route(/\/foods(?:\?.*)?$/, async (route) => {
       if (route.request().resourceType() === "document") return route.continue();
       if (failing) return route.fulfill({ status: 500, body: "failure" });
-      return route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan024Page([])) });
     });
     await page.goto("/foods");
     await expect(page.locator(".catalog-state[role=alert]")).toBeVisible();
@@ -397,7 +394,7 @@ test.describe("Foods list, search, and states @foods", () => {
     await page.setViewportSize({ width: 360, height: 800 });
     await page.route(/\/foods(?:\?.*)?$/, async (route) => {
       if (route.request().resourceType() === "document") return route.continue();
-      await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan024Page([])) });
     });
     await page.goto("/foods");
     await expect(page.locator(".catalog-state")).toBeVisible();
@@ -427,7 +424,11 @@ test.describe("Foods list, search, and states @foods", () => {
       if (route.request().resourceType() === "document") return route.continue();
       const query = new URL(route.request().url()).searchParams.get("search")?.toLowerCase();
       const result = query ? foods.filter((food) => food.name.toLowerCase().includes(query)) : foods;
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(result) });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(plan024Page(result))
+      });
     });
     const initialResponse = waitForPublicFoodsResponse(page);
     await page.goto("/foods");

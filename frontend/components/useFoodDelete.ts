@@ -26,11 +26,12 @@ export function useFoodDelete({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["foods"] }),
         queryClient.invalidateQueries({ queryKey: ["food"] }),
-        queryClient.invalidateQueries({ queryKey: ["food-picker"] }),
-        queryClient.invalidateQueries({ queryKey: ["diary"] }),
+        queryClient.invalidateQueries({ queryKey: ["diary-food-picker"] }),
+        queryClient.invalidateQueries({ queryKey: ["entries"] }),
         queryClient.invalidateQueries({ queryKey: ["week"] }),
         queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-user"] })
+        queryClient.invalidateQueries({ queryKey: ["admin-user"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-user-diary"] })
       ]);
       if (sessionSignal.aborted) return;
       onDeleted?.();

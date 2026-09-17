@@ -14,7 +14,7 @@ function accessibleFood(idSuffix: number, name: string) {
 }
 
 function accessiblePage(items: ReturnType<typeof accessibleFood>[]) {
-  return { items, total: items.length, page: 1, page_size: 20, total_pages: 1, categories: ["other"], uncategorized_count: 0 };
+  return { items, total: items.length, page: 1, page_size: 20, total_pages: 1, categories: ["other"] };
 }
 
 async function expectAxePass(page: Page, stateLabel: string) {

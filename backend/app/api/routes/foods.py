@@ -10,20 +10,16 @@ from app.core.auth import PrincipalContext, get_principal_context, require_admin
 from app.db.session import get_session
 from app.schemas import (
     FoodCreate,
-    FoodCreateV3,
     FoodListResponse,
     FoodPickerResponse,
     FoodResponse,
-    FoodResponseV3,
     FoodSort,
     FoodUpdate,
-    FoodUpdateV3,
 )
 from app.services.food import (
     create_food_response,
     delete_food,
     get_food,
-    list_foods,
     list_food_picker,
     list_foods_page,
     to_food_response,
@@ -35,44 +31,38 @@ from app.services.food_validation_errors import validate_food_payload
 router = APIRouter(prefix="/foods", tags=["foods"])
 
 
-@router.get("", response_model=list[FoodResponseV3] | FoodListResponse)
+@router.get("", response_model=FoodListResponse)
 def read_foods(
     q: str | None = None,
     search: str | None = None,
     category: str | None = None,
     sort: FoodSort = "name",
-    page: int | None = Query(default=None, ge=1),
+    page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     principal: PrincipalContext = Depends(get_principal_context),
     session: Session = Depends(get_session),
-) -> list[FoodResponse] | FoodListResponse:
-    # Preserve the original list response for Diary and existing API consumers.
-    if page is None and search is None and category is None and sort == "name":
-        return to_food_responses(session, principal, list_foods(session, principal, q))
-
+) -> FoodListResponse:
     result = list_foods_page(
         session,
-        principal,
         search=search if search is not None else q,
         category=category,
         sort=sort,
-        page=page or 1,
+        page=page,
         page_size=page_size,
     )
     return FoodListResponse(
-        items=to_food_responses(session, principal, result.items),
+        items=to_food_responses(result.items),
         total=result.total,
         page=result.page,
         page_size=result.page_size,
         total_pages=result.total_pages,
         categories=result.categories,
-        uncategorized_count=result.uncategorized_count,
     )
 
 
-@router.post("", response_model=FoodResponseV3, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=FoodResponse, status_code=status.HTTP_201_CREATED)
 def add_food(
-    payload: Annotated[SkipValidation[FoodCreateV3], Body()],
+    payload: Annotated[SkipValidation[FoodCreate], Body()],
     principal: PrincipalContext = Depends(require_admin),
     session: Session = Depends(get_session),
 ) -> FoodResponse:
@@ -112,19 +102,19 @@ def read_food_picker(
         )
 
 
-@router.get("/{food_id}", response_model=FoodResponseV3)
+@router.get("/{food_id}", response_model=FoodResponse)
 def read_food(
     food_id: UUID,
     principal: PrincipalContext = Depends(get_principal_context),
     session: Session = Depends(get_session),
 ) -> FoodResponse:
-    return to_food_response(session, principal, get_food(session, principal, food_id))
+    return to_food_response(get_food(session, food_id))
 
 
-@router.put("/{food_id}", response_model=FoodResponseV3)
+@router.put("/{food_id}", response_model=FoodResponse)
 def edit_food(
     food_id: UUID,
-    payload: Annotated[SkipValidation[FoodUpdateV3], Body()],
+    payload: Annotated[SkipValidation[FoodUpdate], Body()],
     principal: PrincipalContext = Depends(require_admin),
     session: Session = Depends(get_session),
 ) -> FoodResponse:

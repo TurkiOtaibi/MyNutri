@@ -35,7 +35,7 @@ Status values:
 | F-011 | Upsert profile | Save profile only after successful API response; no local queue; prevent duplicate submits and preserve visible input on failure. | Required / current code needs alignment | `ProfilePage.tsx`, `profile.py` | D-001, D-013, D-023 |
 | F-012 | Profile validation bounds | Enforce age 10-100, no future birth date, height 100-250 cm, weight 20-300 kg, protein/kg 1.0-3.0, fat 15%-40%. | Required / current code needs alignment | `backend/app/schemas.py`, `ProfilePage.tsx` | D-009, D-012 |
 | F-013 | Live target preview | Preview target calories/macros while editing profile. | Confirmed / needs validation alignment | `backend/app/api/routes/profile.py`, `ProfilePage.tsx` | D-009, D-012 |
-| F-014 | Calc engine | Calculate BMR, TDEE, goal calories, macros, and carb clamp flag. | Confirmed | `backend/app/services/calc.py`, `backend/tests/test_calc.py` | D-009 |
+| F-014 | Calc engine | Calculate BMR, TDEE, goal calories, macros, and carb clamp flag. | Confirmed | `backend/app/nutrition_rules/calculation.py`, `backend/tests/test_calc.py` | D-009 |
 | F-015 | Target display | Show target calories and macros on Profile and Diary. | Confirmed | `frontend/features/profile/profile-targets.tsx`, `frontend/features/diary/diary-summary.tsx`, `ProfilePage.tsx`, `DiaryPage.tsx` | N/A |
 | F-016 | Multiple people/profiles | Track multiple people and person-scoped diary. | Future Scope / out of v1 | No `person` table; no `person_id` on diary entries | D-016 |
 

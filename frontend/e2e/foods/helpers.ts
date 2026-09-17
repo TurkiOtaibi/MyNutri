@@ -185,10 +185,12 @@ export class FoodsApi {
   }
 
   async list(query = ""): Promise<FoodRecord[]> {
-    const suffix = query ? `?q=${encodeURIComponent(query)}` : "";
-    const response = await this.request.get(`${API_URL}/foods${suffix}`, { headers: this.headers() });
+    const params = new URLSearchParams({ page: "1", page_size: "100" });
+    if (query) params.set("q", query);
+    const response = await this.request.get(`${API_URL}/foods?${params}`, { headers: this.headers() });
     expect(response.status()).toBe(200);
-    return response.json() as Promise<FoodRecord[]>;
+    const page = await response.json() as { items: FoodRecord[] };
+    return page.items;
   }
 
   async get(id: string): Promise<FoodRecord> {

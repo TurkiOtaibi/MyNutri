@@ -13,9 +13,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
-import { ApiError, deleteFood, getNutritionRegistry, listFoodsPage } from "@/lib/api";
+import { getNutritionRegistry, listFoodsPage } from "@/lib/api";
 import {
   calculateServingNutrition,
   defaultServingText,
@@ -26,11 +26,10 @@ import type { FoodResponse, FoodSort } from "@/lib/types";
 
 import { FoodDeleteDialog } from "./FoodDeleteDialog";
 import { useAuth } from "./AuthProvider";
-import { useSessionAbortSignal } from "./SessionQueryProvider";
+import { useFoodDelete } from "./useFoodDelete";
 
 const FOODS_READ_ERROR = "تعذر تحميل قائمة الأطعمة. تحقق من الاتصال وحاول مرة أخرى.";
 const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
-const UNCATEGORIZED = "__uncategorized__";
 const PAGE_SIZE = 20;
 
 const sortLabels: Record<FoodSort, string> = {
@@ -41,11 +40,8 @@ const sortLabels: Record<FoodSort, string> = {
 };
 
 export function FoodsPage() {
-  const { account, session } = useAuth();
+  const { account } = useAuth();
   const isAdmin = account?.role === "admin";
-  const accessToken = session?.access_token;
-  const sessionSignal = useSessionAbortSignal();
-  const queryClient = useQueryClient();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
@@ -53,7 +49,6 @@ export function FoodsPage() {
   const [page, setPage] = useState(1);
   const [mobileItems, setMobileItems] = useState<FoodResponse[]>([]);
   const [knownCategories, setKnownCategories] = useState<string[]>([]);
-  const [uncategorizedCount, setUncategorizedCount] = useState(0);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FoodResponse | null>(null);
   const [note, setNote] = useState("");
@@ -98,7 +93,6 @@ export function FoodsPage() {
     // The paged query is the external source for the accumulated mobile collection.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setKnownCategories(data.categories);
-    setUncategorizedCount(data.uncategorized_count);
     setMobileItems((current) => {
       if (data.page === 1) return data.items;
       const ids = new Set(current.map((food) => food.id));
@@ -107,32 +101,13 @@ export function FoodsPage() {
     if (data.total_pages > 0 && page > data.total_pages) setPage(data.total_pages);
   }, [foodsQuery.dataUpdatedAt]);
 
-  const deleteMutation = useMutation({
-    mutationFn: (foodId: string) => deleteFood(foodId, accessToken, sessionSignal),
-    onSuccess: async () => {
-      if (sessionSignal.aborted) return;
+  const deleteMutation = useFoodDelete({
+    onDeleted: () => {
       setDeleteTarget(null);
       setOpenMenuId(null);
       setNote("تم حذف الطعام نهائيًا.");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["foods"] }),
-        queryClient.invalidateQueries({ queryKey: ["food"] }),
-        queryClient.invalidateQueries({ queryKey: ["food-picker"] }),
-        queryClient.invalidateQueries({ queryKey: ["diary"] }),
-        queryClient.invalidateQueries({ queryKey: ["week"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-user"] })
-      ]);
-      if (sessionSignal.aborted) return;
     },
-    onError: (error) => {
-      if (sessionSignal.aborted) return;
-      if (error instanceof ApiError && error.status === 404) {
-        setNote("لم يتم العثور على الطعام. حدّث القائمة وحاول مرة أخرى.");
-      } else {
-        setNote(WRITE_ERROR);
-      }
-    }
+    onError: setNote
   });
 
   const data = foodsQuery.data;
@@ -147,9 +122,8 @@ export function FoodsPage() {
         value,
         label: registryQuery.data?.food_taxonomy.find((item) => item.key === value)?.label_ar ?? value
       })),
-      ...(uncategorizedCount > 0 ? [{ value: UNCATEGORIZED, label: "غير مصنف" }] : [])
     ],
-    [knownCategories, uncategorizedCount, registryQuery.data]
+    [knownCategories, registryQuery.data]
   );
   const categoryLabels = useMemo(
     () => new Map(registryQuery.data?.food_taxonomy.map((item) => [item.key, item.label_ar]) ?? []),

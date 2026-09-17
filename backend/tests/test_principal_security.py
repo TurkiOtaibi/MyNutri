@@ -292,7 +292,7 @@ def test_shared_catalog_and_admin_only_mutations(security_context) -> None:
     created = client.post("/foods", json=food_payload(), headers=headers("admin-a"))
     assert created.status_code == 201, created.text
     food_id = created.json()["id"]
-    assert client.get("/foods", headers=headers("user-b")).json()[0]["id"] == food_id
+    assert client.get("/foods", headers=headers("user-b")).json()["items"][0]["id"] == food_id
     assert client.get(f"/foods/{food_id}", headers=headers("user-b")).status_code == 200
     assert (
         client.put(f"/foods/{food_id}", json={"name": "No"}, headers=headers("user-b")).status_code

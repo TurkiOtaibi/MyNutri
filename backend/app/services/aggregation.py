@@ -218,7 +218,7 @@ def _day_summary(
     )
 
 
-def _weekly_summary(
+def weekly_summary(
     session: Session,
     principal: PrincipalContext,
     start: date,
@@ -262,7 +262,3 @@ def _weekly_summary(
         days=days,
         weekly_totals=weekly_totals,
     )
-
-
-def weekly_summary(session: Session, principal: PrincipalContext, start: date) -> WeekSummary:
-    return _weekly_summary(session, principal, start)

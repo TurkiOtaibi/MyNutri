@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 from app.core.auth import PrincipalContext
 from app.core.calendar import current_diary_date
 from app.models import Profile
+from app.nutrition_rules.calculation import calculate_targets
 from app.nutrition_rules.manifest import rules_manifest_hash
 from app.schemas import (
     ProfileDomainValidationError,
@@ -17,7 +18,6 @@ from app.schemas import (
     TargetResponse,
     validate_profile_domain,
 )
-from app.services.calc import calculate_targets
 
 
 def _validate_profile_domain(profile: ProfileUpsert, calculation_date: date) -> None:
