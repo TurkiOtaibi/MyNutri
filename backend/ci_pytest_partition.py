@@ -23,7 +23,7 @@ POSTGRES_FIXTURES = frozenset(
         "plan025_postgresql_session",
     }
 )
-ALLOWED_SKIPS = frozenset({"tests/test_sync.py::test_sync_api_is_future_scope"})
+ALLOWED_SKIPS: frozenset[str] = frozenset()
 
 
 @dataclass

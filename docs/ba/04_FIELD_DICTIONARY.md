@@ -200,6 +200,6 @@ Diary quantity mode contract:
 | Field | Status | Notes |
 |---|---|---|
 | `Authorization` header | Required for protected APIs | 401 maps to Arabic access/session error. |
-| `SyncOperation.method/path/body` | Future Scope | Not a v1 requirement. |
+| Future sync-operation contract | Future Scope / not implemented | No runtime fields or schema exist in v1. |
 | `QueuedMutation.status` | Future Scope | Pending/syncing states are not v1 requirements. |
 | IndexedDB cache tables | Future Scope | Must not be source of truth in v1. |

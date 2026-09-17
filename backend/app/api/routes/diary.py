@@ -9,7 +9,6 @@ from sqlmodel import Session
 
 from app.core.auth import PrincipalContext, get_principal_context
 from app.db.session import get_session
-from app.core.calendar import diary_calendar_authority
 from app.schemas import (
     DiaryEntryCreate,
     DiaryEntryResponse,
@@ -55,14 +54,8 @@ def _add_entry(
     principal: PrincipalContext,
     session: Session,
 ) -> DiaryEntryResponse:
-    authority = diary_calendar_authority()
     validated_payload = validate_diary_payload(DiaryEntryCreate, payload)
-    return create_entry_response(
-        session,
-        principal,
-        validated_payload,
-        calendar_authority=authority,
-    )
+    return create_entry_response(session, principal, validated_payload)
 
 
 @router.post("/entries", response_model=DiaryEntryResponse, status_code=status.HTTP_201_CREATED)

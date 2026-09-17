@@ -848,21 +848,3 @@ class WeekSummary(BaseModel):
     end: date
     days: list[DaySummary]
     weekly_totals: NutritionTotals
-
-
-class SyncOperation(BaseModel):
-    method: str
-    path: str
-    body: dict[str, Any] | None = None
-    client_id: str | None = None
-    created_at: datetime | None = None
-
-
-class SyncPushRequest(BaseModel):
-    operations: list[SyncOperation] = Field(default_factory=list)
-
-
-class SyncPushResponse(BaseModel):
-    accepted: int
-    accepted_client_ids: list[str] = Field(default_factory=list)
-    rejected: list[dict[str, Any]] = Field(default_factory=list)
