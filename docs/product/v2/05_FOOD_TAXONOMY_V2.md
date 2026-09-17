@@ -35,4 +35,6 @@ labels. A subcategory is valid only beneath its listed primary category.
 - Unknown primary maps to `other` and `other`.
 
 Migration must never infer a more specific classification than the source data
-supports. Registry schema version `4` owns the API/UI taxonomy contract.
+supports. The structurally validated Nutrition Registry owns the API/UI taxonomy
+contract; `rules_manifest_hash` and its lock protect content integrity. No semantic
+Registry schema version exists.

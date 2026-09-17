@@ -5,8 +5,8 @@ production mutation.
 
 ## Release identity
 
-The current migration head is combined retirement revision `c8e53f0b2d47`,
-with parent Target Plan date-effective revision `b7d42e9a1c36`. Confirm the intended application
+The current migration head is Food catalog unification revision `d9f64a1c3e58`,
+with parent combined-retirement revision `c8e53f0b2d47`. Confirm the intended application
 commit, generated contract, single Alembic head, and approved environment before
 any rollout action.
 
@@ -113,12 +113,12 @@ Only after a separately approved release window:
 
 ## Rollback
 
-Do not downgrade below `c8e53f0b2d47`. Retired semantic version columns,
-provenance, and transition schema cannot be faithfully synthesized, and the
-preceding Target Plan lifecycle, Day Logging Status, and Food cutovers also
-removed data/schema. Stop writes and either roll forward with an approved
-corrective revision or restore the pre-migration database backup together with
-the matching application release.
+Do not downgrade below `d9f64a1c3e58`. Food archive state cannot be reconstructed,
+and permanent Food deletion may have cascaded Diary history. Earlier semantic-version,
+provenance, transition, Target Plan lifecycle, Day Logging Status, and Food cutovers
+also removed data/schema. Stop writes and either roll forward with an approved
+corrective revision or restore the matching pre-cutover database backup together
+with its compatible application release.
 
 Rollback is not permission to delete production data, rewrite historical
 migrations, revive retired features, or deploy without a separate authorization.

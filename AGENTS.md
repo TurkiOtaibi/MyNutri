@@ -4,11 +4,11 @@ These rules apply to the whole repository. Read the [documentation authority map
 
 ## Authority order
 
-1. Current approved V2 and nutrition product/architecture decisions linked from the authority map.
-2. Unsuperseded BA product decisions and exact approved Arabic copy.
-3. Current executable contracts: schemas, migrations, lockfiles, tests, and CI.
-4. Implementation, QA, audit, and UI/UX reports as supporting evidence.
-5. Explicitly superseded documents as history only.
+1. Current approved V2 Product, architecture, data, nutrition, and operations authority linked from the authority map.
+2. The retained BA summaries and exact approved Arabic copy where they do not conflict with V2 authority.
+3. Current executable contracts: schemas, migrations, lockfiles, tests, generated OpenAPI, and CI.
+4. The repository documentation hierarchy defined by the authority map.
+5. Git, migration, PR, and CI history as historical evidence only, never as current implementation authority.
 
 If two current approved artifacts conflict, stop and obtain a recorded Product Owner decision. Do not resolve product ambiguity through code, tests, or convenience.
 

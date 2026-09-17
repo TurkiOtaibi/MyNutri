@@ -1,44 +1,47 @@
-# Documentation authority map
+# myNutri documentation authority
 
-Use this page before changing myNutri. Documents lower in the list cannot override documents above them. When two approved current artifacts conflict, stop and ask the Product Owner to reconcile them; do not choose the more convenient rule.
+This repository deliberately keeps a small current documentation set. Git history,
+Alembic migrations, pull requests, CI runs, executable tests, and visual-regression
+baselines are the historical record; deleted reports and screenshots are not current
+implementation authority.
 
-## 1. Current product and architecture authority
+## Read first
 
-- [V2 scope and decisions](product/v2/01_V2_SCOPE_AND_DECISIONS.md) defines the authenticated, multi-principal product boundary.
-- [Day Logging Status retirement](product/v2/08_DAY_LOGGING_STATUS_RETIREMENT.md) removes the day-status state machine, commands, persistence, versioning, history, idempotency, API, and UI while allowing future Diary dates.
-- [Target Plan date-effective model](product/v2/09_TARGET_PLAN_DATE_EFFECTIVE_MODEL.md) removes the Target Plan lifecycle state machine and governs immutable dated revisions, canonical date resolution, Diary rebinding, and the final API.
-- [Nutrition Versioning and Legacy Target Compatibility retirement](product/v2/10_NUTRITION_VERSIONING_AND_LEGACY_TARGET_COMPATIBILITY_RETIREMENT.md) removes semantic Nutrition version fields, transition/Profile target fallbacks, and Diary target provenance while retaining Registry/content integrity, immutable Target Plans, and legacy API idempotency replay.
-- [Authentication and role model](product/v2/02_AUTH_AND_ROLE_MODEL.md), [authorization matrix](product/v2/03_AUTHORIZATION_MATRIX.md), and [shared Food catalog](product/v2/04_SHARED_FOOD_CATALOG.md) govern identity, permissions, the single `/foods` experience, and permanent global Food deletion with cross-user Diary cascade.
-- [Food Taxonomy V2](product/v2/05_FOOD_TAXONOMY_V2.md) and [data migration and cutover](product/v2/06_DATA_MIGRATION_AND_CUTOVER.md) govern the V2 schema transition.
-- The [nutrition decision register and scope freeze](product/nutrition-quality-expansion/PRODUCT_DECISION_REGISTER_AND_SCOPE_FREEZE_v1.1.md) and [Wave 1 freeze index](product/nutrition-quality-expansion/12_WAVE1_FREEZE_INDEX.md) are historical decision evidence. Their Food snapshot, NOVA, Food Group, Analytical Trait, Day Logging Status, Pattern Analysis, Weekly Priority, Target Plan lifecycle, semantic Nutrition versioning, and legacy Target compatibility requirements are superseded by the current V2 authorities above. Unaffected nutrient-nullability, formulas, safety, and Registry-content decisions remain applicable only where they do not conflict with current V2 authority.
-- [BA product decisions](ba/13_PRODUCT_DECISIONS.md) are authoritative only where a later approved V2 or nutrition artifact has not superseded them. The rest of the [BA package](ba/) is supporting requirements and traceability evidence; validate each claim against the approved decisions above because older files retain superseded single-user and offline assumptions.
+1. [V2 scope and decisions](product/v2/01_V2_SCOPE_AND_DECISIONS.md)
+2. [Current architecture and data model](product/v2/11_CURRENT_ARCHITECTURE_AND_DATA_MODEL.md)
+3. [Authentication and role model](product/v2/02_AUTH_AND_ROLE_MODEL.md)
+4. [Authorization matrix](product/v2/03_AUTHORIZATION_MATRIX.md)
+5. [Shared Food catalog](product/v2/04_SHARED_FOOD_CATALOG.md)
+6. [Target Plan date-effective model](product/v2/09_TARGET_PLAN_DATE_EFFECTIVE_MODEL.md)
+7. [Nutrition rules, safety, and Registry](product/v2/12_NUTRITION_RULES_SAFETY_AND_REGISTRY.md)
 
-## 2. Operations and release authority
+## Domain and operations authority
 
-- [V2 release and rollback runbook](product/v2/07_RELEASE_AND_ROLLBACK_RUNBOOK.md) governs release gates, deployment order, environment boundaries, smoke checks, and rollback.
-- Repository configuration, lockfiles, migrations, and CI are executable authority for the revision being changed. If they disagree with prose, stop and reconcile the documentation instead of silently bypassing the executable gate.
+- [Food taxonomy](product/v2/05_FOOD_TAXONOMY_V2.md) owns stable taxonomy keys and Arabic labels.
+- [Data migration and cutover](product/v2/06_DATA_MIGRATION_AND_CUTOVER.md) owns the live migration topology and schema-transition boundaries.
+- [Release and rollback runbook](product/v2/07_RELEASE_AND_ROLLBACK_RUNBOOK.md) owns deployment, verification, and recovery procedure.
+- The generated OpenAPI document, Backend schemas, Alembic chain, tests, and CI are executable contracts. When prose and an executable contract disagree, stop and resolve the drift; do not silently choose one.
 
-## 3. Evidence and supporting records
+## Supporting requirements
 
-- [Implementation reports](implementation/) record what was built and verified; they are historical evidence, not permission to change current behavior.
-- [QA and audit reports](qa/) record historical coverage, gaps, and verdicts; later approved decisions take precedence.
-- [UI/UX reports and evidence](ui-ux/) document historical reviewed presentation and accessibility behavior; confirm current acceptance against newer approved artifacts.
-- [Foods analysis](FOODS_PAGE_ANALYSIS.md), [Foods features](FOODS_PAGE_FEATURES.md), and [Foods user stories](FOODS_PAGE_USER_STORIES.md) are supporting historical feature records. Resolve conflicts through the authorities above.
+- [Executive summary](ba/00_EXECUTIVE_SUMMARY.md)
+- [Field dictionary](ba/04_FIELD_DICTIONARY.md)
+- [User stories and acceptance](ba/07_USER_STORIES.md)
+- [Traceability matrix](ba/10_TRACEABILITY_MATRIX.md)
 
-## 4. Historical archives — never implementation authority
+The BA package summarizes current requirements. Product and architecture authority
+remains in the V2 documents above.
 
-- [Superseded system plan](1-SYSTEM-PLAN.md)
-- [Superseded architecture](2-ARCHITECTURE-SERVICES.md)
-- [Superseded Claude Code prompts](CLAUDE_CODE_PROMPTS.md)
-- [Superseded historical decision register](product/nutrition-quality-expansion/02_SUPERSEDED_HISTORICAL_DECISIONS.md)
+## Retired architecture
 
-Historical material exists for traceability. Never copy its single-user, role-free, offline-first, Dexie, or sync assumptions into current work.
+Day Logging Status, the Target Plan lifecycle, semantic Nutrition versions, legacy
+Target snapshots/Profile fallback, Food Archive/Restore, a separate Admin Food UI,
+the Sync shell, `Food*V3` public names, dual-shape `GET /foods`, uncategorized
+compatibility, and `/admin/foods` are absent. Historical descriptions are available
+through Git history only and must not be treated as current behavior.
 
-## Conflict escalation
+## Governance rule
 
-1. Identify the exact conflicting passages and their approval/version status.
-2. Stop implementation that depends on the conflict.
-3. Ask the Product Owner for a recorded decision.
-4. Update or supersede the losing artifact before resuming implementation.
-
-Every new authoritative document must be linked here. Every superseded document must show a first-screen caution banner that points back here.
+Only the 17 Markdown files listed by `docs/tools/validate_authoritative_docs.py`
+belong in the current documentation estate. Run that validator after any documentation,
+route, entity, contract, or migration-head change.
