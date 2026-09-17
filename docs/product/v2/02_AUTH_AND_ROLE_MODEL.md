@@ -18,7 +18,7 @@ The implementation follows the current official guidance:
 
 ## Principal
 
-`principal` gains:
+The current `principal` model has:
 
 - `auth_user_id UUID UNIQUE NULL` for safe brownfield expansion;
 - `email VARCHAR(320) NULL`;
@@ -26,10 +26,10 @@ The implementation follows the current official guidance:
 - `role TEXT NOT NULL CHECK (role IN ('user','admin'))`;
 - existing `status`, `created_at`, and `updated_at` remain authoritative.
 
-The existing production Principal remains unchanged until the bootstrap command
-links it. Unknown valid Supabase users are provisioned transactionally and
-idempotently as active `user` Principals. User metadata may supply a display name
-but never role or status.
+Unknown valid Supabase users are provisioned transactionally and idempotently as
+active `user` Principals. User metadata may supply a display name but never role or
+status. The bootstrap command exists for an explicitly selected administrative
+identity and preserves the durable Principal identifier.
 
 `PrincipalContext` contains `principal_id`, `auth_user_id`, and `role`.
 

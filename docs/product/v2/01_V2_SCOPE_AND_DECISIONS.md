@@ -55,10 +55,9 @@ catalog. Food taxonomy and provenance are intentionally small and stable.
 
 Authentication, authorization, private Principal isolation, Target Plan
 revision history, legacy Target Plan API idempotency replay, Arabic-first RTL behavior,
-responsive behavior, accessibility, PWA
-isolation, audit principals, archival timestamps, measurement/serving fields,
-notes, and nutrient representation fields remain active unless another approved
-decision says otherwise.
+responsive behavior, accessibility, static-shell PWA isolation, Principal/Food
+creation and update attribution, measurement/serving fields, notes, and nutrient
+representation fields remain active unless another approved decision says otherwise.
 
 ## Retired concepts
 

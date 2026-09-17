@@ -2,7 +2,7 @@
 
 myNutri is an Arabic-first, RTL, online nutrition application. The current system uses a Next.js frontend, a FastAPI backend, PostgreSQL, Supabase authentication, Principal-scoped private data, role-aware administration, and a shared Food catalog.
 
-Start with the [documentation authority map](docs/README.md). The old system plan, architecture document, and Claude prompts are historical archives, not implementation instructions.
+Start with the [documentation authority map](docs/README.md). Git history, migrations, tests, PRs, and CI retain historical evidence; the tracked documentation set describes the current system only.
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ Start with the [documentation authority map](docs/README.md). The old system pla
 
 ## Locked setup
 
-Do not use an unlocked `pip install` or `npm install`. Backend inputs are hash-locked by Plan 027, and frontend inputs are locked by `package-lock.json`.
+Do not use an unlocked `pip install` or `npm install`. Backend inputs are hash-locked by the committed requirements files, and frontend inputs are locked by `package-lock.json`.
 
 ```powershell
 python -m venv .venv

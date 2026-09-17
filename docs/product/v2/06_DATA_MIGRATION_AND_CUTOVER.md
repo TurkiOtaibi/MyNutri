@@ -22,6 +22,12 @@ Nutrition semantic versioning and legacy Target compatibility are retired in:
 - revision: `c8e53f0b2d47`
 - parent: `b7d42e9a1c36`
 
+The Food catalog is unified and permanent deletion receives its final cascade and
+database-privilege boundaries in the current sole head:
+
+- revision: `d9f64a1c3e58`
+- parent: `c8e53f0b2d47`
+
 Historical revisions remain unchanged so the base-to-head chain is
 reconstructable. Their retired tables, columns, and guards are removed only by
 the new revision.
@@ -59,7 +65,7 @@ reference, when its recorded measurement cannot be derived safely, or when its
 recorded mass/volume dimension conflicts with the current referenced Food. It
 never guesses Food identity or a mass/volume conversion.
 
-The Food Catalog unification revision changes the final Diary-to-Food foreign
+Revision `d9f64a1c3e58` changes the final Diary-to-Food foreign
 key to non-null `ON DELETE CASCADE`, removes archive columns/constraints/index,
 and revokes direct Food mutation from `PUBLIC`, `anon`, and `authenticated`.
 The migration itself deletes no Food or Diary data.
@@ -149,6 +155,9 @@ Before any release authorization:
 15. Confirm transition snapshots, legacy target provenance, and Profile-as-target
     fallback are absent; no-plan dates return null plan/targets and Diary rows may
     retain a null `target_plan_id`.
+16. Confirm `d9f64a1c3e58` removed Food archive columns, installed the Diary Food
+    `ON DELETE CASCADE`, preserved existing Food/Diary rows during migration, and
+    revoked direct Food mutation from `PUBLIC`, `anon`, and `authenticated`.
 
 ## Downgrade boundary
 
@@ -169,3 +178,8 @@ requires the matching pre-cutover database restore and old application revision.
 Revision `c8e53f0b2d47` also fails closed on downgrade. Removed semantic version
 columns, provenance, and legacy transition schema cannot be synthesized. Recovery
 requires the matching pre-cutover database restore and application revision.
+
+Revision `d9f64a1c3e58` also fails closed on downgrade. Archive state cannot be
+reconstructed and post-cutover permanent Food deletion may already have removed
+Diary history. Recovery requires the matching pre-cutover database restore and
+application revision.
