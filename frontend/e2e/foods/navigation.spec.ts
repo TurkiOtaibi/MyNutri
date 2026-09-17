@@ -26,7 +26,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
   test("[FOOD-TC-003] @p0 list page does not contain the Add Food form", async ({ page }) => {
     await page.goto("/foods");
     await expect(page.getByRole("heading", { name: "الأطعمة" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "إضافة طعام" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "إضافة طعام" })).toBeVisible();
     await expect(page.getByRole("button", { name: "حفظ الطعام" })).toHaveCount(0);
     await expect(page.locator("form.food-form-layout")).toHaveCount(0);
   });
