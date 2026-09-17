@@ -38,7 +38,3 @@ def current_diary_date(now: datetime | None = None) -> date:
 
 def following_diary_date(current_date: date) -> date:
     return current_date + timedelta(days=1)
-
-
-def next_diary_date(now: datetime | None = None) -> date:
-    return following_diary_date(current_diary_date(now))

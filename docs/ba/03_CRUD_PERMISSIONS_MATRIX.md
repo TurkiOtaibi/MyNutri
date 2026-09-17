@@ -22,7 +22,7 @@ Protected API areas:
 - `/diary`
 
 Future Scope:
-- `/sync` exists in code but is not a v1 product requirement.
+- `/sync` is not implemented and remains outside the v1 product boundary.
 - Multi-profile/person switching is not a v1 product requirement.
 - Profile reset/delete is not a v1 product requirement.
 - Offline page, service-worker API caching, IndexedDB personal data caches, and cached-read fallbacks are not v1 source-of-truth behavior.
@@ -75,17 +75,18 @@ Diary dependency behavior:
 - Serving-mode `quantity` means serving count; gram-mode `quantity` means grams per D-021.
 - Future dates are blocked for create and quantity edit.
 
-## Future Scope: SyncOperation / QueuedMutation CRUD
+## Future Scope: Offline sync CRUD
 
-Offline-first is removed from v1. Rows below document current code evidence only.
+Offline-first is removed from v1. Rows below describe unimplemented future capabilities,
+not current code evidence.
 
 | Action | v1 status | Evidence | Required v1 disposition |
 |---|---|---|---|
 | Queue local mutation | Future Scope | `frontend/lib/db.ts` | Do not queue failed writes. |
-| Read pending count | Future Scope | `getPendingMutationCount`, `SyncStatus` | Do not expose pending sync state in v1. |
-| Push operations | Future Scope | `POST /sync/push`, `flushQueuedMutations` | Exclude from v1 behavior. |
-| Pull server state | Future Scope | `GET /sync/pull`, `pullServerState` | v1 loads via normal online API routes. |
-| Sync rejection/conflict handling | Future Scope | `sync.py` | Not a v1 requirement. |
+| Read pending count | Future Scope / not implemented | No runtime owner | Do not expose pending sync state in v1. |
+| Push operations | Future Scope / not implemented | No runtime owner | Exclude from v1 behavior. |
+| Pull server state | Future Scope / not implemented | No runtime owner | v1 loads via normal online API routes. |
+| Sync rejection/conflict handling | Future Scope / not implemented | No runtime owner | Not a v1 requirement. |
 | Offline page/cached read fallback | Future Scope / alignment item | `frontend/app/offline/page.tsx`, `frontend/lib/db.ts`, `service-worker.js` | Do not present cached personal data as current after API read failure. |
 
 ## Remaining CRUD Alignment Items

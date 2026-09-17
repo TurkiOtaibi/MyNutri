@@ -248,11 +248,11 @@ v1 requirement:
 - Must not cache personal nutrition API data.
 - Must not provide offline data behavior.
 
-## Future Scope: SyncOperation and QueuedMutation
+## Future Scope: Offline sync
 
 | Resource | v1 status | Evidence | Notes |
 |---|---|---|---|
-| `SyncOperation` | Future Scope | `backend/app/schemas.py`, `backend/app/api/routes/sync.py` | Not a v1 product requirement. |
+| Sync operation contract | Future Scope / not implemented | No runtime route or schema | Define only as part of a separately approved offline-sync design. |
 | `QueuedMutation` | Future Scope | `frontend/lib/db.ts`, `frontend/lib/types.ts` | Failed writes must not be queued in v1. |
 | IndexedDB personal data stores | Future Scope | `frontend/lib/db.ts` | Must not be source of truth in v1. |
 | Offline page / cached-read fallback behavior | Future Scope / implementation alignment | `frontend/app/offline/page.tsx`, `frontend/lib/db.ts`, `frontend/public/service-worker.js` | Existing offline/cached-read artifacts must not provide v1 personal data source-of-truth behavior. |

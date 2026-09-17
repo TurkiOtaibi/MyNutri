@@ -86,7 +86,6 @@ def target_plan_context(monkeypatch):
     monkeypatch.setattr("app.services.target_plans.current_diary_date", lambda: TODAY)
     monkeypatch.setattr("app.api.routes.target_plans.current_diary_date", lambda: TODAY)
     monkeypatch.setattr("app.api.routes.profile.diary_calendar_authority", lambda: fixed_authority)
-    monkeypatch.setattr("app.api.routes.diary.diary_calendar_authority", lambda: fixed_authority)
     client = TestClient(app)
     try:
         yield client, session

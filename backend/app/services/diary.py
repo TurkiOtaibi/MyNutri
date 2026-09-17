@@ -10,7 +10,6 @@ from sqlalchemy import tuple_
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
-from app.core.calendar import DiaryCalendarAuthority, diary_calendar_authority
 from app.models import DiaryEntry, Food, Principal
 from app.schemas import (
     DiaryEntryCreate,
@@ -261,12 +260,7 @@ def _create_entry_uncommitted(
     session: Session,
     principal: PrincipalContext,
     payload: DiaryEntryCreate,
-    *,
-    calendar_authority: DiaryCalendarAuthority | None = None,
 ) -> tuple[DiaryEntry, Food]:
-    # Retain the injected calendar boundary for route/test compatibility; target
-    # resolution itself is now date-derived and independent of "today".
-    _ = calendar_authority or diary_calendar_authority()
     _lock_owner_for_target_binding(session, principal)
     plan = resolve_target_plan(session, principal, payload.entry_date)
     lock_food_namespace_for_logging(session)
@@ -320,16 +314,9 @@ def create_entry(
     session: Session,
     principal: PrincipalContext,
     payload: DiaryEntryCreate,
-    *,
-    calendar_authority: DiaryCalendarAuthority | None = None,
 ) -> DiaryEntry:
     try:
-        entry, _food = _create_entry_uncommitted(
-            session,
-            principal,
-            payload,
-            calendar_authority=calendar_authority,
-        )
+        entry, _food = _create_entry_uncommitted(session, principal, payload)
         session.commit()
         session.refresh(entry)
         return entry
@@ -342,16 +329,9 @@ def create_entry_response(
     session: Session,
     principal: PrincipalContext,
     payload: DiaryEntryCreate,
-    *,
-    calendar_authority: DiaryCalendarAuthority | None = None,
 ) -> DiaryEntryResponse:
     try:
-        entry, food = _create_entry_uncommitted(
-            session,
-            principal,
-            payload,
-            calendar_authority=calendar_authority,
-        )
+        entry, food = _create_entry_uncommitted(session, principal, payload)
         response = to_entry_response(entry, food)
         response.model_dump_json()
         session.commit()
@@ -390,22 +370,6 @@ def _update_entry_uncommitted(
     session.add(entry)
     session.flush()
     return entry, food
-
-
-def update_entry(
-    session: Session,
-    principal: PrincipalContext,
-    entry_id: UUID,
-    payload: DiaryEntryUpdate,
-) -> DiaryEntry:
-    try:
-        entry, _food = _update_entry_uncommitted(session, principal, entry_id, payload)
-        session.commit()
-        session.refresh(entry)
-        return entry
-    except Exception:
-        session.rollback()
-        raise
 
 
 def update_entry_response(

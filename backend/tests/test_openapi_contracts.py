@@ -154,6 +154,17 @@ def test_retired_analysis_priority_and_snapshot_contracts_are_absent() -> None:
         assert retired not in serialized
 
 
+def test_sync_future_scope_has_no_runtime_contract() -> None:
+    schema = app.openapi()
+
+    assert not any(path.startswith("/sync") for path in schema["paths"])
+    assert {
+        "SyncOperation",
+        "SyncPushRequest",
+        "SyncPushResponse",
+    }.isdisjoint(schema["components"]["schemas"])
+
+
 def test_unused_routes_are_absent_and_protected_routes_remain() -> None:
     relevant_routers = (
         admin_routes.router,

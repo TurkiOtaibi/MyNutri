@@ -36,7 +36,7 @@ Status values:
 | F-012 | Profile validation bounds | Enforce age 10-100, no future birth date, height 100-250 cm, weight 20-300 kg, protein/kg 1.0-3.0, fat 15%-40%. | Required / current code needs alignment | `backend/app/schemas.py`, `ProfilePage.tsx` | D-009, D-012 |
 | F-013 | Live target preview | Preview target calories/macros while editing profile. | Confirmed / needs validation alignment | `backend/app/api/routes/profile.py`, `ProfilePage.tsx` | D-009, D-012 |
 | F-014 | Calc engine | Calculate BMR, TDEE, goal calories, macros, and carb clamp flag. | Confirmed | `backend/app/services/calc.py`, `backend/tests/test_calc.py` | D-009 |
-| F-015 | Target display | Show target calories and macros on Profile and Diary. | Confirmed | `TargetStrip.tsx`, `ProfilePage.tsx`, `DiaryPage.tsx` | N/A |
+| F-015 | Target display | Show target calories and macros on Profile and Diary. | Confirmed | `frontend/features/profile/profile-targets.tsx`, `frontend/features/diary/diary-summary.tsx`, `ProfilePage.tsx`, `DiaryPage.tsx` | N/A |
 | F-016 | Multiple people/profiles | Track multiple people and person-scoped diary. | Future Scope / out of v1 | No `person` table; no `person_id` on diary entries | D-016 |
 
 ## Food Catalog
@@ -80,5 +80,5 @@ Status values:
 | F-041 | Mobile/RTL quality | No horizontal scrolling, usable touch targets, keyboard-safe forms, readable mixed Arabic/English text, and two-line food-name truncation in lists/cards. | Required / needs QA verification | `globals.css`, components | D-015, D-020 |
 | F-042 | Backend and frontend tests | Test calc, snapshot, CRUD, validation, online errors, read-failure copy, duplicate-submit, stale items, mobile, RTL, and accessibility. | Required / partial | `backend/tests` | D-011, D-013, D-015, D-021, D-022, D-023 |
 | F-043 | IndexedDB cache and offline mutation queue | Cache personal nutrition data and queue writes offline. | Future Scope / out of v1 | `frontend/lib/db.ts` | D-001 |
-| F-044 | Sync push/pull and pending sync states | Replay queued changes, pull server state, show pending/syncing status, handle conflicts. | Future Scope / out of v1 | `sync.py`, `SyncStatus.tsx` | D-001 |
+| F-044 | Sync push/pull and pending sync states | Replay queued changes, pull server state, show pending/syncing status, handle conflicts. | Future Scope / not implemented | No runtime route, schema, queue, or status UI | D-001 |
 | F-045 | Offline page/metadata and cached-read fallbacks | Existing offline/cached-read artifacts must not define v1 behavior and must be Future Scope or implementation alignment only. | Future Scope / implementation alignment | `frontend/app/offline/page.tsx`, `frontend/app/layout.tsx`, `frontend/lib/db.ts`, `service-worker.js` | D-001, D-002, D-022 |

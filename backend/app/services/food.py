@@ -308,7 +308,7 @@ def _food_namespace_lock(session: Session, *, shared: bool) -> None:
     """Use one transaction-scoped namespace lock without taking an owner row.
 
     Keeping this sentinel outside the Principal/Food row namespaces lets Diary
-    writers follow the frozen owner -> target -> day -> namespace -> Food order,
+    writers follow the Principal -> Target Plan -> namespace -> Food order,
     while Food writers serialize before locking Food rows.
     """
     if session.get_bind().dialect.name != "postgresql":
@@ -331,7 +331,8 @@ def _lock_food_namespace(session: Session, principal: PrincipalContext) -> None:
 def lock_food_namespace_for_logging(session: Session) -> None:
     """Join the Food lock order with a reader-compatible namespace lock.
 
-    Diary capture takes this only after owner/target/day locks and before Food.
+    Diary capture takes this only after the Principal lock and Target Plan
+    resolution, and before the Food row lock.
     Food writers first lock their Principal, then take the exclusive advisory
     lock before Food. This matches Diary's Principal -> namespace -> Food
     ordering and prevents an implicit Principal foreign-key lock from creating
@@ -573,19 +574,6 @@ def _update_food_uncommitted(
     session.add(food)
     session.flush()
     return food
-
-
-def update_food(
-    session: Session, principal: PrincipalContext, food_id: UUID, payload: FoodUpdate
-) -> Food:
-    try:
-        food = _update_food_uncommitted(session, principal, food_id, payload)
-        session.commit()
-        session.refresh(food)
-        return food
-    except Exception:
-        session.rollback()
-        raise
 
 
 def update_food_response(

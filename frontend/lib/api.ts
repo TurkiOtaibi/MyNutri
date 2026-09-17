@@ -155,11 +155,6 @@ export function listTargetPlanHistory(cursor?: string | null, limit = 20): Promi
   return apiFetch<TargetPlanHistoryResponse>(`/target-plans?${params.toString()}`);
 }
 
-export function listFoods(query = ""): Promise<FoodResponse[]> {
-  const suffix = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
-  return apiFetch<FoodResponse[]>(`/foods${suffix}`);
-}
-
 export function listFoodPicker(
   options: {
     accessToken: string | null | undefined;

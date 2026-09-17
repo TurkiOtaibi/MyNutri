@@ -83,7 +83,7 @@ Offline-first behavior is out of scope for v1. IndexedDB, offline mutation queue
 | DiaryEntry | Confirmed / needs gram and quantity-edit alignment | Snapshot integrity remains required after Food edit/delete. |
 | NutritionSnapshot | Confirmed / needs gram/default-unit calculation definition | Freezes nutrition at logging time and must remain readable after Food deletion. |
 | WeekSummary | Confirmed | Sunday-to-Saturday aggregation. |
-| SyncOperation / QueuedMutation | Future Scope | Not a v1 requirement. |
+| Offline sync | Future Scope / not implemented | No runtime Sync route, schema, mutation queue, or status UI exists. |
 | Service worker | Constrained v1 shell only | Must not cache personal nutrition data. |
 
 ## Requirements Counts
@@ -126,8 +126,7 @@ Current code still contradicts several v1 BA decisions:
 - `frontend/components/FoodsPage.tsx` queues failed food saves/deletes and writes local IndexedDB.
 - `frontend/components/DiaryPage.tsx` queues failed diary add/delete operations.
 - `frontend/lib/db.ts` contains IndexedDB cache and mutation queue behavior.
-- `frontend/components/SyncStatus.tsx` exposes sync/pending status.
-- `backend/app/api/routes/sync.py` and `backend/tests/test_sync.py` are future-scope evidence.
+- No Sync route, runtime schema, mutation queue, or sync-status component is implemented; offline sync remains Future Scope only.
 - `frontend/public/service-worker.js` caches fetched GET responses.
 - Offline page/metadata and cached-read fallback behavior may imply offline data behavior.
 - Food archive fields are no longer v1 requirements; old archive references are superseded by D-025.

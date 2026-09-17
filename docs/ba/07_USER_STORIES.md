@@ -260,7 +260,7 @@ Actor: Single owner
 Type: Happy / Calculation
 Priority: P0
 Status: Implemented / validation alignment needed
-Evidence: `calc.py`, `ProfilePage.tsx`, `TargetStrip.tsx`, `test_calc.py`
+Evidence: `calc.py`, `ProfilePage.tsx`, `frontend/features/profile/profile-targets.tsx`, `frontend/features/diary/diary-summary.tsx`, `test_calc.py`
 Confidence: High
 
 User Story:
@@ -1502,7 +1502,7 @@ Actor: Product team
 Type: Future Scope
 Priority: P3
 Status: Future Scope
-Evidence: `backend/app/api/routes/sync.py`, `frontend/lib/db.ts`, `backend/tests/test_sync.py`
+Evidence: Product Future Scope only; no runtime Sync route, schema, queue, or test shell is implemented.
 Confidence: High
 
 User Story:
@@ -1588,7 +1588,7 @@ Actor: Product owner / QA
 Type: Testability
 Priority: P1
 Status: Required / current tests partial
-Evidence: `backend/tests/test_calc.py`, `backend/tests/test_diary_snapshot.py`, `backend/tests/test_sync.py`
+Evidence: `backend/tests/test_calc.py`, current Diary service/aggregation tests, and OpenAPI absence coverage for Future Scope Sync.
 Confidence: High
 
 User Story:
