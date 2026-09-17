@@ -189,22 +189,7 @@ export async function listFoodsPage(options: FoodListOptions = {}): Promise<Food
   });
   if (options.search?.trim()) params.set("search", options.search.trim());
   if (options.category) params.set("category", options.category);
-  const result = await apiFetch<FoodListResponse | FoodResponse[]>(`/foods?${params.toString()}`);
-  if (!Array.isArray(result)) return result;
-
-  const page = options.page ?? 1;
-  const pageSize = options.pageSize ?? 20;
-  const start = (page - 1) * pageSize;
-  const categories = [...new Set(result.map((food) => food.primary_category))].sort();
-  return {
-    items: result.slice(start, start + pageSize),
-    total: result.length,
-    page,
-    page_size: pageSize,
-    total_pages: result.length ? Math.ceil(result.length / pageSize) : 0,
-    categories,
-    uncategorized_count: 0
-  };
+  return apiFetch<FoodListResponse>(`/foods?${params.toString()}`);
 }
 
 export function getFood(foodId: string): Promise<FoodResponse> {

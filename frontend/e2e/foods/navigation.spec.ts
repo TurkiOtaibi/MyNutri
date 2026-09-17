@@ -364,9 +364,8 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     await expect(page.getByRole("link", { name: /المستخدمون/ })).toBeVisible();
   });
 
-  test("[FOOD-TC-013] @p0 legacy Admin Food URL permanently redirects to the unified catalog", async ({ request }) => {
+  test("[FOOD-TC-013] @p0 retired Admin Food URL is absent", async ({ request }) => {
     const response = await request.get("/admin/foods", { maxRedirects: 0 });
-    expect(response.status()).toBe(308);
-    expect(response.headers().location).toBe("/foods");
+    expect(response.status()).toBe(404);
   });
 });

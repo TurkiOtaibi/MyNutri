@@ -135,7 +135,7 @@ def validate_food_payload(schema: type[ModelT], payload: dict[str, Any]) -> Mode
         validated = schema.model_validate(payload)
     except ValidationError as error:
         raise food_validation_http_exception(error) from error
-    if schema.__name__ in {"FoodCreate", "FoodCreateV3"}:
+    if schema.__name__ == "FoodCreate":
         for field in ("primary_category", "subcategory", "nutrition_data_source"):
             if field not in payload or payload[field] is None:
                 raise HTTPException(

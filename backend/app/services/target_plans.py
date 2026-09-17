@@ -408,7 +408,7 @@ def write_target_plan(
         raise
 
 
-def _query_target_plan(
+def resolve_target_plan(
     session: Session,
     principal: PrincipalContext,
     requested_date: date,
@@ -426,16 +426,6 @@ def _query_target_plan(
         )
         .limit(1)
     ).first()
-
-
-def resolve_target_plan(
-    session: Session,
-    principal: PrincipalContext,
-    requested_date: date,
-) -> TargetPlan | None:
-    return _query_target_plan(session, principal, requested_date)
-
-
 def _target_source_response(
     plan: TargetPlan | None,
 ) -> TargetSourceResponse:
@@ -450,7 +440,7 @@ def _target_source_response(
     )
 
 
-def _load_week_target_context(
+def resolve_week_target_context(
     session: Session,
     principal: PrincipalContext,
     week_start: date,
@@ -508,17 +498,6 @@ def target_for_date(context: WeekTargetContext, requested_date: date) -> TargetS
         None,
     )
     return _target_source_response(plan)
-
-
-def resolve_week_target_context(
-    session: Session,
-    principal: PrincipalContext,
-    week_start: date,
-    week_end: date,
-) -> WeekTargetContext:
-    return _load_week_target_context(session, principal, week_start, week_end)
-
-
 def resolve_targets(
     session: Session,
     principal: PrincipalContext,

@@ -104,8 +104,7 @@ function adminPage(items: ReturnType<typeof adminFood>[]) {
     page: 1,
     page_size: 20,
     total_pages: 1,
-    categories: ["other"],
-    uncategorized_count: 0
+    categories: ["other"]
   };
 }
 

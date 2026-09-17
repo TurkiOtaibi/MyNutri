@@ -21,6 +21,7 @@ from app.schemas import (
     NutritionTotals,
 )
 from app.services.food import get_food_for_logging, lock_food_namespace_for_logging
+from app.services.errors import resource_not_found
 from app.services.target_plans import resolve_target_plan
 
 DETAIL_FIELDS = (
@@ -250,8 +251,6 @@ def get_entry(session: Session, principal: PrincipalContext, entry_id: UUID) -> 
         )
     ).first()
     if entry is None:
-        from app.services.errors import resource_not_found
-
         raise resource_not_found()
     return entry
 
@@ -271,8 +270,6 @@ def _create_entry_uncommitted(
         ).first()
         if existing is not None:
             if existing.principal_id != principal.principal_id:
-                from app.services.errors import resource_not_found
-
                 raise resource_not_found()
             if (
                 existing.entry_date == payload.entry_date
@@ -360,8 +357,6 @@ def _update_entry_uncommitted(
         .with_for_update()
     ).first()
     if entry is None:
-        from app.services.errors import resource_not_found
-
         raise resource_not_found()
     if payload.quantity is not None:
         entry.quantity = payload.quantity
@@ -406,8 +401,6 @@ def delete_entry(
             .with_for_update()
         ).first()
         if entry is None:
-            from app.services.errors import resource_not_found
-
             raise resource_not_found()
         session.delete(entry)
         session.commit()

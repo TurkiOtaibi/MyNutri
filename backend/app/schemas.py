@@ -628,18 +628,6 @@ class FoodResponse(FoodBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-class FoodCreateV3(FoodCreate):
-    """Active Food create contract."""
-
-
-class FoodUpdateV3(FoodUpdate):
-    """Active Food update contract."""
-
-
-class FoodResponseV3(FoodResponse):
-    """Active Food response contract."""
-
-
 class FoodPickerItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -668,13 +656,12 @@ FoodSort = Literal["name", "recent", "calories", "protein"]
 
 
 class FoodListResponse(BaseModel):
-    items: list[FoodResponseV3]
+    items: list[FoodResponse]
     total: int
     page: int
     page_size: int
     total_pages: int
     categories: list[str]
-    uncategorized_count: int
 
 
 class AccountResponse(BaseModel):

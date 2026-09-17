@@ -160,7 +160,7 @@ describe("domain boundaries", () => {
   it("keeps query keys and critical Arabic copy in their owning domains", () => {
     const sources = [
       read("components/ProfilePage.tsx"), read("components/DiaryPage.tsx"),
-      read("components/FoodFormPage.tsx"), featureSource("profile"),
+      read("components/FoodFormPage.tsx"), read("components/useFoodDelete.ts"), featureSource("profile"),
       featureSource("diary"), featureSource("foods"),
     ].join("\n");
     for (const key of [
@@ -168,6 +168,7 @@ describe("domain boundaries", () => {
       '["target-plan-history", subjectId]', '["week", session?.user.id, weekStart]',
       '["entries", session?.user.id, activeDate]',
       '["diary-food-picker", session?.user.id, normalizedSearch]',
+      '["diary-food-picker"]', '["entries"]', '["admin-user-diary"]',
       '["food", foodId]', '["foods"]',
     ]) expect(sources).toContain(key);
     for (const copy of [

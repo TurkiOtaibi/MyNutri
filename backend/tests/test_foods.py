@@ -409,14 +409,14 @@ def test_plan013_batch_responses_preserve_single_item_semantics() -> None:
     with session_fixture() as session:
         foods = create_plan013_representative_foods(session)
 
-        public_foods = list_foods(session, TEST_PRINCIPAL)
-        paged_foods = list_foods_page(session, TEST_PRINCIPAL).items
+        public_foods = list_foods(session)
+        paged_foods = list_foods_page(session).items
         expected = [
-            to_food_response(session, TEST_PRINCIPAL, food).model_dump(mode="json")
+            to_food_response(food).model_dump(mode="json")
             for food in foods
         ]
         with capture_application_selects(session) as statements:
-            responses = to_food_responses(session, TEST_PRINCIPAL, foods)
+            responses = to_food_responses(foods)
 
         assert [food.name for food in public_foods] == [
             "Alpha Zero",
@@ -454,7 +454,7 @@ def test_plan013_batch_response_query_budget(size: int) -> None:
         foods = list(session.exec(select(Food).order_by(Food.name)).all())
 
         with capture_application_selects(session) as statements:
-            responses = to_food_responses(session, TEST_PRINCIPAL, foods)
+            responses = to_food_responses(foods)
 
         assert len(responses) == size
         assert statements == []
@@ -462,9 +462,8 @@ def test_plan013_batch_response_query_budget(size: int) -> None:
 
 def test_plan013_category_metadata_is_distinct_and_empty_safe() -> None:
     with session_fixture() as session:
-        empty = list_foods_page(session, TEST_PRINCIPAL)
+        empty = list_foods_page(session)
         assert empty.categories == []
-        assert empty.uncategorized_count == 0
 
         for name in ("Alpha Sweet", "Beta Sweet"):
             create_food(
@@ -487,10 +486,9 @@ def test_plan013_category_metadata_is_distinct_and_empty_safe() -> None:
         )
 
         with capture_application_selects(session) as statements:
-            all_foods = list_foods_page(session, TEST_PRINCIPAL)
+            all_foods = list_foods_page(session)
 
         assert all_foods.categories == ["other", "sweets_and_sugars"]
-        assert all_foods.uncategorized_count == 0
         assert any(
             statement.startswith("select distinct food.primary_category")
             for statement in statements
@@ -505,13 +503,7 @@ def assert_plan013_list_route_query_budgets(session: Session, size: int) -> None
             FoodCreate.model_validate(food_payload(name=f"Route Budget {index:03}")),
         )
 
-    routes = {
-        "legacy": ("/foods", 1),
-        "paged": (
-            "/foods?page=1&page_size=100",
-            3,
-        ),
-    }
+    routes = {"paged": ("/foods?page=1&page_size=100", 3)}
     with client_for_session(session) as client:
         for route_name, (path, expected_total_selects) in routes.items():
             with capture_application_selects(session) as statements:
@@ -519,7 +511,7 @@ def assert_plan013_list_route_query_budgets(session: Session, size: int) -> None
 
             assert response.status_code == 200, route_name
             body = response.json()
-            items = body if route_name == "legacy" else body["items"]
+            items = body["items"]
             assert len(items) == size, route_name
             assert len(statements) == expected_total_selects, route_name
 
@@ -847,7 +839,7 @@ def test_same_food_name_with_different_default_unit_is_allowed() -> None:
             FoodCreate.model_validate(food_payload(default_unit_type=DefaultUnitType.cup)),
         )
 
-        assert len(list_foods(session, TEST_PRINCIPAL)) == 2
+        assert len(list_foods(session)) == 2
 
 
 def test_deleted_food_does_not_block_duplicate_recreation() -> None:
@@ -857,10 +849,10 @@ def test_deleted_food_does_not_block_duplicate_recreation() -> None:
         recreated = create_food(session, TEST_PRINCIPAL, FoodCreate.model_validate(food_payload()))
 
         assert recreated.id != food.id
-        assert len(list_foods(session, TEST_PRINCIPAL)) == 1
+        assert len(list_foods(session)) == 1
 
 
-def test_food_list_pagination_preserves_legacy_array_response(api_client: TestClient) -> None:
+def test_food_list_always_returns_paginated_response(api_client: TestClient) -> None:
     first = api_client.post(
         "/foods",
         json=food_json(name="Legacy Food", primary_category="other"),
@@ -868,9 +860,9 @@ def test_food_list_pagination_preserves_legacy_array_response(api_client: TestCl
     )
     assert first.status_code == 201
 
-    legacy = api_client.get("/foods", headers=auth_headers())
-    assert legacy.status_code == 200
-    assert isinstance(legacy.json(), list)
+    default = api_client.get("/foods", headers=auth_headers())
+    assert default.status_code == 200
+    assert default.json()["items"][0]["name"] == "Legacy Food"
 
     paged = api_client.get("/foods?page=1&page_size=20", headers=auth_headers())
     assert paged.status_code == 200
@@ -881,6 +873,7 @@ def test_food_list_pagination_preserves_legacy_array_response(api_client: TestCl
     assert body["total_pages"] == 1
     assert body["categories"] == ["other"]
     assert body["items"][0]["name"] == "Legacy Food"
+    assert "uncategorized_count" not in body
 
 
 def test_food_page_combines_search_and_category_filters() -> None:
@@ -914,12 +907,11 @@ def test_food_page_combines_search_and_category_filters() -> None:
         )
 
         grains = list_foods_page(
-            session, TEST_PRINCIPAL, search="oats", category="grains_and_starches"
+            session, search="oats", category="grains_and_starches"
         )
         assert [food.name for food in grains.items] == ["Arabic Oats"]
         assert grains.total == 1
         assert grains.categories == ["grains_and_starches", "other", "sweets_and_sugars"]
-        assert grains.uncategorized_count == 0
 
 
 def test_food_search_matches_brand_for_diary_picker() -> None:
@@ -935,8 +927,8 @@ def test_food_search_matches_brand_for_diary_picker() -> None:
             FoodCreate.model_validate(food_payload(name="Other food", brand="Different")),
         )
 
-        legacy_results = list_foods(session, TEST_PRINCIPAL, "gullon")
-        paged_results = list_foods_page(session, TEST_PRINCIPAL, search="GULLON")
+        legacy_results = list_foods(session, "gullon")
+        paged_results = list_foods_page(session, search="GULLON")
 
         assert [food.name for food in legacy_results] == ["Arabic oats"]
         assert [food.name for food in paged_results.items] == ["Arabic oats"]
@@ -959,10 +951,10 @@ def test_food_page_sorts_by_derived_serving_calories_and_protein() -> None:
             ),
         )
 
-        by_calories = list_foods_page(session, TEST_PRINCIPAL, sort="calories")
+        by_calories = list_foods_page(session, sort="calories")
         assert [food.name for food in by_calories.items] == ["Large Serving", "Small Serving"]
 
-        by_protein = list_foods_page(session, TEST_PRINCIPAL, sort="protein")
+        by_protein = list_foods_page(session, sort="protein")
         assert [food.name for food in by_protein.items] == ["Large Serving", "Small Serving"]
 
 
@@ -1073,9 +1065,9 @@ def test_food_response_preserves_unknown_net_carbs() -> None:
             FoodCreate.model_validate(food_payload(fiber_g=None)),
         )
 
-        assert to_food_response(session, TEST_PRINCIPAL, food).net_carbs_g is None
+        assert to_food_response(food).net_carbs_g is None
         food.fiber_g = 0
-        assert to_food_response(session, TEST_PRINCIPAL, food).net_carbs_g == 7
+        assert to_food_response(food).net_carbs_g == 7
 
 
 def test_wave1_food_contract_preserves_exact_null_zero_and_legacy_values(
@@ -1246,7 +1238,7 @@ def test_plan009_create_rejects_every_non_finite_food_number(
     errors = error_by_field(response)
     assert errors[field]["field"] == field
     assert errors[field]["code"] == "invalid_number"
-    assert api_client.get("/foods", headers=auth_headers()).json() == []
+    assert api_client.get("/foods", headers=auth_headers()).json()["items"] == []
 
 
 @pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
@@ -1380,7 +1372,7 @@ def test_plan009_legacy_non_finite_food_response_fails_closed(constant: float) -
 
         with session.no_autoflush:
             with pytest.raises(HTTPException) as invalid:
-                to_food_response(session, TEST_PRINCIPAL, food)
+                to_food_response(food)
 
         assert invalid.value.status_code == 409
         assert invalid.value.detail["code"] == "INVALID_FOOD_DATA"

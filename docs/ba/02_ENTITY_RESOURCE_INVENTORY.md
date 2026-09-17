@@ -70,7 +70,7 @@ plan for their date.
 |---|---|
 | v1 status | Confirmed |
 | Purpose | Return calculated calories/macros from profile inputs. |
-| Evidence | `backend/app/services/calc.py`, `backend/app/schemas.py` |
+| Evidence | `backend/app/nutrition_rules/calculation.py`, `backend/app/schemas.py` |
 | Stored? | No |
 
 Fields:
@@ -91,15 +91,16 @@ This section supersedes older Food entity rows that treat archive/inactive field
 | Entity | Food |
 | Purpose | Current catalog item used for future Diary logging. Deleted Foods are permanently removed from the catalog. |
 | Routes | `/foods`, `/foods/new`, `/foods/:id`, `/foods/:id/edit` |
-| API routes | `GET /foods`, `POST /foods`, `GET /foods/{id}`, `PUT /foods/{id}`, `DELETE /admin/foods/{id}` |
+| API routes | `GET /foods`, `POST /foods`, `GET /foods/picker`, `GET /foods/{id}`, `PUT /foods/{id}`, `DELETE /foods/{id}` |
+| List contract | `GET /foods` always returns paginated `FoodListResponse`; category values are required and Registry-validated. |
 | Nutrition source of truth | Values per 100g or per 100ml. |
 | Required fields | `name`, `nutrition_basis`, `calories`, `protein_g`, `carb_g`, `fat_g`, `default_unit_type`, `unit_amount`, `unit_basis` |
 | Optional basic fields | `brand`, `category`, `notes`, `data_source` |
 | Optional nutrients | `fiber_g`, `sugar_g`, `added_sugar_g`, `saturated_fat_g`, `trans_fat_g`, `sodium_mg`, `cholesterol_mg`, `potassium_mg`, `calcium_mg`, `iron_mg`, `magnesium_mg`, `zinc_mg`, `vitamin_d_mcg`, `vitamin_b12_mcg`, `vitamin_c_mg`, `vitamin_a_mcg`, `folate_mcg`, `vitamin_k_mcg` |
 | Delete lifecycle | Permanent hard delete with confirmation; no archive/inactive status in v1. |
 | Duplicate key | Current-catalog normalized `name + nutrition_basis + default_unit_type + unit_amount + unit_basis`. |
-| Diary dependency | Existing Diary entries remain readable through frozen snapshots after Food deletion. |
-| Current implementation gap | Current code uses serving-based fields, lacks standalone Food routes, lacks D-025 fields, and hard deletes without required confirmation/copy. |
+| Diary dependency | Admin Food deletion cascades to every referencing Diary entry across all Principals. |
+| Current implementation gap | None for the current shared-catalog route and deletion model. |
 
 Out of v1 for Food:
 - `is_active`

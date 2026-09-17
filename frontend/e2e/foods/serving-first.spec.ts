@@ -171,8 +171,7 @@ async function mockPagedCatalog(page: import("@playwright/test").Page, foods: Fo
         page: current,
         page_size: size,
         total_pages: Math.ceil(foods.length / size),
-        categories: ["fruits", "other"],
-        uncategorized_count: 0
+        categories: ["fruits", "other"]
       })
     });
   });

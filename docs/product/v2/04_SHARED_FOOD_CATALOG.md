@@ -8,12 +8,15 @@ Food visibility is global. `/foods` is the only Food catalog experience:
 
 - authenticated users browse, search, filter, sort, inspect, and select Foods for Diary use;
 - administrators use that same surface and additionally see Add, Edit, and Delete controls;
-- `/admin/foods` exists only as an admin-guarded permanent redirect to `/foods`;
+- `/admin/foods` does not exist; `/foods` is the sole Food UI route;
 - the Admin home retains user monitoring and has no separate Food Management tile.
 
 The backend remains authoritative. `POST /foods`, `PUT /foods/{food_id}`, and
 `DELETE /foods/{food_id}` require the admin role even when a client constructs a
 request directly. Read operations remain available to authenticated users.
+`GET /foods` always returns the paginated `FoodListResponse`; there is no
+legacy bare-array response, uncategorized sentinel, or versioned `Food*V3`
+schema alias.
 
 ## Food truth and Diary measurement
 

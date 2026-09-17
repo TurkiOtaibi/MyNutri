@@ -63,9 +63,12 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     await ensureSuccessful(profile, "Profile read");
   }
 
-  const foods = await fetch(`${API_URL}/foods`, { headers });
+  const foods = await fetch(
+    `${API_URL}/foods?page=1&page_size=100&search=${encodeURIComponent("V2 E2E baseline")}`,
+    { headers }
+  );
   await ensureSuccessful(foods, "Food seed read");
-  const existing = await foods.json() as Array<{ name?: string }>;
+  const existing = (await foods.json() as { items: Array<{ name?: string }> }).items;
   if (!existing.some((food) => food.name === "V2 E2E baseline")) {
     await ensureSuccessful(await fetch(`${API_URL}/foods`, {
       method: "POST", headers,

@@ -186,8 +186,8 @@ def existing_by_key(
     session: Session, principal: PrincipalContext
 ) -> dict[tuple[str, str, str, float, str], Food]:
     return {
-        duplicate_key(to_food_response(session, principal, food).model_dump()): food
-        for food in list_foods(session, principal)
+        duplicate_key(to_food_response(food).model_dump()): food
+        for food in list_foods(session)
     }
 
 

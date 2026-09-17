@@ -303,7 +303,7 @@ export interface FoodListResponse {
   /** Categories */
   categories: string[];
   /** Items */
-  items: FoodResponseV3[];
+  items: FoodResponse[];
   /** Page */
   page: number;
   /** Page Size */
@@ -312,8 +312,6 @@ export interface FoodListResponse {
   total: number;
   /** Total Pages */
   total_pages: number;
-  /** Uncategorized Count */
-  uncategorized_count: number;
 }
 
 /** FoodPickerItem */
@@ -352,11 +350,8 @@ export interface FoodPickerResponse {
   recent_items: FoodPickerItem[];
 }
 
-/**
- * FoodResponseV3
- * Active Food response contract.
- */
-export interface FoodResponseV3 {
+/** FoodResponse */
+export interface FoodResponse {
   /** Vitamin B12 Mcg */
   vitamin_b12_mcg?: number | null;
   /** Added Sugar G */
@@ -1320,7 +1315,7 @@ export namespace Foods {
       zinc_mg?: number | null;
     };
     export type RequestHeaders = {};
-    export type ResponseBody = FoodResponseV3;
+    export type ResponseBody = FoodResponse;
   }
 
   /**
@@ -1435,7 +1430,7 @@ export namespace Foods {
       zinc_mg?: number | null;
     };
     export type RequestHeaders = {};
-    export type ResponseBody = FoodResponseV3;
+    export type ResponseBody = FoodResponse;
   }
 
   /**
@@ -1457,7 +1452,7 @@ export namespace Foods {
     export type RequestQuery = {};
     export type RequestBody = never;
     export type RequestHeaders = {};
-    export type ResponseBody = FoodResponseV3;
+    export type ResponseBody = FoodResponse;
   }
 
   /**
@@ -1504,8 +1499,12 @@ export namespace Foods {
     export type RequestQuery = {
       /** Category */
       category?: string | null;
-      /** Page */
-      page?: number | null;
+      /**
+       * Page
+       * @min 1
+       * @default 1
+       */
+      page?: number;
       /**
        * Page Size
        * @min 1
@@ -1525,7 +1524,7 @@ export namespace Foods {
     };
     export type RequestBody = never;
     export type RequestHeaders = {};
-    export type ResponseBody = FoodResponseV3[] | FoodListResponse;
+    export type ResponseBody = FoodListResponse;
   }
 }
 

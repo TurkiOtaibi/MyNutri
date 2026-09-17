@@ -32,7 +32,7 @@ describe("generated OpenAPI contracts", () => {
       "ProfileResponse",
       "NutritionRegistryResponse",
       "DiaryEntryResponse",
-      "FoodResponseV3",
+      "FoodResponse",
       "AdminUserDetail",
       "export namespace Diary",
       "export namespace Foods",
@@ -51,6 +51,10 @@ describe("generated OpenAPI contracts", () => {
       "ArchiveFoodAdminFoods",
       "RestoreFoodAdminFoods",
       "export namespace AdminFoods",
+      "FoodCreateV3",
+      "FoodUpdateV3",
+      "FoodResponseV3",
+      "uncategorized_count",
     ]) {
       expect(source).not.toContain(retiredContract);
     }
