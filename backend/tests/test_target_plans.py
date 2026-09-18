@@ -1,5 +1,4 @@
 from datetime import date, datetime, timedelta, timezone
-import inspect
 from uuid import UUID
 
 import pytest
@@ -28,7 +27,7 @@ from app.models import (
     UnitBasis,
     utcnow,
 )
-from app.schemas import ProfileUpsert, TargetPlanWriteRequest
+from app.schemas import DiaryEntryCreate, ProfileUpsert, TargetPlanWriteRequest
 from app.services import diary as diary_service
 from app.services.target_plans import (
     _legacy_hash,
@@ -195,16 +194,62 @@ def create_diary_entry(
     return response
 
 
-def test_diary_create_preserves_principal_then_target_then_food_lock_order() -> None:
-    source = inspect.getsource(diary_service._create_entry_uncommitted)
-    symbols = [
-        "_lock_owner_for_target_binding(",
-        "resolve_target_plan(",
-        "lock_food_namespace_for_logging(",
-        "get_food_for_logging(",
-    ]
-    offsets = [source.index(symbol) for symbol in symbols]
-    assert offsets == sorted(offsets)
+def test_diary_create_preserves_principal_then_target_then_food_lock_order(monkeypatch) -> None:
+    calls: list[str] = []
+    principal = PrincipalContext(PRINCIPAL_A)
+    food = Food(
+        principal_id=PRINCIPAL_A,
+        name="Instrumented lock-order food",
+        normalized_name="instrumented lock-order food",
+        primary_category="other",
+        subcategory="other",
+        nutrition_basis=NutritionBasis.per_100g,
+        default_unit_type=DefaultUnitType.g,
+        unit_amount=1,
+        unit_basis=UnitBasis.g,
+        calories=100,
+        protein_g=1,
+        carb_g=2,
+        fat_g=3,
+        nutrition_data_source=NutritionDataSource.estimated,
+    )
+
+    class RecordingSession:
+        def add(self, entry: DiaryEntry) -> None:
+            calls.append("add")
+
+        def flush(self) -> None:
+            calls.append("flush")
+
+    monkeypatch.setattr(
+        diary_service,
+        "_lock_owner_for_target_binding",
+        lambda session, context: calls.append("principal"),
+    )
+    monkeypatch.setattr(
+        diary_service,
+        "resolve_target_plan",
+        lambda session, context, entry_date: calls.append("target") or None,
+    )
+    monkeypatch.setattr(
+        diary_service,
+        "lock_food_namespace_for_logging",
+        lambda session: calls.append("namespace"),
+    )
+    monkeypatch.setattr(
+        diary_service,
+        "get_food_for_logging",
+        lambda session, context, food_id: calls.append("food") or food,
+    )
+
+    _entry, resolved_food = diary_service._create_entry_uncommitted(
+        RecordingSession(),  # type: ignore[arg-type]
+        principal,
+        DiaryEntryCreate(entry_date=TODAY, food_id=food.id, quantity=1),
+    )
+
+    assert resolved_food is food
+    assert calls == ["principal", "target", "namespace", "food", "add", "flush"]
 
 
 def test_first_plan_can_be_effective_today(target_plan_context) -> None:

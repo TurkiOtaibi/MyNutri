@@ -9,7 +9,7 @@ import {
 } from "@/lib/nutrients";
 
 describe("nutrient definitions and values", () => {
-  it("maps target metadata while preserving nullable targets", () => {
+  it("maps server-provided target metadata without local target authority", () => {
     const definitions = definitionsForTargets({
       calories: 2000,
       protein_g: 100,
@@ -23,7 +23,7 @@ describe("nutrient definitions and values", () => {
         order: 4,
         target_type: "maximum",
         target_source: "profile",
-        target_value: null
+        target_value: 137.25
       }]
     } as never);
 
@@ -33,7 +33,7 @@ describe("nutrient definitions and values", () => {
       precision: 0,
       order: 4,
       targetType: "maximum",
-      targetValue: null
+      targetValue: 137.25
     });
   });
 

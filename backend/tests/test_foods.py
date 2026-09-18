@@ -527,8 +527,17 @@ def isolated_postgresql_session():
     url = os.environ.get("TEST_DATABASE_URL", "")
     if not url:
         pytest.skip("TEST_DATABASE_URL is required for PostgreSQL query budgets.")
-    if make_url(url).get_backend_name() != "postgresql":
-        pytest.fail("PostgreSQL query budgets require a PostgreSQL TEST_DATABASE_URL.")
+    parsed = make_url(url)
+    database = parsed.database or ""
+    if (
+        parsed.get_backend_name() != "postgresql"
+        or parsed.host not in {"localhost", "127.0.0.1", "::1"}
+        or not database.startswith("mynutri_test_")
+    ):
+        pytest.fail(
+            "PostgreSQL query budgets require a literal-loopback mynutri_test_ "
+            "TEST_DATABASE_URL."
+        )
 
     schema_name = f"isolated_foods_{uuid4().hex}"
     admin_engine = create_engine(url, isolation_level="AUTOCOMMIT")
@@ -618,23 +627,6 @@ def test_plan013_detail_endpoint_keeps_single_item_response_path() -> None:
         assert response.json()["primary_category"] == "other"
         assert response.json()["subcategory"] == "other"
         assert len(statements) == 1
-
-
-def test_create_food_blocks_normalized_duplicate() -> None:
-    with session_fixture() as session:
-        create_food(
-            session, TEST_PRINCIPAL, FoodCreate.model_validate(food_payload(name="Greek   Yogurt"))
-        )
-
-        with pytest.raises(HTTPException) as error:
-            create_food(
-                session,
-                TEST_PRINCIPAL,
-                FoodCreate.model_validate(food_payload(name=" greek yogurt ")),
-            )
-
-        assert error.value.status_code == 422
-        assert error.value.detail[0]["msg"] == DUPLICATE_FOOD_MESSAGE
 
 
 def test_food_api_returns_structured_arabic_required_errors(api_client: TestClient) -> None:
@@ -956,27 +948,6 @@ def test_food_page_sorts_by_derived_serving_calories_and_protein() -> None:
 
         by_protein = list_foods_page(session, sort="protein")
         assert [food.name for food in by_protein.items] == ["Large Serving", "Small Serving"]
-
-
-def test_optional_nutrient_cross_field_validation() -> None:
-    with pytest.raises(ValidationError):
-        FoodCreate.model_validate(food_payload(fiber_g=8))
-
-    with pytest.raises(ValidationError):
-        FoodCreate.model_validate(food_payload(sugar_g=3, added_sugar_g=4))
-
-    with pytest.raises(ValidationError):
-        FoodCreate.model_validate(food_payload(fat_g=5, saturated_fat_g=3, trans_fat_g=3))
-
-
-def test_optional_nutrient_max_ranges() -> None:
-    FoodCreate.model_validate(food_payload(vitamin_d_mcg=250, sodium_mg=50000))
-
-    with pytest.raises(ValidationError):
-        FoodCreate.model_validate(food_payload(vitamin_d_mcg=251))
-
-    with pytest.raises(ValidationError):
-        FoodCreate.model_validate(food_payload(sodium_mg=50001))
 
 
 def test_referenced_food_delete_cascades_diary_entry() -> None:

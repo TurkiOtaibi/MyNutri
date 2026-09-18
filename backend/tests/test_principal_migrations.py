@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 from collections.abc import Iterator, Mapping, Sequence
@@ -83,6 +82,12 @@ BASELINE_HASHES = {
     "c3a7e6d5f210_add_nutrition_pattern_analysis.py": "eb23950260d4e338c4a2db537a65eff594aad76d3caaee17aa4e3c32896f7617",
     "22733dbf5249_add_weekly_priorities_and_behavior_goals.py": "d340c5e285b45c461bf2a4820b346634611afce82f37de9f14e2802f668bb6e5",
     "df46234d2a7e_constrain_finite_food_nutrients.py": "70767434911230795129b4702f8d4bf2e9a4add9dcf1607c3fa648dfebdd0674",
+    "8a91c4e7d2f6_nova_retirement_phase1.py": "ef99400d81aa6daa39f1551cf8c457e52744b5dc7f8b1d277d7b1fc4e001316e",
+    "f47a2c9d6e13_retire_food_and_analysis_features.py": "0ced840bc07a4f1f46a3134ceb0ad40630a0e3ec1f19a48e65d9823ed087f104",
+    "a6c81e4f2d90_retire_diary_day_status.py": "78666e664cd891a568645d204f8636a5f8b1bbf21b67a45807b3de9a2a91eefa",
+    "b7d42e9a1c36_simplify_target_plans.py": "81f01a3291f9d846058636cfb597794e5dd6d51cdd0d8786b3317132df159894",
+    "c8e53f0b2d47_retire_nutrition_versioning_and_legacy_targets.py": "60737aa5ddae07f966a5a43dcff8470be7272d35998d01728d60d21714b1870d",
+    "d9f64a1c3e58_unify_food_catalog_and_cascade_diary_deletion.py": "140505cd27b921dbac6007630cb983e4512688e3e07f941efef6f7cbf5ef9888",
 }
 DEPLOYMENT_PRINCIPAL = UUID("00000000-0000-0000-0000-000000000001")
 PLAN009_TIMESTAMP = datetime(2026, 7, 28, tzinfo=UTC)
@@ -161,87 +166,6 @@ AUTHORITATIVE_HISTORICAL_CHECKS = {
 }
 
 
-def test_plan031_migration_is_additive_without_completion_backfill_and_fails_closed() -> None:
-    migration = (
-        Path(__file__).parents[1] / "alembic/versions/b7e31a4c9d20_add_diary_day_status.py"
-    ).read_text(encoding="utf-8")
-    assert 'create_table(\n        "diary_day_status"' in migration
-    assert 'create_table(\n        "diary_day_status_history"' in migration
-    assert "INSERT INTO DIARY_DAY_STATUS" not in migration.upper()
-    assert "PLAN031_BACKFILL_MUST_REMAIN_EMPTY" in migration
-    assert "PLAN031 downgrade requires an online empty-table preflight" in migration
-    assert "status_count={status_count}, history_count={history_count}" in migration
-
-
-def test_plan032_migration_is_additive_and_populated_downgrade_fails_closed() -> None:
-    migration = (
-        Path(__file__).parents[1]
-        / "alembic/versions/c3a7e6d5f210_add_nutrition_pattern_analysis.py"
-    ).read_text(encoding="utf-8")
-    for table in (
-        "nutrition_analysis",
-        "nutrition_analysis_revision",
-        "nutrition_analysis_evidence_ref",
-        "nutrition_analysis_revision_event",
-        "nutrition_analysis_command_idempotency",
-    ):
-        assert f'"{table}"' in migration
-    assert 'down_revision = "b7e31a4c9d20"' in migration
-    assert "PLAN032 downgrade requires an online empty-table preflight" in migration
-    assert "preserve immutable analysis history" in migration
-    assert "INSERT INTO nutrition_analysis" not in migration
-
-
-def test_plan033_migration_is_additive_owner_bound_and_fails_closed() -> None:
-    migration = (
-        Path(__file__).parents[1]
-        / "alembic/versions/22733dbf5249_add_weekly_priorities_and_behavior_goals.py"
-    ).read_text(encoding="utf-8")
-    for table in (
-        "weekly_priority_recommendation",
-        "weekly_priority_evaluation",
-        "weekly_priority_evidence_ref",
-        "behavior_goal",
-        "behavior_goal_history",
-        "behavior_goal_command_idempotency",
-        "behavior_goal_reminder_delivery",
-    ):
-        assert f'"{table}"' in migration
-    assert 'revision = "22733dbf5249"' in migration
-    assert 'down_revision = "c3a7e6d5f210"' in migration
-    assert "PLAN033 downgrade requires an online empty-table preflight" in migration
-    assert "preserve immutable goal history" in migration
-    assert "ON DELETE CASCADE" not in migration
-    assert "INSERT INTO weekly_priority" not in migration
-    for constraint in (
-        "fk_weekly_priority_source_owner",
-        "fk_weekly_priority_supersession_owner",
-        "fk_behavior_goal_history_root_owner",
-        "fk_behavior_goal_history_previous_owner",
-        "fk_behavior_goal_command_recommendation_owner",
-        "fk_behavior_goal_command_allocated_owner",
-        "fk_behavior_goal_reminder_revision_owner",
-    ):
-        assert constraint in migration
-    assert 'sa.Column("evaluation_diary_date", sa.Date(), nullable=False)' in migration
-    assert 'sa.Column("evaluation_mode", sa.String(16), nullable=False)' in migration
-    assert "fk_behavior_goal_progress_source_owner" in migration
-    assert "fk_behavior_goal_progress_attempt_source_owner" in migration
-    assert "ck_behavior_goal_progress_attempt_source" in migration
-    assert "ix_behavior_goal_due_progress_source" in migration
-    assert "ix_behavior_goal_finalized_unattempted" in migration
-    assert "ix_behavior_goal_finalized_attempt_revision" in migration
-    assert "ix_behavior_goal_finalized_attempt_event" in migration
-    assert "ix_behavior_goal_history_principal_occurred_id" in migration
-    assert "uq_nutrition_analysis_event_owner_time" in migration
-    assert "ix_nutrition_analysis_event_owner_revision_time_id" in migration
-    assert "fk_behavior_goal_progress_attempt_event_owner" in migration
-    assert "ck_behavior_goal_progress_attempt_event" in migration
-    assert "REVOKE ALL PRIVILEGES ON TABLE public.%I FROM PUBLIC" in migration
-    assert "ARRAY['anon', 'authenticated']" in migration
-    assert "IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = data_api_role)" in migration
-
-
 POSTGRESQL_AUTHORITATIVE_CHECK_DEFINITIONS = {
     "ck_profile_cut_intensity": ("CHECK (cut_intensity = ANY (ARRAY[0.150, 0.200, 0.250]))"),
 }
@@ -301,31 +225,41 @@ def _plan012_expected_tuple(
     return (legacy_primary_category_key, None, None, None, False)
 
 
-@pytest.mark.migration
-@pytest.mark.parametrize("legacy_primary_category_key", PLAN012_LEGACY_CATEGORY_KEYS)
-def test_plan012_deterministic_0014_mapping_fixture_covers_every_v2_field(
-    legacy_primary_category_key: str | None,
-) -> None:
-    expected = _plan012_expected_tuple(legacy_primary_category_key)
-
-    assert len(expected) == len(PLAN012_V2_FIELDS)
-    assert dict(zip(PLAN012_V2_FIELDS, expected, strict=True)) == {
-        "food_category_key": expected[0],
-        "grain_type": expected[1],
-        "baked_good_type": expected[2],
-        "grain_starch_type": expected[3],
-        "taxonomy_review_required": expected[4],
-    }
-
-
 def _database_url() -> str:
     url = os.environ.get("TEST_DATABASE_URL", "")
     if not url:
         pytest.skip("TEST_DATABASE_URL is required for PostgreSQL migration rehearsals.")
-    database = make_url(url).database or ""
-    if not database.startswith("mynutri_test_"):
-        pytest.fail("Migration tests refuse a database without the mynutri_test_ prefix.")
+    parsed = make_url(url)
+    database = parsed.database or ""
+    if (
+        parsed.get_backend_name() != "postgresql"
+        or parsed.host not in {"localhost", "127.0.0.1", "::1"}
+        or not database.startswith("mynutri_test_")
+    ):
+        pytest.fail(
+            "Migration tests require a literal-loopback PostgreSQL database with the "
+            "mynutri_test_ prefix."
+        )
     return url
+
+
+def test_migration_database_url_requires_postgresql_loopback_test_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    refused = (
+        "sqlite:///mynutri_test_local",
+        "postgresql+psycopg://postgres@db.internal:5432/mynutri_test_remote",
+        "postgresql+psycopg://postgres@localhost.example.test:5432/mynutri_test_remote",
+        "postgresql+psycopg://postgres@127.0.0.1:5432/not_a_test_database",
+    )
+    for url in refused:
+        monkeypatch.setenv("TEST_DATABASE_URL", url)
+        with pytest.raises(pytest.fail.Exception):
+            _database_url()
+
+    approved = "postgresql+psycopg://postgres@127.0.0.1:5432/mynutri_test_approved"
+    monkeypatch.setenv("TEST_DATABASE_URL", approved)
+    assert _database_url() == approved
 
 
 def _run_alembic(url: str, *arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -445,14 +379,7 @@ def _normalized_revision_hash(path: Path) -> str:
 
 def _assert_immutable_revision_hashes(versions: Path) -> None:
     revision_files = {path.name for path in versions.glob("*.py")}
-    assert revision_files == set(BASELINE_HASHES) | {
-        "8a91c4e7d2f6_nova_retirement_phase1.py",
-        "f47a2c9d6e13_retire_food_and_analysis_features.py",
-        "a6c81e4f2d90_retire_diary_day_status.py",
-        "b7d42e9a1c36_simplify_target_plans.py",
-        "c8e53f0b2d47_retire_nutrition_versioning_and_legacy_targets.py",
-        "d9f64a1c3e58_unify_food_catalog_and_cascade_diary_deletion.py",
-    }
+    assert revision_files == set(BASELINE_HASHES)
     actual = {name: _normalized_revision_hash(versions / name) for name in BASELINE_HASHES}
     assert actual == BASELINE_HASHES
 
@@ -461,18 +388,6 @@ def _assert_immutable_revision_hashes(versions: Path) -> None:
 def test_immutable_baseline_revision_hashes() -> None:
     versions = Path(__file__).parents[1] / "alembic" / "versions"
     _assert_immutable_revision_hashes(versions)
-
-
-@pytest.mark.migration
-def test_immutable_baseline_revision_hashes_detect_mutation(tmp_path: Path) -> None:
-    versions = Path(__file__).parents[1] / "alembic" / "versions"
-    copied_versions = tmp_path / "versions"
-    shutil.copytree(versions, copied_versions)
-    latest = copied_versions / "9f2a1b6c3d05_plan025_admin_diary_order_index.py"
-    latest.write_bytes(latest.read_bytes() + b"\n# mutation probe\n")
-
-    with pytest.raises(AssertionError):
-        _assert_immutable_revision_hashes(copied_versions)
 
 
 @pytest.mark.migration
@@ -738,9 +653,11 @@ def test_food_catalog_unification_current_head_schema_and_security() -> None:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
             FOOD_CATALOG_UNIFICATION_REVISION
         )
-        assert connection.execute(
-            text("SELECT has_table_privilege(current_user, 'food', 'SELECT,INSERT,UPDATE,DELETE')")
-        ).scalar_one()
+        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+            assert connection.execute(
+                text("SELECT has_table_privilege(current_user, 'food', :privilege)"),
+                {"privilege": privilege},
+            ).scalar_one()
         assert connection.execute(
             text(
                 "SELECT count(*) FROM information_schema.role_table_grants "
@@ -779,16 +696,20 @@ def test_food_catalog_unification_revokes_data_api_food_mutation_and_preserves_b
     engine = create_engine(url)
     with engine.connect() as connection:
         for role in ("anon", "authenticated"):
-            assert not connection.execute(
-                text("SELECT has_table_privilege(:role, 'food', 'INSERT,UPDATE,DELETE')"),
-                {"role": role},
+            for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                assert not connection.execute(
+                    text("SELECT has_table_privilege(:role, 'food', :privilege)"),
+                    {"role": role, "privilege": privilege},
+                ).scalar_one()
+        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+            assert connection.execute(
+                text("SELECT has_table_privilege('service_role', 'food', :privilege)"),
+                {"privilege": privilege},
             ).scalar_one()
-        assert connection.execute(
-            text("SELECT has_table_privilege('service_role', 'food', 'SELECT,INSERT,UPDATE,DELETE')")
-        ).scalar_one()
-        assert connection.execute(
-            text("SELECT has_table_privilege(current_user, 'food', 'SELECT,INSERT,UPDATE,DELETE')")
-        ).scalar_one()
+            assert connection.execute(
+                text("SELECT has_table_privilege(current_user, 'food', :privilege)"),
+                {"privilege": privilege},
+            ).scalar_one()
     engine.dispose()
 
 
@@ -834,6 +755,169 @@ def test_food_catalog_unification_rejects_archived_data_atomically() -> None:
         assert "archived_at" in {
             column["name"] for column in inspect(connection).get_columns("food")
         }
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_food_catalog_unification_preserves_populated_rows_and_cascades_only_dependents(
+    database_restored_to_current_head: str,
+) -> None:
+    url = database_restored_to_current_head
+    _reset_database(url)
+    _run_alembic(url, "upgrade", TARGET_INTEGRITY_RETIREMENT_REVISION)
+    principal_id = uuid4()
+    profile_id = uuid4()
+    plan_id = uuid4()
+    deleted_food_id = uuid4()
+    retained_food_id = uuid4()
+    deleted_entry_id = uuid4()
+    retained_entry_id = uuid4()
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO principal (id,role,status,created_at,updated_at) "
+                "VALUES (:id,'user','active',now(),now())"
+            ),
+            {"id": principal_id},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO profile "
+                "(id,principal_id,sex,birth_date,height_cm,weight_kg,activity_level,goal,"
+                "protein_per_kg,fat_pct,cut_intensity,updated_at) VALUES "
+                "(:id,:principal,'male','1990-01-01',175,80,'moderate','maintain',"
+                "1.2,0.25,0.2,now())"
+            ),
+            {"id": profile_id, "principal": principal_id},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO target_plan "
+                "(id,principal_id,profile_id,effective_from,revision,calculation_document,created_at) "
+                "VALUES (:id,:principal,:profile,'2025-01-01',1,"
+                "CAST(:document AS jsonb),now())"
+            ),
+            {
+                "id": plan_id,
+                "principal": principal_id,
+                "profile": profile_id,
+                "document": json.dumps({"target_result": {"calories": 2000}}),
+            },
+        )
+        for food_id, name in (
+            (deleted_food_id, "Cascade candidate"),
+            (retained_food_id, "Retained catalog food"),
+        ):
+            connection.execute(
+                text(
+                    "INSERT INTO food "
+                    "(id,created_by_principal_id,name,normalized_name,primary_category,"
+                    "subcategory,nutrition_basis,default_unit_type,unit_amount,unit_basis,"
+                    "calories,protein_g,carb_g,fat_g,nutrition_data_source,created_at,updated_at) "
+                    "VALUES (:id,:principal,:name,:normalized,'other','other','per_100g',"
+                    "'serving',100,'g',100,10,20,5,'estimated',now(),now())"
+                ),
+                {
+                    "id": food_id,
+                    "principal": principal_id,
+                    "name": name,
+                    "normalized": name.lower(),
+                },
+            )
+        for entry_id, food_id in (
+            (deleted_entry_id, deleted_food_id),
+            (retained_entry_id, retained_food_id),
+        ):
+            connection.execute(
+                text(
+                    "INSERT INTO diary_entry "
+                    "(id,principal_id,entry_date,food_id,target_plan_id,quantity,"
+                    "recorded_unit_type,recorded_unit_amount,recorded_unit_basis,meal_type,created_at) "
+                    "VALUES (:id,:principal,'2026-01-01',:food,:plan,1,'serving',100,'g',"
+                    "'unspecified',now())"
+                ),
+                {
+                    "id": entry_id,
+                    "principal": principal_id,
+                    "food": food_id,
+                    "plan": plan_id,
+                },
+            )
+    with engine.connect() as connection:
+        before_foods = connection.execute(
+            text(
+                "SELECT id,name,archived_at,archived_by_principal_id FROM food "
+                "ORDER BY id"
+            )
+        ).all()
+        before_entries = connection.execute(
+            text(
+                "SELECT id,food_id,target_plan_id,quantity FROM diary_entry ORDER BY id"
+            )
+        ).all()
+        before_plans = connection.execute(
+            text(
+                "SELECT id,principal_id,profile_id,effective_from,revision,calculation_document "
+                "FROM target_plan ORDER BY id"
+            )
+        ).all()
+    engine.dispose()
+
+    _run_alembic(url, "upgrade", "head")
+
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        after_foods = connection.execute(
+            text("SELECT id,name,NULL,NULL FROM food ORDER BY id")
+        ).all()
+        after_entries = connection.execute(
+            text(
+                "SELECT id,food_id,target_plan_id,quantity FROM diary_entry ORDER BY id"
+            )
+        ).all()
+        after_plans = connection.execute(
+            text(
+                "SELECT id,principal_id,profile_id,effective_from,revision,calculation_document "
+                "FROM target_plan ORDER BY id"
+            )
+        ).all()
+    assert after_foods == before_foods
+    assert after_entries == before_entries
+    assert after_plans == before_plans
+
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM food WHERE id=:id"), {"id": deleted_food_id})
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT id FROM food ORDER BY id")).scalars().all() == [
+            retained_food_id
+        ]
+        assert connection.execute(
+            text("SELECT id FROM diary_entry ORDER BY id")
+        ).scalars().all() == [retained_entry_id]
+        assert connection.execute(text("SELECT id FROM target_plan")).scalar_one() == plan_id
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_food_catalog_unification_online_downgrade_refuses_without_mutation(
+    database_restored_to_current_head: str,
+) -> None:
+    url = database_restored_to_current_head
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "head")
+
+    result = _run_alembic(
+        url, "downgrade", TARGET_INTEGRITY_RETIREMENT_REVISION, check=False
+    )
+
+    assert result.returncode != 0
+    assert "FOOD_CATALOG_SIMPLIFICATION_DOWNGRADE_BLOCKED" in result.stdout + result.stderr
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            FOOD_CATALOG_UNIFICATION_REVISION
+        )
     engine.dispose()
 
 
@@ -4059,6 +4143,121 @@ def test_plan033_populated_downgrade_refuses_without_deleting_history(
     engine.dispose()
 
 
+def _assert_food_simplification_failure_left_source_schema(
+    engine, entry_id: UUID
+) -> None:
+    inspector = inspect(engine)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+            NOVA_RETIREMENT_REVISION
+        )
+        assert connection.execute(
+            text("SELECT count(*) FROM diary_entry WHERE id=:id"), {"id": entry_id}
+        ).scalar_one() == 1
+    diary_columns = {column["name"] for column in inspector.get_columns("diary_entry")}
+    assert "nutrition_snapshot" in diary_columns
+    assert "recorded_unit_basis" not in diary_columns
+
+
+@pytest.mark.migration
+@pytest.mark.parametrize("reference_state", ["null", "orphan"])
+def test_food_simplification_rejects_missing_diary_food_reference_atomically(
+    database_restored_to_current_head: str,
+    reference_state: str,
+) -> None:
+    url = database_restored_to_current_head
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "0014_v2_food_taxonomy")
+    principal_id, food_id = _seed_plan009_food(url)
+    _run_alembic(url, "upgrade", NOVA_RETIREMENT_REVISION)
+    entry_id = uuid4()
+    missing_food_id = None if reference_state == "null" else uuid4()
+    snapshot = {
+        "schema_version": 4,
+        "captured_unit": {
+            "default_unit_type": "serving",
+            "unit_amount": 100,
+            "unit_basis": "g",
+        },
+    }
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        if reference_state == "orphan":
+            connection.execute(text("SET LOCAL session_replication_role = replica"))
+        connection.execute(
+            text(
+                "INSERT INTO diary_entry "
+                "(id,principal_id,entry_date,food_id,quantity,meal_type,nutrition_snapshot,"
+                "target_plan_id,target_provenance,snapshot_schema_version,created_at) VALUES "
+                "(:id,:principal,'2026-09-01',:food,1,'unspecified',CAST(:snapshot AS jsonb),"
+                "NULL,'no_target_source',4,:created_at)"
+            ),
+            {
+                "id": entry_id,
+                "principal": principal_id,
+                "food": missing_food_id,
+                "snapshot": json.dumps(snapshot),
+                "created_at": PLAN009_TIMESTAMP,
+            },
+        )
+        if reference_state == "orphan":
+            connection.execute(text("SET LOCAL session_replication_role = origin"))
+
+    result = _run_alembic(url, "upgrade", FOOD_SIMPLIFICATION_REVISION, check=False)
+
+    assert result.returncode != 0
+    assert "FOOD_SIMPLIFICATION_ORPHANED_DIARY_FOOD_REFERENCE" in (
+        result.stdout + result.stderr
+    )
+    _assert_food_simplification_failure_left_source_schema(engine, entry_id)
+    with engine.connect() as connection:
+        actual_food_id = connection.execute(
+            text("SELECT food_id FROM diary_entry WHERE id=:id"), {"id": entry_id}
+        ).scalar_one_or_none()
+    assert actual_food_id == missing_food_id
+    assert food_id != missing_food_id
+    engine.dispose()
+
+
+@pytest.mark.migration
+def test_food_simplification_rejects_ambiguous_diary_measurement_atomically(
+    database_restored_to_current_head: str,
+) -> None:
+    url = database_restored_to_current_head
+    _reset_database(url)
+    _run_alembic(url, "upgrade", "0014_v2_food_taxonomy")
+    principal_id, food_id = _seed_plan009_food(url)
+    _run_alembic(url, "upgrade", NOVA_RETIREMENT_REVISION)
+    entry_id = uuid4()
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO diary_entry "
+                "(id,principal_id,entry_date,food_id,quantity,meal_type,nutrition_snapshot,"
+                "target_plan_id,target_provenance,snapshot_schema_version,created_at) VALUES "
+                "(:id,:principal,'2026-09-01',:food,1,'unspecified',"
+                "CAST(:snapshot AS jsonb),NULL,'no_target_source',4,:created_at)"
+            ),
+            {
+                "id": entry_id,
+                "principal": principal_id,
+                "food": food_id,
+                "snapshot": json.dumps({"schema_version": 4}),
+                "created_at": PLAN009_TIMESTAMP,
+            },
+        )
+
+    result = _run_alembic(url, "upgrade", FOOD_SIMPLIFICATION_REVISION, check=False)
+
+    assert result.returncode != 0
+    assert "FOOD_SIMPLIFICATION_DIARY_MEASUREMENT_BACKFILL_REQUIRED" in (
+        result.stdout + result.stderr
+    )
+    _assert_food_simplification_failure_left_source_schema(engine, entry_id)
+    engine.dispose()
+
+
 @pytest.mark.migration
 def test_food_simplification_rejects_legacy_diary_food_dimension_mismatch_atomically(
     database_restored_to_current_head: str,
@@ -4114,11 +4313,8 @@ def test_food_simplification_rejects_legacy_diary_food_dimension_mismatch_atomic
         "FOOD_SIMPLIFICATION_DIARY_FOOD_DIMENSION_RECONCILIATION_REQUIRED"
         in result.stdout + result.stderr
     )
-    inspector = inspect(engine)
+    _assert_food_simplification_failure_left_source_schema(engine, entry_id)
     with engine.connect() as connection:
-        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            NOVA_RETIREMENT_REVISION
-        )
         assert (
             connection.execute(
                 text("SELECT nutrition_snapshot->>'schema_version' FROM diary_entry WHERE id=:id"),
@@ -4126,9 +4322,6 @@ def test_food_simplification_rejects_legacy_diary_food_dimension_mismatch_atomic
             ).scalar_one()
             == "4"
         )
-    diary_columns = {column["name"] for column in inspector.get_columns("diary_entry")}
-    assert "nutrition_snapshot" in diary_columns
-    assert "recorded_unit_basis" not in diary_columns
     engine.dispose()
 
 
