@@ -1,7 +1,6 @@
 import { AlertCircle, Check, LoaderCircle, RotateCcw, Search, X } from "lucide-react";
-import type { FormEvent, ReactNode } from "react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { createDiaryEntry, listFoodPicker, updateDiaryEntry } from "@/lib/api";
 import { formatLongArabicDate } from "@/lib/dates";
@@ -11,6 +10,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { useSessionAbortSignal } from "@/components/SessionQueryProvider";
 import { mealAddLabels, mealLabels, multiplyServing, parseQuantity, pickerServingNutrition, scaleEntryPreview, standardMeals, validateQuantity } from "./diary-model";
 import { useDebouncedValue } from "./diary-hooks";
+import { ModalFrame } from "./diary-modal";
 
 const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
 
@@ -47,13 +47,13 @@ export function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: {
 
   const mutation = useMutation({
     mutationFn: (payload: DiaryEntryInput) => createDiaryEntry(payload, accessToken, sessionSignal),
-    onSuccess: async () => {
+    onSuccess: async (_entry, submitted) => {
       if (sessionSignal.aborted) return;
       setSaveSucceeded(true);
       setError("");
       await new Promise((resolve) => window.setTimeout(resolve, 320));
       if (sessionSignal.aborted) return;
-      await onSaved(mealType as MealType);
+      await onSaved(submitted.meal_type);
       if (sessionSignal.aborted) return;
     },
     onError: () => {
@@ -180,17 +180,18 @@ export function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: {
             </div>
           ) : (
             <div className="add-food-configure-state">
-              <SelectedFoodSummary food={selectedFood} onChange={changeFood} />
+              <SelectedFoodSummary food={selectedFood} disabled={mutation.isPending || saveSucceeded} onChange={changeFood} />
               <section className="add-config-section">
                 <h3>قسم الوجبة</h3>
-                <MealTypeSelector value={mealType} onChange={(value) => { setMealType(value); setError(""); }} />
+                <MealTypeSelector value={mealType} disabled={mutation.isPending || saveSucceeded} onChange={(value) => { setMealType(value); setError(""); }} />
               </section>
               <section className="add-config-section">
                 <h3>الكمية</h3>
             <QuantityStepper
               value={quantity}
               unitLabel={defaultUnitLabels[selectedFood.default_unit_type]}
-              errorId={quantityError || error ? "entry-form-error" : undefined}
+              errorId={quantityError ? "entry-form-error" : undefined}
+              disabled={mutation.isPending || saveSucceeded}
               onChange={(value) => { setQuantity(value); setError(""); }}
             />
                 {quantityError ? <p id="entry-form-error" className="field-error quantity-inline-error" role="alert">{quantityError}</p> : null}
@@ -244,7 +245,7 @@ export function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: {
   );
 }
 
-export function FoodResultGroup({ title, foods, onChoose, emptyText }: { title?: string; foods: FoodPickerItem[]; onChoose: (food: FoodPickerItem) => void; emptyText?: string }) {
+function FoodResultGroup({ title, foods, onChoose, emptyText }: { title?: string; foods: FoodPickerItem[]; onChoose: (food: FoodPickerItem) => void; emptyText?: string }) {
   return (
     <section className="food-result-group">
       {title ? <h4>{title}</h4> : null}
@@ -256,7 +257,7 @@ export function FoodResultGroup({ title, foods, onChoose, emptyText }: { title?:
   );
 }
 
-export function FoodResultRow({ food, onChoose }: { food: FoodPickerItem; onChoose: (food: FoodPickerItem) => void }) {
+function FoodResultRow({ food, onChoose }: { food: FoodPickerItem; onChoose: (food: FoodPickerItem) => void }) {
   const serving = pickerServingNutrition(food);
   return (
     <button className="diary-food-option" type="button" onClick={() => onChoose(food)} aria-label={`${food.name}، ${defaultServingText(food)}، ${serving ? Math.round(serving.calories) : "غير متاح"} سعرة`}>
@@ -269,11 +270,11 @@ export function FoodResultRow({ food, onChoose }: { food: FoodPickerItem; onChoo
   );
 }
 
-export function FoodResultSkeletons() {
+function FoodResultSkeletons() {
   return <div className="food-result-skeletons" aria-label="جارٍ تحميل الأطعمة" role="status">{[1, 2, 3, 4].map((item) => <span key={item} />)}</div>;
 }
 
-export function SelectedFoodSummary({ food, onChange }: { food: FoodPickerItem; onChange: () => void }) {
+function SelectedFoodSummary({ food, disabled, onChange }: { food: FoodPickerItem; disabled: boolean; onChange: () => void }) {
   const serving = pickerServingNutrition(food);
   return (
     <section className="selected-food-summary" aria-label={`الطعام المحدد: ${food.name}`}>
@@ -282,7 +283,7 @@ export function SelectedFoodSummary({ food, onChange }: { food: FoodPickerItem; 
         {food.brand ? <p dir="auto">{food.brand}</p> : null}
         <p className="selected-food-serving"><bdi>{defaultServingText(food)}</bdi> · <bdi>{serving ? Math.round(serving.calories) : "—"} سعرة</bdi></p>
       </div>
-      <button type="button" onClick={onChange}>تغيير الطعام</button>
+      <button type="button" disabled={disabled} onClick={onChange}>تغيير الطعام</button>
     </section>
   );
 }
@@ -295,10 +296,10 @@ export function EditEntryDialog({ entry, onClose, onSaved }: { entry: DiaryEntry
   const [mealType, setMealType] = useState<MealType>(entry.meal_type ?? "unspecified");
   const [error, setError] = useState("");
   const mutation = useMutation({
-    mutationFn: (amount: number) => updateDiaryEntry(entry.id, amount, mealType, accessToken, sessionSignal),
-    onSuccess: async () => {
+    mutationFn: ({ amount: submittedAmount, meal: submittedMeal }: { amount: number; meal: MealType }) => updateDiaryEntry(entry.id, submittedAmount, submittedMeal, accessToken, sessionSignal),
+    onSuccess: async (_entry, submitted) => {
       if (sessionSignal.aborted) return;
-      await onSaved(mealType);
+      await onSaved(submitted.meal);
       if (sessionSignal.aborted) return;
     },
     onError: () => {
@@ -318,7 +319,7 @@ export function EditEntryDialog({ entry, onClose, onSaved }: { entry: DiaryEntry
       setError(quantityError || "أدخل كمية صحيحة.");
       return;
     }
-    if (!mutation.isPending) mutation.mutate(amount);
+    if (!mutation.isPending) mutation.mutate({ amount, meal: mealType });
   }
 
   return (
@@ -326,15 +327,16 @@ export function EditEntryDialog({ entry, onClose, onSaved }: { entry: DiaryEntry
       <form onSubmit={submit}>
         <div className="sheet-header">
           <div><p className="section-eyebrow-text" dir="auto">{entry.food.name}</p><h2 id="edit-entry-title">تعديل الكمية والقسم</h2></div>
-          <button className="btn icon" type="button" onClick={onClose} aria-label="إغلاق تعديل الكمية"><X size={19} /></button>
+          <button className="btn icon" type="button" onClick={onClose} disabled={mutation.isPending} aria-label="إغلاق تعديل الكمية"><X size={19} /></button>
         </div>
         <p className="dialog-help">يمكن تعديل الكمية والقسم فقط. تبقى الكمية المسجلة ثابتة، وتُحسب القيم من بيانات الطعام الحالية.</p>
-        <MealTypeSelector value={mealType} onChange={setMealType} />
+        <MealTypeSelector value={mealType} disabled={mutation.isPending} onChange={setMealType} />
         <QuantityStepper
           value={quantity}
           unitLabel={unitLabel}
           errorId={quantityError || error ? "edit-quantity-error" : undefined}
           initialFocus
+          disabled={mutation.isPending}
           onChange={(value) => { setQuantity(value); setError(""); }}
         />
         {preview ? (
@@ -352,17 +354,35 @@ export function EditEntryDialog({ entry, onClose, onSaved }: { entry: DiaryEntry
           </div>
         ) : null}
         {quantityError || error ? <p id="edit-quantity-error" className="field-error" role="alert">{error || quantityError}</p> : null}
-        <div className="sheet-actions"><button className="btn" type="button" onClick={onClose}>إلغاء</button><button className="btn primary" type="submit" disabled={mutation.isPending || Boolean(quantityError)}>{mutation.isPending ? "جارٍ الحفظ…" : "حفظ التغييرات"}</button></div>
+        <div className="sheet-actions"><button className="btn" type="button" onClick={onClose} disabled={mutation.isPending}>إلغاء</button><button className="btn primary" type="submit" disabled={mutation.isPending || Boolean(quantityError)}>{mutation.isPending ? "جارٍ الحفظ…" : "حفظ التغييرات"}</button></div>
       </form>
     </ModalFrame>
   );
 }
 
-export function MealTypeSelector({ value, onChange }: { value: MealType | null; onChange: (value: MealType) => void }) {
+function MealTypeSelector({ value, disabled = false, onChange }: { value: MealType | null; disabled?: boolean; onChange: (value: MealType) => void }) {
+  const hasSelectedMeal = value !== null && standardMeals.includes(value);
+
+  function moveSelection(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    const buttons = Array.from(
+      event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="radio"]:not(:disabled)') ?? [],
+    );
+    const currentIndex = buttons.indexOf(event.currentTarget);
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = (currentIndex + 1) % buttons.length;
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") nextIndex = (currentIndex - 1 + buttons.length) % buttons.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = buttons.length - 1;
+    if (nextIndex === null || !buttons[nextIndex]) return;
+    event.preventDefault();
+    buttons[nextIndex].focus();
+    buttons[nextIndex].click();
+  }
+
   return (
     <div className="meal-type-selector" role="radiogroup" aria-label="قسم الوجبة">
-      {standardMeals.map((meal) => (
-        <button key={meal} type="button" role="radio" aria-checked={value === meal} className={value === meal ? "selected" : ""} onClick={() => onChange(meal)}>
+      {standardMeals.map((meal, index) => (
+        <button key={meal} type="button" role="radio" aria-checked={value === meal} tabIndex={value === meal || (!hasSelectedMeal && index === 0) ? 0 : -1} disabled={disabled} className={value === meal ? "selected" : ""} onClick={() => onChange(meal)} onKeyDown={moveSelection}>
           {mealLabels[meal]}
         </button>
       ))}
@@ -370,17 +390,19 @@ export function MealTypeSelector({ value, onChange }: { value: MealType | null; 
   );
 }
 
-export function QuantityStepper({
+function QuantityStepper({
   value,
   unitLabel,
   errorId,
   initialFocus = false,
+  disabled = false,
   onChange
 }: {
   value: string;
   unitLabel: string;
   errorId?: string;
   initialFocus?: boolean;
+  disabled?: boolean;
   onChange: (value: string) => void;
 }) {
   const amount = parseQuantity(value);
@@ -399,7 +421,7 @@ export function QuantityStepper({
         <button
           type="button"
           onClick={() => adjust(-0.5)}
-          disabled={amount != null && amount <= 0.01}
+          disabled={disabled || (amount != null && amount <= 0.01)}
           aria-label="تقليل الكمية"
         >
           <span aria-hidden="true">−</span>
@@ -412,6 +434,7 @@ export function QuantityStepper({
             inputMode="decimal"
             autoComplete="off"
             value={value}
+            disabled={disabled}
             onChange={(event) => onChange(event.target.value)}
             aria-label="الكمية"
             aria-invalid={invalid}
@@ -419,7 +442,7 @@ export function QuantityStepper({
           />
           <span className="quantity-unit">{unitLabel}</span>
         </label>
-        <button type="button" onClick={() => adjust(0.5)} disabled={amount != null && amount >= 50} aria-label="زيادة الكمية">
+        <button type="button" onClick={() => adjust(0.5)} disabled={disabled || (amount != null && amount >= 50)} aria-label="زيادة الكمية">
           <span aria-hidden="true">+</span>
         </button>
       </div>
@@ -445,181 +468,6 @@ export function ConfirmDialog({ title, description, confirmLabel, cancelLabel = 
         </div>
       </div>
     </ModalFrame>
-  );
-}
-
-export type ModalFocusScope = {
-  panel: HTMLDivElement;
-  opener: HTMLElement | null;
-  fallbackOpener: HTMLElement | null;
-  onCloseRef: { current: () => void };
-  pendingRef: { current: boolean };
-};
-
-export const modalFocusScopes: ModalFocusScope[] = [];
-
-export function focusableElements(panel: HTMLElement): HTMLElement[] {
-  return Array.from(panel.querySelectorAll<HTMLElement>(
-    'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-  )).filter((element) => element.getClientRects().length > 0 && !element.closest("[inert]"));
-}
-
-export function topModalScope(): ModalFocusScope | undefined {
-  return modalFocusScopes[modalFocusScopes.length - 1];
-}
-
-export function syncModalFocusOwnership() {
-  const top = topModalScope();
-  for (const scope of modalFocusScopes) {
-    if (scope === top) {
-      scope.panel.removeAttribute("inert");
-      scope.panel.removeAttribute("aria-hidden");
-    } else {
-      scope.panel.setAttribute("inert", "");
-      scope.panel.setAttribute("aria-hidden", "true");
-    }
-  }
-}
-
-export function handleModalKeyDown(event: KeyboardEvent) {
-  const scope = topModalScope();
-  if (!scope) return;
-  if (event.key === "Escape") {
-    if (!scope.pendingRef.current) {
-      event.preventDefault();
-      scope.onCloseRef.current();
-    }
-    return;
-  }
-  if (event.key !== "Tab") return;
-  const items = focusableElements(scope.panel);
-  if (!items.length) {
-    event.preventDefault();
-    scope.panel.focus();
-    return;
-  }
-  const first = items[0];
-  const last = items[items.length - 1];
-  const active = document.activeElement;
-  if (!scope.panel.contains(active)) {
-    event.preventDefault();
-    (event.shiftKey ? last : first).focus();
-  } else if (event.shiftKey && active === first) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && active === last) {
-    event.preventDefault();
-    first.focus();
-  }
-}
-
-export function registerModalFocusScope(scope: ModalFocusScope) {
-  if (modalFocusScopes.length === 0) {
-    document.addEventListener("keydown", handleModalKeyDown);
-    document.body.classList.add("modal-open");
-  }
-  modalFocusScopes.push(scope);
-  syncModalFocusOwnership();
-  (scope.panel.querySelector<HTMLElement>("[data-initial-focus]") ?? focusableElements(scope.panel)[0] ?? scope.panel).focus();
-}
-
-export function unregisterModalFocusScope(scope: ModalFocusScope) {
-  const wasTop = topModalScope() === scope;
-  const index = modalFocusScopes.indexOf(scope);
-  if (index >= 0) modalFocusScopes.splice(index, 1);
-  syncModalFocusOwnership();
-  if (modalFocusScopes.length === 0) {
-    document.removeEventListener("keydown", handleModalKeyDown);
-    document.body.classList.remove("modal-open");
-  }
-  if (!wasTop) return;
-  const restoreTarget = scope.opener?.isConnected && !scope.opener.closest("[inert]") ? scope.opener : scope.fallbackOpener;
-  if (restoreTarget?.isConnected && !restoreTarget.closest("[inert]")) restoreTarget.focus();
-}
-
-export function ModalFrame({
-  children,
-  labelledBy,
-  describedBy,
-  onClose,
-  pending,
-  className = "",
-  panelClassName = "",
-  role = "dialog"
-}: {
-  children: ReactNode;
-  labelledBy: string;
-  describedBy?: string;
-  onClose: () => void;
-  pending: boolean;
-  className?: string;
-  panelClassName?: string;
-  role?: "dialog" | "alertdialog";
-}) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  const onCloseRef = useRef(onClose);
-  const pendingRef = useRef(pending);
-
-  useEffect(() => {
-    onCloseRef.current = onClose;
-    pendingRef.current = pending;
-  }, [onClose, pending]);
-
-  useEffect(() => {
-    const panel = panelRef.current;
-    if (!panel) return;
-    const parentScope = topModalScope();
-    const opener = document.activeElement as HTMLElement | null;
-    const scope: ModalFocusScope = {
-      panel,
-      opener,
-      fallbackOpener: parentScope?.fallbackOpener ?? parentScope?.opener ?? opener,
-      onCloseRef,
-      pendingRef
-    };
-    registerModalFocusScope(scope);
-    return () => unregisterModalFocusScope(scope);
-  }, []);
-
-  useLayoutEffect(() => {
-    const panel = panelRef.current;
-    if (!pending || !panel || topModalScope()?.panel !== panel) return;
-    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const activeRemainsUsable = Boolean(
-      active
-      && active.isConnected
-      && panel.contains(active)
-      && active.getClientRects().length > 0
-      && !active.matches(":disabled")
-      && active.getAttribute("aria-disabled") !== "true"
-      && !active.closest("[inert]")
-      && !active.closest('[aria-hidden="true"]')
-    );
-    if (!activeRemainsUsable) panel.focus();
-  }, [pending]);
-
-  return createPortal(
-    <div className={`diary-modal-backdrop ${className}`} role="presentation" onMouseDown={(event) => {
-      if (event.target !== event.currentTarget) return;
-      if (pendingRef.current) {
-        event.preventDefault();
-        return;
-      }
-      onCloseRef.current();
-    }}>
-      <div
-        ref={panelRef}
-        className={`diary-modal-panel ${panelClassName}`}
-        role={role}
-        aria-modal="true"
-        aria-labelledby={labelledBy}
-        aria-describedby={describedBy}
-        tabIndex={-1}
-      >
-        {children}
-      </div>
-    </div>,
-    document.body
   );
 }
 

@@ -1,6 +1,7 @@
 import { Save, Trash2, X } from "lucide-react";
 import Link from "next/link";
 
+import type { FoodFormValues } from "@/lib/food";
 import type { FoodResponse } from "@/lib/types";
 import { fieldId } from "./food-form-model";
 
@@ -35,6 +36,7 @@ export function FormSection({ title, children }: { title: string; children: Reac
 }
 
 export function TextField({
+  field,
   label,
   value,
   onChange,
@@ -42,6 +44,7 @@ export function TextField({
   required = false,
   maxLength
 }: {
+  field: keyof FoodFormValues;
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -49,7 +52,7 @@ export function TextField({
   required?: boolean;
   maxLength?: number;
 }) {
-  const id = fieldId(label);
+  const id = fieldId(field);
   return (
     <label className="field" htmlFor={id}>
       <span>
@@ -69,8 +72,8 @@ export function TextField({
   );
 }
 
-export function TextAreaField({ label, value, onChange, error, maxLength }: { label: string; value: string; onChange: (value: string) => void; error?: string; maxLength?: number }) {
-  const id = fieldId(label);
+export function TextAreaField({ field, label, value, onChange, error, maxLength }: { field: keyof FoodFormValues; label: string; value: string; onChange: (value: string) => void; error?: string; maxLength?: number }) {
+  const id = fieldId(field);
   return (
     <label className="field" htmlFor={id}>
       <span>{label}</span>
@@ -89,19 +92,21 @@ export function TextAreaField({ label, value, onChange, error, maxLength }: { la
 }
 
 export function NumberField({
+  field,
   label,
   value,
   onChange,
   error,
   required = false
 }: {
+  field: keyof FoodFormValues;
   label: string;
   value: number | null;
   onChange: (value: number | null) => void;
   error?: string;
   required?: boolean;
 }) {
-  const id = fieldId(label);
+  const id = fieldId(field);
   return (
     <label className="field" htmlFor={id}>
       <span>
@@ -124,6 +129,7 @@ export function NumberField({
 }
 
 export function SelectField({
+  field,
   label,
   value,
   onChange,
@@ -132,6 +138,7 @@ export function SelectField({
   error,
   required = false
 }: {
+  field: keyof FoodFormValues;
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -140,7 +147,7 @@ export function SelectField({
   error?: string;
   required?: boolean;
 }) {
-  const id = fieldId(label);
+  const id = fieldId(field);
   return (
     <label className="field" htmlFor={id}>
       <span>

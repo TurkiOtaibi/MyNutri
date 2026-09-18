@@ -245,7 +245,7 @@ export function ProfilePage() {
       setSavedEffectiveFrom(submission.effectiveFrom);
       setSavedTargets(profile.targets);
       setPendingServerProfile(undefined);
-      transitionWrite({ kind: "committed", accepted });
+      transitionWrite({ kind: "committed" });
     } catch {
       if (!sessionSignal.aborted && mountedRef.current) {
         transitionWrite({ kind: "recovery", submission, accepted });

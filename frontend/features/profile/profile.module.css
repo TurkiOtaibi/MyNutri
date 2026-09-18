@@ -630,15 +630,6 @@ button:global(.profile-setting-row):focus-visible,
   overflow-wrap: anywhere;
 }
 
-:global(.profile-safety-decision) button {
-  flex: 0 0 auto;
-  min-height: 44px;
-  border: 0;
-  background: transparent;
-  color: var(--danger);
-  font-weight: 750;
-}
-
 :global(.profile-safety-decision):global(.is-available) {
   border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
   background: color-mix(in srgb, var(--diary-soft) 65%, white);
@@ -1021,12 +1012,6 @@ button:global(.profile-setting-row):focus-visible,
 @media (max-width: 340px) {
   :global(.profile-safety-decision) {
       flex-wrap: wrap;
-    }
-}
-
-@media (max-width: 340px) {
-  :global(.profile-safety-decision) button {
-      width: 100%;
     }
 }
 

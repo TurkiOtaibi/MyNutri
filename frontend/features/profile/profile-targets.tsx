@@ -2,7 +2,7 @@ import { AlertTriangle, Check, Info } from "lucide-react";
 import type { RefObject } from "react";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels } from "@/lib/nutrients";
 import type { Goal, NutritionRegistryResponse, TargetPlanSummary, TargetResponse } from "@/lib/types";
-import { blockingSafetyMessage, formatTargetNumber, isPreviewActivatable, type BlockingSafetyOutcome } from "./profile-model";
+import { UNKNOWN_SAFETY_MESSAGE, blockingSafetyMessage, formatTargetNumber, isPreviewActivatable, type BlockingSafetyOutcome } from "./profile-model";
 
 export function TargetsCard({ title, badge, targets }: { title: string; badge: string; targets: TargetResponse | null }) {
   return (
@@ -15,7 +15,7 @@ export function TargetsCard({ title, badge, targets }: { title: string; badge: s
   );
 }
 
-export function TargetValue({ label, value }: { label: string; value: number }) {
+function TargetValue({ label, value }: { label: string; value: number }) {
   return <div><span>{label}</span><strong><bdi dir="ltr">{formatTargetNumber(value)}</bdi> جم</strong></div>;
 }
 
@@ -89,7 +89,7 @@ export function ExpectedTargetsCard({
   const safetyMessage = outcome
     ? blockingSafetyMessage(outcome) ??
       (targets && !isPreviewActivatable(targets)
-        ? "تعذر التحقق من إمكانية حفظ هذا الهدف. حدّث المعاينة قبل المتابعة."
+        ? UNKNOWN_SAFETY_MESSAGE
         : null)
     : null;
   const previewDescription = targets && isPreviewActivatable(targets)

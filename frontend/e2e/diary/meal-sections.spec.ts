@@ -72,7 +72,8 @@ test.describe("@diary @meals Gregorian meal sections", () => {
     const nav = page.getByLabel(/التنقل بين أيام اليوميات/);
     await expect(nav).toBeVisible();
     await expect(nav.locator(".compact-week-day")).toHaveCount(7);
-    await expect(nav.locator('[role="tab"][aria-selected="true"]')).toHaveCount(1);
+    await expect(nav.getByRole("group", { name: "أيام الأسبوع" })).toBeVisible();
+    await expect(nav.locator('.compact-week-day[aria-current="date"]')).toHaveCount(1);
     const text = await nav.innerText();
     expect(text).not.toMatch(/[٠-٩]/);
     expect(text).not.toMatch(/محرم|صفر|ربيع|جمادى|رجب|شعبان|رمضان|شوال|القعدة|الحجة/);
@@ -141,7 +142,26 @@ test.describe("@diary @meals Gregorian meal sections", () => {
     await page.getByRole("menuitem", { name: "تعديل" }).click();
     const dialog = page.getByRole("dialog", { name: "تعديل الكمية والقسم" });
     await dialog.getByRole("radio", { name: "عشاء" }).click();
+    let markPatchStarted!: () => void;
+    let releasePatch!: () => void;
+    const patchStarted = new Promise<void>((resolve) => { markPatchStarted = resolve; });
+    const patchRelease = new Promise<void>((resolve) => { releasePatch = resolve; });
+    await page.route("**/diary/entries/*", async (route) => {
+      if (route.request().method() !== "PATCH") return route.continue();
+      markPatchStarted();
+      await patchRelease;
+      return route.continue();
+    });
     await dialog.getByRole("button", { name: "حفظ التغييرات" }).click();
+    await patchStarted;
+    try {
+      await expect(dialog.getByRole("button", { name: "إغلاق تعديل الكمية" })).toBeDisabled();
+      await expect(dialog.getByRole("button", { name: "إلغاء", exact: true })).toBeDisabled();
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeVisible();
+    } finally {
+      releasePatch();
+    }
     const dinnerToggle = page.getByRole("button", { name: /قسم عشاء$/ });
     await expect(dinnerToggle).toContainText("طعام واحد");
     if ((await dinnerToggle.getAttribute("aria-expanded")) !== "true") await dinnerToggle.click();

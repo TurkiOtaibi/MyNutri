@@ -3,6 +3,7 @@ import type { ActivityLevel, CutIntensity, Goal, ProfileInput, ProfileResponse, 
 
 const SPECIALIST_REVIEW_MESSAGE = "لا يمكن حفظ هذا الهدف لأنه غير مناسب لحالتك الحالية. إذا رغبت في اتباع هذا الهدف، فاستشر أخصائي تغذية قبل اعتماده.";
 const VERY_LOW_ENERGY_MESSAGE = "لا يمكن حفظ هذا الهدف لأن السعرات المستهدفة منخفضة جدًا ولا تحقق الحد الأدنى الآمن المعتمد في النظام.";
+export const UNKNOWN_SAFETY_MESSAGE = "تعذر التحقق من إمكانية حفظ هذا الهدف. حدّث المعاينة قبل المتابعة.";
 
 export const PROTEIN_DEFAULT = 1.2;
 export const FAT_DEFAULTS: Record<Sex, number> = { male: 0.25, female: 0.3 };
@@ -59,6 +60,23 @@ export type DraftProfile = {
 
 export type ProfileField = keyof DraftProfile;
 export type FieldErrors = Partial<Record<ProfileField | "effective_from", string>>;
+const PROFILE_FIELD_ERROR_MESSAGES = {
+  birth_date: "اختر تاريخ ميلاد صحيحًا",
+  effective_from: "اختر تاريخًا يبدأ من اليوم",
+  height_cm: "أدخل طولًا صحيحًا",
+  weight_kg: "أدخل وزنًا صحيحًا",
+  protein_per_kg: "أدخل قيمة صحيحة للبروتين لكل كجم",
+  fat_percent: "أدخل نسبة دهون صحيحة",
+  selected_cut_intensity: "اختر شدة خفض صحيحة",
+} as const satisfies FieldErrors;
+const API_PROFILE_FIELD_MAP = {
+  birth_date: "birth_date",
+  height_cm: "height_cm",
+  weight_kg: "weight_kg",
+  protein_per_kg: "protein_per_kg",
+  fat_pct: "fat_percent",
+  effective_from: "effective_from",
+} as const;
 export type SheetKind = "sex" | "activity" | "goal" | "calculation" | null;
 export type TargetPlanSubmission = {
   payload: ProfileInput;
@@ -71,7 +89,7 @@ export type TargetPlanWritePhase =
   | { kind: "confirming"; submission: TargetPlanSubmission }
   | { kind: "submitting"; submission: TargetPlanSubmission }
   | { kind: "reconciling"; submission: TargetPlanSubmission; accepted: TargetPlanWriteResponse }
-  | { kind: "committed"; accepted: TargetPlanWriteResponse }
+  | { kind: "committed" }
   | { kind: "recovery"; submission: TargetPlanSubmission; accepted: TargetPlanWriteResponse }
   | { kind: "failed"; submission: TargetPlanSubmission };
 
@@ -103,7 +121,7 @@ export function blankDraft(): DraftProfile {
   };
 }
 
-export function formatEditableNumber(value: number): string {
+function formatEditableNumber(value: number): string {
   return Number.isFinite(value) ? String(Number(value.toFixed(2))) : "";
 }
 
@@ -134,18 +152,18 @@ export function validateDraft(draft: DraftProfile, authoritativeDate: string | n
   const validBirthDate = /^\d{4}-\d{2}-\d{2}$/.test(draft.birth_date);
   const validEffectiveDate = /^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom);
 
-  if (!validBirthDate || !authoritativeDate || draft.birth_date > authoritativeDate) errors.birth_date = "اختر تاريخ ميلاد صحيحًا";
-  if (!validEffectiveDate || !authoritativeDate || effectiveFrom < authoritativeDate) errors.effective_from = "اختر تاريخًا يبدأ من اليوم";
-  if (height == null || height < PROFILE_LIMITS.heightMin || height > PROFILE_LIMITS.heightMax) errors.height_cm = "أدخل طولًا صحيحًا";
-  if (weight == null || weight < PROFILE_LIMITS.weightMin || weight > PROFILE_LIMITS.weightMax) errors.weight_kg = "أدخل وزنًا صحيحًا";
+  if (!validBirthDate || !authoritativeDate || draft.birth_date > authoritativeDate) errors.birth_date = PROFILE_FIELD_ERROR_MESSAGES.birth_date;
+  if (!validEffectiveDate || !authoritativeDate || effectiveFrom < authoritativeDate) errors.effective_from = PROFILE_FIELD_ERROR_MESSAGES.effective_from;
+  if (height == null || height < PROFILE_LIMITS.heightMin || height > PROFILE_LIMITS.heightMax) errors.height_cm = PROFILE_FIELD_ERROR_MESSAGES.height_cm;
+  if (weight == null || weight < PROFILE_LIMITS.weightMin || weight > PROFILE_LIMITS.weightMax) errors.weight_kg = PROFILE_FIELD_ERROR_MESSAGES.weight_kg;
   if (protein == null || protein < PROFILE_LIMITS.proteinMin || protein > PROFILE_LIMITS.proteinMax) {
-    errors.protein_per_kg = "أدخل قيمة صحيحة للبروتين لكل كجم";
+    errors.protein_per_kg = PROFILE_FIELD_ERROR_MESSAGES.protein_per_kg;
   }
   if (fatPercent == null || fatPercent < PROFILE_LIMITS.fatMinPercent || fatPercent > PROFILE_LIMITS.fatMaxPercent) {
-    errors.fat_percent = "أدخل نسبة دهون صحيحة";
+    errors.fat_percent = PROFILE_FIELD_ERROR_MESSAGES.fat_percent;
   }
   if (![0.15, 0.2, 0.25].includes(draft.selected_cut_intensity)) {
-    errors.selected_cut_intensity = "اختر شدة خفض صحيحة";
+    errors.selected_cut_intensity = PROFILE_FIELD_ERROR_MESSAGES.selected_cut_intensity;
   }
 
   if (Object.keys(errors).length > 0 || height == null || weight == null || protein == null || fatPercent == null) {
@@ -172,7 +190,7 @@ export type BlockingSafetyOutcome = "specialist_review_required" | "very_low_ene
 export function blockingSafetyMessage(outcome: string): string | null {
   if (outcome === "specialist_review_required") return SPECIALIST_REVIEW_MESSAGE;
   if (outcome === "very_low_energy_blocked") return VERY_LOW_ENERGY_MESSAGE;
-  if (outcome !== "normal") return "تعذر التحقق من إمكانية حفظ هذا الهدف. حدّث المعاينة قبل المتابعة.";
+  if (outcome !== "normal") return UNKNOWN_SAFETY_MESSAGE;
   return null;
 }
 
@@ -208,12 +226,9 @@ export function mapProfileApiErrors(error: unknown): FieldErrors {
   const mapped: FieldErrors = {};
   for (const item of error.detail as Array<{ loc?: unknown[] }>) {
     const field = item.loc?.at(-1);
-    if (field === "birth_date") mapped.birth_date = "اختر تاريخ ميلاد صحيحًا";
-    if (field === "height_cm") mapped.height_cm = "أدخل طولًا صحيحًا";
-    if (field === "weight_kg") mapped.weight_kg = "أدخل وزنًا صحيحًا";
-    if (field === "protein_per_kg") mapped.protein_per_kg = "أدخل قيمة صحيحة للبروتين لكل كجم";
-    if (field === "fat_pct") mapped.fat_percent = "أدخل نسبة دهون صحيحة";
-    if (field === "effective_from") mapped.effective_from = "اختر تاريخًا يبدأ من اليوم";
+    if (typeof field !== "string" || !(field in API_PROFILE_FIELD_MAP)) continue;
+    const profileField = API_PROFILE_FIELD_MAP[field as keyof typeof API_PROFILE_FIELD_MAP];
+    mapped[profileField] = PROFILE_FIELD_ERROR_MESSAGES[profileField];
   }
   return mapped;
 }

@@ -17,7 +17,8 @@ export function useDebouncedValue<T>(value: T, delay: number): T {
 export async function invalidateDiary(queryClient: QueryClient) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: ["entries"] }),
-    queryClient.invalidateQueries({ queryKey: ["week"] })
+    queryClient.invalidateQueries({ queryKey: ["week"] }),
+    queryClient.invalidateQueries({ queryKey: ["diary-food-picker"] })
   ]);
 }
 
