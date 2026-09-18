@@ -18,6 +18,25 @@ export const PROFILE_LIMITS = {
   fatMaxPercent: 40
 } as const;
 
+export const sexLabels: Record<Sex, string> = {
+  male: "ذكر",
+  female: "أنثى"
+};
+
+export const activityLabels: Record<ActivityLevel, string> = {
+  sedentary: "خامل",
+  light: "نشاط خفيف",
+  moderate: "نشاط متوسط",
+  active: "نشط",
+  very_active: "نشط جدًا"
+};
+
+export const goalLabels: Record<Goal, string> = {
+  cut: "تنشيف",
+  maintain: "ثبات",
+  bulk: "زيادة"
+};
+
 export const activityDescriptions: Record<ActivityLevel, string> = {
   sedentary: "حركة يومية محدودة ولا توجد تمارين منتظمة",
   light: "تمارين خفيفة أو حركة بسيطة خلال الأسبوع",

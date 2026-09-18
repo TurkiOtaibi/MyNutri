@@ -13,7 +13,8 @@ export type CutIntensity = NonNullable<OpenApi.TargetPlanPreviewRequest["selecte
 export type NutritionBasis = OpenApi.NutritionBasis;
 export type DefaultUnitType = OpenApi.DefaultUnitType;
 export type UnitBasis = OpenApi.UnitBasis;
-export type NutritionDataSource = OpenApi.NutritionDataSource;
+
+type AdditionalNutrientTarget = DeepRequired<OpenApi.AdditionalNutrientTarget>;
 
 export type TargetResponse = Omit<
   DeepRequired<OpenApi.TargetResponse>,
@@ -23,8 +24,6 @@ export type TargetResponse = Omit<
   preview_hash?: string | null;
 };
 export type NutrientTargetType = OpenApi.AdditionalNutrientTarget["target_type"];
-export type AdditionalNutrientTarget = DeepRequired<OpenApi.AdditionalNutrientTarget>;
-export type CalculationWarning = OpenApi.CalculationWarningResponse;
 export type CalendarAuthorityResponse = DeepRequired<OpenApi.CalendarAuthorityResponse>;
 
 /** Editable Profile domain input mapped to the generated transport request. */
@@ -80,7 +79,6 @@ export type DiaryEntryResponse = Omit<DeepRequired<OpenApi.DiaryEntryResponse>, 
   totals: NutritionTotals;
 };
 export type AdminDiaryPage = DeepRequired<OpenApi.AdminDiaryPage>;
-export type AdminDiaryItem = DeepRequired<OpenApi.AdminDiaryItem>;
 export type DaySummary = Omit<DeepRequired<OpenApi.DaySummary>, "totals" | "targets"> & {
   totals: NutritionTotals;
   targets: TargetResponse | null;

@@ -1,9 +1,8 @@
 import { Save, Trash2, X } from "lucide-react";
 import Link from "next/link";
 
-import type { FoodFormValues } from "@/lib/food";
 import type { FoodResponse } from "@/lib/types";
-import { fieldId } from "./food-form-model";
+import { fieldId, type FoodFormValues } from "./food-form-model";
 
 export function FoodFormActions({ isEdit, foodId, pending, food, onDelete }: { isEdit: boolean; foodId?: string; pending: boolean; food: FoodResponse | null; onDelete: (food: FoodResponse) => void }) {
   return (

@@ -1,6 +1,7 @@
-import type { FoodFormValues, FoodNutritionValues } from "@/lib/food";
+import type { FoodNutritionValues } from "@/lib/food";
 import { definitionsFromRegistry } from "@/lib/nutrients";
 import type { NutritionRegistryResponse } from "@/lib/types";
+import type { FoodFormValues } from "./food-form-model";
 
 type OptionalFoodNutrientField = Extract<keyof FoodFormValues, keyof FoodNutritionValues>;
 type FoodNutrientGroupKey = "sugar-fat" | "minerals" | "vitamins";

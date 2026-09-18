@@ -1,9 +1,8 @@
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Cookie, MoreVertical, Moon, Pencil, Plus, Sun, Sunrise, Trash2, X } from "lucide-react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useRef } from "react";
-import { addDays, formatDayNumber, formatShortDate, weekStartSunday } from "@/lib/dates";
+import { addDays, formatDayNumber, formatShortDate, weekdays, weekStartSunday } from "@/lib/dates";
 import { formatServingMacro } from "@/lib/food";
-import { weekdays } from "@/lib/labels";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels, type NutrientDefinition } from "@/lib/nutrients";
 import type { DaySummary, DiaryEntryResponse, DiaryNutrientAggregate, MealType, NutritionRegistryResponse, NutritionTotals, TargetResponse, WeekSummary } from "@/lib/types";
 import { emptyNutritionTotals, entryQuantityLabel, formatDiarySelectedDate, mealItemCountLabel, mealLabels, shortWeekdays, standardMeals } from "./diary-model";

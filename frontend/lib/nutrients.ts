@@ -1,6 +1,6 @@
-import type { FoodResponse, NutrientTargetType, NutritionRegistryResponse, NutritionTotals, TargetResponse } from "./types";
+import type { FoodResponse, NutrientTargetType, NutritionRegistryResponse, NutritionTotals } from "./types";
 
-export type AdditionalNutrientKey = string;
+type AdditionalNutrientKey = string;
 
 export interface NutrientDefinition {
   key: AdditionalNutrientKey;
@@ -9,11 +9,8 @@ export interface NutrientDefinition {
   precision: number;
   order: number;
   targetType: NutrientTargetType;
-  targetSource: string;
   targetValue: number | null;
   foodCompleteness: boolean;
-  profileTargets: boolean;
-  diaryDetails: boolean;
 }
 
 type JsonObject = Record<string, unknown>;
@@ -24,6 +21,24 @@ function isObject(value: unknown): value is JsonObject {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
+}
+
+const approvedTargetTypeMap = {
+  minimum: true,
+  maximum: true,
+  adequate: true,
+  recommended: true,
+  range: true,
+  monitor_only: true,
+  minimize: true
+} as const satisfies Record<NutrientTargetType, true>;
+
+const approvedTargetTypeSet = new Set<NutrientTargetType>(
+  Object.keys(approvedTargetTypeMap) as NutrientTargetType[]
+);
+
+function isNutrientTargetType(value: unknown): value is NutrientTargetType {
+  return typeof value === "string" && approvedTargetTypeSet.has(value as NutrientTargetType);
 }
 
 function hasUniqueStrings(values: string[]): boolean {
@@ -45,7 +60,7 @@ function isNutrientDefinition(value: unknown): boolean {
     && value.display_precision >= 0
     && typeof value.display_order === "number"
     && Number.isInteger(value.display_order)
-    && isNonEmptyString(value.target_type)
+    && isNutrientTargetType(value.target_type)
     && isNonEmptyString(value.target_source)
     && isObject(value.target_rule)
     && typeof value.completeness_participation === "boolean"
@@ -66,7 +81,7 @@ export function parseNutritionRegistry(value: unknown): NutritionRegistryRespons
     || !value.nutrients.every(isNutrientDefinition)
     || !Array.isArray(value.target_types)
     || value.target_types.length === 0
-    || !value.target_types.every(isNonEmptyString)
+    || !value.target_types.every(isNutrientTargetType)
     || !Array.isArray(value.primary_categories)
     || value.primary_categories.length === 0
     || !value.primary_categories.every(isNonEmptyString)
@@ -79,7 +94,7 @@ export function parseNutritionRegistry(value: unknown): NutritionRegistryRespons
   }
 
   const nutrients = value.nutrients as JsonObject[];
-  const targetTypes = value.target_types as string[];
+  const targetTypes = value.target_types as NutrientTargetType[];
   const primaryCategories = value.primary_categories as string[];
   const taxonomy = value.food_taxonomy;
   const dataSources = value.nutrition_data_sources as Array<{ key: string; label_ar: string }>;
@@ -88,7 +103,7 @@ export function parseNutritionRegistry(value: unknown): NutritionRegistryRespons
     || !hasUniqueStrings(targetTypes)
     || !hasUniqueStrings(primaryCategories)
     || !hasUniqueStrings(dataSources.map((item) => item.key))
-    || !nutrients.every((item) => targetTypes.includes(item.target_type as string))) {
+    || !nutrients.every((item) => targetTypes.includes(item.target_type as NutrientTargetType))) {
     throw new Error("Invalid nutrition registry definitions");
   }
 
@@ -125,22 +140,6 @@ function localizedUnit(unit: string): string {
   return unit;
 }
 
-export function definitionsForTargets(targets: TargetResponse | null): NutrientDefinition[] {
-  return (targets?.additional_targets ?? []).map((target) => ({
-    key: target.key,
-    label: target.label_ar,
-    unit: localizedUnit(target.unit),
-    precision: target.precision,
-    order: target.order,
-    targetType: target.target_type,
-    targetSource: target.target_source,
-    targetValue: target.target_value,
-    foodCompleteness: true,
-    profileTargets: true,
-    diaryDetails: true
-  }));
-}
-
 export function definitionsFromRegistry(registry: NutritionRegistryResponse): NutrientDefinition[] {
   return registry.nutrients.map((item) => ({
     key: item.key,
@@ -149,11 +148,8 @@ export function definitionsFromRegistry(registry: NutritionRegistryResponse): Nu
     precision: item.display_precision,
     order: item.display_order,
     targetType: item.target_type,
-    targetSource: item.target_source,
     targetValue: null,
-    foodCompleteness: item.completeness_participation,
-    profileTargets: true,
-    diaryDetails: item.diary_coverage_participation
+    foodCompleteness: item.completeness_participation
   }));
 }
 
