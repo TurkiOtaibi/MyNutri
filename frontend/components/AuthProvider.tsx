@@ -20,7 +20,7 @@ type AuthState = {
   recoverySubjectId: string | null;
 };
 
-export type RecoveryStatus = "checking" | "ready" | "invalid";
+type RecoveryStatus = "checking" | "ready" | "invalid";
 type RecoveryAttempt = "none" | "pending" | "invalid";
 
 type AuthAction =

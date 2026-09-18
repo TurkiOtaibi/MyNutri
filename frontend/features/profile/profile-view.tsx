@@ -1,120 +1,111 @@
 import { Activity, CalendarDays, Check, ChevronDown, ChevronLeft, Info, LoaderCircle, RotateCcw, Ruler, Scale, SlidersHorizontal, Target, UserRound } from "lucide-react";
-import type { Dispatch, FormEvent, RefObject, SetStateAction } from "react";
+import type { FormEvent, RefObject } from "react";
 import { activityLabels, goalLabels, sexLabels } from "@/lib/labels";
-import type { ActivityLevel, Goal, NutritionRegistryResponse, ProfileInput, ProfileResponse, Sex, TargetPlanHistoryResponse, TargetPlanWriteResponse, TargetResponse } from "@/lib/types";
+import type { ActivityLevel, Goal, NutritionRegistryResponse, Sex, TargetPlanHistoryResponse, TargetResponse } from "@/lib/types";
 import { NumericSettingsRow, OptionList, SelectionCard, SettingsButton, CutIntensitySelector } from "./profile-controls";
 import { AdditionalTargetsCard, ExpectedTargetsCard, RegistryState, TargetPlanHistory, TargetsCard } from "./profile-targets";
 import { ProfileConfirm, ProfileSheet } from "./profile-dialogs";
-import { FAT_DEFAULTS, PROFILE_LIMITS, PROTEIN_DEFAULT, activityDescriptions, activityDisplayLabels, blankDraft, goalDescriptions, goalDisplayLabels, normalizeNumber, toDraft, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type SheetKind, type TargetPlanSubmission, type TargetPlanWritePhase } from "./profile-model";
+import { PROFILE_LIMITS, activityDescriptions, activityDisplayLabels, goalDescriptions, goalDisplayLabels, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type SheetKind, type TargetPlanWritePhase } from "./profile-model";
 import "./profile.module.css";
 
 const PROFILE_WRITE_ERROR = "تعذر حفظ التغييرات";
 
-type ProfileViewProps = {
+type ProfileViewState = {
   dirty: boolean;
-  pendingServerProfile: ProfileResponse | null | undefined;
-  setPendingServerProfile: Dispatch<SetStateAction<ProfileResponse | null | undefined>>;
-  requestDiscard: (continueAction: () => void) => void;
-  setDraft: Dispatch<SetStateAction<DraftProfile>>;
-  setSavedDraft: Dispatch<SetStateAction<DraftProfile | null>>;
-  setSavedTargets: Dispatch<SetStateAction<TargetResponse | null>>;
-  setPreview: Dispatch<SetStateAction<TargetResponse | null>>;
-  setPreviewDraftHash: Dispatch<SetStateAction<string | null>>;
-  setErrors: Dispatch<SetStateAction<FieldErrors>>;
+  hasPendingServerProfile: boolean;
   draft: DraftProfile;
-  effectiveFrom: string;
-  setEffectiveFrom: (value: string) => void;
-  effectiveFromRef: RefObject<HTMLInputElement | null>;
-  activeSheet: SheetKind;
-  updateSex: (sex: Sex) => void;
-  setActiveSheet: Dispatch<SetStateAction<SheetKind>>;
   errors: FieldErrors;
-  birthRef: RefObject<HTMLInputElement | null>;
+  effectiveFrom: string;
   authoritativeDate: string | null;
   displayBirthDate: string;
+  activeSheet: SheetKind;
+  advancedOpen: boolean;
+  restoreOpen: boolean;
+  effectiveFromRef: RefObject<HTMLInputElement | null>;
+  birthRef: RefObject<HTMLInputElement | null>;
   heightRef: RefObject<HTMLInputElement | null>;
   weightRef: RefObject<HTMLInputElement | null>;
-  update: <K extends keyof DraftProfile>(key: K, value: DraftProfile[K]) => void;
-  advancedOpen: boolean;
-  setAdvancedOpen: Dispatch<SetStateAction<boolean>>;
   proteinRef: RefObject<HTMLInputElement | null>;
   fatRef: RefObject<HTMLInputElement | null>;
+};
+
+type ProfileTargetsViewState = {
   savedTargets: TargetResponse | null;
-  registryQuery: { isPending: boolean; isError: boolean; data: NutritionRegistryResponse | undefined; refetch: () => unknown };
+  registry: {
+    pending: boolean;
+    failed: boolean;
+    data: NutritionRegistryResponse | undefined;
+  };
+  history: {
+    plans: TargetPlanHistoryResponse["items"];
+    pending: boolean;
+    failed: boolean;
+    hasMore: boolean;
+    loadingMore: boolean;
+  };
+  preview: {
+    visible: boolean;
+    current: TargetResponse | null;
+    pending: boolean;
+    failed: boolean;
+    safetyOutcome: BlockingSafetyOutcome | null;
+    safetyAttemptSequence: number;
+    safetyRef: RefObject<HTMLDivElement | null>;
+  };
+};
+
+type ProfileWriteViewState = {
   registryReady: boolean;
-  planHistoryQuery: { data: { pages: TargetPlanHistoryResponse[] } | undefined; isPending: boolean; isError: boolean; hasNextPage: boolean; isFetchingNextPage: boolean; refetch: () => unknown; fetchNextPage: () => unknown };
-  currentPreview: TargetResponse | null;
-  previewPending: boolean;
-  previewFailed: boolean;
-  writeSafetyOutcome: BlockingSafetyOutcome | null;
-  safetyAttemptSequence: number;
-  safetyRef: RefObject<HTMLDivElement | null>;
-  requestPreview: () => void;
-  validation: { payload: ProfileInput | null };
+  validationHasPayload: boolean;
   writeErrorCode: string | null;
   writePhase: TargetPlanWritePhase;
-  submit: (event?: FormEvent) => void;
-  reconcileAcceptedPlan: (submission: TargetPlanSubmission, accepted: TargetPlanWriteResponse) => Promise<void>;
-  restoreOpen: boolean;
-  setRestoreOpen: Dispatch<SetStateAction<boolean>>;
-  transitionWrite: (next: TargetPlanWritePhase) => void;
-  writePhaseRef: RefObject<TargetPlanWritePhase>;
   restoreWriteFocusRef: RefObject<boolean>;
-  writeConfirmedPlan: () => Promise<void>;
+};
+
+type ProfileViewIntents = {
+  keepLocalProfile: () => void;
+  acceptServerProfile: () => void;
+  updateField: <K extends keyof DraftProfile>(key: K, value: DraftProfile[K]) => void;
+  changeEffectiveFrom: (value: string) => void;
+  openSheet: (sheet: Exclude<SheetKind, null>) => void;
+  closeSheet: () => void;
+  selectSex: (sex: Sex) => void;
+  selectActivity: (activity: ActivityLevel) => void;
+  selectGoal: (goal: Goal) => void;
+  toggleAdvanced: () => void;
+  requestRestoreDefaults: () => void;
+  cancelRestoreDefaults: () => void;
+  confirmRestoreDefaults: () => void;
+  retryRegistry: () => void;
+  retryHistory: () => void;
+  loadMoreHistory: () => void;
+  retryPreview: () => void;
+  submit: (event?: FormEvent) => void;
+  retryReconciliation: () => void;
+  cancelWriteConfirmation: () => void;
+  confirmWrite: () => void;
+};
+
+type ProfileViewProps = {
+  profile: ProfileViewState;
+  targets: ProfileTargetsViewState;
+  write: ProfileWriteViewState;
+  intents: ProfileViewIntents;
 };
 
 export function ProfileView({
-  dirty,
-  pendingServerProfile,
-  setPendingServerProfile,
-  requestDiscard,
-  setDraft,
-  setSavedDraft,
-  setSavedTargets,
-  setPreview,
-  setPreviewDraftHash,
-  setErrors,
-  draft,
-  effectiveFrom,
-  setEffectiveFrom,
-  effectiveFromRef,
-  activeSheet,
-  updateSex,
-  setActiveSheet,
-  errors,
-  birthRef,
-  authoritativeDate,
-  displayBirthDate,
-  heightRef,
-  weightRef,
-  update,
-  advancedOpen,
-  setAdvancedOpen,
-  proteinRef,
-  fatRef,
-  savedTargets,
-  registryQuery,
-  registryReady,
-  planHistoryQuery,
-  currentPreview,
-  previewPending,
-  previewFailed,
-  writeSafetyOutcome,
-  safetyAttemptSequence,
-  safetyRef,
-  requestPreview,
-  validation,
-  writeErrorCode,
-  writePhase,
-  submit,
-  reconcileAcceptedPlan,
-  restoreOpen,
-  setRestoreOpen,
-  transitionWrite,
-  writePhaseRef,
-  restoreWriteFocusRef,
-  writeConfirmedPlan,
+  profile,
+  targets,
+  write,
+  intents,
 }: ProfileViewProps) {
+  const {
+    dirty, hasPendingServerProfile, draft, errors, effectiveFrom, authoritativeDate,
+    displayBirthDate, activeSheet, advancedOpen, restoreOpen, effectiveFromRef,
+    birthRef, heightRef, weightRef, proteinRef, fatRef,
+  } = profile;
+  const { savedTargets, registry, history, preview } = targets;
+  const { registryReady, validationHasPayload, writeErrorCode, writePhase, restoreWriteFocusRef } = write;
   return (
     <main className={`profile-page ${dirty ? "is-dirty" : ""}`}>
       <header className="profile-page-head">
@@ -122,22 +113,13 @@ export function ProfileView({
         <p>حدّث بياناتك لنحسب احتياجك اليومي.</p>
       </header>
 
-      <form className="profile-form" onSubmit={submit} noValidate>
-        {pendingServerProfile !== undefined ? (
+      <form className="profile-form" onSubmit={intents.submit} noValidate>
+        {hasPendingServerProfile ? (
           <div className="unsaved-conflict" role="status">
             <p>توجد نسخة أحدث من بيانات الملف على الخادم. احتفظنا بتعديلاتك الحالية.</p>
             <div className="actions">
-              <button className="btn" type="button" onClick={() => setPendingServerProfile(undefined)}>الاحتفاظ بتعديلاتي</button>
-              <button className="btn danger" type="button" onClick={() => requestDiscard(() => {
-                const nextDraft = pendingServerProfile ? toDraft(pendingServerProfile) : blankDraft();
-                setDraft(nextDraft);
-                setSavedDraft(nextDraft);
-                setSavedTargets(pendingServerProfile?.targets ?? null);
-                setPreview(null);
-                setPreviewDraftHash(null);
-                setErrors({});
-                setPendingServerProfile(undefined);
-              })}>تحميل نسخة الخادم</button>
+              <button className="btn" type="button" onClick={intents.keepLocalProfile}>الاحتفاظ بتعديلاتي</button>
+              <button className="btn danger" type="button" onClick={intents.acceptServerProfile}>تحميل نسخة الخادم</button>
             </div>
           </div>
         ) : null}
@@ -147,7 +129,7 @@ export function ProfileView({
             icon={<UserRound size={19} />}
             label="الجنس"
             value={sexLabels[draft.sex]}
-            onClick={() => setActiveSheet("sex")}
+            onClick={() => intents.openSheet("sex")}
             ariaLabel={`تغيير الجنس، القيمة الحالية ${sexLabels[draft.sex]}`}
           />
           <label className={`profile-setting-row profile-date-row ${errors.birth_date ? "has-error" : ""}`}>
@@ -159,7 +141,7 @@ export function ProfileView({
               type="date"
               value={draft.birth_date}
               max={authoritativeDate ?? undefined}
-              onChange={(event) => update("birth_date", event.target.value)}
+              onChange={(event) => intents.updateField("birth_date", event.target.value)}
               aria-label="تاريخ الميلاد"
               aria-invalid={Boolean(errors.birth_date)}
               aria-describedby={errors.birth_date ? "birth-date-error" : undefined}
@@ -176,7 +158,7 @@ export function ProfileView({
             min={PROFILE_LIMITS.heightMin}
             max={PROFILE_LIMITS.heightMax}
             error={errors.height_cm}
-            onChange={(value) => update("height_cm", value)}
+            onChange={(value) => intents.updateField("height_cm", value)}
           />
           <NumericSettingsRow
             ref={weightRef}
@@ -188,7 +170,7 @@ export function ProfileView({
             min={PROFILE_LIMITS.weightMin}
             max={PROFILE_LIMITS.weightMax}
             error={errors.weight_kg}
-            onChange={(value) => update("weight_kg", value)}
+            onChange={(value) => intents.updateField("weight_kg", value)}
           />
         </section>
 
@@ -197,7 +179,7 @@ export function ProfileView({
           title="مستوى النشاط"
           value={activityDisplayLabels[draft.activity_level]}
           description={activityDescriptions[draft.activity_level]}
-          onClick={() => setActiveSheet("activity")}
+          onClick={() => intents.openSheet("activity")}
           ariaLabel={`تغيير مستوى النشاط، القيمة الحالية ${activityLabels[draft.activity_level]}`}
         />
 
@@ -206,14 +188,14 @@ export function ProfileView({
           title="الهدف"
           value={goalDisplayLabels[draft.goal]}
           description={goalDescriptions[draft.goal]}
-          onClick={() => setActiveSheet("goal")}
+          onClick={() => intents.openSheet("goal")}
           ariaLabel={`تغيير الهدف، القيمة الحالية ${goalLabels[draft.goal]}`}
         />
 
         {draft.goal === "cut" ? (
           <CutIntensitySelector
             value={draft.selected_cut_intensity}
-            onChange={(value) => update("selected_cut_intensity", value)}
+            onChange={(value) => intents.updateField("selected_cut_intensity", value)}
           />
         ) : null}
 
@@ -224,7 +206,7 @@ export function ProfileView({
             aria-expanded={advancedOpen}
             aria-controls="advanced-profile-fields"
             aria-label={`${advancedOpen ? "إغلاق" : "فتح"} الخيارات المتقدمة`}
-            onClick={() => setAdvancedOpen((current) => !current)}
+            onClick={intents.toggleAdvanced}
           >
             <SlidersHorizontal size={20} aria-hidden="true" />
             <span><strong>الخيارات المتقدمة</strong><small>لمن يرغب بتخصيص توزيع البروتين والدهون</small></span>
@@ -241,7 +223,7 @@ export function ProfileView({
               max={PROFILE_LIMITS.proteinMax}
               error={errors.protein_per_kg}
               help="يحدد هدف البروتين حسب وزنك."
-              onChange={(value) => update("protein_per_kg", value)}
+              onChange={(value) => intents.updateField("protein_per_kg", value)}
             />
             <NumericSettingsRow
               ref={fatRef}
@@ -253,17 +235,13 @@ export function ProfileView({
               max={PROFILE_LIMITS.fatMaxPercent}
               error={errors.fat_percent}
               help="تحدد نسبة السعرات اليومية القادمة من الدهون."
-              onChange={(value) => update("fat_percent", value)}
+              onChange={(value) => intents.updateField("fat_percent", value)}
             />
             <p className="profile-advanced-notice">تغيير هذه القيم سيؤثر في أهداف البروتين والدهون اليومية.</p>
             <button
               className="profile-text-action"
               type="button"
-              onClick={() => {
-                const defaultsAlreadySet = normalizeNumber(draft.protein_per_kg) === PROTEIN_DEFAULT && normalizeNumber(draft.fat_percent) === FAT_DEFAULTS[draft.sex] * 100;
-                if (defaultsAlreadySet) return;
-                setRestoreOpen(true);
-              }}
+              onClick={intents.requestRestoreDefaults}
             >استعادة القيم الافتراضية</button>
           </div>
         </section>
@@ -279,7 +257,7 @@ export function ProfileView({
               type="date"
               value={effectiveFrom}
               min={authoritativeDate ?? undefined}
-              onChange={(event) => setEffectiveFrom(event.target.value)}
+              onChange={(event) => intents.changeEffectiveFrom(event.target.value)}
               aria-label="تاريخ سريان الأهداف"
               aria-invalid={Boolean(errors.effective_from)}
               aria-describedby={errors.effective_from ? "effective-from-error" : undefined}
@@ -289,28 +267,28 @@ export function ProfileView({
         </section>
 
         <TargetsCard title="الأهداف اليومية" badge="محسوبة تلقائيًا" targets={savedTargets} />
-        {registryQuery.isPending ? <RegistryState kind="loading" /> : registryQuery.isError ? <RegistryState kind="unavailable" onRetry={() => registryQuery.refetch()} /> : registryReady ? <AdditionalTargetsCard targets={savedTargets} registry={registryQuery.data!} /> : null}
+        {registry.pending ? <RegistryState kind="loading" /> : registry.failed ? <RegistryState kind="unavailable" onRetry={intents.retryRegistry} /> : registryReady ? <AdditionalTargetsCard targets={savedTargets} registry={registry.data!} /> : null}
         <TargetPlanHistory
-          plans={planHistoryQuery.data?.pages.flatMap((page) => page.items) ?? []}
-          pending={planHistoryQuery.isPending}
-          failed={planHistoryQuery.isError}
-          hasMore={planHistoryQuery.hasNextPage}
-          loadingMore={planHistoryQuery.isFetchingNextPage}
-          onRetry={() => planHistoryQuery.refetch()}
-          onLoadMore={() => planHistoryQuery.fetchNextPage()}
+          plans={history.plans}
+          pending={history.pending}
+          failed={history.failed}
+          hasMore={history.hasMore}
+          loadingMore={history.loadingMore}
+          onRetry={intents.retryHistory}
+          onLoadMore={intents.loadMoreHistory}
         />
-        <button className="profile-explain-action" type="button" onClick={() => setActiveSheet("calculation")}><Info size={17} /> كيف حُسبت أهدافي؟</button>
+        <button className="profile-explain-action" type="button" onClick={() => intents.openSheet("calculation")}><Info size={17} /> كيف حُسبت أهدافي؟</button>
 
-        {dirty && validation.payload ? (
+        {preview.visible ? (
           <ExpectedTargetsCard
-            targets={currentPreview}
+            targets={preview.current}
             goal={draft.goal}
-            pending={previewPending}
-            failed={previewFailed}
-            recoveryOutcome={writeSafetyOutcome}
-            safetyAttemptSequence={safetyAttemptSequence}
-            safetyRef={safetyRef}
-            onRetry={requestPreview}
+            pending={preview.pending}
+            failed={preview.failed}
+            recoveryOutcome={preview.safetyOutcome}
+            safetyAttemptSequence={preview.safetyAttemptSequence}
+            safetyRef={preview.safetyRef}
+            onRetry={intents.retryPreview}
           />
         ) : null}
 
@@ -318,10 +296,10 @@ export function ProfileView({
 
       {dirty ? (
         <div className="profile-save-bar" role="region" aria-label="حفظ تغييرات الملف الشخصي">
-          <span>{Object.keys(errors).length > 0 ? "صحح الحقول المعلّمة للمتابعة" : writeSafetyOutcome ? "راجع قرار السلامة وحدّث المعاينة قبل المتابعة" : writeErrorCode ? "تغيّرت المعاينة. راجع الأهداف المحدثة ثم أكد مجددًا" : writePhase.kind === "failed" ? PROFILE_WRITE_ERROR : !registryReady ? "سجل التغذية غير جاهز" : "تغييرات غير محفوظة"}</span>
+          <span>{Object.keys(errors).length > 0 ? "صحح الحقول المعلّمة للمتابعة" : preview.safetyOutcome ? "راجع قرار السلامة وحدّث المعاينة قبل المتابعة" : writeErrorCode ? "تغيّرت المعاينة. راجع الأهداف المحدثة ثم أكد مجددًا" : writePhase.kind === "failed" ? PROFILE_WRITE_ERROR : !registryReady ? "سجل التغذية غير جاهز" : "تغييرات غير محفوظة"}</span>
           {writePhase.kind === "failed" ? <small>تحقق من الاتصال ثم أعد المحاولة</small> : null}
-          <button className="btn primary" type="button" onClick={() => submit()} disabled={!registryReady || writePhase.kind === "submitting" || previewPending || (Boolean(validation.payload) && !currentPreview?.preview_hash && !writeSafetyOutcome)}>
-            {writePhase.kind === "submitting" ? <><LoaderCircle className="spin" size={17} /> جارٍ حفظ الخطة…</> : writeSafetyOutcome ? "تحديث المعاينة" : writeErrorCode ? "مراجعة المعاينة" : writePhase.kind === "failed" ? <><RotateCcw size={17} /> إعادة المحاولة</> : "مراجعة وتأكيد"}
+          <button className="btn primary" type="button" onClick={() => intents.submit()} disabled={!registryReady || writePhase.kind === "submitting" || preview.pending || (validationHasPayload && !preview.current?.preview_hash && !preview.safetyOutcome)}>
+            {writePhase.kind === "submitting" ? <><LoaderCircle className="spin" size={17} /> جارٍ حفظ الخطة…</> : preview.safetyOutcome ? "تحديث المعاينة" : writeErrorCode ? "مراجعة المعاينة" : writePhase.kind === "failed" ? <><RotateCcw size={17} /> إعادة المحاولة</> : "مراجعة وتأكيد"}
           </button>
         </div>
       ) : null}
@@ -330,41 +308,41 @@ export function ProfileView({
       {writePhase.kind === "recovery" ? (
         <div className="profile-reconciliation-status" role="status">
           <div><Check size={17} /><span><strong>تم حفظ التغييرات</strong><small>تعذر تحديث البيانات المعروضة. الأهداف المحفوظة أدناه ما زالت معتمدة.</small></span></div>
-          <button className="btn" type="button" onClick={() => void reconcileAcceptedPlan(writePhase.submission, writePhase.accepted)}>
+          <button className="btn" type="button" onClick={intents.retryReconciliation}>
             <RotateCcw size={17} /> إعادة تحديث البيانات
           </button>
         </div>
       ) : null}
 
       {activeSheet === "sex" ? (
-        <ProfileSheet title="اختر الجنس" onClose={() => setActiveSheet(null)}>
+        <ProfileSheet title="اختر الجنس" onClose={intents.closeSheet}>
           <OptionList
             value={draft.sex}
             options={(Object.keys(sexLabels) as Sex[]).map((value) => ({ value, label: sexLabels[value] }))}
-            onChoose={(value) => { updateSex(value as Sex); setActiveSheet(null); }}
+            onChoose={(value) => intents.selectSex(value as Sex)}
           />
         </ProfileSheet>
       ) : null}
       {activeSheet === "activity" ? (
-        <ProfileSheet title="اختر مستوى النشاط" onClose={() => setActiveSheet(null)}>
+        <ProfileSheet title="اختر مستوى النشاط" onClose={intents.closeSheet}>
           <OptionList
             value={draft.activity_level}
             options={(Object.keys(activityLabels) as ActivityLevel[]).map((value) => ({ value, label: activityDisplayLabels[value], description: activityDescriptions[value] }))}
-            onChoose={(value) => { update("activity_level", value as ActivityLevel); setActiveSheet(null); }}
+            onChoose={(value) => intents.selectActivity(value as ActivityLevel)}
           />
         </ProfileSheet>
       ) : null}
       {activeSheet === "goal" ? (
-        <ProfileSheet title="اختر هدفك" onClose={() => setActiveSheet(null)}>
+        <ProfileSheet title="اختر هدفك" onClose={intents.closeSheet}>
           <OptionList
             value={draft.goal}
             options={(Object.keys(goalLabels) as Goal[]).map((value) => ({ value, label: goalDisplayLabels[value], description: goalDescriptions[value] }))}
-            onChoose={(value) => { update("goal", value as Goal); setActiveSheet(null); }}
+            onChoose={(value) => intents.selectGoal(value as Goal)}
           />
         </ProfileSheet>
       ) : null}
       {activeSheet === "calculation" ? (
-        <ProfileSheet title="طريقة حساب أهدافك" onClose={() => setActiveSheet(null)}>
+        <ProfileSheet title="طريقة حساب أهدافك" onClose={intents.closeSheet}>
           <div className="profile-calculation-copy">
             <p>نحسب معدل الأيض الأساسي باستخدام معادلة <bdi dir="ltr">Mifflin–St Jeor</bdi>، ثم نعدله وفق مستوى النشاط والهدف، وبعدها نوزع البروتين والدهون والكربوهيدرات حسب إعداداتك.</p>
             <ul>
@@ -380,12 +358,8 @@ export function ProfileView({
           description="سيتم استبدال إعدادات البروتين والدهون الحالية."
           safeLabel="إبقاء القيم الحالية"
           confirmLabel="استعادة القيم"
-          onClose={() => setRestoreOpen(false)}
-          onConfirm={() => {
-            update("protein_per_kg", String(PROTEIN_DEFAULT));
-            update("fat_percent", String(FAT_DEFAULTS[draft.sex] * 100));
-            setRestoreOpen(false);
-          }}
+          onClose={intents.cancelRestoreDefaults}
+          onConfirm={intents.confirmRestoreDefaults}
         />
       ) : null}
 
@@ -397,10 +371,8 @@ export function ProfileView({
           confirmLabel="حفظ الخطة"
           restoreFocusRef={restoreWriteFocusRef}
           pending={writePhase.kind === "submitting"}
-          onClose={() => {
-            if (writePhaseRef.current.kind === "confirming") transitionWrite({ kind: "idle" });
-          }}
-          onConfirm={() => void writeConfirmedPlan()}
+          onClose={intents.cancelWriteConfirmation}
+          onConfirm={intents.confirmWrite}
         />
       ) : null}
 

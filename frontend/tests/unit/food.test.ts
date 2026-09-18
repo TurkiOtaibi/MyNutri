@@ -5,6 +5,7 @@ import {
   cleanOptionalText,
   defaultServingText,
   emptyFoodForm,
+  formatNutrientNumber,
   formatOptionalValue,
   normalizeFoodForm,
   validateFoodForm
@@ -49,6 +50,11 @@ describe("food normalization and presentation", () => {
     expect(formatOptionalValue(12, "mg")).toBe("12 mg");
     expect(defaultServingText({ default_unit_type: "g", unit_amount: 37.5, unit_basis: "g" }))
       .toContain("37.5");
+  });
+
+  it("formats nutrient values with the supplied Registry precision", () => {
+    expect(formatNutrientNumber(12.345, 1)).toBe("12.3");
+    expect(formatNutrientNumber(12.345, 3)).toBe("12.345");
   });
 
   it("preserves unknown net carbohydrates instead of inventing zero", () => {

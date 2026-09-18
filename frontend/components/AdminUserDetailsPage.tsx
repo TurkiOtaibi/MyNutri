@@ -43,15 +43,26 @@ function ReadOnlyFields({ data, keys }: { data: object | null; keys: string[] })
   ))}</dl>;
 }
 
+function useErrorOccurrenceFocus(
+  active: boolean,
+  occurrence: number,
+  targetRef: { current: HTMLButtonElement | null },
+) {
+  const lastFocusedErrorRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!active || !occurrence || lastFocusedErrorRef.current === occurrence) return;
+    const target = targetRef.current;
+    if (!target?.isConnected || target.disabled) return;
+    lastFocusedErrorRef.current = occurrence;
+    target.focus({ preventScroll: true });
+  }, [active, occurrence, targetRef]);
+}
+
 export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
   const detailRetryRef = useRef<HTMLButtonElement>(null);
   const initialDiaryRetryRef = useRef<HTMLButtonElement>(null);
   const nextDiaryRetryRef = useRef<HTMLButtonElement>(null);
   const refetchDiaryRetryRef = useRef<HTMLButtonElement>(null);
-  const lastFocusedDetailErrorRef = useRef<number | null>(null);
-  const lastFocusedInitialDiaryErrorRef = useRef<number | null>(null);
-  const lastFocusedNextDiaryErrorRef = useRef<number | null>(null);
-  const lastFocusedRefetchDiaryErrorRef = useRef<number | null>(null);
   const detail = useQuery({ queryKey: ["admin-user", principalId], queryFn: () => getAdminUser(principalId) });
   const diaryQuery = useInfiniteQuery({
     queryKey: ["admin-user-diary", principalId],
@@ -65,45 +76,10 @@ export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
   const nextPageFailure = diaryQuery.isFetchNextPageError;
   const refetchFailure = diaryQuery.isRefetchError;
 
-  useEffect(() => {
-    if (!detail.isError) return;
-    const occurrence = detail.errorUpdatedAt;
-    if (!occurrence || lastFocusedDetailErrorRef.current === occurrence) return;
-    const target = detailRetryRef.current;
-    if (!target?.isConnected || target.disabled) return;
-    lastFocusedDetailErrorRef.current = occurrence;
-    target.focus({ preventScroll: true });
-  }, [detail.errorUpdatedAt, detail.isError]);
-
-  useEffect(() => {
-    if (!detail.isSuccess || !initialDiaryFailure) return;
-    const occurrence = diaryQuery.errorUpdatedAt;
-    if (!occurrence || lastFocusedInitialDiaryErrorRef.current === occurrence) return;
-    const target = initialDiaryRetryRef.current;
-    if (!target?.isConnected || target.disabled) return;
-    lastFocusedInitialDiaryErrorRef.current = occurrence;
-    target.focus({ preventScroll: true });
-  }, [detail.isSuccess, diaryQuery.errorUpdatedAt, initialDiaryFailure]);
-
-  useEffect(() => {
-    if (!detail.isSuccess || !nextPageFailure) return;
-    const occurrence = diaryQuery.errorUpdatedAt;
-    if (!occurrence || lastFocusedNextDiaryErrorRef.current === occurrence) return;
-    const target = nextDiaryRetryRef.current;
-    if (!target?.isConnected || target.disabled) return;
-    lastFocusedNextDiaryErrorRef.current = occurrence;
-    target.focus({ preventScroll: true });
-  }, [detail.isSuccess, diaryQuery.errorUpdatedAt, nextPageFailure]);
-
-  useEffect(() => {
-    if (!detail.isSuccess || !refetchFailure) return;
-    const occurrence = diaryQuery.errorUpdatedAt;
-    if (!occurrence || lastFocusedRefetchDiaryErrorRef.current === occurrence) return;
-    const target = refetchDiaryRetryRef.current;
-    if (!target?.isConnected || target.disabled) return;
-    lastFocusedRefetchDiaryErrorRef.current = occurrence;
-    target.focus({ preventScroll: true });
-  }, [detail.isSuccess, diaryQuery.errorUpdatedAt, refetchFailure]);
+  useErrorOccurrenceFocus(detail.isError, detail.errorUpdatedAt, detailRetryRef);
+  useErrorOccurrenceFocus(detail.isSuccess && initialDiaryFailure, diaryQuery.errorUpdatedAt, initialDiaryRetryRef);
+  useErrorOccurrenceFocus(detail.isSuccess && nextPageFailure, diaryQuery.errorUpdatedAt, nextDiaryRetryRef);
+  useErrorOccurrenceFocus(detail.isSuccess && refetchFailure, diaryQuery.errorUpdatedAt, refetchDiaryRetryRef);
 
   if (detail.isPending) return <div className="state-note">جارٍ تحميل بيانات المستخدم...</div>;
   if (detail.isError) return <div className="state-note" role="alert"><p>تعذر تحميل بيانات المستخدم.</p><button ref={detailRetryRef} className="btn" type="button" disabled={detail.isFetching} onClick={() => detail.refetch()}>{detail.isFetching ? "جارٍ إعادة تحميل بيانات المستخدم..." : "إعادة محاولة تحميل بيانات المستخدم"}</button></div>;
