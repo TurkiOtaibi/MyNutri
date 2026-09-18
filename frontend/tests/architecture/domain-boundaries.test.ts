@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -18,8 +18,8 @@ const manifests = {
   "features/profile/profile-model.ts": [
     "DraftProfile", "ProfileField", "FieldErrors", "SheetKind", "TargetPlanSubmission",
     "TargetPlanWritePhase", "BlockingSafetyOutcome", "PROTEIN_DEFAULT", "FAT_DEFAULTS",
-    "PROFILE_LIMITS", "UNKNOWN_SAFETY_MESSAGE", "activityDescriptions", "activityDisplayLabels", "goalDescriptions",
-    "goalDisplayLabels", "toDraft", "blankDraft", "normalizeNumber",
+    "PROFILE_LIMITS", "UNKNOWN_SAFETY_MESSAGE", "activityDescriptions", "activityDisplayLabels", "activityLabels",
+    "goalDescriptions", "goalDisplayLabels", "goalLabels", "sexLabels", "toDraft", "blankDraft", "normalizeNumber",
     "normalizeDraft", "validateDraft", "blockingSafetyMessage", "isPreviewActivatable",
     "profileMatchesAcceptedPlan", "formatArabicGregorianDate", "formatTargetNumber",
     "mapProfileApiErrors",
@@ -50,7 +50,11 @@ const manifests = {
     "validateQuantity", "entryQuantityLabel",
   ],
   "features/diary/diary-hooks.ts": ["useDebouncedValue", "invalidateDiary", "useCalendarAuthorityRefresh"],
-  "features/foods/food-form-model.ts": ["fieldId", "mapFoodApiError"],
+  "features/foods/food-form-model.ts": [
+    "FoodFormErrors", "FoodFormValues", "defaultUnitOptions", "emptyFoodForm", "fieldId",
+    "foodTextMax", "foodToForm", "hasFoodErrors", "mapFoodApiError", "normalizeFoodForm",
+    "validateFoodForm",
+  ],
   "features/foods/food-form-fields.tsx": [
     "FormSection", "FoodFormActions", "TextField",
     "TextAreaField", "NumberField", "SelectField",
@@ -195,6 +199,13 @@ describe("domain boundaries", () => {
         read("features/foods/food-nutrients.ts"),
       ].join("\n"),
     );
+  });
+
+  it("keeps shared libraries limited to live cross-domain boundaries", () => {
+    expect(existsSync(resolve(root, "lib/supabase/server.ts"))).toBe(false);
+    expect(existsSync(resolve(root, "lib/labels.ts"))).toBe(false);
+    expect(read("lib/api.ts")).not.toContain("apiFetchWithResponse");
+    expect(read("lib/dates.ts")).toContain("export const weekdays");
   });
 
   it("proves the Foods ownership oracle rejects query, state, and presentation regressions", () => {

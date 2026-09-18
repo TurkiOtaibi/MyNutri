@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  definitionsForTargets,
   definitionsFromRegistry,
   formatNutrientValue,
   nutrientValue,
@@ -9,34 +8,6 @@ import {
 } from "@/lib/nutrients";
 
 describe("nutrient definitions and values", () => {
-  it("maps target metadata while preserving nullable targets", () => {
-    const definitions = definitionsForTargets({
-      calories: 2000,
-      protein_g: 100,
-      carb_g: 250,
-      fat_g: 70,
-      additional_targets: [{
-        key: "sodium_mg",
-        label_ar: "الصوديوم",
-        unit: "mg",
-        precision: 0,
-        order: 4,
-        target_type: "maximum",
-        target_source: "profile",
-        target_value: null
-      }]
-    } as never);
-
-    expect(definitions).toHaveLength(1);
-    expect(definitions[0]).toMatchObject({
-      key: "sodium_mg",
-      precision: 0,
-      order: 4,
-      targetType: "maximum",
-      targetValue: null
-    });
-  });
-
   it("maps registry coverage and localizes known units", () => {
     const registry = {
       rules_manifest_hash: "a".repeat(64),
@@ -68,8 +39,7 @@ describe("nutrient definitions and values", () => {
     expect(definitions[0]).toMatchObject({
       key: "vitamin_c_mg",
       precision: 1,
-      foodCompleteness: true,
-      diaryDetails: false
+      foodCompleteness: true
     });
     expect(definitions[0].unit).not.toBe("mg");
     expect(() => parseNutritionRegistry({ ...registry, rules_manifest_hash: "bad" })).toThrow();
@@ -86,6 +56,11 @@ describe("nutrient definitions and values", () => {
           { ...registry.food_taxonomy[0].subcategories[0] }
         ]
       }]
+    })).toThrow();
+    expect(() => parseNutritionRegistry({
+      ...registry,
+      target_types: ["future_type"],
+      nutrients: [{ ...registry.nutrients[0], target_type: "future_type" }]
     })).toThrow();
   });
 

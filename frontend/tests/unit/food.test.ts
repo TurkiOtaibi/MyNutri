@@ -2,16 +2,18 @@ import { describe, expect, it } from "vitest";
 
 import {
   calculateServingNutrition,
-  cleanOptionalText,
   defaultServingText,
-  emptyFoodForm,
-  formatNutrientNumber,
-  formatOptionalValue,
-  normalizeFoodForm,
-  validateFoodForm
+  formatNutrientNumber
 } from "@/lib/food";
 import { ApiError } from "@/lib/api";
-import { fieldId, mapFoodApiError } from "@/features/foods/food-form-model";
+import {
+  emptyFoodForm,
+  fieldId,
+  foodToForm,
+  mapFoodApiError,
+  normalizeFoodForm,
+  validateFoodForm
+} from "@/features/foods/food-form-model";
 import type { FoodResponse } from "@/lib/types";
 
 describe("food normalization and presentation", () => {
@@ -43,11 +45,32 @@ describe("food normalization and presentation", () => {
     expect(source.name).toBe("  Brown   rice  ");
   });
 
-  it("preserves established nullable and serving presentation", () => {
-    expect(cleanOptionalText(null)).toBeNull();
-    expect(cleanOptionalText("  a   b ")).toBe("a b");
-    expect(formatOptionalValue(null, "mg")).toBe("-");
-    expect(formatOptionalValue(12, "mg")).toBe("12 mg");
+  it("maps only editable fields from a Food response", () => {
+    const form = foodToForm({
+      ...emptyFoodForm,
+      id: "00000000-0000-0000-0000-000000000001",
+      calories: 100,
+      protein_g: 5,
+      carb_g: 20,
+      fat_g: 2,
+      unit_amount: 100,
+      net_carbs_g: 15,
+      legacy_nutrition: { folate_mcg: null, vitamin_a_mcg: null, meaning_ar: "قديم" },
+      created_at: "2026-09-01T00:00:00Z",
+      updated_at: "2026-09-01T00:00:00Z",
+      future_server_field: "server-owned"
+    } as FoodResponse & { future_server_field: string });
+
+    expect(form).not.toHaveProperty("id");
+    expect(form).not.toHaveProperty("net_carbs_g");
+    expect(form).not.toHaveProperty("legacy_nutrition");
+    expect(form).not.toHaveProperty("created_at");
+    expect(form).not.toHaveProperty("updated_at");
+    expect(form).not.toHaveProperty("future_server_field");
+    expect(form).toMatchObject({ name: "", calories: 100, unit_amount: 100 });
+  });
+
+  it("preserves established serving presentation", () => {
     expect(defaultServingText({ default_unit_type: "g", unit_amount: 37.5, unit_basis: "g" }))
       .toContain("37.5");
   });

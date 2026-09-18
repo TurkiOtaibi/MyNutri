@@ -8,23 +8,25 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFood, getFood, getNutritionRegistry, updateFood } from "@/lib/api";
 import {
   defaultUnitLabels,
-  defaultUnitOptions,
-  emptyFoodForm,
-  foodToForm,
-  foodTextMax,
-  hasFoodErrors,
-  normalizeFoodForm,
   nutritionBasisLabels,
-  unitBasisLabels,
-  validateFoodForm,
-  type FoodFormErrors,
-  type FoodFormValues
+  unitBasisLabels
 } from "@/lib/food";
 import type { FoodResponse } from "@/lib/types";
 
 import { FoodDeleteDialog } from "./FoodDeleteDialog";
 import { FoodFormActions, FormSection, NumberField, SelectField, TextAreaField, TextField } from "@/features/foods/food-form-fields";
-import { mapFoodApiError } from "@/features/foods/food-form-model";
+import {
+  defaultUnitOptions,
+  emptyFoodForm,
+  foodToForm,
+  foodTextMax,
+  hasFoodErrors,
+  mapFoodApiError,
+  normalizeFoodForm,
+  validateFoodForm,
+  type FoodFormErrors,
+  type FoodFormValues
+} from "@/features/foods/food-form-model";
 import { createFoodNutrientAdapter } from "@/features/foods/food-nutrients";
 import "@/features/foods/food-form.module.css";
 import { useFoodDelete } from "./useFoodDelete";

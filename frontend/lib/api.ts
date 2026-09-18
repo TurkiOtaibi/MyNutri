@@ -20,7 +20,6 @@ import type {
   AccountResponse,
   AdminUserDetail,
   AdminUserListResponse,
-  AdminUserSummary as GeneratedAdminUserSummary,
   CalendarAuthorityResponse
 } from "./generated/openapi";
 import { createClient } from "./supabase/client";
@@ -42,11 +41,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  return (await apiFetchWithResponse<T>(path, init)).body;
-}
-
-async function apiFetchWithResponse<T>(path: string, init: RequestInit = {}): Promise<{ body: T; response: Response }> {
+async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -65,7 +60,7 @@ async function apiFetchWithResponse<T>(path: string, init: RequestInit = {}): Pr
   });
 
   if (response.status === 204) {
-    return { body: undefined as T, response };
+    return undefined as T;
   }
 
   if (!response.ok) {
@@ -86,7 +81,7 @@ async function apiFetchWithResponse<T>(path: string, init: RequestInit = {}): Pr
     throw new ApiError(message, response.status, detail, code);
   }
 
-  return { body: await response.json() as T, response };
+  return await response.json() as T;
 }
 
 export function getCurrentAccount(options: { accessToken: string; signal?: AbortSignal }): Promise<CurrentAccount> {
@@ -173,7 +168,7 @@ export function listFoodPicker(
   );
 }
 
-export interface FoodListOptions {
+interface FoodListOptions {
   search?: string;
   category?: string;
   sort?: FoodSort;
@@ -214,8 +209,7 @@ export function deleteFood(foodId: string, accessToken: string | null | undefine
   return apiFetch<void>(`/foods/${foodId}`, authorizedInit(accessToken, signal, { method: "DELETE" }));
 }
 
-export type AdminUserSummary = GeneratedAdminUserSummary;
-export type AdminUserList = AdminUserListResponse;
+type AdminUserList = AdminUserListResponse;
 
 export function listAdminUsers(search = "", page = 1): Promise<AdminUserList> {
   const params = new URLSearchParams({ page: String(page), page_size: "20" });
