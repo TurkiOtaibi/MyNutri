@@ -139,7 +139,7 @@ export function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: {
           </div>
         </div>
 
-        <div className={`add-sheet-content ${selectedFood ? "configure-state" : "search-state"}`}>
+        <div className={`add-sheet-content ${selectedFood ? "configure-state" : "search-state"}`} tabIndex={mutation.isPending ? 0 : undefined}>
           {!selectedFood ? (
             <div className="add-food-search-state">
               <div className="add-search-sticky">

@@ -5,7 +5,7 @@ import type { ActivityLevel, Goal, NutritionRegistryResponse, Sex, TargetPlanHis
 import { NumericSettingsRow, OptionList, SelectionCard, SettingsButton, CutIntensitySelector } from "./profile-controls";
 import { AdditionalTargetsCard, ExpectedTargetsCard, RegistryState, TargetPlanHistory, TargetsCard } from "./profile-targets";
 import { ProfileConfirm, ProfileSheet } from "./profile-dialogs";
-import { activityDescriptions, activityDisplayLabels, goalDescriptions, goalDisplayLabels, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type SheetKind, type TargetPlanWritePhase } from "./profile-model";
+import { PROFILE_LIMITS, activityDescriptions, activityDisplayLabels, goalDescriptions, goalDisplayLabels, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type SheetKind, type TargetPlanWritePhase } from "./profile-model";
 import "./profile.module.css";
 
 const PROFILE_WRITE_ERROR = "تعذر حفظ التغييرات";
@@ -154,6 +154,9 @@ export function ProfileView({
             label="الطول"
             value={draft.height_cm}
             unit="سم"
+            step="0.1"
+            min={PROFILE_LIMITS.heightMin}
+            max={PROFILE_LIMITS.heightMax}
             error={errors.height_cm}
             onChange={(value) => intents.updateField("height_cm", value)}
           />
@@ -163,6 +166,9 @@ export function ProfileView({
             label="الوزن"
             value={draft.weight_kg}
             unit="كجم"
+            step="0.1"
+            min={PROFILE_LIMITS.weightMin}
+            max={PROFILE_LIMITS.weightMax}
             error={errors.weight_kg}
             onChange={(value) => intents.updateField("weight_kg", value)}
           />
@@ -212,6 +218,9 @@ export function ProfileView({
               label="البروتين لكل كجم"
               value={draft.protein_per_kg}
               unit="جم/كجم"
+              step="0.1"
+              min={PROFILE_LIMITS.proteinMin}
+              max={PROFILE_LIMITS.proteinMax}
               error={errors.protein_per_kg}
               help="يحدد هدف البروتين حسب وزنك."
               onChange={(value) => intents.updateField("protein_per_kg", value)}
@@ -221,6 +230,9 @@ export function ProfileView({
               label="نسبة الدهون"
               value={draft.fat_percent}
               unit="%"
+              step="1"
+              min={PROFILE_LIMITS.fatMinPercent}
+              max={PROFILE_LIMITS.fatMaxPercent}
               error={errors.fat_percent}
               help="تحدد نسبة السعرات اليومية القادمة من الدهون."
               onChange={(value) => intents.updateField("fat_percent", value)}
