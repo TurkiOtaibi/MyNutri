@@ -1,5 +1,4 @@
 from dataclasses import replace
-from pathlib import Path
 from uuid import UUID
 
 import pytest
@@ -250,8 +249,25 @@ def test_admin_bootstrap_refuses_email_owned_by_another_principal(bootstrap_engi
         bootstrap_admin(request(dry_run=True))
 
 
-def test_admin_bootstrap_source_never_embeds_or_prints_secret_values() -> None:
-    source = Path(module.__file__).read_text("utf-8")
-    assert "response.text" not in source
-    assert "ADMIN_BOOTSTRAP_PASSWORD" in source
-    assert "SUPABASE_SERVICE_ROLE_KEY" in source
+def test_admin_bootstrap_provider_failure_redacts_secrets_and_response_body(
+    monkeypatch, caplog, capsys
+) -> None:
+    configure_bootstrap_secrets(monkeypatch, url="https://project.supabase.co")
+    response_body = "provider-body-secret"
+
+    class Response:
+        status_code = 400
+        text = response_body
+
+    monkeypatch.setattr(module.httpx, "post", lambda *args, **kwargs: Response())
+
+    with pytest.raises(RuntimeError, match=r"rejected the request \(400\)") as error:
+        module._create_supabase_user(request(dry_run=False))
+
+    captured = capsys.readouterr()
+    visible_output = "\n".join(
+        [str(error.value), captured.out, captured.err, caplog.text]
+    )
+    assert "fixture-service-role-key" not in visible_output
+    assert "fixture-bootstrap-password" not in visible_output
+    assert response_body not in visible_output

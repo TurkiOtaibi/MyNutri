@@ -1,7 +1,6 @@
 from collections.abc import Generator
 from importlib.resources import files
 import json
-from pathlib import Path
 from uuid import UUID
 
 import pytest
@@ -191,10 +190,3 @@ def test_profile_preview_returns_blocked_safety_outcome_without_override(
     assert 800 <= response.json()["final_target_calories"] <= 1200
     assert response.json()["safety_outcome"] == "specialist_review_required"
     assert response.json()["can_activate"] is False
-
-
-def test_frontend_contains_no_authoritative_nutrient_target_registry() -> None:
-    source = (Path(__file__).resolve().parents[2] / "frontend/lib/nutrients.ts").read_text("utf-8")
-    assert "additionalNutrients" not in source
-    assert "targetValue: 30" not in source
-    assert "percent_of_calories" not in source

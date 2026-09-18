@@ -297,8 +297,17 @@ def plan015_postgresql_session():
     url = os.environ.get("TEST_DATABASE_URL", "")
     if not url:
         pytest.skip("TEST_DATABASE_URL is required for PostgreSQL Plan 015 budgets.")
-    if make_url(url).get_backend_name() != "postgresql":
-        pytest.fail("Plan 015 query budgets require PostgreSQL TEST_DATABASE_URL.")
+    parsed = make_url(url)
+    database = parsed.database or ""
+    if (
+        parsed.get_backend_name() != "postgresql"
+        or parsed.host not in {"localhost", "127.0.0.1", "::1"}
+        or not database.startswith("mynutri_test_")
+    ):
+        pytest.fail(
+            "Plan 015 query budgets require a literal-loopback mynutri_test_ "
+            "PostgreSQL TEST_DATABASE_URL."
+        )
 
     schema_name = f"isolated_plan015_{uuid4().hex}"
     admin_engine = create_engine(url, isolation_level="AUTOCOMMIT")
