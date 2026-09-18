@@ -1,12 +1,13 @@
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Cookie, MoreVertical, Moon, Pencil, Plus, Sun, Sunrise, Trash2, X } from "lucide-react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef } from "react";
 import { addDays, formatDayNumber, formatShortDate, weekStartSunday } from "@/lib/dates";
 import { formatServingMacro } from "@/lib/food";
 import { weekdays } from "@/lib/labels";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels, type NutrientDefinition } from "@/lib/nutrients";
 import type { DaySummary, DiaryEntryResponse, DiaryNutrientAggregate, MealType, NutritionRegistryResponse, NutritionTotals, TargetResponse, WeekSummary } from "@/lib/types";
 import { emptyNutritionTotals, entryQuantityLabel, formatDiarySelectedDate, mealItemCountLabel, mealLabels, shortWeekdays, standardMeals } from "./diary-model";
-import { ModalFrame } from "./diary-entry-dialogs";
+import { ModalFrame } from "./diary-modal";
 
 const WEEK_READ_ERROR = "تعذر تحميل ملخص الأسبوع. تحقق من الاتصال وحاول مرة أخرى.";
 
@@ -47,7 +48,7 @@ export function CompactWeekNavigator({
         <button className="week-day-arrow next" type="button" onClick={() => onSelect(addDays(selectedDate, 1))} aria-label="اليوم التالي"><ChevronRight size={19} /></button>
         {selectedDate !== today ? <button className="compact-today" type="button" onClick={() => onSelect(today)}>اليوم</button> : null}
       </div>
-      <div className="compact-week-days" role="tablist" aria-label="أيام الأسبوع">
+      <div className="compact-week-days" role="group" aria-label="أيام الأسبوع">
         {days.map((day, index) => {
           const selected = day.date === selectedDate;
           const dayTarget = day.targets?.target_calories;
@@ -60,8 +61,6 @@ export function CompactWeekNavigator({
               key={day.date}
               type="button"
               onClick={() => onSelect(day.date)}
-              role="tab"
-              aria-selected={selected}
               aria-current={selected ? "date" : undefined}
               aria-label={`${weekdays[index]}، ${formatShortDate(day.date)}، ${Math.round(day.totals.calories)} سعرة`}
             >
@@ -126,7 +125,7 @@ export function DailyProgressSummary({ totals, targets, pending, failed, onOpenN
   );
 }
 
-export function MacroProgress({ label, value, max }: { label: string; value: number; max: number }) {
+function MacroProgress({ label, value, max }: { label: string; value: number; max: number }) {
   const percent = max > 0 ? Math.round((value / max) * 100) : 0;
   const over = percent > 100;
   const visualPercent = Math.min(percent, 100);
@@ -148,7 +147,7 @@ export function MacroProgress({ label, value, max }: { label: string; value: num
         aria-label={label}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={percent}
+        aria-valuenow={visualPercent}
         aria-valuetext={`${formatServingMacro(value)} من ${formatServingMacro(max)} جم، ${percent}%${over ? `، فوق الهدف بـ ${formatServingMacro(value - max)} جم` : ""}`}
       >
         <span style={{ "--macro-progress": `${visualPercent}%`, "--macro-min-progress": `${minimumVisualPixels}px` } as CSSProperties} />
@@ -224,7 +223,7 @@ export function MealSections({
   );
 }
 
-export function DiaryEntryRow({
+function DiaryEntryRow({
   entry,
   menuOpen,
   onToggleMenu,
@@ -239,21 +238,65 @@ export function DiaryEntryRow({
   onDelete: () => void;
   deleting: boolean;
 }) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const initialMenuItemRef = useRef<"first" | "last">("first");
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []);
+    const initialItem = initialMenuItemRef.current === "last" ? items.at(-1) : items[0];
+    initialMenuItemRef.current = "first";
+    items.forEach((item) => { item.tabIndex = item === initialItem ? 0 : -1; });
+    initialItem?.focus();
+  }, [menuOpen]);
+
+  function handleMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowDown") nextIndex = (currentIndex + 1) % items.length;
+    if (event.key === "ArrowUp") nextIndex = (currentIndex - 1 + items.length) % items.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = items.length - 1;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onToggleMenu();
+      requestAnimationFrame(() => triggerRef.current?.focus());
+      return;
+    }
+    if (nextIndex === null || !items[nextIndex]) return;
+    event.preventDefault();
+    items.forEach((item, index) => { item.tabIndex = index === nextIndex ? 0 : -1; });
+    items[nextIndex].focus();
+  }
+
+  function handleMenuTriggerKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    initialMenuItemRef.current = event.key === "ArrowUp" ? "last" : "first";
+    if (!menuOpen) onToggleMenu();
+  }
+
   return (
-    <article className={`diary-entry-row ${deleting ? "is-deleting" : ""}`} role="button" tabIndex={deleting ? -1 : 0} aria-label={`تعديل ${entry.food.name}`} onClick={() => { if (!deleting) onEdit(); }} onKeyDown={(event) => { if (!deleting && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onEdit(); } }}>
-      <div className="diary-entry-copy">
-        <h3 dir="auto">{entry.food.name}</h3>
-        <p>{entryQuantityLabel(entry)}</p>
+    <article className={`diary-entry-row ${deleting ? "is-deleting" : ""}`}>
+      <div className="diary-entry-edit-target">
+        <div className="diary-entry-copy">
+          <h3 dir="auto">{entry.food.name}</h3>
+          <p>{entryQuantityLabel(entry)}</p>
+        </div>
+        <strong className="diary-entry-calories"><bdi dir="ltr">{Math.round(entry.totals.calories)}</bdi> سعرة</strong>
+        <button className="diary-entry-edit-button" type="button" disabled={deleting} aria-label={`تعديل ${entry.food.name}`} onClick={onEdit} />
       </div>
-      <strong className="diary-entry-calories"><bdi dir="ltr">{Math.round(entry.totals.calories)}</bdi> سعرة</strong>
-      <div className="entry-menu-wrap" onClick={(event) => event.stopPropagation()}>
-        <button className="btn icon entry-menu-trigger" type="button" disabled={deleting} onClick={onToggleMenu} aria-label={`خيارات ${entry.food.name}`} aria-expanded={menuOpen}>
+      <div className="entry-menu-wrap">
+        <button ref={triggerRef} className="btn icon entry-menu-trigger" type="button" disabled={deleting} onClick={onToggleMenu} onKeyDown={handleMenuTriggerKeyDown} aria-label={`خيارات ${entry.food.name}`} aria-haspopup="menu" aria-expanded={menuOpen} aria-controls={`entry-menu-${entry.id}`}>
           <MoreVertical size={18} />
         </button>
         {menuOpen ? (
-          <div className="entry-action-menu" role="menu">
-            <button type="button" role="menuitem" data-diary-entry-action={`edit-${entry.id}`} onClick={onEdit}><Pencil size={16} /> تعديل</button>
-            <button type="button" role="menuitem" data-diary-entry-action={`delete-${entry.id}`} className="danger-text" onClick={onDelete}><Trash2 size={16} /> حذف</button>
+          <div ref={menuRef} id={`entry-menu-${entry.id}`} className="entry-action-menu" role="menu" onKeyDown={handleMenuKeyDown}>
+            <button type="button" role="menuitem" tabIndex={0} data-diary-entry-action={`edit-${entry.id}`} onClick={onEdit}><Pencil size={16} /> تعديل</button>
+            <button type="button" role="menuitem" tabIndex={-1} data-diary-entry-action={`delete-${entry.id}`} className="danger-text" onClick={onDelete}><Trash2 size={16} /> حذف</button>
           </div>
         ) : null}
       </div>
@@ -296,7 +339,7 @@ const evaluationLabels: Record<string, string> = {
   indeterminate_partial_coverage: "لا يمكن تحديد الحالة مع التغطية الجزئية"
 };
 
-export function DailyNutrientRow({ aggregate, definition }: { aggregate: DiaryNutrientAggregate; definition: NutrientDefinition | undefined }) {
+function DailyNutrientRow({ aggregate, definition }: { aggregate: DiaryNutrientAggregate; definition: NutrientDefinition | undefined }) {
   const precision = definition?.precision ?? 1;
   const unit = definition?.unit ?? aggregate.target?.unit ?? "";
   if (!definition) return null;

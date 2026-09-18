@@ -18,18 +18,18 @@ const manifests = {
   "features/profile/profile-model.ts": [
     "DraftProfile", "ProfileField", "FieldErrors", "SheetKind", "TargetPlanSubmission",
     "TargetPlanWritePhase", "BlockingSafetyOutcome", "PROTEIN_DEFAULT", "FAT_DEFAULTS",
-    "PROFILE_LIMITS", "activityDescriptions", "activityDisplayLabels", "goalDescriptions",
-    "goalDisplayLabels", "toDraft", "blankDraft", "formatEditableNumber", "normalizeNumber",
+    "PROFILE_LIMITS", "UNKNOWN_SAFETY_MESSAGE", "activityDescriptions", "activityDisplayLabels", "goalDescriptions",
+    "goalDisplayLabels", "toDraft", "blankDraft", "normalizeNumber",
     "normalizeDraft", "validateDraft", "blockingSafetyMessage", "isPreviewActivatable",
     "profileMatchesAcceptedPlan", "formatArabicGregorianDate", "formatTargetNumber",
     "mapProfileApiErrors",
   ],
   "features/profile/profile-controls.tsx": [
     "SettingsButton", "NumericSettingsRow", "SelectionCard", "OptionList",
-    "cutIntensityOptions", "CutIntensitySelector",
+    "CutIntensitySelector",
   ],
   "features/profile/profile-targets.tsx": [
-    "TargetsCard", "TargetValue", "AdditionalTargetsCard", "RegistryState",
+    "TargetsCard", "AdditionalTargetsCard", "RegistryState",
     "TargetPlanHistory", "ExpectedTargetsCard",
   ],
   "features/profile/profile-dialogs.tsx": [
@@ -37,38 +37,32 @@ const manifests = {
   ],
   "features/profile/profile-view.tsx": ["ProfileView"],
   "features/diary/diary-summary.tsx": [
-    "CompactWeekNavigator", "DailyProgressSummary", "MacroProgress", "MealSections",
-    "DiaryEntryRow", "DailyNutritionDetails", "DailyNutrientRow",
+    "CompactWeekNavigator", "DailyProgressSummary", "MealSections", "DailyNutritionDetails",
   ],
   "features/diary/diary-entry-dialogs.tsx": [
-    "AddEntrySheet", "FoodResultGroup", "FoodResultRow", "FoodResultSkeletons",
-    "SelectedFoodSummary", "EditEntryDialog", "MealTypeSelector", "QuantityStepper",
-    "ConfirmDialog", "ModalFocusScope", "modalFocusScopes", "focusableElements",
-    "topModalScope", "syncModalFocusOwnership", "handleModalKeyDown",
-    "registerModalFocusScope", "unregisterModalFocusScope", "ModalFrame", "RetryState",
-    "DiaryEntriesSkeleton",
+    "AddEntrySheet", "EditEntryDialog", "ConfirmDialog", "RetryState", "DiaryEntriesSkeleton",
   ],
+  "features/diary/diary-modal.tsx": ["ModalFrame"],
   "features/diary/diary-model.ts": [
     "mealLabels", "standardMeals", "shortWeekdays", "mealAddLabels",
     "mealItemCountLabel", "emptyNutritionTotals", "formatDiarySelectedDate",
     "pickerServingNutrition", "multiplyServing", "scaleEntryPreview", "parseQuantity",
     "validateQuantity", "entryQuantityLabel",
   ],
-  "features/diary/diary-hooks.ts": ["useDebouncedValue", "invalidateDiary"],
+  "features/diary/diary-hooks.ts": ["useDebouncedValue", "invalidateDiary", "useCalendarAuthorityRefresh"],
   "features/foods/food-form-model.ts": ["fieldId", "mapFoodApiError"],
   "features/foods/food-form-fields.tsx": [
     "FormSection", "FoodFormActions", "TextField",
     "TextAreaField", "NumberField", "SelectField",
   ],
   "features/foods/food-nutrients.ts": [
-    "EditableFoodNutrient", "FoodNutrientSpec", "FoodNutrientGroup",
-    "FoodNutrientAdapter", "createFoodNutrientAdapter",
+    "FoodNutrientSpec", "createFoodNutrientAdapter",
   ],
   "features/foods/food-catalog-view.tsx": [
     "FoodTableRow", "FoodCard", "DesktopPagination", "FoodsLoading", "EmptyFoodsState",
   ],
   "features/foods/food-details-view.tsx": [
-    "FoodDetailsLoading", "DetailServingMetric", "NutritionCompleteness",
+    "NutritionMode", "FoodDetailsLoading", "DetailServingMetric", "NutritionCompleteness",
     "NutrientGroup", "MetadataRow", "formatFoodDate",
   ],
 } as const;
@@ -158,11 +152,11 @@ describe("domain boundaries", () => {
   it("enforces the exact extraction manifest and stable thin orchestrators", () => {
     for (const [path, symbols] of Object.entries(manifests)) {
       const source = read(path);
-      for (const symbol of symbols) {
-        expect(source, `${symbol} must live in ${path}`).toMatch(
-          new RegExp(`(?:export\\s+)?(?:function|const|type|interface)\\s+${symbol}\\b`),
-        );
-      }
+      const actualExports = [...source.matchAll(
+        /^export\s+(?:async\s+)?(?:function|const|type|interface)\s+(\w+)/gm,
+      )].map((match) => match[1]).sort();
+      expect(actualExports, `${path} must expose only its approved feature boundary`)
+        .toEqual([...symbols].sort());
     }
 
     for (const [path, exportName, limit] of [

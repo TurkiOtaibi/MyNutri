@@ -11,7 +11,7 @@ import {
   validateFoodForm
 } from "@/lib/food";
 import { ApiError } from "@/lib/api";
-import { mapFoodApiError } from "@/features/foods/food-form-model";
+import { fieldId, mapFoodApiError } from "@/features/foods/food-form-model";
 import type { FoodResponse } from "@/lib/types";
 
 describe("food normalization and presentation", () => {
@@ -55,6 +55,11 @@ describe("food normalization and presentation", () => {
   it("formats nutrient values with the supplied Registry precision", () => {
     expect(formatNutrientNumber(12.345, 1)).toBe("12.3");
     expect(formatNutrientNumber(12.345, 3)).toBe("12.345");
+  });
+
+  it("derives stable form control IDs from field keys rather than display labels", () => {
+    expect(fieldId("vitamin_b12_mcg")).toBe("food-vitamin-b12-mcg");
+    expect(fieldId("nutrition_data_source")).toBe("food-nutrition-data-source");
   });
 
   it("preserves unknown net carbohydrates instead of inventing zero", () => {

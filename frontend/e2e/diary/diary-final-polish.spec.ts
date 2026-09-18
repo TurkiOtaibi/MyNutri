@@ -129,6 +129,7 @@ test.describe("@diary @final-polish compact visual refinements", () => {
     const overTrack = rows.nth(1).locator(".macro-progress-track");
     const [trackBox, fillBox] = await Promise.all([overTrack.boundingBox(), overTrack.locator("> span").boundingBox()]);
     expect(fillBox!.width).toBeLessThanOrEqual(trackBox!.width + 0.5);
+    await expect(overTrack).toHaveAttribute("aria-valuenow", "100");
     await expect(overTrack).toHaveAttribute("aria-valuetext", /فوق الهدف/);
   });
 

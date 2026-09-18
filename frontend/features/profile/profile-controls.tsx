@@ -28,7 +28,7 @@ export function SelectionCard({ icon, title, value, description, onClick, ariaLa
   );
 }
 
-export const cutIntensityOptions: Array<{ value: CutIntensity; label: string; percent: string; recommended?: boolean }> = [
+const cutIntensityOptions: Array<{ value: CutIntensity; label: string; percent: string; recommended?: boolean }> = [
   { value: 0.15, label: "خفيف", percent: "15%" },
   { value: 0.2, label: "عادي", percent: "20%", recommended: true },
   { value: 0.25, label: "قوي", percent: "25%" }

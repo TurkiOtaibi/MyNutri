@@ -24,6 +24,6 @@ export function mapFoodApiError(error: unknown): FoodFormErrors {
   return next;
 }
 
-export function fieldId(label: string): string {
-  return `food-${label.replace(/\s+/g, "-")}`;
+export function fieldId(field: keyof FoodFormValues): string {
+  return `food-${field.replaceAll("_", "-")}`;
 }
