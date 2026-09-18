@@ -24,7 +24,8 @@ import type { FoodResponse } from "@/lib/types";
 
 import { FoodDeleteDialog } from "./FoodDeleteDialog";
 import { FoodFormActions, FormSection, NumberField, SelectField, TextAreaField, TextField } from "@/features/foods/food-form-fields";
-import { mapFoodApiError, optionalFields } from "@/features/foods/food-form-model";
+import { mapFoodApiError } from "@/features/foods/food-form-model";
+import { createFoodNutrientAdapter } from "@/features/foods/food-nutrients";
 import "@/features/foods/food-form.module.css";
 import { useFoodDelete } from "./useFoodDelete";
 import { useAuth } from "./AuthProvider";
@@ -149,7 +150,14 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     }
   });
 
-  const optionalHasErrors = useMemo(() => optionalFields.some((field) => errors[field]), [errors]);
+  const nutrientAdapter = useMemo(
+    () => createFoodNutrientAdapter(registryQuery.data),
+    [registryQuery.data],
+  );
+  const optionalHasErrors = useMemo(
+    () => nutrientAdapter.editable.some(({ field }) => errors[field]),
+    [errors, nutrientAdapter],
+  );
 
   function update<K extends keyof FoodFormValues>(key: K, value: FoodFormValues[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -354,26 +362,15 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
         <details className="details-block food-optional-section" open={optionalHasErrors ? true : undefined}>
           <summary>القيم الغذائية الإضافية</summary>
           <div className="form-grid" style={{ marginTop: 12 }}>
-            <NumberField label="ألياف g" value={form.fiber_g} error={errors.fiber_g} onChange={(value) => update("fiber_g", value)} />
-            <NumberField label="إجمالي السكر g" value={form.sugar_g} error={errors.sugar_g} onChange={(value) => update("sugar_g", value)} />
-            <NumberField label="سكر مضاف g" value={form.added_sugar_g} error={errors.added_sugar_g} onChange={(value) => update("added_sugar_g", value)} />
-            <NumberField label="دهون مشبعة g" value={form.saturated_fat_g} error={errors.saturated_fat_g} onChange={(value) => update("saturated_fat_g", value)} />
-            <NumberField label="دهون متحولة g" value={form.trans_fat_g} error={errors.trans_fat_g} onChange={(value) => update("trans_fat_g", value)} />
-            <NumberField label="صوديوم mg" value={form.sodium_mg} error={errors.sodium_mg} onChange={(value) => update("sodium_mg", value)} />
-            <NumberField label="كوليسترول mg" value={form.cholesterol_mg} error={errors.cholesterol_mg} onChange={(value) => update("cholesterol_mg", value)} />
-            <NumberField label="بوتاسيوم mg" value={form.potassium_mg} error={errors.potassium_mg} onChange={(value) => update("potassium_mg", value)} />
-            <NumberField label="كالسيوم mg" value={form.calcium_mg} error={errors.calcium_mg} onChange={(value) => update("calcium_mg", value)} />
-            <NumberField label="حديد mg" value={form.iron_mg} error={errors.iron_mg} onChange={(value) => update("iron_mg", value)} />
-            <NumberField label="مغنيسيوم mg" value={form.magnesium_mg} error={errors.magnesium_mg} onChange={(value) => update("magnesium_mg", value)} />
-            <NumberField label="زنك mg" value={form.zinc_mg} error={errors.zinc_mg} onChange={(value) => update("zinc_mg", value)} />
-            <NumberField label="سيلينيوم mcg" value={form.selenium_mcg} error={errors.selenium_mcg} onChange={(value) => update("selenium_mcg", value)} />
-            <NumberField label="فيتامين D mcg" value={form.vitamin_d_mcg} error={errors.vitamin_d_mcg} onChange={(value) => update("vitamin_d_mcg", value)} />
-            <NumberField label="فيتامين B12 mcg" value={form.vitamin_b12_mcg} error={errors.vitamin_b12_mcg} onChange={(value) => update("vitamin_b12_mcg", value)} />
-            <NumberField label="فيتامين C mg" value={form.vitamin_c_mg} error={errors.vitamin_c_mg} onChange={(value) => update("vitamin_c_mg", value)} />
-            <NumberField label="فيتامين A RAE mcg" value={form.vitamin_a_rae_mcg} error={errors.vitamin_a_rae_mcg} onChange={(value) => update("vitamin_a_rae_mcg", value)} />
-            <NumberField label="فولات DFE mcg" value={form.folate_dfe_mcg} error={errors.folate_dfe_mcg} onChange={(value) => update("folate_dfe_mcg", value)} />
-            <NumberField label="فيتامين K mcg" value={form.vitamin_k_mcg} error={errors.vitamin_k_mcg} onChange={(value) => update("vitamin_k_mcg", value)} />
-            <NumberField label="يود mcg" value={form.iodine_mcg} error={errors.iodine_mcg} onChange={(value) => update("iodine_mcg", value)} />
+            {nutrientAdapter.editable.map(({ field, label, unit }) => (
+              <NumberField
+                key={field}
+                label={`${label} ${unit}`}
+                value={form[field]}
+                error={errors[field]}
+                onChange={(value) => update(field, value)}
+              />
+            ))}
           </div>
         </details>
 

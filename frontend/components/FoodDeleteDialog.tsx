@@ -18,7 +18,6 @@ export function FoodDeleteDialog({
 }) {
   const panelRef = useRef<HTMLElement | null>(null);
   const cancelRef = useRef<HTMLButtonElement | null>(null);
-  const confirmRef = useRef<HTMLButtonElement | null>(null);
   const onCancelRef = useRef(onCancel);
   const deletingRef = useRef(false);
   const submittedRef = useRef(false);
@@ -111,7 +110,7 @@ export function FoodDeleteDialog({
             <X size={18} />
             إلغاء
           </button>
-          <button ref={confirmRef} className="btn danger" type="button" onClick={confirmOnce} disabled={deleting}>
+          <button className="btn danger" type="button" onClick={confirmOnce} disabled={deleting}>
             <Trash2 size={18} />
             {deleting ? "جاري الحذف..." : "حذف نهائي"}
           </button>

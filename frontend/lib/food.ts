@@ -382,8 +382,8 @@ export function formatServingMacro(value: number): string {
   return formatNumber(Math.round(value * 10) / 10, 1);
 }
 
-export function formatNutrientNumber(value: number): string {
-  return formatNumber(value, 2);
+export function formatNutrientNumber(value: number, maximumFractionDigits = 2): string {
+  return formatNumber(value, maximumFractionDigits);
 }
 
 function formatNumber(value: number, maximumFractionDigits: number): string {

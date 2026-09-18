@@ -12,13 +12,13 @@ import {
 } from "react";
 
 import { ApiError, getCalendarAuthority, getNutritionRegistry, getProfile, listTargetPlanHistory, previewProfile, writeTargetPlan } from "@/lib/api";
-import type { ProfileResponse, Sex, TargetPlanWriteResponse, TargetResponse } from "@/lib/types";
+import type { ActivityLevel, Goal, ProfileResponse, Sex, TargetPlanWriteResponse, TargetResponse } from "@/lib/types";
 import { useAuth } from "./AuthProvider";
 import { useSessionAbortSignal } from "./SessionQueryProvider";
 import { useUnsavedChanges } from "./UnsavedChangesProvider";
 import { ProfileLoadError, ProfileSkeleton } from "@/features/profile/profile-dialogs";
 import { ProfileView } from "@/features/profile/profile-view";
-import { FAT_DEFAULTS, blankDraft, formatArabicGregorianDate, isPreviewActivatable, mapProfileApiErrors, normalizeDraft, normalizeNumber, profileMatchesAcceptedPlan, toDraft, validateDraft, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type ProfileField, type SheetKind, type TargetPlanSubmission, type TargetPlanWritePhase } from "@/features/profile/profile-model";
+import { FAT_DEFAULTS, PROTEIN_DEFAULT, blankDraft, formatArabicGregorianDate, isPreviewActivatable, mapProfileApiErrors, normalizeDraft, normalizeNumber, profileMatchesAcceptedPlan, toDraft, validateDraft, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type ProfileField, type SheetKind, type TargetPlanSubmission, type TargetPlanWritePhase } from "@/features/profile/profile-model";
 
 export function ProfilePage() {
   const { session } = useAuth();
@@ -402,6 +402,49 @@ export function ProfilePage() {
     });
   }
 
+  function acceptServerProfile() {
+    const serverProfile = pendingServerProfile;
+    if (serverProfile === undefined) return;
+    requestDiscard(() => {
+      const nextDraft = serverProfile ? toDraft(serverProfile) : blankDraft();
+      setDraft(nextDraft);
+      setSavedDraft(nextDraft);
+      setSavedTargets(serverProfile?.targets ?? null);
+      setPreview(null);
+      setPreviewDraftHash(null);
+      setErrors({});
+      setPendingServerProfile(undefined);
+    });
+  }
+
+  function changeEffectiveFrom(value: string) {
+    setEffectiveFrom(value);
+    setErrors((current) => { const next = { ...current }; delete next.effective_from; return next; });
+    transitionWrite({ kind: "idle" });
+    setWriteErrorCode(null);
+  }
+
+  function requestRestoreDefaults() {
+    const defaultsAlreadySet = normalizeNumber(draft.protein_per_kg) === PROTEIN_DEFAULT &&
+      normalizeNumber(draft.fat_percent) === FAT_DEFAULTS[draft.sex] * 100;
+    if (!defaultsAlreadySet) setRestoreOpen(true);
+  }
+
+  function confirmRestoreDefaults() {
+    update("protein_per_kg", String(PROTEIN_DEFAULT));
+    update("fat_percent", String(FAT_DEFAULTS[draft.sex] * 100));
+    setRestoreOpen(false);
+  }
+
+  function retryReconciliation() {
+    const current = writePhaseRef.current;
+    if (current.kind === "recovery") void reconcileAcceptedPlan(current.submission, current.accepted);
+  }
+
+  function cancelWriteConfirmation() {
+    if (writePhaseRef.current.kind === "confirming") transitionWrite({ kind: "idle" });
+  }
+
   if (profileQuery.isPending || authorityQuery.isPending) return <ProfileSkeleton />;
   if ((profileQuery.isError && savedDraft === null) || authorityQuery.isError) return <ProfileLoadError onRetry={() => {
     profileQuery.refetch();
@@ -412,61 +455,74 @@ export function ProfilePage() {
 
   return (
     <ProfileView
-      dirty={dirty}
-      pendingServerProfile={pendingServerProfile}
-      setPendingServerProfile={setPendingServerProfile}
-      requestDiscard={requestDiscard}
-      setDraft={setDraft}
-      setSavedDraft={setSavedDraft}
-      setSavedTargets={setSavedTargets}
-      setPreview={setPreview}
-      setPreviewDraftHash={setPreviewDraftHash}
-      setErrors={setErrors}
-      draft={draft}
-      effectiveFrom={selectedEffectiveFrom}
-      setEffectiveFrom={(value) => {
-        setEffectiveFrom(value);
-        setErrors((current) => { const next = { ...current }; delete next.effective_from; return next; });
-        transitionWrite({ kind: "idle" });
-        setWriteErrorCode(null);
+      profile={{
+        dirty,
+        hasPendingServerProfile: pendingServerProfile !== undefined,
+        draft,
+        errors,
+        effectiveFrom: selectedEffectiveFrom,
+        authoritativeDate,
+        displayBirthDate,
+        activeSheet,
+        advancedOpen,
+        restoreOpen,
+        effectiveFromRef,
+        birthRef,
+        heightRef,
+        weightRef,
+        proteinRef,
+        fatRef,
       }}
-      effectiveFromRef={effectiveFromRef}
-      activeSheet={activeSheet}
-      updateSex={updateSex}
-      setActiveSheet={setActiveSheet}
-      errors={errors}
-      birthRef={birthRef}
-      authoritativeDate={authoritativeDate}
-      displayBirthDate={displayBirthDate}
-      heightRef={heightRef}
-      weightRef={weightRef}
-      update={update}
-      advancedOpen={advancedOpen}
-      setAdvancedOpen={setAdvancedOpen}
-      proteinRef={proteinRef}
-      fatRef={fatRef}
-      savedTargets={savedTargets}
-      registryQuery={registryQuery}
-      registryReady={registryReady}
-      planHistoryQuery={planHistoryQuery}
-      currentPreview={currentPreview}
-      previewPending={previewPending}
-      previewFailed={previewFailed}
-      writeSafetyOutcome={writeSafetyOutcome}
-      safetyAttemptSequence={safetyAttemptSequence}
-      safetyRef={safetyRef}
-      requestPreview={requestPreview}
-      validation={validation}
-      writeErrorCode={writeErrorCode}
-      writePhase={writePhase}
-      submit={submit}
-      reconcileAcceptedPlan={reconcileAcceptedPlan}
-      restoreOpen={restoreOpen}
-      setRestoreOpen={setRestoreOpen}
-      transitionWrite={transitionWrite}
-      writePhaseRef={writePhaseRef}
-      restoreWriteFocusRef={restoreWriteFocusRef}
-      writeConfirmedPlan={writeConfirmedPlan}
+      targets={{
+        savedTargets,
+        registry: { pending: registryQuery.isPending, failed: registryQuery.isError, data: registryQuery.data },
+        history: {
+          plans: planHistoryQuery.data?.pages.flatMap((page) => page.items) ?? [],
+          pending: planHistoryQuery.isPending,
+          failed: planHistoryQuery.isError,
+          hasMore: planHistoryQuery.hasNextPage,
+          loadingMore: planHistoryQuery.isFetchingNextPage,
+        },
+        preview: {
+          visible: dirty && Boolean(validation.payload),
+          current: currentPreview,
+          pending: previewPending,
+          failed: previewFailed,
+          safetyOutcome: writeSafetyOutcome,
+          safetyAttemptSequence,
+          safetyRef,
+        },
+      }}
+      write={{
+        registryReady,
+        validationHasPayload: Boolean(validation.payload),
+        writeErrorCode,
+        writePhase,
+        restoreWriteFocusRef,
+      }}
+      intents={{
+        keepLocalProfile: () => setPendingServerProfile(undefined),
+        acceptServerProfile,
+        updateField: update,
+        changeEffectiveFrom,
+        openSheet: setActiveSheet,
+        closeSheet: () => setActiveSheet(null),
+        selectSex: (sex: Sex) => { updateSex(sex); setActiveSheet(null); },
+        selectActivity: (activity: ActivityLevel) => { update("activity_level", activity); setActiveSheet(null); },
+        selectGoal: (goal: Goal) => { update("goal", goal); setActiveSheet(null); },
+        toggleAdvanced: () => setAdvancedOpen((current) => !current),
+        requestRestoreDefaults,
+        cancelRestoreDefaults: () => setRestoreOpen(false),
+        confirmRestoreDefaults,
+        retryRegistry: () => void registryQuery.refetch(),
+        retryHistory: () => void planHistoryQuery.refetch(),
+        loadMoreHistory: () => void planHistoryQuery.fetchNextPage(),
+        retryPreview: requestPreview,
+        submit,
+        retryReconciliation,
+        cancelWriteConfirmation,
+        confirmWrite: () => void writeConfirmedPlan(),
+      }}
     />
   );
 }

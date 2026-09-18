@@ -55,12 +55,21 @@ const manifests = {
     "validateQuantity", "entryQuantityLabel",
   ],
   "features/diary/diary-hooks.ts": ["useDebouncedValue", "invalidateDiary"],
-  "features/foods/food-form-model.ts": [
-    "optionalFields", "fieldId", "mapFoodApiError",
-  ],
+  "features/foods/food-form-model.ts": ["fieldId", "mapFoodApiError"],
   "features/foods/food-form-fields.tsx": [
     "FormSection", "FoodFormActions", "TextField",
     "TextAreaField", "NumberField", "SelectField",
+  ],
+  "features/foods/food-nutrients.ts": [
+    "EditableFoodNutrient", "FoodNutrientSpec", "FoodNutrientGroup",
+    "FoodNutrientAdapter", "createFoodNutrientAdapter",
+  ],
+  "features/foods/food-catalog-view.tsx": [
+    "FoodTableRow", "FoodCard", "DesktopPagination", "FoodsLoading", "EmptyFoodsState",
+  ],
+  "features/foods/food-details-view.tsx": [
+    "FoodDetailsLoading", "DetailServingMetric", "NutritionCompleteness",
+    "NutrientGroup", "MetadataRow", "formatFoodDate",
   ],
 } as const;
 
@@ -86,6 +95,22 @@ function expectCriticalDialogSemantics(source: string) {
   expect(source).toContain('aria-modal="true"');
   expect(source).toContain('aria-labelledby="profile-sheet-title"');
   expect(source).toContain('aria-live="polite"');
+}
+
+function expectFoodsCatalogOwnership(page: string, presentation: string) {
+  expect(page).toContain('queryKey: ["foods", "catalog", search, category, sort, page]');
+  expect(page).toMatch(/queryFn:\s*\(\) => listFoodsPage\(\{[\s\S]*?search,[\s\S]*?category,[\s\S]*?sort,[\s\S]*?page,[\s\S]*?pageSize: PAGE_SIZE/);
+  expect(page).toMatch(/const \[searchInput, setSearchInput\] = useState\(""\)/);
+  expect(page).toMatch(/const \[mobileItems, setMobileItems\] = useState<FoodResponse\[]>\(\[\]\)/);
+  expect(page).toMatch(/const \[page, setPage\] = useState\(1\)/);
+  expect(page).toContain("window.setTimeout");
+  expect(page).toContain("resetCollection");
+  expect(page).toContain("setMobileItems");
+  expect(page).toContain("useFoodDelete");
+
+  expect(presentation).not.toMatch(/@tanstack\/react-query|@\/lib\/api/);
+  expect(presentation).not.toMatch(/\b(?:useQuery|useInfiniteQuery|useMutation|useState|useReducer)\b/);
+  expect(presentation).not.toMatch(/\b(?:listFoodsPage|getNutritionRegistry|useFoodDelete|resetCollection|setMobileItems)\b/);
 }
 
 const movedSelectors = [
@@ -154,7 +179,46 @@ describe("domain boundaries", () => {
 
     const view = read("features/profile/profile-view.tsx");
     expect(view).not.toMatch(/\b(?:useQuery|useInfiniteQuery|useMutation|useState|useEffect|useLayoutEffect)\b/);
+    expect(view).not.toMatch(/\b(?:Dispatch|SetStateAction|setPendingServerProfile|reconcileAcceptedPlan|transitionWrite|writePhaseRef)\b/);
+    expect(view).toMatch(/type ProfileViewProps = \{\s*profile: ProfileViewState;\s*targets: ProfileTargetsViewState;\s*write: ProfileWriteViewState;\s*intents: ProfileViewIntents;\s*\}/s);
     expect(read("components/ProfilePage.tsx")).toMatch(/\buseQuery\b/);
+  });
+
+  it("keeps focused cleanups and food presentation ownership explicit", () => {
+    expect(read("components/FoodDeleteDialog.tsx")).not.toContain("confirmRef");
+    expect(read("components/AuthProvider.tsx")).not.toContain("export type RecoveryStatus");
+    expect(read("components/AdminUserDetailsPage.tsx")).toContain("useErrorOccurrenceFocus");
+
+    const foodsSource = `${read("components/FoodsPage.tsx")}\n${featureSource("foods")}`;
+    expect(foodsSource).not.toContain("لا توجد أطعمة نشطة في الكتالوج حاليًا.");
+    expect(read("components/FoodsPage.tsx")).not.toMatch(/function\s+(?:FoodTableRow|FoodCard|DesktopPagination|FoodsLoading|EmptyFoodsState)\b/);
+    expect(read("components/FoodDetailsPage.tsx")).not.toMatch(/function\s+(?:FoodDetailsLoading|DetailServingMetric|NutritionCompleteness|NutrientGroup|MetadataRow)\b/);
+    expectFoodsCatalogOwnership(
+      read("components/FoodsPage.tsx"),
+      [
+        read("features/foods/food-catalog-view.tsx"),
+        read("features/foods/food-details-view.tsx"),
+        read("features/foods/food-nutrients.ts"),
+      ].join("\n"),
+    );
+  });
+
+  it("proves the Foods ownership oracle rejects query, state, and presentation regressions", () => {
+    const page = read("components/FoodsPage.tsx");
+    const presentation = read("features/foods/food-catalog-view.tsx");
+
+    expect(() => expectFoodsCatalogOwnership(
+      page.replace('queryKey: ["foods", "catalog", search, category, sort, page]', 'queryKey: ["foods"]'),
+      presentation,
+    )).toThrow();
+    expect(() => expectFoodsCatalogOwnership(
+      page.replace("setMobileItems", "appendMobileItems"),
+      presentation,
+    )).toThrow();
+    expect(() => expectFoodsCatalogOwnership(
+      page,
+      `${presentation}\nconst leakedState = useState([]);`,
+    )).toThrow();
   });
 
   it("keeps query keys and critical Arabic copy in their owning domains", () => {
