@@ -2,10 +2,7 @@ import { API_TOKEN, API_URL, diaryDate as localDate, expect, test, uniqueName } 
 
 async function selectDate(page: import("@playwright/test").Page, value: string) {
   const picker = page.getByLabel("اختيار تاريخ اليوميات");
-  await page.waitForFunction(() => {
-    const input = document.querySelector('input[aria-label="اختيار تاريخ اليوميات"]');
-    return input != null && Object.keys(input).some((key) => key.startsWith("__reactProps$"));
-  });
+  await expect(picker).toBeEditable();
   await picker.fill(value);
   await expect(picker).toHaveValue(value);
   await expect(page.locator(".diary-entry-skeleton")).toHaveCount(0);
@@ -94,8 +91,11 @@ test.describe("@diary @final-polish compact visual refinements", () => {
       await expect(row.locator(".macro-value-expression")).toContainText("من");
       await expect(row.locator(".macro-value-expression")).not.toContainText("/");
     }
-    await page.waitForTimeout(250);
     const bars = rows.locator(".macro-progress-track > span");
+    await expect.poll(async () => {
+      const widths = await bars.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().width));
+      return widths[0] >= 3 && widths[1] > widths[0] && widths[2] > widths[1];
+    }).toBe(true);
     const widths = await bars.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().width));
     expect(widths[0]).toBeGreaterThanOrEqual(3);
     expect(widths[1]).toBeGreaterThan(widths[0]);

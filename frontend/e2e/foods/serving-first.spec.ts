@@ -1,4 +1,6 @@
-import { test, expect, expectNoHorizontalOverflow, type FoodRecord, validFood } from "./helpers";
+import { API_URL, test, expect, expectNoHorizontalOverflow, type FoodRecord, validFood } from "./helpers";
+
+const API_ORIGIN = new URL(API_URL).origin;
 
 test.describe("Foods serving-first catalog and details @foods", () => {
   test("[SERVING-001] @p0 @mobile card uses correctly rounded serving values", async ({ page, foodsApi }) => {
@@ -62,9 +64,35 @@ test.describe("Foods serving-first catalog and details @foods", () => {
     const wrongCategory = await foodsApi.create({ name: `E2E Filter Oats Other ${stamp}`, primary_category: "sweets_and_sugars", subcategory: "other" });
     const wrongName = await foodsApi.create({ name: `E2E Filter Rice ${stamp}`, primary_category: "grains_and_starches", subcategory: "rice" });
 
+    const initialResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.origin === API_ORIGIN &&
+        url.pathname === "/foods" &&
+        url.searchParams.get("sort") === "name" &&
+        !url.searchParams.has("search") &&
+        !url.searchParams.has("category");
+    });
     await page.goto("/foods");
+    expect((await initialResponse).status()).toBe(200);
+    await expect(page.getByLabel("بحث باسم الطعام")).toBeEditable();
+    const searchResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.origin === API_ORIGIN &&
+        url.pathname === "/foods" &&
+        url.searchParams.get("search") === `Oats ${stamp}` &&
+        !url.searchParams.has("category");
+    });
     await page.getByLabel("بحث باسم الطعام").fill(`Oats ${stamp}`);
+    expect((await searchResponse).status()).toBe(200);
+    const categoryResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.origin === API_ORIGIN &&
+        url.pathname === "/foods" &&
+        url.searchParams.get("search") === `Oats ${stamp}` &&
+        url.searchParams.get("category") === "grains_and_starches";
+    });
     await page.getByLabel("تصفية حسب التصنيف").selectOption("grains_and_starches");
+    expect((await categoryResponse).status()).toBe(200);
 
     await expect(page.getByText(match.name, { exact: true }).first()).toBeVisible();
     await expect(page.getByText(wrongCategory.name, { exact: true })).toHaveCount(0);
@@ -75,9 +103,35 @@ test.describe("Foods serving-first catalog and details @foods", () => {
     const stamp = Date.now();
     const small = await foodsApi.create({ name: `E2E Sort ${stamp} Small`, calories: 500, unit_amount: 10 });
     const large = await foodsApi.create({ name: `E2E Sort ${stamp} Large`, calories: 100, unit_amount: 100 });
+    const initialResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.origin === API_ORIGIN &&
+        url.pathname === "/foods" &&
+        url.searchParams.get("page") === "1" &&
+        url.searchParams.get("sort") === "name" &&
+        !url.searchParams.has("search");
+    });
     await page.goto("/foods");
+    expect((await initialResponse).status()).toBe(200);
+    await expect(page.getByLabel("بحث باسم الطعام")).toBeEditable();
+    const searchResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.origin === API_ORIGIN &&
+        url.pathname === "/foods" &&
+        url.searchParams.get("search") === `E2E Sort ${stamp}` &&
+        url.searchParams.get("sort") === "name";
+    });
     await page.getByLabel("بحث باسم الطعام").fill(`E2E Sort ${stamp}`);
+    expect((await searchResponse).status()).toBe(200);
+    const sortResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.origin === API_ORIGIN &&
+        url.pathname === "/foods" &&
+        url.searchParams.get("search") === `E2E Sort ${stamp}` &&
+        url.searchParams.get("sort") === "calories";
+    });
     await page.getByLabel("ترتيب الأطعمة").first().selectOption("calories");
+    expect((await sortResponse).status()).toBe(200);
     const rows = page.locator("tbody tr");
     await expect(rows).toHaveCount(2);
     await expect(rows.nth(0)).toContainText(large.name);

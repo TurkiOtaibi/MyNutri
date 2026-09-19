@@ -48,15 +48,13 @@ test.describe("@diary @visual final meal sections", () => {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/diary");
-    await page.waitForFunction(() => {
-      const input = document.querySelector('input[aria-label="اختيار تاريخ اليوميات"]');
-      return input != null && Object.keys(input).some((key) => key.startsWith("__reactProps$"));
-    });
-    await page.getByLabel("اختيار تاريخ اليوميات").fill(emptyDate);
+    const picker = page.getByLabel("اختيار تاريخ اليوميات");
+    await expect(picker).toBeEditable();
+    await picker.fill(emptyDate);
     await expect(page.locator(".meal-section")).toHaveCount(4);
     await page.screenshot({ path: resolve(output, "diary-mobile-empty-390.png"), fullPage: true });
 
-    await page.getByLabel("اختيار تاريخ اليوميات").fill(localDate());
+    await picker.fill(localDate());
     await expect(page.getByRole("button", { name: /قسم فطور$/ })).toContainText(/طعام واحد|طعامان|\d+ أطعمة|\d+ طعامًا/);
     await page.screenshot({ path: resolve(output, "diary-mobile-populated-390.png"), fullPage: true });
     await page.screenshot({ path: resolve(output, "diary-mobile-breakfast-expanded-390.png") });

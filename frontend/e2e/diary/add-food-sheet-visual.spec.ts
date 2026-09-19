@@ -37,7 +37,6 @@ test("@diary @visual capture production-style Add Food sheet states", async ({ p
   await search.fill(food.name);
   await dialog.getByRole("button", { name: new RegExp(food.name) }).click();
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.waitForTimeout(220);
   await expect(dialog.getByRole("radio", { name: "فطور" })).toHaveAttribute("aria-checked", "true");
   await page.screenshot({ path: resolve(output, "04-selected-no-meal-390.png") });
 
@@ -46,7 +45,7 @@ test("@diary @visual capture production-style Add Food sheet states", async ({ p
   await dialog.getByRole("textbox", { name: "الكمية", exact: true }).fill("2.5");
   await page.screenshot({ path: resolve(output, "06-decimal-quantity-2.5-390.png") });
 
-  await page.route("**/diary", async (route) => {
+  await page.route("**/diary/entries", async (route) => {
     if (route.request().method() !== "POST") return route.continue();
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 900));
     return route.abort("failed");

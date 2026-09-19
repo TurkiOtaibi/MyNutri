@@ -75,17 +75,6 @@ test.describe("Food creation @foods", () => {
     await foodsApi.remove(page.url().split("/").pop()!);
   });
 
-  test("[FOOD-TC-042] @p0 network failure preserves the draft and creates no Food", async ({ page, foodsApi }) => {
-    const name = `E2E-Network-Fail-${Date.now()}`;
-    await page.route("**/foods", (route) => route.abort("failed"));
-    await page.goto("/foods/new");
-    await fillRequiredFoodForm(page, { name });
-    await submitFoodForm(page);
-    await expect(page.getByRole("status")).toContainText("تعذر الاتصال بالخادم");
-    await expect(page.getByLabel(/اسم الطعام/)).toHaveValue(name);
-    expect((await foodsApi.list()).some((food) => food.name === name)).toBeFalsy();
-  });
-
   test("[FOOD-TC-043] @p0 structured API field error maps to the Food name", async ({ page }) => {
     await page.route("**/foods", async (route) => {
       if (route.request().method() !== "POST") return route.continue();

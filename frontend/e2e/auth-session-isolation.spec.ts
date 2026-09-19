@@ -30,6 +30,11 @@ function tokenSubject(accessToken: string): string {
   return (JSON.parse(Buffer.from(normalized, "base64").toString("utf8")) as { sub: string }).sub;
 }
 
+function authorizationSubject(authorization: string | undefined): string | undefined {
+  if (!authorization?.startsWith("Bearer ")) return undefined;
+  return tokenSubject(authorization.slice("Bearer ".length));
+}
+
 function profile(weight: number): ProfileInput {
   return {
     sex: "male",
@@ -556,12 +561,12 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
   await token(emailB);
 
   let createWasBlocked = false;
-  let createAuthorization: string | undefined;
+  let createSubject: string | undefined;
   let createName: string | undefined;
-  let adminAccountAuthorization: string | undefined;
+  let adminAccountSubject: string | undefined;
   let bAccountWasBlocked = false;
   let bAccountWasSettled = false;
-  let bAccountAuthorization: string | undefined;
+  let bAccountSubject: string | undefined;
   let staleDetailRequested = false;
   const createGate = createReleaseGate();
   const bAccountGate = createReleaseGate();
@@ -586,8 +591,8 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
     };
   });
   page.on("request", (request) => {
-    if (request.url() === `${API_URL}/account/me` && !adminAccountAuthorization) {
-      adminAccountAuthorization = request.headers()["authorization"];
+    if (request.url() === `${API_URL}/account/me` && !adminAccountSubject) {
+      adminAccountSubject = authorizationSubject(request.headers()["authorization"]);
     }
   });
 
@@ -596,7 +601,7 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
   expect(await sessionSignalAborted(page)).toBe(false);
   const adminSubjectKey = await sessionSubjectKey(page);
   await retainSessionSignalInspector(page);
-  expect(adminAccountAuthorization).toMatch(/^Bearer /);
+  expect(adminAccountSubject).toBeTruthy();
   await fillRequiredFoodForm(page, { name: marker });
   const originalUrl = page.url();
 
@@ -605,7 +610,7 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
       await route.continue();
       return;
     }
-    createAuthorization = route.request().headers()["authorization"];
+    createSubject = authorizationSubject(route.request().headers()["authorization"]);
     createName = (route.request().postDataJSON() as { name?: string }).name;
     createWasBlocked = true;
     await createGate.promise;
@@ -616,12 +621,12 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
     });
   });
   await page.route(`${API_URL}/account/me`, async (route) => {
-    const authorization = route.request().headers()["authorization"];
-    if (!authorization || authorization === adminAccountAuthorization) {
+    const subject = authorizationSubject(route.request().headers()["authorization"]);
+    if (!subject || subject === adminAccountSubject) {
       await route.continue();
       return;
     }
-    bAccountAuthorization = authorization;
+    bAccountSubject = subject;
     bAccountWasBlocked = true;
     await bAccountGate.promise;
     await route.continue();
@@ -646,7 +651,7 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
     await installLeakObserver(page, [marker], [marker], true);
     const bAccountResponse = page.waitForResponse((response) =>
       response.url() === `${API_URL}/account/me` &&
-      response.request().headers()["authorization"] !== adminAccountAuthorization
+      authorizationSubject(response.request().headers()["authorization"]) !== adminAccountSubject
     ).then((response) => {
       bAccountWasSettled = true;
       return response;
@@ -674,11 +679,10 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
     expect(bAccountGate.released).toBe(false);
 
     await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-    await page.waitForTimeout(100);
     expect(createName).toBe(marker);
-    expect(bAccountAuthorization).toMatch(/^Bearer /);
-    expect(createAuthorization).toBe(adminAccountAuthorization);
-    expect(createAuthorization).not.toBe(bAccountAuthorization);
+    expect(bAccountSubject).toBeTruthy();
+    expect(createSubject).toBe(adminAccountSubject);
+    expect(createSubject).not.toBe(bAccountSubject);
     expect(staleDetailRequested).toBe(false);
     expect(await leakRecords(page)).toEqual([]);
     await expect(page).toHaveURL(originalUrl);
@@ -692,7 +696,7 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
     const bResponse = await bAccountResponse;
     expect(bAccountWasSettled).toBe(true);
     expect(bResponse.status()).toBe(200);
-    expect(bResponse.request().headers()["authorization"]).toBe(bAccountAuthorization);
+    expect(authorizationSubject(bResponse.request().headers()["authorization"])).toBe(bAccountSubject);
     const bAccount = await bResponse.json() as { email: string | null; role: "user" | "admin" };
     expect(bAccount.email).toBe(emailB);
     expect(bAccount.role).toBe("user");

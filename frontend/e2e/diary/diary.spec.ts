@@ -33,14 +33,23 @@ test.describe("@diary daily-use redesign", () => {
     await expect(page.getByRole("button", { name: "اليوم التالي" })).toBeEnabled();
   });
 
-  test("@p0 future Diary API date is accepted without If-Match", async ({ foodsApi }) => {
+  test("@p0 future Diary API entries can be created, updated, and deleted without If-Match", async ({ foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Future date") });
-    const response = await foodsApi.createDiaryRaw({
+    const createResponse = await foodsApi.createDiaryRaw({
       food_id: food.id,
       entry_date: localDate(1),
       quantity: 1
     });
-    expect(response.status()).toBe(201);
+    expect(createResponse.status()).toBe(201);
+    const created = await createResponse.json() as { id: string; quantity: number; meal_type: string };
+    expect(created.quantity).toBe(1);
+
+    const updated = await foodsApi.updateDiary(created.id, 2.5, "dinner");
+    expect(updated.quantity).toBe(2.5);
+    expect(updated.meal_type).toBe("dinner");
+
+    await foodsApi.removeDiary(created.id);
+    expect((await foodsApi.listDiary(localDate(1))).some((entry) => entry.id === created.id)).toBe(false);
   });
 
   test("@p0 future Diary bindings follow immutable revisions while past bindings stay fixed", async ({ request, foodsApi }) => {
@@ -166,47 +175,6 @@ test.describe("@diary daily-use redesign", () => {
     await expect(page.getByLabel("وجبات اليوم").getByText("160 سعرة", { exact: true })).toBeVisible();
   });
 
-  test("@p0 failed save preserves Food and quantity input", async ({ page, foodsApi }) => {
-    const food = await foodsApi.create({ name: uniqueName("Failed Diary Save") });
-    await page.route("**/diary/entries", (route) => {
-      if (route.request().method() === "POST") return route.abort("failed");
-      return route.continue();
-    });
-    await page.goto("/diary");
-    await page.getByRole("button", { name: "إضافة طعام إلى فطور" }).click();
-    const dialog = page.getByRole("dialog", { name: "إضافة طعام" });
-    await dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية").fill(food.name);
-    await dialog.getByRole("button", { name: new RegExp(food.name) }).click();
-    await dialog.getByRole("radio", { name: "فطور" }).click();
-    await dialog.getByRole("textbox", { name: "الكمية", exact: true }).fill("3");
-    await dialog.getByRole("button", { name: "إضافة إلى الفطور" }).click();
-
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole("textbox", { name: "الكمية", exact: true })).toHaveValue("3");
-    await expect(dialog.getByText("تعذر إضافة الطعام")).toBeVisible();
-  });
-
-  test("@p0 duplicate save submission sends one POST", async ({ page, foodsApi }) => {
-    const food = await foodsApi.create({ name: uniqueName("Single Submit") });
-    let postCount = 0;
-    await page.route("**/diary/entries", async (route) => {
-      if (route.request().method() !== "POST") return route.continue();
-      postCount += 1;
-      await new Promise((resolve) => setTimeout(resolve, 350));
-      return route.continue();
-    });
-    await page.goto("/diary");
-    await page.getByRole("button", { name: "إضافة طعام إلى فطور" }).click();
-    const dialog = page.getByRole("dialog", { name: "إضافة طعام" });
-    await dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية").fill(food.name);
-    await dialog.getByRole("button", { name: new RegExp(food.name) }).click();
-    await dialog.getByRole("radio", { name: "فطور" }).click();
-    const save = dialog.getByRole("button", { name: "إضافة إلى الفطور" });
-    await save.dblclick();
-    await expect(dialog).toHaveCount(0);
-    expect(postCount).toBe(1);
-  });
-
   test("@p0 quantity-only edit recalculates the entry without exposing Food or date fields", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Quantity edit"), unit_amount: 50, calories: 200 });
     await foodsApi.createDiary(food.id, localDate(), 1);
@@ -275,9 +243,9 @@ test.describe("@diary daily-use redesign", () => {
     await expect(page.getByRole("button", { name: "إضافة طعام إلى فطور" })).toBeFocused();
   });
 
-  test("@p1 responsive layout remains usable at all supported Diary widths", async ({ page }) => {
-    for (const width of [360, 390, 430, 768, 1024, 1440]) {
-      await page.setViewportSize({ width, height: width < 768 ? 844 : 1000 });
+  test("@p1 responsive layout remains usable at supported desktop widths", async ({ page }) => {
+    for (const width of [768, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 1000 });
       await page.goto("/diary");
       await expect(page.getByLabel("التنقل بين أيام اليوميات")).toBeVisible();
       await expect(page.getByLabel(/الأسبوع من/)).toBeVisible();

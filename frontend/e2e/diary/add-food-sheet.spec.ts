@@ -132,8 +132,10 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     await Promise.all(pickerAudits);
 
     expect(getUrls.filter((url) => url.pathname === "/foods/picker").length).toBeGreaterThan(0);
-    expect(getUrls.filter((url) => url.pathname === "/foods" && !url.search)).toHaveLength(0);
-    expect(getUrls.filter((url) => url.pathname === "/diary" && !url.search)).toHaveLength(0);
+    expect(getUrls.filter((url) => url.pathname === "/foods")).toHaveLength(0);
+    expect(getUrls.filter((url) =>
+      url.pathname === "/diary/entries" && !url.searchParams.has("entry_date")
+    )).toHaveLength(0);
   });
 
   test("@plan014 @p0 pagination appends stable bounded pages without duplicate Food IDs", async ({ page }) => {
