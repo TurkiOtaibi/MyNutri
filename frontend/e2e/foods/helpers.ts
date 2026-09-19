@@ -101,6 +101,7 @@ type DiaryRecord = {
   target_plan_id: string | null;
   food: { id: string; name: string; brand: string | null };
   quantity: number;
+  meal_type: string;
   recorded_unit_type: FoodPayload["default_unit_type"];
   recorded_unit_amount: number;
   recorded_unit_basis: FoodPayload["unit_basis"];
@@ -176,6 +177,10 @@ export class FoodsApi {
     return food;
   }
 
+  trackFood(id: string): void {
+    this.foodIds.add(id);
+  }
+
   async createRaw(payload: unknown) {
     return this.request.post(`${API_URL}/foods`, { headers: this.headers(), data: payload });
   }
@@ -241,6 +246,15 @@ export class FoodsApi {
     this.diaryIds.delete(id);
   }
 
+  async updateDiary(id: string, quantity: number, mealType: string): Promise<DiaryRecord> {
+    const response = await this.request.patch(`${API_URL}/diary/entries/${id}`, {
+      headers: this.headers(),
+      data: { quantity, meal_type: mealType }
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    return response.json() as Promise<DiaryRecord>;
+  }
+
   async listDiary(entryDate: string) {
     const response = await this.request.get(`${API_URL}/diary/entries?entry_date=${entryDate}`, { headers: this.headers() });
     expect(response.status()).toBe(200);
@@ -290,11 +304,8 @@ export const test = base.extend<Fixtures>({
 export { expect };
 
 async function waitForReactForm(page: Page): Promise<void> {
-  await page.locator("form").waitFor({ state: "attached" });
-  await page.waitForFunction(() => {
-    const form = document.querySelector("form");
-    return form != null && Object.keys(form).some((key) => key.startsWith("__reactProps$"));
-  });
+  await expect(page.locator("form.food-form-layout")).toBeVisible();
+  await expect(page.getByLabel(/اسم الطعام/)).toBeEditable();
 }
 
 export async function fillRequiredFoodForm(page: Page, payload: Partial<FoodPayload> = {}): Promise<FoodPayload> {

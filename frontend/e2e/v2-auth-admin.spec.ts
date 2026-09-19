@@ -3,15 +3,24 @@ import AxeBuilder from "@axe-core/playwright";
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
 const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
+const USER_PASSWORD = "E2e-user-password-2026!";
 
 async function localToken(email: string): Promise<string> {
   const response = await fetch(`${AUTH_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: { apikey: "e2e-public-key", "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password: "E2e-user-password-2026!" })
+    body: JSON.stringify({ email, password: USER_PASSWORD })
   });
   expect(response.status).toBe(200);
   return ((await response.json()) as { access_token: string }).access_token;
+}
+
+async function signInAsUser(page: Page, email: string): Promise<void> {
+  await page.goto("/auth/login?next=%2Ffoods");
+  await page.locator('input[type="email"]').fill(email);
+  await page.locator('input[type="password"]').fill(USER_PASSWORD);
+  await page.locator('button[type="submit"]').click();
+  await page.waitForURL(/\/foods$/);
 }
 
 test("unauthenticated navigation redirects to Arabic login", async ({ browser }) => {
@@ -24,25 +33,52 @@ test("unauthenticated navigation redirects to Arabic login", async ({ browser })
   await context.close();
 });
 
-test("new user receives user role and cannot mutate the shared Food catalog", async ({ request }) => {
-  const token = await localToken(`user-${Date.now()}@example.test`);
+test("normal user can read Foods but cannot reach Admin UI or mutate the shared catalog", async ({ browser, request }) => {
+  const email = `user-${Date.now()}@example.test`;
+  const token = await localToken(email);
   const headers = { Authorization: `Bearer ${token}` };
   const account = await request.get(`${API_URL}/account/me`, { headers });
   expect(account.status()).toBe(200);
-  expect((await account.json()).role).toBe("user");
-  const catalog = await request.get(`${API_URL}/foods`, { headers });
+  const accountBody = await account.json() as { principal_id: string; role: string };
+  expect(accountBody.role).toBe("user");
+  const catalog = await request.get(`${API_URL}/foods?page=1&page_size=20&sort=name`, { headers });
   expect(catalog.status()).toBe(200);
-  const mutation = await request.post(`${API_URL}/foods`, {
+  const catalogBody = await catalog.json() as { items: Array<{ id: string }> };
+  expect(catalogBody.items.length).toBeGreaterThan(0);
+  const existingFoodId = catalogBody.items[0].id;
+  const payload = {
+    name: `Forbidden user Food ${Date.now()}`, primary_category: "other", subcategory: "other",
+    nutrition_basis: "per_100g", default_unit_type: "serving", unit_amount: 100,
+    unit_basis: "g", calories: 100, protein_g: 1, carb_g: 20, fat_g: 1,
+    nutrition_data_source: "estimated"
+  };
+  const create = await request.post(`${API_URL}/foods`, {
     headers,
-    data: {
-      name: "Forbidden user Food", primary_category: "other", subcategory: "other",
-      nutrition_basis: "per_100g", default_unit_type: "serving", unit_amount: 100,
-      unit_basis: "g", calories: 100, protein_g: 1, carb_g: 20, fat_g: 1,
-      nutrition_data_source: "estimated"
-    }
+    data: payload
   });
-  expect(mutation.status()).toBe(403);
-  expect(await mutation.text()).toContain("FORBIDDEN");
+  const update = await request.put(`${API_URL}/foods/${existingFoodId}`, { headers, data: payload });
+  const remove = await request.delete(`${API_URL}/foods/${existingFoodId}`, { headers });
+  for (const mutation of [create, update, remove]) {
+    expect(mutation.status()).toBe(403);
+    expect(await mutation.text()).toContain("FORBIDDEN");
+  }
+
+  const context = await browser.newContext({ storageState: undefined });
+  const page = await context.newPage();
+  await signInAsUser(page, email);
+  await expect(page.getByRole("heading", { name: "الأطعمة" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "إضافة طعام" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /إجراءات/ })).toHaveCount(0);
+
+  for (const route of ["/admin", "/admin/users", `/admin/users/${accountBody.principal_id}`]) {
+    await page.goto(route);
+    await expect(page.locator('.state-note[role="alert"]')).toHaveText("هذه الصفحة متاحة للمشرف فقط.");
+  }
+  for (const route of ["/foods/new", `/foods/${existingFoodId}/edit`]) {
+    await page.goto(route);
+    await expect(page.locator('.state-note[role="alert"]')).toHaveText("إدارة الأطعمة متاحة للمشرف فقط.");
+  }
+  await context.close();
 });
 
 test("admin navigation and monitoring remain explicit and read-only", async ({ page }) => {

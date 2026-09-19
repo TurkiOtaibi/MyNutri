@@ -63,7 +63,7 @@ test.describe("@diary @meals Gregorian meal sections", () => {
     });
     await page.goto("/diary");
     await expect(page.locator(".compact-selected-date h2")).not.toContainText(/\d{4}/);
-    await page.waitForTimeout(500);
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     expect(hydrationErrors).toEqual([]);
   });
 

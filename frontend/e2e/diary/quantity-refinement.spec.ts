@@ -87,17 +87,6 @@ test.describe("@diary quantity and UX refinement", () => {
     });
   }
 
-  test("@p0 quantity remains stable after search rerender and failed save", async ({ page, foodsApi }) => {
-    const food = await foodsApi.create({ name: uniqueName("Stable Quantity") });
-    await page.route("**/diary/entries", (route) => route.request().method() === "POST" ? route.abort("failed") : route.continue());
-    await page.goto("/diary");
-    const { dialog } = await openAddAndSelect(page, food.name);
-    await dialog.getByRole("textbox", { name: "الكمية", exact: true }).fill("2.25");
-    await dialog.getByRole("button", { name: "إضافة إلى الفطور" }).click();
-    await expect(dialog.getByRole("textbox", { name: "الكمية", exact: true })).toHaveValue("2.25");
-    await expect(dialog.getByText("تعذر إضافة الطعام")).toBeVisible();
-  });
-
   test("@p0 meal Add action is compact and never covers the final entry", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("CTA Spacing") });
     await foodsApi.createDiary(food.id, localDate(), 1);

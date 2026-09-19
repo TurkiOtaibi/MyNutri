@@ -12,16 +12,20 @@ test.describe("Foods online-only behavior @foods", () => {
     await expect(page.locator("tbody tr")).toHaveCount(0);
   });
 
-  test("[FOOD-TC-138] @p0 failed write is not saved or queued offline", async ({ page, foodsApi }) => {
+  test("[FOOD-TC-042][FOOD-TC-138] @p0 failed write preserves the draft and is not saved or queued offline", async ({ page, foodsApi }) => {
     const name = `E2E-No-Queue-${Date.now()}`;
     await page.route("**/foods", async (route) => {
       if (route.request().method() === "POST") return route.abort("failed");
       return route.continue();
     });
     await page.goto("/foods/new");
-    await fillRequiredFoodForm(page, { name });
+    await fillRequiredFoodForm(page, { name, brand: "Failure Brand", calories: 222 });
     await submitFoodForm(page);
+    await expect(page).toHaveURL(/\/foods\/new$/);
+    await expect(page.getByRole("status")).toContainText("تعذر الاتصال بالخادم");
     await expect(page.getByLabel(/اسم الطعام/)).toHaveValue(name);
+    await expect(page.getByLabel("العلامة التجارية")).toHaveValue("Failure Brand");
+    await expect(page.getByLabel(/السعرات/)).toHaveValue("222");
     const body = await page.locator("body").innerText();
     expect(body).not.toContain("تم الحفظ محليًا");
     expect(body).not.toContain("سيتم المزامنة لاحقًا");
