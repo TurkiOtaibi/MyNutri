@@ -24,6 +24,30 @@ const calendarPath = (url: URL) => url.pathname === "/account/calendar";
 const targetPlanWritePath = (url: URL) =>
   url.pathname === "/target-plans";
 
+async function ownerInvalidations(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const inspect = (window as Window & {
+      __mynutriE2EQueryInvalidations?: () => string[];
+    }).__mynutriE2EQueryInvalidations;
+    if (!inspect) throw new Error("E2E query invalidation inspection hook is unavailable.");
+    return inspect().filter((serialized) => {
+      const key = JSON.parse(serialized) as unknown;
+      return Array.isArray(key) && key.length === 3 && key[0] === "labs" && key[2] === "owner";
+    });
+  });
+}
+
+async function warmLabsThenOpenProfile(page: Page): Promise<void> {
+  const overview = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.origin === API_ORIGIN && url.pathname === "/labs" && response.request().method() === "GET";
+  });
+  await page.goto("/labs");
+  expect((await overview).status()).toBe(200);
+  await page.getByRole("link", { name: "الملف", exact: true }).click();
+  await expect(page).toHaveURL(/\/profile$/);
+}
+
 function addIsoDays(value: string, days: number): string {
   const [year, month, day] = value.split("-").map(Number);
   const result = new Date(Date.UTC(year, month - 1, day + days));
@@ -368,11 +392,6 @@ test.describe("@profile Profile and targets redesign", () => {
     const proposedDob = addIsoDays(originalProfile.birth_date, 1);
     let previewRequests = 0;
     let writeRequests = 0;
-    let labsReads = 0;
-    await page.route("**/labs**", async (route) => {
-      if (route.request().method() === "GET") labsReads += 1;
-      await route.continue();
-    });
     await page.route(previewPath, async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       previewRequests += 1;
@@ -390,7 +409,8 @@ test.describe("@profile Profile and targets redesign", () => {
       await route.continue();
     });
 
-    await page.goto("/profile?labs-dob-rejected=1");
+    await warmLabsThenOpenProfile(page);
+    const invalidationsBeforePreview = await ownerInvalidations(page);
     const birthDate = page.getByLabel("تاريخ الميلاد");
     await birthDate.fill(proposedDob);
     await expect.poll(() => previewRequests).toBe(1);
@@ -400,7 +420,66 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(birthDate).toBeFocused();
     await expect(page.getByText("تم حفظ التغييرات")).toHaveCount(0);
     expect(writeRequests).toBe(0);
-    expect(labsReads).toBe(0);
+    expect(await ownerInvalidations(page)).toEqual(invalidationsBeforePreview);
+  });
+
+  test("@p0 ordinary mapped write rejection restores the confirmation opener", async ({ page, originalProfile }) => {
+    let writeRequests = 0;
+    await page.route(targetPlanWritePath, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      writeRequests += 1;
+      await route.fulfill({
+        status: 422,
+        contentType: "application/json",
+        json: { detail: [{ type: "less_than_equal", loc: ["body", "height_cm"], msg: "invalid", input: 251 }] }
+      });
+    });
+
+    await page.goto("/profile?ordinary-write-rejection=1");
+    const height = page.getByLabel("الطول");
+    await height.fill(String(originalProfile.height_cm + 1));
+    const review = page.getByRole("button", { name: "مراجعة وتأكيد" });
+    await review.click();
+    await page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" })
+      .getByRole("button", { name: "حفظ الخطة" }).click();
+
+    await expect(page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" })).toHaveCount(0);
+    await expect(page.getByText("أدخل طولًا صحيحًا", { exact: true })).toBeVisible();
+    await expect(height).toHaveValue(String(originalProfile.height_cm + 1));
+    await expect(review).toBeFocused();
+    expect(writeRequests).toBe(1);
+  });
+
+  test("@p0 governed DOB write rejection focuses DOB and does not invalidate warm Labs", async ({ page, originalProfile }) => {
+    let writeRequests = 0;
+    await page.route(targetPlanWritePath, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      writeRequests += 1;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        json: { error: {
+          code: "LABS_ADULT_HISTORY_REQUIRED",
+          message_ar: "لا يمكن تعديل تاريخ الميلاد لأنه يجعل نتائج تحاليل مسجلة قبل عمر 18 سنة."
+        } }
+      });
+    });
+
+    await warmLabsThenOpenProfile(page);
+    const invalidationsBeforeWrite = await ownerInvalidations(page);
+    const proposedDob = addIsoDays(originalProfile.birth_date, 1);
+    const birthDate = page.getByLabel("تاريخ الميلاد");
+    await birthDate.fill(proposedDob);
+    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+    await page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" })
+      .getByRole("button", { name: "حفظ الخطة" }).click();
+
+    await expect(page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" })).toHaveCount(0);
+    await expect(page.getByText("لا يمكن تعديل تاريخ الميلاد لأنه يجعل نتائج تحاليل مسجلة قبل عمر 18 سنة.", { exact: true })).toBeVisible();
+    await expect(birthDate).toHaveValue(proposedDob);
+    await expect(birthDate).toBeFocused();
+    expect(await ownerInvalidations(page)).toEqual(invalidationsBeforeWrite);
+    expect(writeRequests).toBe(1);
   });
 
   test("@p0 effective date accepts today or future, rejects the past, and is sent to the unified write", async ({ page, originalProfile }) => {

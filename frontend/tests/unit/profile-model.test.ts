@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { blankDraft, didConfirmedBirthDateChange, mapProfileApiErrors, targetPlanSubmissionMatches, withUpdatedSex, withoutProfileFieldError } from "@/features/profile/profile-model";
+import { blankDraft, didConfirmedBirthDateChange, mapProfileApiErrors, mappedProfileErrorFocusField, targetPlanSubmissionMatches, withUpdatedSex, withoutProfileFieldError } from "@/features/profile/profile-model";
 import type { ProfileInput } from "@/lib/types";
 import { ApiError } from "@/lib/api";
 
@@ -24,6 +24,12 @@ describe("Profile governed errors and confirmed DOB changes", () => {
       { loc: ["body", "fat_pct"] },
     ]))).toEqual({ birth_date: "اختر تاريخ ميلاد صحيحًا", fat_percent: "أدخل نسبة دهون صحيحة" });
     expect(mapProfileApiErrors(new ApiError("conflict", 409, undefined, "IDEMPOTENCY_KEY_REUSED"))).toEqual({});
+  });
+
+  it("selects governed sex and DOB focus targets while retaining opener restoration for other fields", () => {
+    expect(mappedProfileErrorFocusField({ height_cm: "height" })).toBeNull();
+    expect(mappedProfileErrorFocusField({ birth_date: "dob", weight_kg: "weight" })).toBe("birth_date");
+    expect(mappedProfileErrorFocusField({ sex: "sex", birth_date: "dob" })).toBe("sex");
   });
 
   it.each([

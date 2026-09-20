@@ -237,6 +237,12 @@ export function didConfirmedBirthDateChange(previous: string | null, accepted: s
   return previous !== accepted;
 }
 
+export function mappedProfileErrorFocusField(errors: FieldErrors): "sex" | "birth_date" | null {
+  if (errors.sex) return "sex";
+  if (errors.birth_date) return "birth_date";
+  return null;
+}
+
 export function mapProfileApiErrors(error: unknown): FieldErrors {
   if (!(error instanceof ApiError)) return {};
   if (error.code === "PROFILE_SEX_IMMUTABLE") {

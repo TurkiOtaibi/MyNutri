@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 
+import { installQueryInvalidationInspection, type QueryInvalidationInspection } from "@/features/session/query-invalidation-inspection";
 import { useAuth } from "./AuthProvider";
 
 const SessionAbortContext = createContext<AbortSignal | null>(null);
@@ -22,6 +23,7 @@ type SessionBoundaryInspection = {
 
 type E2eInspectionWindow = Window & {
   __mynutriE2EQueryKeys?: () => string[];
+  __mynutriE2EQueryInvalidations?: () => string[];
   __mynutriE2ESessionSignalAborted?: () => boolean;
   __mynutriE2ESessionSubjectKey?: () => string;
   __mynutriE2ESessionBoundaryRotations?: () => SessionBoundaryRotation[];
@@ -94,7 +96,8 @@ function SubjectQueryBoundary({
 }) {
   const [client] = useState(createQueryClient);
   const [controller] = useState(() => new AbortController());
-  const effectGenerationRef = useRef(0);
+  const effectLeaseRef = useRef<{ active: boolean } | null>(null);
+  const invalidationInspectionRef = useRef<QueryInvalidationInspection | null>(null);
 
   useLayoutEffect(() => {
     // A keyed subject takeover installs a different controller. Abort the old
@@ -121,15 +124,22 @@ function SubjectQueryBoundary({
   }, [activeBoundaryRef, controller, inspectionRef, subjectKey]);
 
   useEffect(() => {
-    const effectGeneration = ++effectGenerationRef.current;
+    const effectLease = { active: true };
+    if (effectLeaseRef.current) effectLeaseRef.current.active = false;
+    effectLeaseRef.current = effectLease;
     const allowE2eInspection = e2eInspectionAllowed();
     const e2eWindow = window as E2eInspectionWindow;
+    const invalidationInspection = allowE2eInspection
+      ? invalidationInspectionRef.current ??= installQueryInvalidationInspection(client, 20, controller.signal)
+      : null;
     const inspectQueryKeys = () => client.getQueryCache().getAll().map((query) => JSON.stringify(query.queryKey));
+    const inspectInvalidations = () => controller.signal.aborted ? [] : invalidationInspection?.inspect() ?? [];
     const inspectSignalAborted = () => controller.signal.aborted;
     const inspectSubjectKey = () => subjectKey;
     const inspectRotations = () => inspectionRef.current.rotations.map((rotation) => ({ ...rotation }));
     if (allowE2eInspection) {
       e2eWindow.__mynutriE2EQueryKeys = inspectQueryKeys;
+      e2eWindow.__mynutriE2EQueryInvalidations = inspectInvalidations;
       e2eWindow.__mynutriE2ESessionSignalAborted = inspectSignalAborted;
       e2eWindow.__mynutriE2ESessionSubjectKey = inspectSubjectKey;
       e2eWindow.__mynutriE2ESessionBoundaryRotations = inspectRotations;
@@ -138,13 +148,16 @@ function SubjectQueryBoundary({
       // StrictMode replays passive cleanup/setup in the same task while retaining
       // state. A newer setup supersedes that synthetic cleanup before this runs.
       queueMicrotask(() => {
-        if (effectGenerationRef.current !== effectGeneration) return;
+        if (!effectLease.active) return;
         if (activeBoundaryRef.current?.controller === controller) {
           controller.abort();
           activeBoundaryRef.current = null;
         }
         if (allowE2eInspection && e2eWindow.__mynutriE2EQueryKeys === inspectQueryKeys) {
           delete e2eWindow.__mynutriE2EQueryKeys;
+        }
+        if (allowE2eInspection && e2eWindow.__mynutriE2EQueryInvalidations === inspectInvalidations) {
+          delete e2eWindow.__mynutriE2EQueryInvalidations;
         }
         if (allowE2eInspection && e2eWindow.__mynutriE2ESessionSignalAborted === inspectSignalAborted) {
           delete e2eWindow.__mynutriE2ESessionSignalAborted;
@@ -154,6 +167,10 @@ function SubjectQueryBoundary({
         }
         if (allowE2eInspection && e2eWindow.__mynutriE2ESessionBoundaryRotations === inspectRotations) {
           delete e2eWindow.__mynutriE2ESessionBoundaryRotations;
+        }
+        if (invalidationInspection) {
+          invalidationInspection.dispose();
+          invalidationInspectionRef.current = null;
         }
         void client.cancelQueries().catch(() => undefined).finally(() => client.clear());
       });

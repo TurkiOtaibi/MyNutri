@@ -19,7 +19,7 @@ import { useUnsavedChanges } from "./UnsavedChangesProvider";
 import { ProfileLoadError, ProfileSkeleton } from "@/features/profile/profile-dialogs";
 import { ProfileView } from "@/features/profile/profile-view";
 import { labsQueryKeys } from "@/features/labs/lab-query-keys";
-import { FAT_DEFAULTS, PROTEIN_DEFAULT, blankDraft, didConfirmedBirthDateChange, formatArabicGregorianDate, isPreviewActivatable, mapProfileApiErrors, normalizeDraft, normalizeNumber, profileMatchesAcceptedPlan, targetPlanSubmissionMatches, toDraft, validateDraft, withUpdatedSex, withoutProfileFieldError, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type ProfileField, type SheetKind, type TargetPlanSubmission, type TargetPlanWritePhase } from "@/features/profile/profile-model";
+import { FAT_DEFAULTS, PROTEIN_DEFAULT, blankDraft, didConfirmedBirthDateChange, formatArabicGregorianDate, isPreviewActivatable, mapProfileApiErrors, mappedProfileErrorFocusField, normalizeDraft, normalizeNumber, profileMatchesAcceptedPlan, targetPlanSubmissionMatches, toDraft, validateDraft, withUpdatedSex, withoutProfileFieldError, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type ProfileField, type SheetKind, type TargetPlanSubmission, type TargetPlanWritePhase } from "@/features/profile/profile-model";
 
 export function ProfilePage() {
   const { session } = useAuth();
@@ -65,10 +65,11 @@ export function ProfilePage() {
     writePhaseRef.current = next;
     setWritePhase(next);
   }
-
   function focusMappedProfileError(mapped: FieldErrors) {
-    const target = mapped.sex ? sexRef : mapped.birth_date ? birthRef : null;
-    if (target) window.setTimeout(() => target.current?.focus(), 0);
+    const field = mappedProfileErrorFocusField(mapped);
+    const target = field === "sex" ? sexRef : field === "birth_date" ? birthRef : null;
+    if (target?.current) window.setTimeout(() => target.current?.focus(), 0);
+    return Boolean(target?.current);
   }
 
   useEffect(() => () => {
@@ -313,9 +314,8 @@ export function ProfilePage() {
       if (sessionSignal.aborted || !mountedRef.current) return;
       const mapped = mapProfileApiErrors(error);
       if (Object.keys(mapped).length > 0) {
-        restoreWriteFocusRef.current = false;
         setErrors(mapped);
-        focusMappedProfileError(mapped);
+        restoreWriteFocusRef.current = !focusMappedProfileError(mapped);
       }
       else if (error instanceof ApiError && ["SPECIALIST_REVIEW_REQUIRED", "VERY_LOW_ENERGY_TARGET_BLOCKED"].includes(error.code ?? "")) {
         restoreWriteFocusRef.current = false;
