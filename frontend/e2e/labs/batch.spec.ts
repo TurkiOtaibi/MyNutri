@@ -121,7 +121,7 @@ test("a later overview refresh never overwrites the active date or typed values"
   await open(page, ["hba1c"], offsetIsoDate(today, -2));
   await page.locator("#lab-hba1c-value").fill("5.270");
   const refreshed = page.waitForResponse((response) => response.url() === `${API_URL}/labs` && response.request().method() === "GET");
-  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
   expect((await refreshed).status()).toBe(200);
   await expect(page.locator("#lab-hba1c-value")).toHaveValue("5.270");
   await back(page); await back(page);
