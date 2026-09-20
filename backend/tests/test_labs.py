@@ -15,6 +15,187 @@ from app.models import IdempotencyRecord, LabResult, Principal, Profile
 from labs_fixtures import count_receipts, count_results, request
 
 
+def patch_request(day="2026-09-19", value="5.270", unit="%", **extra):
+    from app.schemas import LabResultPatch
+
+    return LabResultPatch.model_validate(
+        {"test_date": day, "entered_value": value, "entered_unit": unit, **extra}
+    )
+
+
+@pytest.mark.parametrize("field", ["test_key", "principal_id", "owner", "id", "unknown"])
+def test_edit_schema_rejects_immutable_and_unknown_fields(field):
+    with pytest.raises(ValidationError):
+        patch_request(**{field: "hba1c"})
+
+
+@pytest.mark.parametrize("field", ["test_date", "entered_value", "entered_unit"])
+def test_edit_schema_requires_complete_triplet(field):
+    from app.schemas import LabResultPatch
+
+    body = {"test_date": "2026-09-19", "entered_value": "5.2", "entered_unit": "%"}
+    del body[field]
+    with pytest.raises(ValidationError):
+        LabResultPatch.model_validate(body)
+
+
+@pytest.mark.parametrize("value", ["-1", "1e3", "NaN", "<5", 5.2, "1" * 129])
+def test_edit_schema_rejects_invalid_decimal(value):
+    with pytest.raises(ValidationError):
+        patch_request(value=value)
+
+
+def test_edit_overwrites_only_owned_fact_and_enforces_duplicate(
+    service, labs_postgresql_session, lab_owner, two_dated_results, get_result_fact
+):
+    from app.services.labs_errors import LabValidationError
+
+    session = labs_postgresql_session
+    result_id = two_dated_results.first_id
+    before = get_result_fact(result_id).model_dump()
+    other_before = get_result_fact(two_dated_results.second_id).model_dump()
+    result = service.update_result(
+        session, lab_owner.context, result_id,
+        patch_request("2026-08-01", "38.797950", "mmol/mol"), load_catalog(),
+    )
+    assert result.entered_value == "38.797950"
+    assert result.entered_unit == "mmol/mol" and result.test_date == date(2026, 8, 1)
+    assert result.test_key == "hba1c" and result.created_at == before["created_at"]
+    assert result.updated_at > before["updated_at"]
+    assert result.medical_rules_version == load_catalog().version
+    assert get_result_fact(two_dated_results.second_id).model_dump() == other_before
+    with pytest.raises(LabValidationError) as caught:
+        service.update_result(session, lab_owner.context, result_id,
+            patch_request(two_dated_results.second_date.isoformat()), load_catalog())
+    assert caught.value.status_code == 409
+    assert [(e.code, e.loc) for e in caught.value.errors] == [
+        ("LAB_DUPLICATE", ["body", "test_date"])
+    ]
+    assert get_result_fact(result_id).test_date == date(2026, 8, 1)
+    # Same date is allowed when the only matching row is this result itself.
+    again = service.update_result(session, lab_owner.context, result_id,
+        patch_request("2026-08-01", "5.270"), load_catalog())
+    assert again.entered_value == "5.270" and again.display_value == "5.270"
+
+
+@pytest.mark.parametrize("day,unit,code", [
+    ("2007-12-31", "%", "LAB_ADULT_REQUIRED"),
+    ("2026-09-21", "%", "LAB_DATE_FUTURE"),
+    ("2026-09-19", "bad", "LAB_UNIT_UNSUPPORTED"),
+])
+def test_edit_invalid_replacement_leaves_all_facts_unchanged(
+    service, labs_postgresql_session, lab_owner, lab_result, day, unit, code
+):
+    from app.services.labs_errors import LabValidationError
+
+    session = labs_postgresql_session
+    before = lab_result.model_dump()
+    with pytest.raises(LabValidationError) as caught:
+        service.update_result(session, lab_owner.context, lab_result.id,
+            patch_request(day, unit=unit), load_catalog())
+    assert caught.value.status_code == 422
+    assert code in [error.code for error in caught.value.errors]
+    assert session.get(LabResult, before["id"]).model_dump() == before
+
+
+@pytest.mark.parametrize("operation", ["update", "delete"])
+@pytest.mark.parametrize("target", ["other", "missing"])
+def test_mutations_hide_cross_owner_and_absent_results(
+    service, labs_postgresql_session, lab_owner, other_lab_owner, lab_result, operation, target
+):
+    from fastapi import HTTPException
+    from uuid import uuid4
+
+    result_id = lab_result.id if target == "other" else uuid4()
+    with pytest.raises(HTTPException) as caught:
+        if operation == "update":
+            service.update_result(labs_postgresql_session, other_lab_owner.context,
+                result_id, patch_request(), load_catalog())
+        else:
+            service.delete_result(labs_postgresql_session, other_lab_owner.context, result_id)
+    assert caught.value.status_code == 404
+    assert caught.value.detail["code"] == "RESOURCE_NOT_FOUND"
+    assert count_results(labs_postgresql_session, lab_owner.id) == 1
+
+
+@pytest.mark.parametrize("operation", ["update", "delete"])
+@pytest.mark.parametrize("change,status,code", [
+    ("admin", 403, "LAB_READ_ONLY"), ("inactive", 401, "INVALID_CREDENTIAL"),
+])
+def test_mutations_recheck_current_actor_under_lock(
+    service, labs_postgresql_session, lab_owner, lab_result, operation, change, status, code
+):
+    from app.models import PrincipalRole, PrincipalStatus
+    from app.services.labs_errors import LabValidationError
+
+    session = labs_postgresql_session
+    result_id = lab_result.id
+    with Session(session.get_bind()) as writer:
+        actor = writer.get(Principal, lab_owner.id)
+        if change == "admin":
+            actor.role = PrincipalRole.admin
+        else:
+            actor.status = PrincipalStatus.disabled
+        writer.add(actor)
+        writer.commit()
+    with pytest.raises(LabValidationError) as caught:
+        if operation == "update":
+            service.update_result(session, lab_owner.context, result_id, patch_request(), load_catalog())
+        else:
+            service.delete_result(session, lab_owner.context, result_id)
+    assert caught.value.status_code == status and caught.value.errors[0].code == code
+    assert count_results(session, lab_owner.id) == 1
+
+
+@pytest.mark.parametrize("operation", ["update", "delete"])
+def test_mutation_unexpected_commit_failure_rolls_back(
+    service, labs_postgresql_session, lab_owner, lab_result, monkeypatch, operation
+):
+    session = labs_postgresql_session
+    before = lab_result.model_dump()
+
+    def fail():
+        session.flush()
+        raise RuntimeError("synthetic persistence failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(session, "commit", fail)
+        with pytest.raises(RuntimeError, match="synthetic persistence failure"):
+            if operation == "update":
+                service.update_result(session, lab_owner.context, before["id"],
+                    patch_request(), load_catalog())
+            else:
+                service.delete_result(session, lab_owner.context, before["id"])
+    assert session.get(LabResult, before["id"]).model_dump() == before
+
+
+@pytest.mark.parametrize("delete_latest", [True, False])
+def test_delete_recomputes_history_preserves_receipts_and_secure_second_delete(
+    service, labs_postgresql_session, lab_owner, seeded_lab_history, delete_latest
+):
+    from fastapi import HTTPException
+
+    session = labs_postgresql_session
+    rows = session.exec(select(LabResult).order_by(LabResult.test_date)).all()
+    deleted, remaining = (rows[1], rows[0]) if delete_latest else (rows[0], rows[1])
+    deleted_id, remaining_id = deleted.id, remaining.id
+    remaining_before = remaining.model_dump()
+    receipts_before = session.execute(select(IdempotencyRecord.__table__)).all()
+    service.delete_result(session, lab_owner.context, deleted_id)
+    overview = service.read_labs(session, lab_owner.id, False, load_catalog())
+    assert overview.items[0].latest.id == remaining_id
+    assert overview.items[0].last_updated_at == remaining_before["updated_at"]
+    assert session.get(LabResult, remaining_id).model_dump() == remaining_before
+    with pytest.raises(HTTPException) as caught:
+        service.delete_result(session, lab_owner.context, deleted_id)
+    assert caught.value.status_code == 404
+    service.delete_result(session, lab_owner.context, remaining_id)
+    assert service.read_labs(session, lab_owner.id, False, load_catalog()).items == []
+    detail = service.read_lab_test(session, lab_owner.id, "hba1c", False, load_catalog())
+    assert detail.test.test_key == "hba1c" and detail.results == []
+    assert session.execute(select(IdempotencyRecord.__table__)).all() == receipts_before
+
+
 @pytest.fixture
 def service(monkeypatch):
     from app.services import labs

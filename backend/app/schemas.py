@@ -885,6 +885,24 @@ class LabCreateRequest(BaseModel):
         return value
 
 
+class LabResultPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    test_date: date
+    entered_value: StrictStr
+    entered_unit: StrictStr
+
+    @field_validator("entered_value", mode="before")
+    @classmethod
+    def plain_decimal(cls, value: Any) -> str:
+        return LabCreateRow.plain_decimal(value)
+
+    @field_validator("test_date", mode="before")
+    @classmethod
+    def iso_date_string(cls, value: Any) -> date:
+        return LabCreateRequest.iso_date_string(value)
+
+
 class LabCreateReceipt(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

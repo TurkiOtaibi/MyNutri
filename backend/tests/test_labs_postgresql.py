@@ -333,3 +333,127 @@ def test_read_snapshot_survives_concurrent_dob_and_result_commit(
         "6.7",
         "diabetes_range",
     )
+
+
+def test_edit_response_survives_later_delete_and_profile_change(
+    labs_postgresql_database, labs_postgresql_session, lab_owner, lab_result, monkeypatch
+):
+    from sqlalchemy import event
+    from sqlmodel import select
+    from app.labs.catalog import load_catalog
+    from app.services import labs
+    from test_labs import patch_request
+
+    session = labs_postgresql_session
+    result_id, owner_id = lab_result.id, lab_owner.id
+    monkeypatch.setattr(labs, "database_calendar_date", lambda _: date(2026, 9, 20))
+    original = labs.project_result
+    projected = []
+
+    def project(row, profile, catalog):
+        assert not session.in_transaction(), "Interpretation must happen after commit"
+        projected.append(row.id)
+        return original(row, profile, catalog)
+
+    def after_commit(_):
+        with Session(labs_postgresql_database.engine) as writer:
+            labs.delete_result(writer, lab_owner.context, result_id)
+            profile = writer.exec(select(models.Profile).where(models.Profile.principal_id == owner_id)).one()
+            profile.birth_date = date(1980, 1, 1)
+            writer.add(profile)
+            writer.commit()
+
+    monkeypatch.setattr(labs, "project_result", project)
+    event.listen(session, "after_commit", after_commit)
+    try:
+        response = labs.update_result(session, lab_owner.context, result_id,
+            patch_request(value="6.700"), load_catalog())
+    finally:
+        event.remove(session, "after_commit", after_commit)
+    assert projected == [result_id]
+    assert (response.entered_value, response.age_years, response.status.code) == ("6.700", 36, "diabetes_range")
+    with Session(labs_postgresql_database.engine) as check:
+        assert check.get(models.LabResult, result_id) is None
+
+
+@pytest.mark.parametrize("edit_first", [True, False])
+def test_concurrent_edit_and_create_duplicate_serialize(
+    labs_postgresql_session, lab_owner, lab_result, run_owner_lock_race, monkeypatch, edit_first
+):
+    from app.labs.catalog import load_catalog
+    from app.services import labs
+    from app.services.labs_errors import LabValidationError
+    from labs_fixtures import request
+    from test_labs import patch_request
+
+    result_id = lab_result.id
+    labs_postgresql_session.rollback()
+    monkeypatch.setattr(labs, "database_calendar_date", lambda _: date(2026, 9, 20))
+
+    def edit(session):
+        try:
+            return labs.update_result(session, lab_owner.context, result_id,
+                patch_request("2026-09-18"), load_catalog()).id
+        except LabValidationError as error:
+            return error.errors[0].code
+
+    def create(session):
+        try:
+            return labs.create_results(session, lab_owner.context,
+                request("2026-09-18", [("hba1c", "5.8", "%")]), "race-create", load_catalog())[0].result_ids[0]
+        except LabValidationError as error:
+            return error.errors[0].code
+
+    first, second = run_owner_lock_race(lab_owner.id, edit if edit_first else create, create if edit_first else edit)
+    assert isinstance(first, type(result_id)) and second == "LAB_DUPLICATE"
+    labs_postgresql_session.expire_all()
+    row = labs_postgresql_session.get(models.LabResult, result_id)
+    assert row.test_date == date(2026, 9, 18 if edit_first else 19)
+
+
+@pytest.mark.parametrize("edit_first", [True, False])
+def test_profile_dob_and_edit_serialize_on_owner_lock(
+    labs_postgresql_session, lab_owner, lab_result, run_owner_lock_race, monkeypatch, edit_first
+):
+    from app.labs.catalog import load_catalog
+    from app.schemas import TargetPlanWriteRequest
+    from app.services import labs
+    from app.services.labs_errors import LabValidationError
+    from app.services.profile import to_target_response
+    from app.services.target_plans import TargetPlanError, write_target_plan
+    from labs_fixtures import LABS_TODAY
+    from test_labs import patch_request
+    from test_target_plans import profile_payload
+
+    result_id = lab_result.id
+    # Existing result is valid for both DOBs; only the requested backdate conflicts.
+    lab_result.test_date = LABS_TODAY
+    labs_postgresql_session.add(lab_result)
+    labs_postgresql_session.commit()
+    monkeypatch.setattr(labs, "database_calendar_date", lambda _: LABS_TODAY)
+    monkeypatch.setattr("app.services.target_plans._database_riyadh_date", lambda _: LABS_TODAY)
+    payload = TargetPlanWriteRequest.model_validate(profile_payload() | {
+        "sex": "female", "birth_date": "2008-09-20", "confirmed": True,
+        "effective_from": LABS_TODAY, "expected_preview_hash": "0" * 64,
+    })
+    payload.expected_preview_hash = to_target_response(payload, LABS_TODAY).preview_hash
+
+    def edit(session):
+        try:
+            return labs.update_result(session, lab_owner.context, result_id,
+                patch_request("2026-09-19"), load_catalog()).id
+        except LabValidationError as error:
+            return error.errors[0].code
+
+    def profile(session):
+        try:
+            return write_target_plan(session, lab_owner.context, payload, "dob-edit-race")[0].plan.id
+        except TargetPlanError as error:
+            return error.code
+
+    first, second = run_owner_lock_race(lab_owner.id, edit if edit_first else profile, profile if edit_first else edit)
+    assert isinstance(first, type(result_id))
+    assert second == ("LABS_ADULT_HISTORY_REQUIRED" if edit_first else "LAB_ADULT_REQUIRED")
+    labs_postgresql_session.expire_all()
+    row = labs_postgresql_session.get(models.LabResult, result_id)
+    assert row.test_date == date(2026, 9, 19 if edit_first else 20)

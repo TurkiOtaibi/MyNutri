@@ -35,6 +35,7 @@ from app.schemas import (
     LabStatus,
     LabStatusZone,
     LabResultResponse,
+    LabResultPatch,
     LabEligibility,
     LabCatalogTest,
     LabOverviewItem,
@@ -228,6 +229,121 @@ def create_results(
                 409, [field_error("LAB_IDEMPOTENCY_CONFLICT", "Idempotency-Key")]
             ) from error
         raise
+    except Exception:
+        session.rollback()
+        raise
+
+
+def _lock_writer(session: Session, principal: PrincipalContext) -> None:
+    actor = session.exec(
+        select(Principal)
+        .where(Principal.id == principal.principal_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).one_or_none()
+    if actor is None or actor.status != PrincipalStatus.active:
+        raise LabValidationError(401, [field_error("INVALID_CREDENTIAL")])
+    if actor.role == PrincipalRole.admin:
+        raise LabValidationError(403, [field_error("LAB_READ_ONLY")])
+
+
+def _lock_owned_result(session: Session, owner_id: UUID, result_id: UUID) -> LabResult:
+    row = session.exec(
+        select(LabResult)
+        .where(LabResult.principal_id == owner_id, LabResult.id == result_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).one_or_none()
+    if row is None:
+        raise resource_not_found()
+    return row
+
+
+def update_result(
+    session: Session,
+    principal: PrincipalContext,
+    result_id: UUID,
+    payload: LabResultPatch,
+    catalog: Catalog,
+) -> LabResultResponse:
+    """Replace one owned fact, then interpret its committed scalar snapshot."""
+    try:
+        _lock_writer(session, principal)
+        row = _lock_owned_result(session, principal.principal_id, result_id)
+        profile = session.exec(
+            select(Profile)
+            .where(Profile.principal_id == principal.principal_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).one_or_none()
+        errors: list[LabFieldError] = []
+        if profile is None:
+            errors.append(field_error("LAB_PROFILE_REQUIRED"))
+        elif age_on(profile.birth_date, payload.test_date) < 18:
+            errors.append(field_error("LAB_ADULT_REQUIRED", "test_date"))
+        if payload.test_date > database_calendar_date(session):
+            errors.append(field_error("LAB_DATE_FUTURE", "test_date"))
+        test = catalog.tests.get(row.test_key)
+        if test is None:
+            errors.append(field_error("LAB_TEST_UNSUPPORTED", "test_key", test_key=row.test_key))
+        elif payload.entered_unit not in test.supported_units:
+            errors.append(field_error("LAB_UNIT_UNSUPPORTED", "entered_unit", test_key=row.test_key))
+        else:
+            try:
+                to_canonical(test, parse_entered_decimal(payload.entered_value), payload.entered_unit)
+            except ValueError:
+                errors.append(field_error("LAB_DECIMAL_INVALID", "entered_value", test_key=row.test_key))
+        duplicate = session.exec(
+            select(LabResult.id).where(
+                LabResult.principal_id == principal.principal_id,
+                LabResult.test_key == row.test_key,
+                LabResult.test_date == payload.test_date,
+                LabResult.id != result_id,
+            )
+        ).first()
+        if duplicate is not None:
+            errors.append(field_error("LAB_DUPLICATE", "test_date", test_key=row.test_key))
+        if errors:
+            raise LabValidationError(
+                409 if any(error.code == "LAB_DUPLICATE" for error in errors) else 422, errors
+            )
+        row.entered_value = parse_entered_decimal(payload.entered_value)
+        row.entered_unit = payload.entered_unit
+        row.test_date = payload.test_date
+        row.updated_at = utcnow()
+        session.add(row)
+        session.flush()
+        # Scalar Rows remain usable after commit expires ORM identities. Capture
+        # Profile and facts while the owner lock still protects both.
+        captured = session.exec(
+            select(
+                LabResult.id, LabResult.test_key, LabResult.test_date,
+                LabResult.entered_value, LabResult.entered_unit,
+                LabResult.created_at, LabResult.updated_at, Profile.birth_date, Profile.sex,
+            )
+            .join(Profile, Profile.principal_id == LabResult.principal_id)
+            .where(LabResult.principal_id == principal.principal_id, LabResult.id == result_id)
+        ).one()
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        constraint = getattr(getattr(error.orig, "diag", None), "constraint_name", None)
+        if constraint == "uq_lab_result_principal_test_date":
+            raise LabValidationError(409, [field_error("LAB_DUPLICATE", "test_date")]) from error
+        raise
+    except Exception:
+        session.rollback()
+        raise
+    return project_result(captured, captured, catalog)
+
+
+def delete_result(session: Session, principal: PrincipalContext, result_id: UUID) -> None:
+    """Delete only the owned fact; durable create receipts remain untouched."""
+    try:
+        _lock_writer(session, principal)
+        row = _lock_owned_result(session, principal.principal_id, result_id)
+        session.delete(row)
+        session.commit()
     except Exception:
         session.rollback()
         raise
