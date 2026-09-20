@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Request } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Page, type Request } from "@playwright/test";
 import type { ProfileInput } from "../lib/types";
 import { fillRequiredFoodForm, submitFoodForm } from "./foods/helpers";
 import { applyProfileThroughTargetPlan } from "./profile-api";
@@ -237,6 +237,165 @@ async function e2eAuthAction(page: Page, action: "refresh" | "signOut" | "signIn
     return call();
   }, { operation: action, login: credentials });
   expect(result.error).toBeNull();
+}
+
+type LabsIsolationActor = {
+  email: string;
+  token: string;
+  subject: string;
+  principalId: string;
+  resultId: string;
+  displayValue: string;
+};
+
+async function prepareLabsIsolation(browser: Browser, request: APIRequestContext) {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const trackedResults = new Map<string, Set<string>>();
+  const gates = new Set<ReturnType<typeof createReleaseGate>>();
+  const cleanupTrackedResults = async () => {
+    const failures: unknown[] = [];
+    for (const [accessToken, ids] of trackedResults) {
+      for (const id of ids) {
+        try {
+          const removed = await request.delete(`${API_URL}/labs/results/${encodeURIComponent(id)}`, { headers: headers(accessToken) });
+          expect([204, 404]).toContain(removed.status());
+        } catch (error) { failures.push(error); }
+      }
+    }
+    return failures;
+  };
+
+  const createActor = async (label: string, enteredValue: string): Promise<LabsIsolationActor> => {
+    const email = `labs-isolation-${label}-${suffix}@example.test`;
+    const accessToken = await token(email);
+    await applyProfileThroughTargetPlan(request, accessToken, profile(label === "a" ? 71 : 89));
+    const account = await request.get(`${API_URL}/account/me`, { headers: headers(accessToken) });
+    expect(account.status()).toBe(200);
+    const principalId = (await account.json() as { principal_id: string }).principal_id;
+    const overview = await request.get(`${API_URL}/labs`, { headers: headers(accessToken) });
+    expect(overview.status()).toBe(200);
+    const serverToday = (await overview.json() as { server_today: string }).server_today;
+    const day = new Date(`${serverToday}T00:00:00Z`);
+    day.setUTCDate(day.getUTCDate() - 2);
+    const testDate = day.toISOString().slice(0, 10);
+    const created = await request.post(`${API_URL}/labs/results`, {
+      headers: { ...headers(accessToken), "Idempotency-Key": `labs-isolation-${label}-${suffix}` },
+      data: { test_date: testDate, results: [{ test_key: "hba1c", entered_value: enteredValue, entered_unit: "%" }] },
+    });
+    expect(created.status(), await created.text()).toBe(201);
+    const resultId = (await created.json() as { result_ids: string[] }).result_ids[0];
+    trackedResults.set(accessToken, new Set([resultId]));
+    const detail = await request.get(`${API_URL}/labs/tests/hba1c`, { headers: headers(accessToken) });
+    expect(detail.status()).toBe(200);
+    const result = (await detail.json() as { results: Array<{ id: string; display_value: string }> }).results
+      .find((item) => item.id === resultId);
+    if (!result) throw new Error("Synthetic Labs isolation result is missing.");
+    return { email, token: accessToken, subject: tokenSubject(accessToken), principalId, resultId, displayValue: result.display_value };
+  };
+
+  let actorA!: LabsIsolationActor;
+  let actorB!: LabsIsolationActor;
+  let context!: BrowserContext;
+  let page!: Page;
+  try {
+    actorA = await createActor("a", "98.7654321");
+    actorB = await createActor("b", "1.23456789");
+    context = await browser.newContext({ storageState: undefined });
+    page = await context.newPage();
+  } catch (primaryFailure) {
+    const cleanupFailures = await cleanupTrackedResults();
+    if (context) {
+      try { await context.close(); } catch (error) { cleanupFailures.push(error); }
+    }
+    if (cleanupFailures.length) throw new AggregateError([primaryFailure, ...cleanupFailures], "Labs isolation setup and cleanup failed.");
+    throw primaryFailure;
+  }
+
+  const holdGet = async (pathname: string, accessToken: string) => {
+    const delivery = createReleaseGate();
+    const started = createReleaseGate();
+    gates.add(delivery);
+    const response = page.waitForResponse((candidate) => {
+      const requestEvent = candidate.request();
+      return new URL(candidate.url()).pathname === pathname && requestEvent.method() === "GET"
+        && requestEvent.headers()["authorization"] === `Bearer ${accessToken}`;
+    });
+    void response.catch(() => undefined);
+    await page.route((url) => url.origin === new URL(API_URL).origin && url.pathname === pathname, async (route) => {
+      if (route.request().headers()["authorization"] !== `Bearer ${accessToken}`) {
+        await route.continue();
+        return;
+      }
+      const upstream = await route.fetch();
+      started.release();
+      await delivery.promise;
+      await route.fulfill({ response: upstream });
+    });
+    return {
+      started: started.promise,
+      response,
+      release() { delivery.release(); },
+    };
+  };
+
+  const queryKeys = () => page.evaluate(() => {
+    const inspect = (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys;
+    if (!inspect) throw new Error("E2E query inspection hook is unavailable.");
+    return inspect();
+  });
+
+  const assertNoActorAValuesOrInputs = async () => {
+    await expect(page.getByText(actorA.displayValue, { exact: false })).toHaveCount(0);
+    await expect(page.locator(`input[value="${actorA.displayValue}"]`)).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "إضافة نتائج" })).toHaveCount(0);
+    await expect(page.getByText(/تم حفظ النتائج\.|تم حفظ التعديل\.|تعذر تأكيد الحفظ/)).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    expect(await leakRecords(page)).toEqual([]);
+  };
+
+  const assertNoActorAQueryKeysOrPendingBatch = async () => {
+    expect((await queryKeys()).some((key) => key.includes(actorA.subject) || key.includes(actorA.principalId))).toBe(false);
+    await expect(page.locator("#lab-batch-date, [id^='lab-'][id$='-value']")).toHaveCount(0);
+  };
+
+  const track = (accessToken: string, id: string) => {
+    const actorResults = trackedResults.get(accessToken) ?? new Set<string>();
+    actorResults.add(id);
+    trackedResults.set(accessToken, actorResults);
+  };
+
+  const close = async () => {
+    const failures: unknown[] = [];
+    for (const gate of gates) gate.release();
+    try { await page.unrouteAll({ behavior: "wait" }); } catch (error) { failures.push(error); }
+    try { await context.close(); } catch (error) { failures.push(error); }
+    failures.push(...await cleanupTrackedResults());
+    if (failures.length) throw new AggregateError(failures, "Labs isolation cleanup failed.");
+  };
+
+  return {
+    page, actorA, actorB, holdGet, track, close,
+    login: (actor: LabsIsolationActor, next: string, password = PASSWORD) => signIn(page, actor.email, password, next),
+    assertNoActorAValuesOrInputs,
+    assertNoActorAQueryKeysOrPendingBatch,
+  };
+}
+
+async function withLabsIsolation(
+  browser: Browser,
+  request: APIRequestContext,
+  work: (fixture: Awaited<ReturnType<typeof prepareLabsIsolation>>) => Promise<void>,
+) {
+  const fixture = await prepareLabsIsolation(browser, request);
+  let primaryFailure: unknown;
+  try { await work(fixture); } catch (error) { primaryFailure = error; }
+  let cleanupFailure: unknown;
+  try { await fixture.close(); } catch (error) { cleanupFailure = error; }
+  if (primaryFailure && cleanupFailure) {
+    throw new AggregateError([primaryFailure, cleanupFailure], "Labs isolation assertion and cleanup failed.");
+  }
+  if (primaryFailure) throw primaryFailure;
+  if (cleanupFailure) throw cleanupFailure;
 }
 
 test("@plan016 @strictmode development StrictMode replay keeps one session and History API owner live", async ({ browser }) => {
@@ -513,7 +672,8 @@ test("a delivered delayed Admin account response cannot restore Admin identity a
     window.fetch = (input, init) => {
       const url = typeof input === "string" ? input : input instanceof Request ? input.url : input.href;
       if (new URL(url, window.location.href).pathname === "/account/me" && init?.signal) {
-        const { signal: _signal, ...withoutSignal } = init;
+        const withoutSignal = { ...init };
+        delete withoutSignal.signal;
         return originalFetch(input, withoutSignal);
       }
       return originalFetch(input, init);
@@ -579,7 +739,8 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
         init?.method?.toUpperCase() === "POST" &&
         init.signal
       ) {
-        const { signal: _signal, ...withoutSignal } = init;
+        const withoutSignal = { ...init };
+        delete withoutSignal.signal;
         return originalFetch(input, withoutSignal);
       }
       return originalFetch(input, init);
@@ -721,7 +882,8 @@ test("a stale User A 401 cannot clear User B's same-page session", async ({ brow
     window.fetch = (input, init) => {
       const url = typeof input === "string" ? input : input instanceof Request ? input.url : input.href;
       if (new URL(url, window.location.href).pathname === "/account/me" && init?.signal) {
-        const { signal: _signal, ...withoutSignal } = init;
+        const withoutSignal = { ...init };
+        delete withoutSignal.signal;
         return originalFetch(input, withoutSignal);
       }
       return originalFetch(input, init);
@@ -951,4 +1113,160 @@ test("a refresh-token session update keeps User A's query client and does not re
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("74");
   expect(profileRequestsAfterRefresh).toBe(0);
   await context.close();
+});
+
+test("@strictmode Labs old owner detail cannot repopulate a new actor session", async ({ browser, request }) => {
+  await withLabsIsolation(browser, request, async (fixture) => {
+    const { page, actorA, actorB } = fixture;
+    await page.addInitScript(({ apiOrigin, path }) => {
+      const original = window.fetch.bind(window);
+      window.fetch = (input, init) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof Request ? input.url : input.href, location.href);
+        if (url.origin === apiOrigin && url.pathname === path && (!init?.method || init.method === "GET")) {
+          const withoutSignal = { ...init }; delete withoutSignal.signal;
+          return original(input, withoutSignal);
+        }
+        return original(input, init);
+      };
+    }, { apiOrigin: new URL(API_URL).origin, path: "/labs/tests/hba1c" });
+    await fixture.login(actorA, "/labs");
+    await retainSessionSignalInspector(page);
+    const pending = await fixture.holdGet("/labs/tests/hba1c", actorA.token);
+    await page.getByRole("tab", { name: "كل التحاليل", exact: true }).click();
+    await page.locator('[data-testid="lab-row"][data-test-key="hba1c"] a').click();
+    await pending.started;
+    await installLeakObserver(page, [actorA.displayValue, actorA.resultId], [actorA.displayValue], true);
+    await e2eAuthAction(page, "signIn", { email: actorB.email, password: PASSWORD });
+    expect(await retainedSessionSignalAborted(page)).toBe(true);
+    await expect(page.getByText(actorB.displayValue, { exact: false })).toBeVisible();
+    pending.release();
+    expect((await pending.response).status()).toBe(200);
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(page).toHaveURL(/\/labs\/hba1c$/);
+    await fixture.assertNoActorAValuesOrInputs();
+    await fixture.assertNoActorAQueryKeysOrPendingBatch();
+  });
+});
+
+test("@strictmode Labs committed POST delivered after takeover stays with its original actor", async ({ browser, request }) => {
+  await withLabsIsolation(browser, request, async (fixture) => {
+    const { page, actorA, actorB } = fixture;
+    const enteredValue = "87.6543210";
+    await page.addInitScript((apiOrigin) => {
+      const original = window.fetch.bind(window);
+      window.fetch = (input, init) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof Request ? input.url : input.href, location.href);
+        if (url.origin === apiOrigin && url.pathname === "/labs/results" && init?.method === "POST") {
+          const withoutSignal = { ...init }; delete withoutSignal.signal;
+          return original(input, withoutSignal);
+        }
+        return original(input, init);
+      };
+    }, new URL(API_URL).origin);
+    await fixture.login(actorA, "/labs");
+    await retainSessionSignalInspector(page);
+    await page.getByRole("tab", { name: "كل التحاليل", exact: true }).click();
+    await page.locator('[data-testid="lab-row"][data-test-key="eosinophils_pct"]').getByRole("button", { name: "إضافة نتيجة" }).click();
+    const dialog = page.getByRole("dialog", { name: "إضافة نتائج" });
+    await dialog.getByRole("button", { name: "التالي", exact: true }).click();
+    await dialog.getByRole("button", { name: "التالي", exact: true }).click();
+    await page.locator("#lab-eosinophils_pct-value").fill(enteredValue);
+
+    const delivery = createReleaseGate();
+    const started = createReleaseGate();
+    let committedId = "";
+    await page.route((url) => url.origin === new URL(API_URL).origin && url.pathname === "/labs/results", async (route) => {
+      if (route.request().method() !== "POST") { await route.continue(); return; }
+      const upstream = await route.fetch();
+      const receipt = await upstream.json() as { result_ids: string[] };
+      committedId = receipt.result_ids[0];
+      fixture.track(actorA.token, committedId);
+      started.release();
+      await delivery.promise;
+      await route.fulfill({ response: upstream });
+    });
+    try {
+      const response = page.waitForResponse((candidate) => candidate.url() === `${API_URL}/labs/results` && candidate.request().method() === "POST");
+      void response.catch(() => undefined);
+      await dialog.getByRole("button", { name: "حفظ النتائج", exact: true }).click();
+      await started.promise;
+      await installLeakObserver(page, [enteredValue, committedId], [enteredValue], true);
+      await e2eAuthAction(page, "signIn", { email: actorB.email, password: PASSWORD });
+      expect(await retainedSessionSignalAborted(page)).toBe(true);
+      delivery.release();
+      expect((await response).status()).toBe(201);
+      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      await expect(page).toHaveURL(/\/labs$/);
+      await fixture.assertNoActorAValuesOrInputs();
+      await fixture.assertNoActorAQueryKeysOrPendingBatch();
+      const aDetail = await request.get(`${API_URL}/labs/tests/eosinophils_pct`, { headers: headers(actorA.token) });
+      const bDetail = await request.get(`${API_URL}/labs/tests/eosinophils_pct`, { headers: headers(actorB.token) });
+      expect(aDetail.status()).toBe(200); expect(bDetail.status()).toBe(200);
+      expect((await aDetail.json() as { results: Array<{ id: string }> }).results.some((item) => item.id === committedId)).toBe(true);
+      expect((await bDetail.json() as { results: Array<{ id: string }> }).results.some((item) => item.id === committedId)).toBe(false);
+    } finally {
+      delivery.release();
+    }
+  });
+});
+
+test("@strictmode held selected-user Labs GET cannot repaint after admin changes selected user", async ({ browser, request }) => {
+  await withLabsIsolation(browser, request, async (fixture) => {
+    const { page, actorA, actorB } = fixture;
+    const heldPath = `/admin/users/${actorA.principalId}/labs/tests/hba1c`;
+    await page.addInitScript(({ apiOrigin, path }) => {
+      const original = window.fetch.bind(window);
+      window.fetch = (input, init) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof Request ? input.url : input.href, location.href);
+        if (url.origin === apiOrigin && url.pathname === path && (!init?.method || init.method === "GET")) {
+          const withoutSignal = { ...init }; delete withoutSignal.signal;
+          return original(input, withoutSignal);
+        }
+        return original(input, init);
+      };
+    }, { apiOrigin: new URL(API_URL).origin, path: heldPath });
+    await fixture.login({ ...actorA, email: ADMIN_EMAIL }, `/admin/users/${actorA.principalId}/labs`, ADMIN_PASSWORD);
+    expect(await sessionSignalAborted(page)).toBe(false);
+    const adminToken = await token(ADMIN_EMAIL, ADMIN_PASSWORD);
+    const pending = await fixture.holdGet(heldPath, adminToken);
+    await page.locator('[data-testid="lab-row"][data-test-key="hba1c"] a').click();
+    await pending.started;
+    await installLeakObserver(page, [actorA.displayValue, actorA.resultId], [], true);
+    await page.locator('a[href="/admin"]').click();
+    await page.locator('a[href="/admin/users"]').click();
+    await page.locator(`a[href="/admin/users/${actorB.principalId}"]`).click();
+    await page.getByRole("link", { name: "عرض التحاليل", exact: true }).click();
+    await expect(page.getByText(actorB.displayValue, { exact: false })).toBeVisible();
+    expect(await sessionSignalAborted(page)).toBe(false);
+    pending.release();
+    expect((await pending.response).status()).toBe(200);
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(page).toHaveURL(new RegExp(`/admin/users/${actorB.principalId}/labs$`));
+    expect(await leakRecords(page)).toEqual([]);
+    await expect(page.getByText(actorA.displayValue, { exact: false })).toHaveCount(0);
+    expect((await page.evaluate(() => (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys?.() ?? []))
+      .some((key) => key.includes(actorA.principalId))).toBe(false);
+  });
+});
+
+test("@strictmode admin logout to ordinary actor clears selected-user Labs while its URL remains", async ({ browser, request }) => {
+  await withLabsIsolation(browser, request, async (fixture) => {
+    const { page, actorA, actorB } = fixture;
+    await fixture.login({ ...actorA, email: ADMIN_EMAIL }, `/admin/users/${actorA.principalId}/labs`, ADMIN_PASSWORD);
+    await expect(page.getByText(actorA.displayValue, { exact: false })).toBeVisible();
+    const oldAdminSubject = await sessionSubjectKey(page);
+    await retainSessionSignalInspector(page);
+    await installLeakObserver(page, [actorA.displayValue, actorA.resultId, ADMIN_EMAIL], [], true);
+    await e2eAuthAction(page, "signOut");
+    await e2eAuthAction(page, "signIn", { email: actorB.email, password: PASSWORD });
+    expect(await retainedSessionSignalAborted(page)).toBe(true);
+    expect(new URL(page.url()).pathname).toBe(`/admin/users/${actorA.principalId}/labs`);
+    await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+    await expect(page.getByText(actorA.displayValue, { exact: false })).toHaveCount(0);
+    expect((await page.evaluate(() => (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys?.() ?? []))
+      .some((key) => key.includes(oldAdminSubject))).toBe(false);
+    await expect(page.getByRole("dialog", { name: "إضافة نتائج" })).toHaveCount(0);
+    await expect(page.getByText(/تم حفظ النتائج\.|تعذر تأكيد الحفظ/)).toHaveCount(0);
+    expect(await leakRecords(page)).toEqual([]);
+  });
 });

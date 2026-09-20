@@ -82,7 +82,10 @@ function headers(token: string) {
   return { Authorization: `Bearer ${token}` };
 }
 
-async function createActor(request: APIRequestContext, initialProfile: LabsFixtures["initialLabsProfile"]): Promise<LabsActor> {
+export async function createActor(
+  request: APIRequestContext,
+  initialProfile: Partial<Pick<ProfileInput, "sex" | "birth_date">>,
+): Promise<LabsActor> {
   const email = `labs-owner-${randomUUID()}@example.test`;
   const tokenResponse = await fetch(`${AUTH_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
@@ -112,7 +115,7 @@ async function createActor(request: APIRequestContext, initialProfile: LabsFixtu
   };
 }
 
-function createLabsApi(request: APIRequestContext, actor: LabsActor): LabsApi & { cleanup: () => Promise<void> } {
+export function createLabsApi(request: APIRequestContext, actor: LabsActor): LabsApi & { cleanup: () => Promise<void> } {
   const resultIds = new Set<string>();
   const actorHeaders = () => headers(actor.token);
   const api: LabsApi & { cleanup: () => Promise<void> } = {
@@ -155,21 +158,26 @@ function createLabsApi(request: APIRequestContext, actor: LabsActor): LabsApi & 
       resultIds.delete(id);
     },
     async cleanup() {
+      const failures: unknown[] = [];
       for (const id of resultIds) {
-        const response = await request.delete(`${API_URL}/labs/results/${encodeURIComponent(id)}`, {
-          headers: actorHeaders(),
-        });
-        expect([204, 404]).toContain(response.status());
+        try {
+          const response = await request.delete(`${API_URL}/labs/results/${encodeURIComponent(id)}`, {
+            headers: actorHeaders(),
+          });
+          expect([204, 404]).toContain(response.status());
+        } catch (error) { failures.push(error); }
       }
       resultIds.clear();
+      if (failures.length) throw new AggregateError(failures, "Labs fixture cleanup failed.");
     },
   };
   return api;
 }
 
-async function loginOwner(browser: Browser, actor: LabsActor, hasTouch: boolean): Promise<{ context: BrowserContext; page: Page }> {
+export async function loginOwner(browser: Browser, actor: LabsActor, hasTouch: boolean, allowServiceWorkers = false): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({
     hasTouch,
+    serviceWorkers: allowServiceWorkers ? "allow" : "block",
     storageState: {
       cookies: actor.authCookies.map(({ name, value, expires }) => ({
         name,

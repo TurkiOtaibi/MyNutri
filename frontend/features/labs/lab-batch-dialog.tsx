@@ -87,8 +87,8 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
               const test = catalog.tests.find((test) => test.test_key === key)!;
               const rowErrors = errors.rows[key];
               const valueError = rowErrors?.entered_value ?? rowErrors?.form;
-              return <div className={styles.batchRow} key={key} data-testid="lab-batch-row" data-test-key={key}>
-                <strong>{test.name_ar} <bdi dir="ltr">{test.abbreviation ?? test.name_en}</bdi></strong>
+              return <fieldset className={styles.batchRow} key={key} data-testid="lab-batch-row" data-test-key={key} aria-labelledby={`lab-${key}-name`}>
+                <legend id={`lab-${key}-name`}><strong>{test.name_ar} <bdi dir="ltr">{test.abbreviation ?? test.name_en}</bdi></strong></legend>
                 <label>القيمة
                   <input id={`lab-${key}-value`} type="text" inputMode="decimal" dir="ltr" value={row.value} aria-invalid={Boolean(valueError)} aria-describedby={valueError ? `lab-${key}-value-error` : undefined} onChange={(event) => props.onValue(key, event.target.value)} />
                   {valueError ? <span id={`lab-${key}-value-error`} className={styles.batchError}>{valueError}</span> : null}
@@ -99,7 +99,7 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
                   </select>
                   {rowErrors?.entered_unit ? <span id={`lab-${key}-unit-error`} className={styles.batchError}>{rowErrors.entered_unit}</span> : null}
                 </label>
-              </div>;
+              </fieldset>;
             }) : null}
           </fieldset>
           {draft.step === "values" ? <p aria-live="polite">سيتم حفظ <bdi dir="ltr">{populatedCount(draft)}</bdi> نتائج</p> : null}

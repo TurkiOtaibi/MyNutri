@@ -13,6 +13,15 @@ export type LabListItem = {
 };
 
 export type LabSort = "newest_updated" | "oldest_updated" | "name_asc" | "name_desc" | "category";
+export type LabsView = "owned" | "all";
+
+export function nextLabsView(view: LabsView, key: string): LabsView | null {
+  if (key === "Home") return "owned";
+  if (key === "End") return "all";
+  if (key === "ArrowLeft") return view === "owned" ? "all" : "owned";
+  if (key === "ArrowRight") return view === "all" ? "owned" : "all";
+  return null;
+}
 
 const arabicCollator = new Intl.Collator("ar");
 
@@ -36,7 +45,7 @@ function compareName(left: LabListItem, right: LabListItem): number {
 export function toLabListItems(
   catalog: LabCatalogResponse,
   overview: LabOverviewResponse,
-  view: "owned" | "all",
+  view: LabsView,
 ): LabListItem[] {
   const categoryOrder = new Map(catalog.categories.map((category) => [category.key, category.order]));
   const activity = new Map(overview.items.map((item) => [item.test_key, item]));

@@ -7,8 +7,8 @@ import { useAuth } from "@/components/AuthProvider";
 import { useSessionAbortSignal } from "@/components/SessionQueryProvider";
 import { useLabBatch } from "@/components/useLabBatch";
 import { LabBatchDialog } from "@/features/labs/lab-batch-dialog";
-import { LabCatalogView, OwnedLabsView } from "@/features/labs/labs-overview-view";
-import { filterLabs, sortLabs, toLabListItems, type LabSort } from "@/features/labs/lab-model";
+import { LabCatalogView, LabsViewTabs, OwnedLabsView } from "@/features/labs/labs-overview-view";
+import { filterLabs, sortLabs, toLabListItems, type LabSort, type LabsView } from "@/features/labs/lab-model";
 import { labsQueryKeys } from "@/features/labs/lab-query-keys";
 import styles from "@/features/labs/labs.module.css";
 import { getLabCatalog, getLabs } from "@/lib/api";
@@ -18,10 +18,15 @@ export function LabsPage() {
   const sessionSignal = useSessionAbortSignal();
   const actorId = session?.user.id;
   const accessToken = session?.access_token;
-  const [view, setView] = useState<"owned" | "all">("owned");
+  const [view, setView] = useState<LabsView>("owned");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [sort, setSort] = useState<LabSort>("newest_updated");
+  const [viewOwner, setViewOwner] = useState(actorId);
+  if (viewOwner !== actorId) {
+    setViewOwner(actorId);
+    setView("owned"); setSearch(""); setCategory(null); setSort("newest_updated");
+  }
   const batchOpener = useRef<HTMLElement | null>(null);
   const queryPolicy = { staleTime: 0, refetchOnMount: "always" as const, refetchOnWindowFocus: "always" as const };
   const catalog = useQuery({
@@ -73,11 +78,13 @@ export function LabsPage() {
     {batch.refreshError || overview.isError || catalog.isError ? <div role="alert">تعذر تحميل التحاليل الحالية. حاول مرة أخرى.
       <button className="btn" type="button" onClick={() => { if (catalog.isError) void catalog.refetch(); void batch.refresh(); }}>إعادة تحميل التحاليل</button>
     </div> : null}
-    <div className={styles.tabs} role="tablist" aria-label="عرض التحاليل">
-      <button type="button" role="tab" aria-selected={view === "owned"} onClick={() => setView("owned")}>تحاليلك</button>
-      <button type="button" role="tab" aria-selected={view === "all"} onClick={() => setView("all")}>كل التحاليل</button>
+    <LabsViewTabs view={view} onViewChange={setView} />
+    <div id="labs-panel-owned" role="tabpanel" aria-labelledby="labs-tab-owned" tabIndex={view === "owned" ? 0 : -1} hidden={view !== "owned"}>
+      {view === "owned" ? <OwnedLabsView {...props} /> : null}
     </div>
-    {view === "owned" ? <OwnedLabsView {...props} /> : <LabCatalogView {...props} />}
+    <div id="labs-panel-all" role="tabpanel" aria-labelledby="labs-tab-all" tabIndex={view === "all" ? 0 : -1} hidden={view !== "all"}>
+      {view === "all" ? <LabCatalogView {...props} /> : null}
+    </div>
     <LabBatchDialog phase={batch.phase} catalog={batch.catalog} returnFocusRef={batchOpener}
       onDate={(date) => batch.dispatch({ type: "EDIT_DATE", date })}
       onPanel={(key, selected) => { if (batch.catalog) batch.dispatch({ type: "PANEL", key, selected, catalog: batch.catalog }); }}

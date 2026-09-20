@@ -1,4 +1,5 @@
-import { expect, test, type Page, type Request, type Response, type Route } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page, type Request, type Response, type Route } from "@playwright/test";
+import { API_URL, createActor, createLabsApi, loginOwner, offsetIsoDate } from "./labs/helpers";
 
 const APP_CACHE_PREFIX = "mynutri-shell-";
 const CURRENT_CACHE = "mynutri-shell-v3";
@@ -282,7 +283,7 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
   type BypassCase = {
     name: string;
     url: string;
-    method: "GET" | "POST";
+    method: "GET" | "POST" | "PATCH" | "DELETE";
     headers: Record<string, string>;
     body?: string;
     mode: "same-origin" | "cors";
@@ -317,6 +318,64 @@ test("@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic",
       headers: {},
       mode: "same-origin",
       credentials: "same-origin"
+    },
+    {
+      name: "labs-owner-overview-get",
+      url: `${API_URL}/labs`,
+      method: "GET",
+      headers: {},
+      mode: "cors",
+      credentials: "omit"
+    },
+    {
+      name: "labs-owner-detail-get",
+      url: `${API_URL}/labs/tests/hba1c`,
+      method: "GET",
+      headers: {},
+      mode: "cors",
+      credentials: "omit"
+    },
+    {
+      name: "labs-admin-overview-get",
+      url: `${API_URL}/admin/users/00000000-0000-4000-8000-000000000017/labs`,
+      method: "GET",
+      headers: {},
+      mode: "cors",
+      credentials: "omit"
+    },
+    {
+      name: "labs-admin-detail-get",
+      url: `${API_URL}/admin/users/00000000-0000-4000-8000-000000000017/labs/tests/hba1c`,
+      method: "GET",
+      headers: {},
+      mode: "cors",
+      credentials: "omit"
+    },
+    {
+      name: "labs-post",
+      url: `${API_URL}/labs/results`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ test_date: "2026-09-20", results: [{ test_key: "hba1c", entered_value: "17.001", entered_unit: "%" }] }),
+      mode: "cors",
+      credentials: "omit"
+    },
+    {
+      name: "labs-patch",
+      url: `${API_URL}/labs/results/00000000-0000-4000-8000-000000000017`,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ test_date: "2026-09-20", entered_value: "17.002", entered_unit: "%" }),
+      mode: "cors",
+      credentials: "omit"
+    },
+    {
+      name: "labs-delete",
+      url: `${API_URL}/labs/results/00000000-0000-4000-8000-000000000017`,
+      method: "DELETE",
+      headers: {},
+      mode: "cors",
+      credentials: "omit"
     },
     {
       name: "auth-get",
@@ -656,7 +715,10 @@ test("@plan017 deep navigations return the exact generic offline document", asyn
   expect((await appCacheEntries(page)).some(({ pathname }) => ["/diary", "/profile"].includes(pathname))).toBe(false);
 
   await context.setOffline(true);
-  for (const path of ["/diary", "/foods/plan017/edit", "/admin/users/plan017"]) {
+  for (const path of [
+    "/diary", "/foods/plan017/edit", "/admin/users/plan017", "/labs", "/labs/hba1c",
+    "/admin/users/plan017/labs", "/admin/users/plan017/labs/hba1c",
+  ]) {
     const response = await page.goto(path);
     expect(response).not.toBeNull();
     expect(await response!.text()).toBe(offline.body);
@@ -743,7 +805,11 @@ test("@plan017 CacheStorage contains only generic and immutable static resources
       record.stillOpenAtReadiness = !record.finished && !record.failed;
     }
     profileReadyEntries = await appCacheEntries(page);
-    for (const path of ["/diary", "/foods", "/admin/users/00000000-0000-0000-0000-000000000001"]) {
+    for (const path of [
+      "/diary", "/foods", "/admin/users/00000000-0000-0000-0000-000000000001",
+      "/labs", "/labs/hba1c", "/admin/users/00000000-0000-0000-0000-000000000001/labs",
+      "/admin/users/00000000-0000-0000-0000-000000000001/labs/hba1c",
+    ]) {
       await page.goto(path);
     }
   } finally {
@@ -853,4 +919,100 @@ test("@plan017 CacheStorage contains only generic and immutable static resources
     expect(entry.containsPrivateMarker).toBe(false);
   }
   expect(await page.evaluate(() => indexedDB.databases().then((databases) => databases.length))).toBe(0);
+});
+
+test("Labs private reads and successful writes never enter browser persistence or offline history", async ({ browser, request }) => {
+  const actor = await createActor(request, {});
+  const api = createLabsApi(request, actor);
+  let context: BrowserContext | undefined;
+  let page: Page | undefined;
+  let initialId = "";
+  let createdId = "";
+  const privateMarker = "74.210987654";
+  let primaryFailure: unknown;
+  try {
+    const today = (await api.overview()).server_today;
+    const initial = await api.create(offsetIsoDate(today, -2), [{ test_key: "hba1c", entered_value: "73.210987654", entered_unit: "%" }]);
+    initialId = initial.result_ids[0];
+    ({ context, page } = await loginOwner(browser, actor, false, true));
+    await waitForWorkerControl(page);
+    await page.goto("/profile");
+    await expect(page.getByRole("heading", { name: "بياناتك وأهدافك", exact: true })).toBeVisible();
+    const storageBefore = await page.evaluate(() => ({
+      local: Object.keys(localStorage).sort(),
+      session: Object.keys(sessionStorage).sort(),
+    }));
+    await page.goto("/labs");
+    await expect(page.getByRole("heading", { name: "تحاليلك", exact: true })).toBeVisible();
+    await page.goto("/labs/hba1c");
+    await expect(page.getByTestId("lab-detail")).toBeVisible();
+
+    const mutation = await page.evaluate(async ({ apiUrl, token, date, resultId, marker }) => {
+      const common = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+      const created = await fetch(`${apiUrl}/labs/results`, {
+        method: "POST",
+        headers: { ...common, "Idempotency-Key": `pwa-labs-${crypto.randomUUID()}` },
+        body: JSON.stringify({ test_date: date, results: [{ test_key: "eosinophils_pct", entered_value: marker, entered_unit: "%" }] }),
+      });
+      const receipt = await created.json() as { result_ids: string[] };
+      const patched = await fetch(`${apiUrl}/labs/results/${resultId}`, {
+        method: "PATCH",
+        headers: common,
+        body: JSON.stringify({ test_date: date, entered_value: marker, entered_unit: "%" }),
+      });
+      const removed = await fetch(`${apiUrl}/labs/results/${receipt.result_ids[0]}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return { statuses: [created.status, patched.status, removed.status], id: receipt.result_ids[0] };
+    }, { apiUrl: API_URL, token: actor.token, date: offsetIsoDate(today, -1), resultId: initialId, marker: privateMarker });
+    expect(mutation.statuses).toEqual([201, 200, 204]);
+    createdId = mutation.id;
+
+    const storageAfter = await page.evaluate(() => ({
+      local: Object.keys(localStorage).sort(),
+      session: Object.keys(sessionStorage).sort(),
+    }));
+    expect(storageAfter).toEqual(storageBefore);
+    const cachePrivacy = await page.evaluate(async ({ marker, ids }) => {
+      let leaked = false;
+      let mutationEntry = false;
+      for (const name of await caches.keys()) {
+        const cache = await caches.open(name);
+        for (const cachedRequest of await cache.keys()) {
+          const response = await cache.match(cachedRequest);
+          const body = response ? await response.clone().text() : "";
+          leaked ||= body.includes(marker) || ids.some((id) => body.includes(id) || cachedRequest.url.includes(id));
+          mutationEntry ||= cachedRequest.method !== "GET" || new URL(cachedRequest.url).pathname.startsWith("/labs");
+        }
+      }
+      return { leaked, mutationEntry };
+    }, { marker: privateMarker, ids: [initialId, createdId] });
+    expect(cachePrivacy).toEqual({ leaked: false, mutationEntry: false });
+    expect(await page.evaluate(() => indexedDB.databases().then((databases) => databases.length))).toBe(0);
+
+    const offlineDocument = await page.evaluate(async () => {
+      const response = await (await caches.open("mynutri-shell-v3")).match("/offline");
+      if (!response) throw new Error("Offline document was not precached.");
+      return response.text();
+    });
+    await context.setOffline(true);
+    const offlineResponse = await page.goto("/labs/hba1c");
+    expect(offlineResponse).not.toBeNull();
+    expect(await offlineResponse!.text()).toBe(offlineDocument);
+    await expect(page.getByText("myNutri v1", { exact: false })).toBeVisible();
+    await expect(page.locator("body")).not.toContainText(privateMarker);
+    await expect(page.locator("body")).not.toContainText(initialId);
+    await expect(page.locator("body")).not.toContainText(createdId);
+  } catch (error) { primaryFailure = error; }
+  const cleanupFailures: unknown[] = [];
+  try { if (context) await context.setOffline(false); } catch (error) { cleanupFailures.push(error); }
+  try { if (createdId) await api.remove(createdId); } catch (error) { cleanupFailures.push(error); }
+  try { await api.cleanup(); } catch (error) { cleanupFailures.push(error); }
+  try { if (context) await context.close(); } catch (error) { cleanupFailures.push(error); }
+  if (primaryFailure && cleanupFailures.length) {
+    throw new AggregateError([primaryFailure, ...cleanupFailures], "Labs PWA assertion and cleanup failed.");
+  }
+  if (primaryFailure) throw primaryFailure;
+  if (cleanupFailures.length) throw new AggregateError(cleanupFailures, "Labs PWA cleanup failed.");
 });

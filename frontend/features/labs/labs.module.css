@@ -2,6 +2,7 @@
   display: grid;
   gap: 18px;
 }
+.labsPage > a, .identity a { display: inline-flex; align-items: center; width: fit-content; min-height: 44px; }
 
 .heading {
   display: flex;
@@ -28,7 +29,7 @@
 .rows { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
 .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 14px 16px; box-shadow: 0 3px 14px rgba(20, 32, 24, .04); }
 .identity, .latest { display: grid; gap: 4px; }
-.identity span, .latest time, .noResult { color: var(--muted); font-size: .82rem; }
+.identity bdi, .latest time, .noResult { color: var(--muted); font-size: .82rem; }
 .latest { justify-items: end; text-align: end; }
 .status { width: fit-content; border-radius: 999px; padding: 3px 9px; font-size: .78rem; font-weight: 800; }
 .status[data-tone="within"] { background: color-mix(in srgb, var(--accent) 12%, white); color: var(--accent-strong); }
@@ -74,8 +75,8 @@
 .batchFields input:focus, .batchFields select:focus { outline: 3px solid color-mix(in srgb, var(--accent) 22%, white); border-color: var(--accent); }
 .batchFields .batchChoice { display: flex; align-items: center; min-height: 44px; gap: 10px; }
 .batchChoice input { width: 20px; height: 20px; flex-shrink: 0; }
-.batchRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 150px); gap: 12px; padding-block: 14px; border-bottom: 1px solid var(--line); }
-.batchRow strong { grid-column: 1 / -1; }
+.batchRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 150px); gap: 12px; min-width: 0; margin: 0; padding: 14px 0; border: 0; border-bottom: 1px solid var(--line); }
+.batchRow legend { grid-column: 1 / -1; max-width: 100%; padding: 0; overflow-wrap: anywhere; }
 .batchError { color: #7a1b14; }
 .batchError p { margin: 6px 0; }
 .batchActions { display: flex; justify-content: end; flex-wrap: wrap; gap: 10px; margin-top: 18px; }

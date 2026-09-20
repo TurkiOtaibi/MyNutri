@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
 
 import {
   createLabResults,
@@ -15,9 +16,9 @@ import {
   updateLabResult,
   ApiError,
 } from "@/lib/api";
-import { filterLabs, sortLabs, toLabListItems } from "@/features/labs/lab-model";
-import { labsQueryKeys } from "@/features/labs/lab-query-keys";
-import { OwnedLabsView } from "@/features/labs/labs-overview-view";
+import { filterLabs, nextLabsView, sortLabs, toLabListItems } from "@/features/labs/lab-model";
+import { isOtherAdminSubjectQuery, labsQueryKeys } from "@/features/labs/lab-query-keys";
+import { LabsViewTabs, OwnedLabsView } from "@/features/labs/labs-overview-view";
 import type { LabOverviewResponse } from "@/lib/types";
 import {
   catalogFixture,
@@ -136,6 +137,25 @@ describe("Labs query keys", () => {
     expect(labsQueryKeys.ownerOverview("actor-b")).not.toEqual(labsQueryKeys.ownerOverview("actor-a"));
     expect(labsQueryKeys.adminOverview("admin-a", "subject-b")).not.toEqual(labsQueryKeys.adminOverview("admin-a", "subject-a"));
   });
+
+  it("removes only another selected user's Labs keys while preserving current and owner queries", () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(labsQueryKeys.adminOverview("admin-a", "subject-a"), "old overview");
+    queryClient.setQueryData(labsQueryKeys.adminTest("admin-a", "subject-a", "hba1c"), "old detail");
+    queryClient.setQueryData(labsQueryKeys.adminOverview("admin-a", "subject-b"), "current overview");
+    queryClient.setQueryData(labsQueryKeys.adminTest("admin-a", "subject-b", "hba1c"), "current detail");
+    queryClient.setQueryData(labsQueryKeys.ownerOverview("admin-a"), "owner overview");
+
+    queryClient.removeQueries({
+      predicate: (query) => isOtherAdminSubjectQuery(query.queryKey, "admin-a", "subject-b"),
+    });
+
+    expect(queryClient.getQueryData(labsQueryKeys.adminOverview("admin-a", "subject-a"))).toBeUndefined();
+    expect(queryClient.getQueryData(labsQueryKeys.adminTest("admin-a", "subject-a", "hba1c"))).toBeUndefined();
+    expect(queryClient.getQueryData(labsQueryKeys.adminOverview("admin-a", "subject-b"))).toBe("current overview");
+    expect(queryClient.getQueryData(labsQueryKeys.adminTest("admin-a", "subject-b", "hba1c"))).toBe("current detail");
+    expect(queryClient.getQueryData(labsQueryKeys.ownerOverview("admin-a"))).toBe("owner overview");
+  });
 });
 
 describe("Labs list model", () => {
@@ -149,6 +169,30 @@ describe("Labs list model", () => {
     medical_rules_version: "labs-v1",
     read_only: false,
   };
+
+  it("moves the two-tab selection with RTL arrows and Home/End", () => {
+    expect(nextLabsView("owned", "ArrowLeft")).toBe("all");
+    expect(nextLabsView("all", "ArrowRight")).toBe("owned");
+    expect(nextLabsView("all", "Home")).toBe("owned");
+    expect(nextLabsView("owned", "End")).toBe("all");
+    expect(nextLabsView("owned", "Tab")).toBeNull();
+  });
+
+  it("connects each roving tab to its stable panel", () => {
+    const html = renderToStaticMarkup(createElement(LabsViewTabs, {
+      view: "owned",
+      onViewChange: () => undefined,
+    }));
+    expect(html).toContain('role="tablist"');
+    expect(html).toContain('id="labs-tab-owned"');
+    expect(html).toContain('aria-controls="labs-panel-owned"');
+    expect(html).toContain('aria-selected="true"');
+    expect(html).toContain('tabindex="0"');
+    expect(html).toContain('id="labs-tab-all"');
+    expect(html).toContain('aria-controls="labs-panel-all"');
+    expect(html).toContain('aria-selected="false"');
+    expect(html).toContain('tabindex="-1"');
+  });
 
   it("builds 120 valid unique ascending history dates covered by the zone span", () => {
     const dates = historyFixture(120).map((result) => result.test_date);

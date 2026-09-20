@@ -83,15 +83,22 @@ test("keyboard containment, previous steps, cancellation and reopening preserve 
   const opener = page.getByRole("button", { name: "إضافة نتائج", exact: true });
   await opener.focus(); await page.keyboard.press("Enter");
   await expect(page.locator("#lab-batch-date")).toBeFocused();
-  for (let index = 0; index < 8; index += 1) {
-    await page.keyboard.press(index % 2 ? "Shift+Tab" : "Tab");
-    expect(await dialog(page).evaluate((element) => element.contains(document.activeElement))).toBe(true);
-  }
+  const lastDateStepControl = dialog(page).getByRole("button", { name: "التالي", exact: true });
+  await lastDateStepControl.focus();
+  await page.keyboard.press("Tab");
+  await expect(page.locator("#lab-batch-date")).toBeFocused();
+  await page.locator("#lab-batch-date").focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(lastDateStepControl).toBeFocused();
   await next(page);
   await page.locator('[data-individual-key="hba1c"]').focus();
   await page.keyboard.press("Space");
   await next(page);
   await expect(page.locator("#lab-hba1c-value")).toBeFocused();
+  const hba1cGroup = dialog(page).getByRole("group", { name: /السكر التراكمي.*HbA1c/ });
+  await expect(hba1cGroup).toBeVisible();
+  await expect(hba1cGroup.getByRole("textbox", { name: "القيمة" })).toHaveAttribute("id", "lab-hba1c-value");
+  await expect(hba1cGroup.getByRole("combobox", { name: "الوحدة" })).toHaveAttribute("id", "lab-hba1c-unit");
   await page.keyboard.type("5.270");
   await back(page); await next(page);
   await expect(page.locator("#lab-hba1c-value")).toHaveValue("5.270");

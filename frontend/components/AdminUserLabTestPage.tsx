@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/components/AuthProvider";
 import { useSessionAbortSignal } from "@/components/SessionQueryProvider";
 import { LabTestView } from "@/features/labs/lab-test-view";
-import { labsQueryKeys } from "@/features/labs/lab-query-keys";
+import { isOtherAdminSubjectQuery, labsQueryKeys } from "@/features/labs/lab-query-keys";
 import styles from "@/features/labs/labs.module.css";
 import { getAdminLabTest } from "@/lib/api";
 
@@ -15,11 +15,24 @@ export function AdminUserLabTestPage({ principalId, testKey }: { principalId: st
   const sessionSignal = useSessionAbortSignal();
   const actorId = session?.user.id, accessToken = session?.access_token;
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
+  const selectedScope = `${actorId ?? "anonymous"}:${principalId}:${testKey}`;
+  const [resultScope, setResultScope] = useState(selectedScope);
+  if (resultScope !== selectedScope) {
+    setResultScope(selectedScope);
+    setSelectedResultId(null);
+  }
+  const queryClient = useQueryClient();
   const detail = useQuery({
     queryKey: labsQueryKeys.adminTest(actorId ?? "anonymous", principalId, testKey),
     queryFn: ({ signal }) => getAdminLabTest(principalId, testKey, { accessToken: accessToken!, signal: AbortSignal.any([signal, sessionSignal]) }),
     enabled: Boolean(actorId && accessToken), staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: "always", retry: false,
   });
+  useEffect(() => {
+    if (!actorId) return;
+    queryClient.removeQueries({
+      predicate: (query) => isOtherAdminSubjectQuery(query.queryKey, actorId, principalId),
+    });
+  }, [actorId, principalId, queryClient]);
   return <div className={styles.labsPage}>
     <Link href={`/admin/users/${encodeURIComponent(principalId)}/labs`}>رجوع إلى تحاليل المستخدم</Link>
     {detail.isPending ? <p role="status">جارٍ تحميل تحاليل المستخدم...</p> : null}

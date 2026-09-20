@@ -1,14 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useSessionAbortSignal } from "@/components/SessionQueryProvider";
 import { OwnedLabsView } from "@/features/labs/labs-overview-view";
 import { filterLabs, sortLabs, toLabListItems, type LabSort } from "@/features/labs/lab-model";
-import { labsQueryKeys } from "@/features/labs/lab-query-keys";
+import { isOtherAdminSubjectQuery, labsQueryKeys } from "@/features/labs/lab-query-keys";
 import styles from "@/features/labs/labs.module.css";
 import { getAdminLabs, getLabCatalog } from "@/lib/api";
 
@@ -20,6 +20,13 @@ export function AdminUserLabsPage({ principalId }: { principalId: string }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [sort, setSort] = useState<LabSort>("newest_updated");
+  const selectedScope = `${actorId ?? "anonymous"}:${principalId}`;
+  const [filterScope, setFilterScope] = useState(selectedScope);
+  if (filterScope !== selectedScope) {
+    setFilterScope(selectedScope);
+    setSearch(""); setCategory(null); setSort("newest_updated");
+  }
+  const queryClient = useQueryClient();
   const queryPolicy = { staleTime: 0, refetchOnMount: "always" as const, refetchOnWindowFocus: "always" as const };
   const catalog = useQuery({
     queryKey: labsQueryKeys.catalog(actorId ?? "anonymous"),
@@ -33,6 +40,12 @@ export function AdminUserLabsPage({ principalId }: { principalId: string }) {
     enabled: Boolean(actorId && accessToken),
     ...queryPolicy,
   });
+  useEffect(() => {
+    if (!actorId) return;
+    queryClient.removeQueries({
+      predicate: (query) => isOtherAdminSubjectQuery(query.queryKey, actorId, principalId),
+    });
+  }, [actorId, principalId, queryClient]);
   const rows = useMemo(() => {
     if (!catalog.data || !overview.data) return [];
     return sortLabs(filterLabs(toLabListItems(catalog.data, overview.data, "owned"), search, category), sort);

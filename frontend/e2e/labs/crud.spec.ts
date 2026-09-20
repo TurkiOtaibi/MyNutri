@@ -30,10 +30,14 @@ test("edit uses full entered precision and supported units, immutable identity a
   await expect(edit(page).locator("[data-tone]")).toHaveCount(0);
   await expect(edit(page).getByText("نطاق ما قبل السكري")).toHaveCount(0);
   await expect(edit(page).locator("select")).toHaveCount(1);
-  for (let index = 0; index < 8; index += 1) {
-    await page.keyboard.press(index % 2 ? "Shift+Tab" : "Tab");
-    expect(await edit(page).evaluate(element => element.contains(document.activeElement))).toBe(true);
-  }
+  const firstEditControl = page.locator("#lab-edit-value");
+  const lastEditControl = edit(page).getByRole("button", { name: "حفظ التعديل", exact: true });
+  await lastEditControl.focus();
+  await page.keyboard.press("Tab");
+  await expect(firstEditControl).toBeFocused();
+  await firstEditControl.focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(lastEditControl).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(edit(page)).toHaveCount(0);
   await expect(row(page, id).getByRole("button", { name: /^تعديل نتيجة/ })).toBeFocused();
@@ -167,7 +171,7 @@ for (const outcome of ["matches", "different", "absent", "failed"] as const) {
       else await route.continue();
     });
     await page.locator("#lab-edit-value").fill(" ٤٠٫٠٠٠ "); await save(page);
-    await expect(edit(page)).toContainText(outcome === "matches" ? "القيم الحالية على الخادم تطابق القيم المرسلة" : outcome === "different" ? "تختلف النتيجة الحالية" : outcome === "absent" ? "هذه النتيجة لم تعد موجودة" : "تعذر تأكيد الحفظ أو قراءة النتيجة الحالية");
+    await expect(edit(page)).toContainText(outcome === "matches" ? "تعذر تأكيد الحفظ، لكن النتيجة الحالية تطابق القيم التي أدخلتها. يمكنك إغلاق النافذة لمراجعتها." : outcome === "different" ? "النتيجة الحالية تختلف عن القيم التي أدخلتها. أغلق النافذة لمراجعتها قبل تعديلها مجددًا." : outcome === "absent" ? "هذه النتيجة لم تعد موجودة" : "تعذر تأكيد الحفظ أو قراءة النتيجة الحالية");
     await expect(page.locator("#lab-edit-value")).toHaveValue(" ٤٠٫٠٠٠ ");
     await expect(page.locator("#lab-edit-value")).toBeDisabled();
     await expect(edit(page).getByRole("button", { name: "حفظ التعديل" })).toHaveCount(0);
@@ -335,7 +339,7 @@ for (const method of ["PATCH", "DELETE"] as const) {
       release(); expect(await (await delivered).finished()).toBeNull();
       await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
       await expect(edit(page)).toHaveCount(0); await expect(deletion(page)).toHaveCount(0);
-      await expect(page.getByText(/تم حفظ التعديل\.|تم حذف النتيجة\.|القيم الحالية على الخادم تطابق/)).toHaveCount(0);
+      await expect(page.getByText(/تم حفظ التعديل\.|تم حذف النتيجة\.|النتيجة الحالية تطابق القيم التي أدخلتها/)).toHaveCount(0);
       const keys = await page.evaluate(() => (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys?.() ?? []);
       expect(keys.some(key => key.includes(oldSubject!))).toBe(false);
     } finally { release(); }

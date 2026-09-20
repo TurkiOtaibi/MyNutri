@@ -136,11 +136,13 @@ function expectLabsOverviewOwnership(owner: string, admin: string, presentation:
   expect(owner).toMatch(/const \[search, setSearch\] = useState\(""\)/);
   expect(owner).toMatch(/const \[category, setCategory\] = useState<string \| null>\(null\)/);
   expect(owner).toMatch(/const \[sort, setSort\] = useState<LabSort>\("newest_updated"\)/);
-  expect(`${owner}\n${admin}`).toContain('staleTime: 0');
-  expect(`${owner}\n${admin}`).toContain('refetchOnMount: "always"');
-  expect(`${owner}\n${admin}`).toContain('refetchOnWindowFocus: "always"');
-  expect(`${owner}\n${admin}`).not.toContain("refetchInterval");
-  expect(`${owner}\n${admin}`).toContain("AbortSignal.any([signal, sessionSignal])");
+  for (const [name, source] of [["owner", owner], ["admin", admin]] as const) {
+    expect(source, `${name} overview stale policy`).toContain('staleTime: 0');
+    expect(source, `${name} overview mount policy`).toContain('refetchOnMount: "always"');
+    expect(source, `${name} overview focus policy`).toContain('refetchOnWindowFocus: "always"');
+    expect(source, `${name} overview polling policy`).not.toContain("refetchInterval");
+    expect(source, `${name} overview combined abort signal`).toContain("AbortSignal.any([signal, sessionSignal])");
+  }
 
   expect(admin).toContain("getAdminLabs");
   expect(admin).toContain("labsQueryKeys.adminOverview");
@@ -316,11 +318,13 @@ describe("domain boundaries", () => {
     expect(() => assertDetail(`${admin}\nconst forbidden = LabDeleteDialog;`)).toThrow();
     expect(owner).toContain("labsQueryKeys.ownerTest");
     expect(owner).toContain("batch.open([testKey])");
-    for (const source of [owner, admin]) {
-      expect(source).toContain('refetchOnMount: "always"');
-      expect(source).toContain('refetchOnWindowFocus: "always"');
-      expect(source).toContain("AbortSignal.any([signal, sessionSignal])");
-      expect(source).not.toContain("refetchInterval");
+    expect(admin).toContain("isOtherAdminSubjectQuery");
+    expect(admin).toContain("queryClient.removeQueries");
+    for (const [name, source] of [["owner", owner], ["admin", admin]] as const) {
+      expect(source, `${name} detail mount policy`).toContain('refetchOnMount: "always"');
+      expect(source, `${name} detail focus policy`).toContain('refetchOnWindowFocus: "always"');
+      expect(source, `${name} detail combined abort signal`).toContain("AbortSignal.any([signal, sessionSignal])");
+      expect(source, `${name} detail polling policy`).not.toContain("refetchInterval");
     }
     for (const file of ["lab-test-view", "lab-history-chart", "lab-history-list", "lab-result-dialogs"]) {
       expect(read(`features/labs/${file}.tsx`)).not.toMatch(/@tanstack\/react-query|@\/lib\/api|useMutation|AuthProvider|SessionQueryProvider/);
@@ -351,6 +355,14 @@ describe("domain boundaries", () => {
       admin,
       `${presentation}\nconst leakedState = useState([]);`,
     )).toThrow();
+  });
+
+  it("removes selected-user Labs caches independently in both admin orchestrators", () => {
+    for (const path of ["components/AdminUserLabsPage.tsx", "components/AdminUserLabTestPage.tsx"]) {
+      const source = read(path);
+      expect(source, `${path} selected-subject predicate`).toContain("isOtherAdminSubjectQuery");
+      expect(source, `${path} selected-subject cleanup`).toContain("queryClient.removeQueries");
+    }
   });
 
   it("moves representative exclusively owned selectors without global duplicates", () => {

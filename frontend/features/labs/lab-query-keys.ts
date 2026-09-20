@@ -1,5 +1,17 @@
 const root = (actorId: string) => ["labs", actorId] as const;
 
+export function isOtherAdminSubjectQuery(
+  queryKey: readonly unknown[],
+  actorId: string,
+  principalId: string,
+): boolean {
+  return queryKey[0] === "labs"
+    && queryKey[1] === actorId
+    && queryKey[2] === "admin"
+    && typeof queryKey[3] === "string"
+    && queryKey[3] !== principalId;
+}
+
 export const labsQueryKeys = {
   catalog: (actorId: string) => [...root(actorId), "catalog"] as const,
   ownerRoot: (actorId: string) => [...root(actorId), "owner"] as const,

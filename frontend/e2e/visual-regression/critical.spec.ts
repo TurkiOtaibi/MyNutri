@@ -1,6 +1,7 @@
 import { type Page, type Route } from "@playwright/test";
 
-import type { ProfileResponse, TargetResponse, WeekSummary } from "../../lib/types";
+import type { LabOverviewResponse, LabTestDetailResponse, ProfileResponse, TargetResponse, WeekSummary } from "../../lib/types";
+import { catalogFixture, ferritinAge51Segments, ferritinFemaleHistory } from "../../tests/unit/fixtures/labs";
 import {
   API_TOKEN,
   API_URL,
@@ -106,6 +107,52 @@ function adminPage(items: ReturnType<typeof adminFood>[]) {
     total_pages: 1,
     categories: ["other"]
   };
+}
+
+const visualLabResults = ferritinFemaleHistory.map((result, index) => ({
+  ...result,
+  display_value: index === 0 ? "5.900" : "12.40",
+  display_unit: "ng/mL",
+  status: index === 0
+    ? { code: "low", label_ar: "منخفض", tone: "outside" }
+    : { code: "in_range", label_ar: "ضمن النطاق", tone: "within" },
+  reference_zones: ferritinAge51Segments[index].zones,
+})).reverse();
+
+const visualLabOverview: LabOverviewResponse = {
+  items: [{
+    test_key: "ferritin",
+    latest: visualLabResults[0],
+    last_updated_at: visualLabResults[0].updated_at,
+  }],
+  eligibility: { allowed: true, reason: null },
+  server_today: FIXED_VISUAL_DATE,
+  medical_rules_version: "labs-v1",
+  read_only: false,
+};
+
+const visualLabDetail: LabTestDetailResponse = {
+  test: catalogFixture.tests[0],
+  results: visualLabResults,
+  chart_zones: ferritinAge51Segments,
+  reference_at_date: visualLabResults[0].test_date,
+  reference_zones: visualLabResults[0].reference_zones,
+  eligibility: { allowed: true, reason: null },
+  server_today: FIXED_VISUAL_DATE,
+  medical_rules_version: "labs-v1",
+  read_only: false,
+};
+
+async function routeVisualLabs(page: Page, principalId?: string) {
+  await page.route((url) => isExactApiPath(url, "/labs/catalog"), (route) => route.fulfill({ json: catalogFixture }));
+  const overviewPath = principalId ? `/admin/users/${principalId}/labs` : "/labs";
+  const detailPath = principalId ? `/admin/users/${principalId}/labs/tests/ferritin` : "/labs/tests/ferritin";
+  await page.route((url) => isExactApiPath(url, overviewPath), (route) => route.fulfill({
+    json: { ...visualLabOverview, read_only: Boolean(principalId) },
+  }));
+  await page.route((url) => isExactApiPath(url, detailPath), (route) => route.fulfill({
+    json: { ...visualLabDetail, read_only: Boolean(principalId) },
+  }));
 }
 
 test.describe("critical visual regression", () => {
@@ -216,6 +263,44 @@ test.describe("critical visual regression", () => {
     await expect(page).toHaveScreenshot("foods-admin-actions-mobile.png", {
       timeout: 20_000
     });
+  });
+
+  test("Labs populated overview", async ({ page }) => {
+    await routeVisualLabs(page);
+    await page.goto("/labs?visual=overview");
+    await expect(page.locator('[data-testid="lab-row"][data-test-key="ferritin"]')).toBeVisible();
+    await stableRendering(page);
+    await expect(page).toHaveScreenshot("labs-overview-populated.png");
+  });
+
+  test("Labs populated batch values", async ({ page }) => {
+    await routeVisualLabs(page);
+    await page.goto("/labs?visual=batch");
+    await page.getByRole("button", { name: "إضافة نتائج", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "إضافة نتائج" });
+    await dialog.getByRole("button", { name: "التالي", exact: true }).click();
+    await page.locator('[data-panel-key="iron_studies"]').check();
+    await dialog.getByRole("button", { name: "التالي", exact: true }).click();
+    await page.locator("#lab-ferritin-value").fill("12.400");
+    await stableRendering(page);
+    await expect(dialog).toHaveScreenshot("labs-batch-populated.png");
+  });
+
+  test("Labs detail at an age-zone boundary", async ({ page }) => {
+    await routeVisualLabs(page);
+    await page.goto("/labs/ferritin?visual=age-zone");
+    await expect(page.getByTestId("lab-detail")).toBeVisible();
+    await stableRendering(page);
+    await expect(page.getByTestId("lab-detail")).toHaveScreenshot("labs-detail-age-zone.png");
+  });
+
+  test("Labs selected-user read-only admin detail", async ({ page }) => {
+    const principalId = "00000000-0000-4000-8000-000000000015";
+    await routeVisualLabs(page, principalId);
+    await page.goto(`/admin/users/${principalId}/labs/ferritin?visual=admin-readonly`);
+    await expect(page.getByTestId("lab-detail")).toContainText("للقراءة فقط");
+    await stableRendering(page);
+    await expect(page.getByTestId("lab-detail")).toHaveScreenshot("labs-admin-detail-readonly.png");
   });
 
 });

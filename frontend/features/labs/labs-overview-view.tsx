@@ -1,8 +1,33 @@
 import Link from "next/link";
 
 import type { LabCatalogResponse, LabOverviewResponse } from "@/lib/types";
-import type { LabListItem, LabSort } from "./lab-model";
+import { nextLabsView, type LabListItem, type LabSort, type LabsView } from "./lab-model";
 import styles from "./labs.module.css";
+
+export function LabsViewTabs({ view, onViewChange }: { view: LabsView; onViewChange: (view: LabsView) => void }) {
+  const activate = (next: LabsView, focus: boolean) => {
+    onViewChange(next);
+    if (focus) document.getElementById(`labs-tab-${next}`)?.focus();
+  };
+  return <div className={styles.tabs} role="tablist" aria-label="عرض التحاليل" aria-orientation="horizontal">
+    {([ ["owned", "تحاليلك"], ["all", "كل التحاليل"] ] as const).map(([key, label]) => <button
+      key={key}
+      id={`labs-tab-${key}`}
+      type="button"
+      role="tab"
+      aria-selected={view === key}
+      aria-controls={`labs-panel-${key}`}
+      tabIndex={view === key ? 0 : -1}
+      onClick={() => activate(key, false)}
+      onKeyDown={(event) => {
+        const next = nextLabsView(view, event.key);
+        if (!next) return;
+        event.preventDefault();
+        activate(next, true);
+      }}
+    >{label}</button>)}
+  </div>;
+}
 
 type LabsViewProps = {
   catalog: LabCatalogResponse;
@@ -78,10 +103,10 @@ function LabRows({ rows, emptyMessage, onAddTest, detailHref }: { rows: LabListI
     >
       <div className={styles.identity}>
         <strong>{detailHref ? <Link href={detailHref(item.test_key)}>{item.test.name_ar}</Link> : item.test.name_ar}</strong>
-        <span dir="ltr">{item.test.abbreviation ?? item.test.name_en}</span>
+        <bdi dir="ltr">{item.test.abbreviation ?? item.test.name_en}</bdi>
       </div>
       {item.latest ? <div className={styles.latest}>
-        <strong dir="ltr">{item.latest.display_value} {item.latest.display_unit}</strong>
+        <strong><bdi dir="ltr">{item.latest.display_value} {item.latest.display_unit}</bdi></strong>
         <span className={styles.status} data-tone={item.latest.status.tone}>{item.latest.status.label_ar}</span>
         <time dateTime={item.latest.test_date}>{formatDate(item.latest.test_date)} · {item.latest.test_date}</time>
       </div> : <div className={styles.latest}><span className={styles.noResult}>لا توجد نتيجة مسجلة</span>
