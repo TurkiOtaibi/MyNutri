@@ -1245,3 +1245,119 @@ def test_configured_engine_hides_lab_parameters_in_debug_logs(caplog):
         engine_log.handlers[:] = original_handlers
         engine_log.setLevel(original_level)
         engine_log.propagate = original_propagate
+
+
+@pytest.mark.parametrize("dependency_scope,error_kind", [
+    ("request", "http"), ("request", "domain"),
+    ("function", "http"), ("function", "domain"),
+])
+def test_http_intentional_teardown_preserves_contract(dependency_scope, error_kind, caplog):
+    from fastapi import Depends, FastAPI, HTTPException, Response
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.testclient import TestClient
+    from app.api.routes.labs import LabsRoute
+    from app.services.labs_errors import LabValidationError, field_error
+
+    isolated_app = FastAPI()
+    isolated_app.router.route_class = LabsRoute
+    isolated_app.add_middleware(CORSMiddleware, allow_origins=["https://labs.example.test"],
+                               expose_headers=["Idempotent-Replayed"])
+
+    def cleanup():
+        yield
+        if error_kind == "http":
+            raise HTTPException(403, detail={"code": "FORBIDDEN"}, headers={
+                "WWW-Authenticate": "Bearer", "X-Test": "retained", "cache-control": "public",
+            })
+        raise LabValidationError(403, [field_error("LAB_READ_ONLY")])
+
+    @isolated_app.get("/labs")
+    def endpoint(response: Response, _=Depends(cleanup, scope=dependency_scope)):
+        response.headers["Idempotent-Replayed"] = "false"
+        return {"ok": True}
+
+    with TestClient(isolated_app) as client:
+        response = client.get("/labs", headers={"Origin": "https://labs.example.test"})
+    assert response.status_code == 403
+    assert response.headers.get_list("Cache-Control") == ["no-store"]
+    assert response.headers["Access-Control-Allow-Origin"] == "https://labs.example.test"
+    assert response.headers["Access-Control-Expose-Headers"] == "Idempotent-Replayed"
+    assert "Idempotent-Replayed" not in response.headers
+    if error_kind == "http":
+        assert response.json() == {"detail": {"code": "FORBIDDEN"}}
+        assert response.headers["WWW-Authenticate"] == "Bearer"
+        assert response.headers["X-Test"] == "retained"
+    else:
+        assert response.json() == {"detail": [field_error("LAB_READ_ONLY").model_dump()]}
+    assert "Labs request failed" not in caplog.text
+
+
+def test_http_unrelated_runtime_error_with_http_cause_remains_sanitized(caplog):
+    from fastapi import Depends, FastAPI, HTTPException
+    from fastapi.testclient import TestClient
+    from app.api.routes.labs import LabsRoute
+
+    isolated_app = FastAPI()
+    isolated_app.router.route_class = LabsRoute
+
+    def cleanup():
+        yield
+        raise RuntimeError("private-runtime-sentinel") from HTTPException(
+            418, detail="private-http-sentinel", headers={"X-Private": "secret-sentinel"},
+        )
+
+    @isolated_app.get("/labs")
+    def endpoint(_=Depends(cleanup)):
+        return {"ok": True}
+
+    with TestClient(isolated_app) as client:
+        response = client.get("/labs")
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal Server Error"}
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "X-Private" not in response.headers
+    assert "sentinel" not in response.text + caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
+@pytest.mark.parametrize("dependency_scope", ["request", "function"])
+@pytest.mark.parametrize("kind", ["cancel", "base"])
+def test_http_teardown_cancellation_and_baseexceptions_propagate(dependency_scope, kind, caplog):
+    import asyncio
+    from fastapi import Depends, FastAPI
+    from app.api.routes.labs import LabsRoute
+
+    class StopSignal(BaseException):
+        pass
+
+    failure = asyncio.CancelledError() if kind == "cancel" else StopSignal()
+    isolated_app = FastAPI()
+    isolated_app.router.route_class = LabsRoute
+
+    async def cleanup():
+        yield
+        raise failure
+
+    @isolated_app.get("/labs")
+    def endpoint(_=Depends(cleanup, scope=dependency_scope)):
+        return {"ok": True}
+
+    sent = []
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+        "method": "GET", "scheme": "http", "path": "/labs", "raw_path": b"/labs",
+        "query_string": b"", "root_path": "", "headers": [],
+        "client": ("127.0.0.1", 12345), "server": ("127.0.0.1", 80),
+    }
+    with pytest.raises(type(failure)) as caught:
+        asyncio.run(isolated_app(scope, receive, send))
+    assert caught.value is failure
+    assert sent == []
+    assert "Labs request failed" not in caplog.text

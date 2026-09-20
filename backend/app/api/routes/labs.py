@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import SkipValidation
 from sqlmodel import Session
+from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException
 from starlette.types import Message, Receive, Scope, Send
 
@@ -46,22 +47,40 @@ class LabsRoute(APIRoute):
         messages: list[Message] = []
 
         async def retain(message: Message) -> None:
+            # Function-scope teardown HTTP errors may be rendered by Starlette,
+            # bypassing private_handler. Apply the same policy to every response.
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)["Cache-Control"] = "no-store"
             messages.append(message)
 
         try:
             await super().handle(scope, receive, retain)
-        except HTTPException as error:
-            response = JSONResponse(
-                status_code=error.status_code, content={"detail": error.detail},
-                headers={**(error.headers or {}), "Cache-Control": "no-store"},
-            )
-            await response(scope, receive, send)
         except Exception as error:
-            logger.error("Labs request failed: %s", type(error).__name__)
-            response = JSONResponse(
-                status_code=500, content={"detail": "Internal Server Error"},
-                headers={"Cache-Control": "no-store"},
-            )
+            # The locked Starlette wrapper marks our retained response as started
+            # and wraps a later handled HTTP exception. Recover only that exact
+            # wrapper, never an arbitrary exception's HTTP cause/context chain.
+            if (
+                type(error) is RuntimeError
+                and error.args == ("Caught handled exception, but response already started.",)
+                and isinstance(error.__cause__, HTTPException)
+                and messages
+            ):
+                error = error.__cause__
+            messages.clear()
+            if isinstance(error, HTTPException):
+                response = JSONResponse(
+                    status_code=error.status_code, content={"detail": error.detail},
+                    headers=error.headers,
+                )
+            elif isinstance(error, LabValidationError):
+                response = JSONResponse(
+                    status_code=error.status_code,
+                    content={"detail": [item.model_dump() for item in error.errors]},
+                )
+            else:
+                logger.error("Labs request failed: %s", type(error).__name__)
+                response = JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
+            response.headers["Cache-Control"] = "no-store"
             await response(scope, receive, send)
         else:
             for message in messages:
