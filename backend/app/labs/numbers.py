@@ -14,7 +14,7 @@ _PLAIN = re.compile(r"[0-9]+(?:\.[0-9]+)?", re.ASCII)
 def normalize_decimal_text(raw: str) -> str:
     if not isinstance(raw, str):
         raise ValueError("A plain decimal string is required")
-    normalized = raw.translate(_DIGITS)
+    normalized = raw.strip().translate(_DIGITS)
     if _PLAIN.fullmatch(normalized) is None:
         raise ValueError("A nonnegative plain decimal is required")
     integer, dot, fractional = normalized.partition(".")
