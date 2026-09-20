@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from decimal import Decimal
 from fractions import Fraction
 from importlib.resources import files
@@ -265,6 +265,14 @@ def test_reference_compilation_omits_only_unreachable_zero_low_zones() -> None:
         assert zones[0].low == Fraction(0)
         assert zones[0].low_inclusive is True
 
+    compiler_input = replace(
+        catalog.tests["eosinophils_pct"], omit_unreachable_low=False, rule_slices=()
+    )
+    assert [zone.status for zone in compile_rule_slices(compiler_input)[0].zones] == [
+        "in_range",
+        "high",
+    ]
+
     zones = catalog.tests["mcv"].rule_slices[0].zones
     assert [(zone.status, zone.low, zone.high) for zone in zones] == [
         ("low", None, Fraction(391, 5)),
@@ -375,6 +383,14 @@ def test_catalog_graph_is_immutable() -> None:
         (
             lambda raw: raw["tests"][0]["rule"]["bands"][1].update({"min": "5.8"}),
             "gapped decision zones",
+        ),
+        (
+            lambda raw: raw["tests"][21].update({"omit_unreachable_low": False}),
+            "zero lower-bound invariant",
+        ),
+        (
+            lambda raw: raw["tests"][21]["rule"].update({"low_inclusive": False}),
+            "zero lower-bound invariant",
         ),
         (
             lambda raw: raw["tests"][0].update(

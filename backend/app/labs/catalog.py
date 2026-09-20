@@ -283,11 +283,13 @@ def _parse_rule(raw_value: Any, context: str, minimum_age: int, maximum_age: int
     return SexRule(kind=kind, male=children["male"], female=children["female"])
 
 
-def _reference_zones(rule: ReferenceRule, omit_unreachable_low: bool) -> tuple[Zone, ...]:
+def _reference_zones(rule: ReferenceRule) -> tuple[Zone, ...]:
     low = Fraction(rule.low)
     high = Fraction(rule.high)
+    if low == 0 and not rule.low_inclusive:
+        raise ValueError("zero lower-bound invariant requires inclusive zero")
     zones: list[Zone] = []
-    if not omit_unreachable_low:
+    if low != 0:
         zones.append(
             Zone(
                 status="low",
@@ -323,7 +325,6 @@ def _branch_slices(
     sex: Sex,
     minimum_age: int,
     maximum_age: int | None,
-    omit_unreachable_low: bool,
 ) -> tuple[RuleSlice, ...]:
     if isinstance(branch, ReferenceRule):
         return (
@@ -331,7 +332,7 @@ def _branch_slices(
                 sex=sex,
                 min_age=minimum_age,
                 max_age_exclusive=maximum_age,
-                zones=_reference_zones(branch, omit_unreachable_low),
+                zones=_reference_zones(branch),
             ),
         )
     if isinstance(branch, DecisionRule):
@@ -357,7 +358,7 @@ def _branch_slices(
             sex=sex,
             min_age=band.min_age,
             max_age_exclusive=band.max_age_exclusive,
-            zones=_reference_zones(band.rule, omit_unreachable_low),
+            zones=_reference_zones(band.rule),
         )
         for band in branch.age_bands
     )
@@ -377,7 +378,6 @@ def compile_rule_slices(test: TestDefinition) -> tuple[RuleSlice, ...]:
             sex,
             test.min_age,
             test.max_age_exclusive,
-            test.omit_unreachable_low,
         )
     )
 
@@ -513,19 +513,24 @@ def _parse_test(value: Any, index: int) -> TestDefinition:
     omit_unreachable_low = _expect_bool(
         raw["omit_unreachable_low"], f"{context}.omit_unreachable_low"
     )
+    branches: tuple[RuleBranch, ...]
+    if isinstance(raw_rule, SexRule):
+        branches = (raw_rule.male, raw_rule.female)
+    else:
+        branches = (raw_rule,)
+    reference_rules = tuple(
+        band.rule
+        for branch in branches
+        for band in (branch.age_bands if isinstance(branch, AgeRule) else ())
+    ) + tuple(branch for branch in branches if isinstance(branch, ReferenceRule))
     if omit_unreachable_low:
-        branches: tuple[RuleBranch, ...]
-        if isinstance(raw_rule, SexRule):
-            branches = (raw_rule.male, raw_rule.female)
-        else:
-            branches = (raw_rule,)
-        reference_rules = tuple(
-            band.rule
-            for branch in branches
-            for band in (branch.age_bands if isinstance(branch, AgeRule) else ())
-        ) + tuple(branch for branch in branches if isinstance(branch, ReferenceRule))
-        if not reference_rules or any(rule.low != 0 for rule in reference_rules):
-            raise ValueError(f"{context} cannot omit a reachable low zone")
+        valid_omission = bool(reference_rules) and all(
+            rule.low == 0 and rule.low_inclusive for rule in reference_rules
+        )
+        if not valid_omission:
+            raise ValueError(f"{context} violates the zero lower-bound invariant")
+    elif any(rule.low == 0 for rule in reference_rules):
+        raise ValueError(f"{context} violates the zero lower-bound invariant")
     test = TestDefinition(
         key=_expect_string(raw["test_key"], f"{context}.test_key"),
         name_ar=_expect_string(raw["name_ar"], f"{context}.name_ar"),
