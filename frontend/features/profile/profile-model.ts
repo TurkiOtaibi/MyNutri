@@ -65,6 +65,7 @@ export type TargetPlanSubmission = {
   effectiveFrom: string;
   preview: TargetResponse & { preview_hash: string };
   idempotencyKey: string;
+  previouslyConfirmedBirthDate: string | null;
 };
 export type TargetPlanWritePhase =
   | { kind: "idle" }
@@ -100,6 +101,16 @@ export function blankDraft(): DraftProfile {
     selected_cut_intensity: 0.2,
     protein_per_kg: String(PROTEIN_DEFAULT),
     fat_percent: String(FAT_DEFAULTS.male * 100)
+  };
+}
+
+export function withUpdatedSex(current: DraftProfile, nextSex: Sex): DraftProfile {
+  const currentFat = normalizeNumber(current.fat_percent);
+  const previousDefault = FAT_DEFAULTS[current.sex] * 100;
+  return {
+    ...current,
+    sex: nextSex,
+    fat_percent: currentFat === previousDefault ? String(FAT_DEFAULTS[nextSex] * 100) : current.fat_percent
   };
 }
 
@@ -193,6 +204,25 @@ export function profileMatchesAcceptedPlan(
     normalizeDraft(toDraft(profile)) === normalizeDraft(toDraft(submission.payload));
 }
 
+export function targetPlanSubmissionMatches(
+  submission: Pick<TargetPlanSubmission, "payload" | "effectiveFrom"> & {
+    preview: Pick<TargetPlanSubmission["preview"], "preview_hash">;
+  },
+  payload: ProfileInput,
+  effectiveFrom: string,
+  previewHash: string
+): boolean {
+  return normalizeDraft(toDraft(submission.payload)) === normalizeDraft(toDraft(payload)) &&
+    submission.effectiveFrom === effectiveFrom &&
+    submission.preview.preview_hash === previewHash;
+}
+
+export function withoutProfileFieldError(errors: FieldErrors, field: keyof FieldErrors): FieldErrors {
+  const next = { ...errors };
+  delete next[field];
+  return next;
+}
+
 export function formatArabicGregorianDate(input: string): string {
   const [year, month, day] = input.split("-").map(Number);
   if (!year || !month || !day) return "غير محدد";
@@ -203,8 +233,19 @@ export function formatTargetNumber(value: number): string {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1, useGrouping: false }).format(value);
 }
 
+export function didConfirmedBirthDateChange(previous: string | null, accepted: string): boolean {
+  return previous !== accepted;
+}
+
 export function mapProfileApiErrors(error: unknown): FieldErrors {
-  if (!(error instanceof ApiError) || !Array.isArray(error.detail)) return {};
+  if (!(error instanceof ApiError)) return {};
+  if (error.code === "PROFILE_SEX_IMMUTABLE") {
+    return { sex: "لا يمكن تعديل الجنس بعد حفظ الملف الشخصي." };
+  }
+  if (error.code === "LABS_ADULT_HISTORY_REQUIRED") {
+    return { birth_date: "لا يمكن تعديل تاريخ الميلاد لأنه يجعل نتائج تحاليل مسجلة قبل عمر 18 سنة." };
+  }
+  if (!Array.isArray(error.detail)) return {};
   const mapped: FieldErrors = {};
   for (const item of error.detail as Array<{ loc?: unknown[] }>) {
     const field = item.loc?.at(-1);

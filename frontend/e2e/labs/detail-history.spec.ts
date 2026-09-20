@@ -1,7 +1,9 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { LabTestDetailResponse } from "../../lib/types";
-import { expect, navigateToOwnerLabs, offsetIsoDate, test, waitForLabsGet } from "./helpers";
+import { API_URL, expect, navigateToOwnerLabs, offsetIsoDate, test, waitForLabsGet } from "./helpers";
+
+const API_ORIGIN = new URL(API_URL).origin;
 
 test.use({ labsHasTouch: true });
 
@@ -182,4 +184,87 @@ test("focus refetch removes deleted selected point and defaults to new latest", 
   await labsApi.patch(detail.results[1].id, { test_date: detail.results[1].test_date, entered_unit: "%", entered_value: "6.7" });
   await openDetail(page, "hba1c");
   await expectReferences(page, (await labsApi.detail("hba1c")).results[0]);
+});
+
+test.describe("accepted Profile DOB freshness", () => {
+  test.use({ initialLabsProfile: { sex: "female", birth_date: "1970-01-01" } });
+
+  test("accepted DOB survives failed reconciliation and retry, then refreshes age zones inside 20 seconds", async ({ labsPage: page, labsApi }) => {
+    for (const date of ["2020-12-31", "2021-01-01", "2022-01-01"]) {
+      await labsApi.create(date, [{ test_key: "ferritin", entered_value: "8", entered_unit: "ng/mL" }]);
+    }
+    const original = await labsApi.detail("ferritin");
+    expect(original.results.map((result) => result.age_years)).toEqual([52, 51, 50]);
+    expect(original.chart_zones[0].to_date_exclusive).toBe("2021-01-01");
+
+    let detailReads = 0;
+    let catalogReads = 0;
+    let overviewReads = 0;
+    let accepted = false;
+    let allowProfileRead = false;
+    let targetPlanWrites = 0;
+    await page.route("**/labs/**", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.origin === API_ORIGIN && route.request().method() === "GET" && url.pathname === "/labs/tests/ferritin") detailReads += 1;
+      if (url.origin === API_ORIGIN && route.request().method() === "GET" && url.pathname === "/labs/catalog") catalogReads += 1;
+      await route.continue();
+    });
+    await page.route("**/labs", async (route) => {
+      if (new URL(route.request().url()).origin === API_ORIGIN && route.request().method() === "GET" && route.request().resourceType() === "fetch") overviewReads += 1;
+      await route.continue();
+    });
+    await page.route("**/target-plans", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      targetPlanWrites += 1;
+      const response = await route.fetch();
+      accepted = response.status() === 201;
+      await route.fulfill({ response });
+    });
+    await page.route("**/profile", async (route) => {
+      if (route.request().method() === "GET" && route.request().resourceType() === "fetch" && accepted && !allowProfileRead) {
+        return route.fulfill({ status: 503, contentType: "application/json", json: { detail: "unavailable" } });
+      }
+      await route.continue();
+    });
+
+    await navigateToOwnerLabs(page);
+    await openDetail(page, "ferritin");
+    const readsBeforePreview = detailReads;
+    await page.goto("/profile?labs-dob-accepted=1");
+    await expect(page.getByText("لا يمكن تعديل الجنس بعد حفظ الملف الشخصي.", { exact: true })).toBeVisible();
+    await page.getByLabel("تاريخ الميلاد").fill("1971-01-01");
+    await expect(page.getByRole("region", { name: "الأهداف المتوقعة بعد الحفظ" })).toBeVisible();
+    expect(detailReads).toBe(readsBeforePreview);
+    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+    await page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" }).getByRole("button", { name: "حفظ الخطة" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "تعذر تحديث البيانات المعروضة" })).toBeVisible();
+    await expect(page.getByLabel("تاريخ الميلاد")).toHaveValue("1971-01-01");
+    await expect(page.getByText("لا يمكن تعديل الجنس بعد حفظ الملف الشخصي.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /تغيير الجنس/ })).toHaveCount(0);
+    expect(targetPlanWrites).toBe(1);
+
+    allowProfileRead = true;
+    await page.getByRole("button", { name: "إعادة تحديث البيانات" }).click();
+    await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
+    expect(targetPlanWrites).toBe(1);
+
+    const revised = await labsApi.detail("ferritin");
+    expect(revised.results.map((result) => result.age_years)).toEqual([51, 50, 49]);
+    expect(revised.chart_zones[0].to_date_exclusive).toBe("2022-01-01");
+    const readsBeforeOpen = detailReads;
+    await openDetail(page, "ferritin");
+    expect(detailReads).toBe(readsBeforeOpen + 1);
+    await expectReferences(page, revised.results[0]);
+
+    const focusRefresh = waitForLabsGet(page, "/labs/tests/ferritin");
+    const readsBeforeFocus = detailReads;
+    await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
+    expect((await focusRefresh).status()).toBe(200);
+    expect(detailReads).toBe(readsBeforeFocus + 1);
+
+    await page.clock.install({ time: new Date() });
+    const readsBeforeMinute = { detailReads, catalogReads, overviewReads };
+    await page.clock.fastForward(60_000);
+    expect({ detailReads, catalogReads, overviewReads }).toEqual(readsBeforeMinute);
+  });
 });

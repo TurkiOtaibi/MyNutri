@@ -9,6 +9,7 @@ import { applyProfileThroughTargetPlan } from "../profile-api";
 
 const output = resolve(process.cwd(), "test-results", "manual-capture", "profile-targets-redesign");
 const headers = { Authorization: `Bearer ${API_TOKEN}` };
+const LOCAL_TEST_PASSWORD = "Acceptance-only-password-2026!";
 const API_ORIGIN = new URL(API_URL).origin;
 const profileApiPattern = (url: URL) => url.origin === API_ORIGIN && url.pathname === "/profile";
 const targetPlanApiPattern = (url: URL) =>
@@ -22,7 +23,7 @@ function inputFrom(profile: ProfileResponse): ProfileInput {
   };
 }
 
-test("@profile @visual capture production Profile and Targets states", async ({ page, request }) => {
+test("@profile @visual capture production Profile and Targets states", async ({ browser, page, request }) => {
   await mkdir(output, { recursive: true });
   const originalResponse = await request.get(`${API_URL}/profile`, { headers });
   const original = (await originalResponse.json()) as ProfileResponse;
@@ -34,10 +35,30 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
     await expect(page.getByRole("heading", { name: "بياناتك وأهدافك" })).toBeVisible();
     await page.screenshot({ path: resolve(output, "01-profile-loaded-390.png"), fullPage: true });
     await page.getByRole("region", { name: "بيانات الجسم" }).screenshot({ path: resolve(output, "02-body-data-card-390.png") });
+    await expect(page.getByText("لا يمكن تعديل الجنس بعد حفظ الملف الشخصي.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /تغيير الجنس/ })).toHaveCount(0);
 
-    await page.getByRole("button", { name: /تغيير الجنس/ }).click();
-    await page.screenshot({ path: resolve(output, "03-sex-sheet-390.png") });
-    await page.keyboard.press("Escape");
+    const freshContext = await browser.newContext({
+      baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000",
+      storageState: undefined,
+      locale: "ar-SA",
+      serviceWorkers: "block"
+    });
+    const freshPage = await freshContext.newPage();
+    try {
+      await freshPage.setViewportSize({ width: 390, height: 844 });
+      await freshPage.goto("/auth/login");
+      await freshPage.locator('input[type="email"]').fill(`profile-visual-${Date.now()}@example.test`);
+      await freshPage.locator('input[type="password"]').fill(LOCAL_TEST_PASSWORD);
+      await freshPage.locator('button[type="submit"]').click();
+      await freshPage.waitForURL(/\/diary$/);
+      await freshPage.goto("/profile?visual-first-profile=1");
+      await freshPage.getByRole("button", { name: /تغيير الجنس/ }).click();
+      await expect(freshPage.getByRole("dialog", { name: "اختر الجنس" })).toBeVisible();
+      await freshPage.screenshot({ path: resolve(output, "03-sex-sheet-390.png") });
+    } finally {
+      await freshContext.close();
+    }
     await page.getByRole("button", { name: /تغيير مستوى النشاط/ }).click();
     await page.screenshot({ path: resolve(output, "04-activity-sheet-390.png") });
     await page.keyboard.press("Escape");
