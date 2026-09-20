@@ -471,6 +471,257 @@ export interface HTTPValidationError {
   detail?: ValidationError[];
 }
 
+/** LabCatalogCategory */
+export interface LabCatalogCategory {
+  /** Key */
+  key: string;
+  /** Name Ar */
+  name_ar: string;
+  /** Order */
+  order: number;
+}
+
+/** LabCatalogPanel */
+export interface LabCatalogPanel {
+  /** Key */
+  key: string;
+  /** Name Ar */
+  name_ar: string;
+  /** Name En */
+  name_en: string;
+  /** Test Keys */
+  test_keys: string[];
+}
+
+/** LabCatalogResponse */
+export interface LabCatalogResponse {
+  /** Categories */
+  categories: LabCatalogCategory[];
+  /** Medical Rules Version */
+  medical_rules_version: string;
+  /** Panels */
+  panels: LabCatalogPanel[];
+  /** Tests */
+  tests: LabCatalogTest[];
+}
+
+/** LabCatalogTest */
+export interface LabCatalogTest {
+  /** Abbreviation */
+  abbreviation: string | null;
+  /** Canonical Unit */
+  canonical_unit: string;
+  /** Default Input Unit */
+  default_input_unit: string;
+  /** Fasting Assumption */
+  fasting_assumption: string;
+  /** Measurement */
+  measurement: string;
+  /** Name Ar */
+  name_ar: string;
+  /** Name En */
+  name_en: string;
+  /** Panels */
+  panels: string[];
+  /** Primary Category */
+  primary_category: string;
+  /** Specimen Context */
+  specimen_context: string;
+  /** Supported Units */
+  supported_units: string[];
+  /** Test Key */
+  test_key: string;
+}
+
+/** LabChartZoneSegment */
+export interface LabChartZoneSegment {
+  /** Age Min */
+  age_min: number;
+  /**
+   * From Date
+   * @format date
+   */
+  from_date: string;
+  /**
+   * To Date Exclusive
+   * @format date
+   */
+  to_date_exclusive: string;
+  /** Zones */
+  zones: LabStatusZone[];
+}
+
+/** LabCreateReceipt */
+export interface LabCreateReceipt {
+  /**
+   * Receipt Version
+   * @default 1
+   */
+  receipt_version?: 1;
+  /** Result Ids */
+  result_ids: string[];
+}
+
+/** LabCreateRow */
+export interface LabCreateRow {
+  /** Entered Unit */
+  entered_unit: string;
+  /** Entered Value */
+  entered_value: string;
+  /** Test Key */
+  test_key: string;
+}
+
+/** LabEligibility */
+export interface LabEligibility {
+  /** Allowed */
+  allowed: boolean;
+  /** Reason */
+  reason?: "profile_required" | "adult_only" | "read_only" | null;
+}
+
+/** LabErrorResponse */
+export interface LabErrorResponse {
+  /** Detail */
+  detail: LabFieldError[];
+}
+
+/** LabFieldError */
+export interface LabFieldError {
+  /** Code */
+  code?: string | null;
+  /** Field */
+  field?: string | null;
+  /** Loc */
+  loc: (string | number)[];
+  /** Msg */
+  msg: string;
+  /** Test Key */
+  test_key?: string | null;
+  /** Type */
+  type: string;
+}
+
+/** LabOverviewItem */
+export interface LabOverviewItem {
+  /**
+   * Last Updated At
+   * @format date-time
+   */
+  last_updated_at: string;
+  latest: LabResultResponse;
+  /** Test Key */
+  test_key: string;
+}
+
+/** LabOverviewResponse */
+export interface LabOverviewResponse {
+  eligibility: LabEligibility;
+  /** Items */
+  items: LabOverviewItem[];
+  /** Medical Rules Version */
+  medical_rules_version: string;
+  /** Read Only */
+  read_only: boolean;
+  /**
+   * Server Today
+   * @format date
+   */
+  server_today: string;
+}
+
+/** LabResultResponse */
+export interface LabResultResponse {
+  /** Age Years */
+  age_years: number;
+  /**
+   * Created At
+   * @format date-time
+   */
+  created_at: string;
+  /** Display Is Approximate */
+  display_is_approximate: boolean;
+  /** Display Unit */
+  display_unit: string;
+  /** Display Value */
+  display_value: string;
+  /** Entered Unit */
+  entered_unit: string;
+  /** Entered Value */
+  entered_value: string;
+  /**
+   * Id
+   * @format uuid
+   */
+  id: string;
+  /** Medical Rules Version */
+  medical_rules_version: string;
+  /** Reference Zones */
+  reference_zones: LabStatusZone[];
+  status: LabStatus;
+  /**
+   * Test Date
+   * @format date
+   */
+  test_date: string;
+  /** Test Key */
+  test_key: string;
+  /**
+   * Updated At
+   * @format date-time
+   */
+  updated_at: string;
+}
+
+/** LabStatus */
+export interface LabStatus {
+  /** Code */
+  code: string;
+  /** Label Ar */
+  label_ar: string;
+  /** Tone */
+  tone: string;
+}
+
+/** LabStatusZone */
+export interface LabStatusZone {
+  /** High */
+  high: string | null;
+  /** High Inclusive */
+  high_inclusive: boolean;
+  /** Low */
+  low: string | null;
+  /** Low Inclusive */
+  low_inclusive: boolean;
+  status: LabStatus;
+}
+
+/** LabTestDetailResponse */
+export interface LabTestDetailResponse {
+  /** Chart Zones */
+  chart_zones: LabChartZoneSegment[];
+  eligibility: LabEligibility;
+  /** Medical Rules Version */
+  medical_rules_version: string;
+  /** Read Only */
+  read_only: boolean;
+  /**
+   * Reference At Date
+   * @format date
+   */
+  reference_at_date: string;
+  /** Reference Zones */
+  reference_zones: LabStatusZone[];
+  /** Results */
+  results: LabResultResponse[];
+  /**
+   * Server Today
+   * @format date
+   */
+  server_today: string;
+  test: LabCatalogTest;
+}
+
 /** LegacyNutritionResponse */
 export interface LegacyNutritionResponse {
   /** Folate Mcg */
@@ -1078,6 +1329,52 @@ export namespace Admin {
     export type RequestHeaders = {};
     export type ResponseBody = AdminDiaryPage;
   }
+
+  /**
+   * No description
+   * @tags admin
+   * @name UserLabsAdminUsersPrincipalIdLabsGet
+   * @summary User Labs
+   * @request GET:/admin/users/{principal_id}/labs
+   * @secure
+   */
+  export namespace UserLabsAdminUsersPrincipalIdLabsGet {
+    export type RequestParams = {
+      /**
+       * Principal Id
+       * @format uuid
+       */
+      principalId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = LabOverviewResponse;
+  }
+
+  /**
+   * No description
+   * @tags admin
+   * @name UserLabTestAdminUsersPrincipalIdLabsTestsTestKeyGet
+   * @summary User Lab Test
+   * @request GET:/admin/users/{principal_id}/labs/tests/{test_key}
+   * @secure
+   */
+  export namespace UserLabTestAdminUsersPrincipalIdLabsTestsTestKeyGet {
+    export type RequestParams = {
+      /**
+       * Principal Id
+       * @format uuid
+       */
+      principalId: string;
+      /** Test Key */
+      testKey: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = LabTestDetailResponse;
+  }
 }
 
 export namespace Diary {
@@ -1542,6 +1839,144 @@ export namespace Health {
     export type RequestBody = never;
     export type RequestHeaders = {};
     export type ResponseBody = Record<string, string>;
+  }
+}
+
+export namespace Labs {
+  /**
+   * No description
+   * @tags labs
+   * @name AddResultsLabsResultsPost
+   * @summary Add Results
+   * @request POST:/labs/results
+   * @secure
+   */
+  export namespace AddResultsLabsResultsPost {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = {
+      /**
+       * Results
+       * @maxItems 51
+       * @minItems 1
+       */
+      results: LabCreateRow[];
+      /**
+       * Test Date
+       * @format date
+       */
+      test_date: string;
+    };
+    export type RequestHeaders = {
+      /** Idempotency-Key */
+      "Idempotency-Key": string;
+    };
+    export type ResponseBody = LabCreateReceipt;
+  }
+
+  /**
+   * No description
+   * @tags labs
+   * @name EditResultLabsResultsResultIdPatch
+   * @summary Edit Result
+   * @request PATCH:/labs/results/{result_id}
+   * @secure
+   */
+  export namespace EditResultLabsResultsResultIdPatch {
+    export type RequestParams = {
+      /**
+       * Result Id
+       * @format uuid
+       */
+      resultId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = {
+      /** Entered Unit */
+      entered_unit: string;
+      /** Entered Value */
+      entered_value: string;
+      /**
+       * Test Date
+       * @format date
+       */
+      test_date: string;
+    };
+    export type RequestHeaders = {};
+    export type ResponseBody = LabResultResponse;
+  }
+
+  /**
+   * No description
+   * @tags labs
+   * @name ReadCatalogLabsCatalogGet
+   * @summary Read Catalog
+   * @request GET:/labs/catalog
+   * @secure
+   */
+  export namespace ReadCatalogLabsCatalogGet {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = LabCatalogResponse;
+  }
+
+  /**
+   * No description
+   * @tags labs
+   * @name ReadOverviewLabsGet
+   * @summary Read Overview
+   * @request GET:/labs
+   * @secure
+   */
+  export namespace ReadOverviewLabsGet {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = LabOverviewResponse;
+  }
+
+  /**
+   * No description
+   * @tags labs
+   * @name ReadTestLabsTestsTestKeyGet
+   * @summary Read Test
+   * @request GET:/labs/tests/{test_key}
+   * @secure
+   */
+  export namespace ReadTestLabsTestsTestKeyGet {
+    export type RequestParams = {
+      /** Test Key */
+      testKey: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = LabTestDetailResponse;
+  }
+
+  /**
+   * No description
+   * @tags labs
+   * @name RemoveResultLabsResultsResultIdDelete
+   * @summary Remove Result
+   * @request DELETE:/labs/results/{result_id}
+   * @secure
+   */
+  export namespace RemoveResultLabsResultsResultIdDelete {
+    export type RequestParams = {
+      /**
+       * Result Id
+       * @format uuid
+       */
+      resultId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = void;
   }
 }
 

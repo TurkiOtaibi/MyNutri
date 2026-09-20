@@ -1009,3 +1009,239 @@ def test_reinterpret_accepted_dob_change_moves_ferritin_birthday(
     assert (before.reference_zones[1].low, after.reference_zones[1].low) == ("6", "11")
     assert after.chart_zones[0].age_min == after.results[0].age_years == 51
     assert session.exec(select(LabResult)).one().model_dump() == facts_before
+
+
+def http_payload(**overrides):
+    return {
+        "test_date": "2026-09-19",
+        "results": [{"test_key": "hba1c", "entered_value": "5.270", "entered_unit": "%"}],
+        **overrides,
+    }
+
+
+def test_http_labs_crud_receipt_replay_and_cors(labs_client):
+    from app.main import settings
+
+    catalog = labs_client.get("/labs/catalog")
+    assert catalog.status_code == 200
+    assert len(catalog.json()["tests"]) == 51
+    assert len(catalog.json()["categories"]) == 15
+    assert len(catalog.json()["panels"]) == 7
+    assert not {"sources", "provenance", "content_sha256", "rule_slices"} & set(catalog.json())
+    headers = {"Idempotency-Key": "http-create", "Origin": settings.allowed_origins[0]}
+    response = labs_client.post("/labs/results", json=http_payload(), headers=headers)
+    assert response.status_code == 201, response.text
+    assert response.headers["Idempotent-Replayed"] == "false"
+    assert response.headers["Access-Control-Allow-Origin"] == settings.allowed_origins[0]
+    assert "idempotent-replayed" in response.headers["Access-Control-Expose-Headers"].lower()
+    receipt = response.json()
+    assert set(receipt) == {"receipt_version", "result_ids"}
+    replay = labs_client.post("/labs/results", json=http_payload(), headers=headers)
+    assert replay.status_code == 201 and replay.json() == receipt
+    assert replay.headers["Idempotent-Replayed"] == "true"
+    conflict = labs_client.post("/labs/results", json=http_payload(test_date="2026-09-18"), headers=headers)
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"][0]["code"] == "LAB_IDEMPOTENCY_CONFLICT"
+    duplicate = labs_client.post("/labs/results", json=http_payload(), headers={"Idempotency-Key": "other"})
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"][0]["code"] == "LAB_DUPLICATE"
+    overview = labs_client.get("/labs")
+    detail = labs_client.get("/labs/tests/hba1c")
+    assert overview.status_code == detail.status_code == 200
+    assert overview.json()["items"][0]["latest"] == detail.json()["results"][0]
+    assert detail.json()["results"][0]["entered_value"] == "5.270"
+    result_id = receipt["result_ids"][0]
+    patch = labs_client.patch(f"/labs/results/{result_id}", json={
+        "test_date": "2026-09-18", "entered_value": "5.1", "entered_unit": "%",
+    })
+    assert patch.status_code == 200 and patch.json()["entered_value"] == "5.1"
+    deleted = labs_client.delete(f"/labs/results/{result_id}")
+    assert deleted.status_code == 204 and not deleted.content
+    replay_deleted = labs_client.post("/labs/results", json=http_payload(), headers=headers)
+    assert replay_deleted.status_code == 201 and replay_deleted.json() == receipt
+    assert labs_client.get("/labs").json()["items"] == []
+    for item in (catalog, response, replay, conflict, duplicate, overview, detail, patch, deleted):
+        assert item.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize("value,code", [(5.2, "LAB_DECIMAL_INVALID"), ("1e4", "LAB_DECIMAL_INVALID"),
+    ("1" * 129, "LAB_VALUE_TOO_LONG")])
+def test_http_nested_errors_are_stable_and_private(labs_client, value, code):
+    response = labs_client.post("/labs/results", json=http_payload(results=[
+        {"test_key": "hba1c", "entered_value": value, "entered_unit": "%"},
+    ]), headers={"Idempotency-Key": "bad"})
+    assert response.status_code == 422
+    error = response.json()["detail"][0]
+    assert error["loc"] == ["body", "results", 0, "entered_value"]
+    assert error["field"] == "entered_value" and error["test_key"] == "hba1c"
+    assert error["code"] == code
+    assert set(error) == {"loc", "field", "test_key", "code", "msg", "type"}
+    assert "input" not in response.text and "ctx" not in response.text
+
+
+@pytest.mark.parametrize("body,code", [
+    ({"results": []}, "LAB_BATCH_EMPTY"),
+    ({"test_date": "2026-09-21"}, "LAB_DATE_FUTURE"),
+    ({"test_date": "2007-01-01"}, "LAB_ADULT_REQUIRED"),
+    ({"results": [{"test_key": "hba1c", "entered_value": "5", "entered_unit": "bad"}]}, "LAB_UNIT_UNSUPPORTED"),
+    ({"results": [{"test_key": "unknown", "entered_value": "5", "entered_unit": "%"}]}, "LAB_TEST_UNSUPPORTED"),
+    ({"sources": "private-source-sentinel"}, "NON_AUTHORITATIVE_FIELD"),
+])
+def test_http_labs_errors_use_exact_copy(labs_client, body, code):
+    from app.services.labs_errors import MESSAGES
+
+    response = labs_client.post("/labs/results", json=http_payload(**body), headers={"Idempotency-Key": "invalid"})
+    assert response.status_code == 422
+    error = response.json()["detail"][0]
+    assert error["code"] == code
+    assert error["msg"] == (MESSAGES[code] if code in MESSAGES else "هذا الحقل يحدده الخادم ولا يقبله من العميل.")
+    assert "private-source-sentinel" not in response.text
+
+
+@pytest.mark.parametrize("kind", ["missing_header", "bad_json", "bad_uuid"])
+def test_http_framework_validation_never_echoes_payload(labs_client, kind):
+    if kind == "missing_header":
+        response = labs_client.post("/labs/results", json=http_payload())
+    elif kind == "bad_json":
+        response = labs_client.post("/labs/results", content='{"private-sentinel":', headers={"Content-Type": "application/json"})
+    else:
+        response = labs_client.delete("/labs/results/private-sentinel")
+    assert response.status_code == 422
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "private-sentinel" not in response.text
+    assert "input" not in response.text and "ctx" not in response.text
+    assert all(set(e) <= {"loc", "field", "test_key", "code", "msg", "type"} for e in response.json()["detail"])
+
+
+def test_http_ownership_and_admin_reads_only(labs_client, lab_result, lab_owner, other_lab_owner, lab_admin, as_actor):
+    from uuid import uuid4
+
+    result_id = str(lab_result.id)
+    owner_id = str(lab_owner.id)
+    as_actor(other_lab_owner)
+    assert labs_client.get("/labs").json()["items"] == []
+    assert labs_client.get("/labs/tests/hba1c").json()["results"] == []
+    patch = {"test_date": "2026-09-19", "entered_value": "5", "entered_unit": "%"}
+    for method in ("patch", "delete"):
+        foreign = labs_client.request(method, f"/labs/results/{result_id}", **({"json": patch} if method == "patch" else {}))
+        missing = labs_client.request(method, f"/labs/results/{uuid4()}", **({"json": patch} if method == "patch" else {}))
+        assert foreign.status_code == missing.status_code == 404
+        assert foreign.json() == missing.json()
+        assert result_id not in foreign.text
+    as_actor(lab_admin)
+    for suffix in ("", "/tests/hba1c"):
+        selected = labs_client.get(f"/admin/users/{owner_id}/labs{suffix}")
+        assert selected.status_code == 200 and selected.json()["read_only"] is True
+        assert selected.json()["eligibility"] == {"allowed": False, "reason": "read_only"}
+        assert selected.headers["Cache-Control"] == "no-store"
+    assert labs_client.get(f"/admin/users/{owner_id}/labs/tests/hba1c").json()["results"][0]["id"] == result_id
+    assert labs_client.get(f"/admin/users/{uuid4()}/labs").status_code == 404
+    assert labs_client.get("/labs").json()["read_only"] is True
+    for method, path, body in (
+        ("post", "/labs/results", http_payload()),
+        ("patch", f"/labs/results/{result_id}", patch),
+        ("delete", f"/labs/results/{result_id}", None),
+    ):
+        response = labs_client.request(method, path, json=body, headers={"Idempotency-Key": "admin"})
+        assert response.status_code == 403
+        assert response.json()["detail"][0]["code"] == "LAB_READ_ONLY"
+    assert labs_client.post(f"/admin/users/{owner_id}/labs/results", json=http_payload()).status_code == 404
+
+
+@pytest.mark.parametrize("operation", ["catalog", "overview", "detail", "create", "patch", "delete", "admin_overview", "admin_detail"])
+def test_http_unexpected_errors_are_sanitized(labs_client, lab_owner, lab_admin, as_actor, monkeypatch, caplog, operation):
+    from uuid import uuid4
+    from app.labs.catalog import get_catalog
+    from app.main import app
+    from sqlalchemy.exc import StatementError
+
+    def failure(*args, **kwargs):
+        raise StatementError("private-medical-sentinel", "SQL sentinel", {"value": "patient-sentinel"}, RuntimeError("secret-sentinel"))
+
+    methods = {
+        "overview": ("read_labs", "get", "/labs", None),
+        "detail": ("read_lab_test", "get", "/labs/tests/hba1c", None),
+        "create": ("create_results", "post", "/labs/results", http_payload()),
+        "patch": ("update_result", "patch", f"/labs/results/{uuid4()}", {"test_date": "2026-09-19", "entered_value": "5", "entered_unit": "%"}),
+        "delete": ("delete_result", "delete", f"/labs/results/{uuid4()}", None),
+        "admin_overview": ("read_labs", "get", f"/admin/users/{lab_owner.id}/labs", None),
+        "admin_detail": ("read_lab_test", "get", f"/admin/users/{lab_owner.id}/labs/tests/hba1c", None),
+    }
+    if operation == "catalog":
+        app.dependency_overrides[get_catalog] = lambda: failure()
+        method, path, body = "get", "/labs/catalog", None
+    else:
+        function, method, path, body = methods[operation]
+        monkeypatch.setattr(f"app.services.labs.{function}", failure)
+    if operation.startswith("admin"):
+        as_actor(lab_admin)
+    response = labs_client.request(method, path, json=body, headers={"Idempotency-Key": "private-key-sentinel"})
+    assert response.status_code == 500
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "sentinel" not in response.text + caplog.text
+    assert "StatementError" in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
+def test_http_dependency_cleanup_failure_is_sanitized(monkeypatch, caplog):
+    from uuid import uuid4
+    from fastapi.testclient import TestClient
+    from sqlalchemy.exc import StatementError
+    from app.core.auth import PrincipalContext, get_principal_context
+    from app.db.session import get_session
+    from app.main import app, settings
+    from app.schemas import LabOverviewResponse, LabEligibility
+
+    def session_with_failed_cleanup():
+        yield None
+        raise StatementError("cleanup-sentinel", "SQL sentinel", {"value": "patient-sentinel"}, RuntimeError("secret-sentinel"))
+
+    previous = app.dependency_overrides.copy()
+    app.dependency_overrides[get_principal_context] = lambda: PrincipalContext(uuid4())
+    app.dependency_overrides[get_session] = session_with_failed_cleanup
+    monkeypatch.setattr("app.services.labs.read_labs", lambda *args: LabOverviewResponse(
+        items=[], eligibility=LabEligibility(allowed=False, reason="profile_required"),
+        server_today=date(2026, 9, 20), medical_rules_version=load_catalog().version, read_only=False,
+    ))
+    try:
+        with TestClient(app) as client:
+            response = client.get("/labs", headers={"Origin": settings.allowed_origins[0]})
+        assert response.headers["Access-Control-Allow-Origin"] == settings.allowed_origins[0]
+        assert "idempotent-replayed" in response.headers["Access-Control-Expose-Headers"].lower()
+        assert response.status_code == 500
+        assert response.headers["Cache-Control"] == "no-store"
+        assert "sentinel" not in response.text + caplog.text
+        assert "StatementError" in caplog.text
+        assert all(record.exc_info is None for record in caplog.records)
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
+
+
+@pytest.mark.migration
+def test_configured_engine_hides_lab_parameters_in_debug_logs(caplog):
+    import logging
+    from sqlalchemy import text
+    from sqlalchemy.engine import make_url
+    from app.db.session import engine
+    from labs_fixtures import safe_labs_database_url
+
+    assert engine.url == make_url(safe_labs_database_url())
+    engine_log = logging.getLogger("sqlalchemy.engine.Engine")
+    original_echo = engine.echo
+    original_handlers = engine_log.handlers[:]
+    original_level, original_propagate = engine_log.level, engine_log.propagate
+    try:
+        engine.echo = True
+        with engine.connect() as connection:
+            value = connection.execute(text("SELECT CAST(:private_lab_value AS TEXT)"), {
+                "private_lab_value": "private-medical-parameter-sentinel",
+            }).scalar_one()
+        assert value == "private-medical-parameter-sentinel"
+        assert "private-medical-parameter-sentinel" not in caplog.text
+        assert "SQL parameters hidden due to hide_parameters=True" in caplog.text
+    finally:
+        engine.echo = original_echo
+        engine_log.handlers[:] = original_handlers
+        engine_log.setLevel(original_level)
+        engine_log.propagate = original_propagate

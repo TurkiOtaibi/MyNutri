@@ -1,6 +1,12 @@
 """Labs domain errors; routes keep the field-specific detail envelope."""
 
+from typing import Any, TypeVar
+
+from pydantic import BaseModel, ValidationError
+
 from app.schemas import LabFieldError
+
+ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
 MESSAGES = {
@@ -45,3 +51,35 @@ class LabValidationError(Exception):
         super().__init__("Labs validation failed")
         self.status_code = status_code
         self.errors = errors
+
+
+# Structural checks deliberately precede mutable catalog/Profile validation in services.
+def validate_labs_payload(schema: type[ModelT], payload: Any) -> ModelT:
+    """Keep full field locations without echoing entered values or validation context."""
+    try:
+        return schema.model_validate(payload)
+    except ValidationError as error:
+        details = []
+        for item in error.errors(include_input=False, include_context=False, include_url=False):
+            loc = ["body", *item["loc"]]
+            field = next((part for part in reversed(item["loc"]) if isinstance(part, str)), None)
+            error_type = item["type"]
+            if error_type in MESSAGES:
+                code, message = error_type, MESSAGES[error_type]
+            elif error_type == "extra_forbidden":
+                code = "NON_AUTHORITATIVE_FIELD"
+                message = "هذا الحقل يحدده الخادم ولا يقبله من العميل."
+            else:
+                code, message = "invalid", "راجع الحقول المحددة ثم حاول مرة أخرى."
+            test_key = None
+            nested = item["loc"]
+            if (len(nested) >= 2 and nested[0] == "results" and isinstance(nested[1], int)
+                    and isinstance(payload, dict) and isinstance(payload.get("results"), list)):
+                row = payload["results"][nested[1]]
+                if isinstance(row, dict) and isinstance(row.get("test_key"), str):
+                    test_key = row["test_key"]
+            details.append(LabFieldError(
+                loc=loc, field=field, test_key=test_key,
+                code=code, msg=message, type=error_type,
+            ))
+        raise LabValidationError(422, details) from None

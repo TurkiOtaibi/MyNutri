@@ -686,3 +686,27 @@ def test_production_auth_and_cors_configuration_fail_closed() -> None:
         validate_runtime_configuration(Settings(environment="production"))
     with pytest.raises(ValueError, match="Wildcard"):
         Settings(allowed_origins=["*"])
+
+
+@pytest.mark.parametrize("method,path", [
+    ("get", "/labs/catalog"), ("get", "/labs"), ("get", "/labs/tests/hba1c"),
+    ("post", "/labs/results"),
+    ("patch", f"/labs/results/{PRINCIPAL_A}"),
+    ("delete", f"/labs/results/{PRINCIPAL_A}"),
+    ("get", f"/admin/users/{PRINCIPAL_B}/labs"),
+    ("get", f"/admin/users/{PRINCIPAL_B}/labs/tests/hba1c"),
+])
+def test_labs_requires_bearer_and_never_caches_auth_errors(security_context, method, path):
+    client, _ = security_context
+    response = client.request(method, path)
+    assert response.status_code == 401
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "hba1c" not in response.text
+
+
+@pytest.mark.parametrize("suffix", ["", "/tests/hba1c"])
+def test_labs_admin_monitoring_rejects_normal_users(security_context, suffix):
+    client, _ = security_context
+    response = client.get(f"/admin/users/{PRINCIPAL_A}/labs{suffix}", headers=headers("user-b"))
+    assert response.status_code == 403
+    assert response.headers["Cache-Control"] == "no-store"

@@ -45,6 +45,15 @@ EXPECTED_TARGET_PLAN_OPERATIONS = {
     "/target-plans": {"get", "post"},
     "/target-plans/current": {"get"},
 }
+EXPECTED_LABS_OPERATIONS = {
+    "/labs/catalog": {"get"},
+    "/labs": {"get"},
+    "/labs/tests/{test_key}": {"get"},
+    "/labs/results": {"post"},
+    "/labs/results/{result_id}": {"patch", "delete"},
+    "/admin/users/{principal_id}/labs": {"get"},
+    "/admin/users/{principal_id}/labs/tests/{test_key}": {"get"},
+}
 VALIDATOR_PATH = "docs/tools/validate_authoritative_docs.py"
 EXPECTED_ALEMBIC_HEAD = "e8b7a42f6c31"
 SPECIALIST_MESSAGE = (
@@ -298,6 +307,18 @@ def _runtime_checks(root: Path, issues: list[str]) -> None:
         issues.append(
             "Target Plan OpenAPI operations are "
             f"{actual_target_plan_operations!r}, expected {EXPECTED_TARGET_PLAN_OPERATIONS!r}"
+        )
+    actual_labs_operations = {
+        path: {method for method in methods
+               if method in {"get", "post", "put", "delete", "patch"}}
+        for path, methods in paths.items()
+        if path == "/labs" or path.startswith("/labs/")
+        or path.startswith("/admin/users/") and "/labs" in path
+    }
+    if actual_labs_operations != EXPECTED_LABS_OPERATIONS:
+        issues.append(
+            f"Labs OpenAPI operations are {actual_labs_operations!r}, "
+            f"expected {EXPECTED_LABS_OPERATIONS!r}"
         )
     get_foods_schema = (
         paths.get("/foods", {})

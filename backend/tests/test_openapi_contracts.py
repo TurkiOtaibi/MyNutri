@@ -19,6 +19,59 @@ from app.nutrition_rules.manifest import registry_response
 from app.schemas import NutritionRegistryResponse
 
 
+def test_labs_openapi_routes_and_exact_wire_contracts():
+    schema = app.openapi()
+    paths, models = schema["paths"], schema["components"]["schemas"]
+    expected = {
+        ("/labs/catalog", "get"): ("200", "LabCatalogResponse"),
+        ("/labs", "get"): ("200", "LabOverviewResponse"),
+        ("/labs/tests/{test_key}", "get"): ("200", "LabTestDetailResponse"),
+        ("/labs/results", "post"): ("201", "LabCreateReceipt"),
+        ("/labs/results/{result_id}", "patch"): ("200", "LabResultResponse"),
+        ("/labs/results/{result_id}", "delete"): ("204", None),
+        ("/admin/users/{principal_id}/labs", "get"): ("200", "LabOverviewResponse"),
+        ("/admin/users/{principal_id}/labs/tests/{test_key}", "get"):
+            ("200", "LabTestDetailResponse"),
+    }
+    assert set(expected) == {
+        (path, method) for path, operations in paths.items()
+        if path.startswith("/labs") or "/labs" in path
+        for method in operations if method in {"get", "post", "patch", "put", "delete"}
+    }
+    for (path, method), (status, name) in expected.items():
+        operation = paths[path][method]
+        assert operation["security"] == [{"BearerAuth": []}]
+        assert schema["components"]["securitySchemes"]["BearerAuth"]["scheme"] == "bearer"
+        if name:
+            assert operation["responses"][status]["content"]["application/json"]["schema"] == {
+                "$ref": f"#/components/schemas/{name}"
+            }
+        for error in ("409", "422"):
+            assert operation["responses"][error]["content"]["application/json"]["schema"] == {
+                "$ref": "#/components/schemas/LabErrorResponse"
+            }
+    assert "Idempotent-Replayed" in paths["/labs/results"]["post"]["responses"]["201"]["headers"]
+    for path, method, keys in (
+        ("/labs/results", "post", {"test_date", "results"}),
+        ("/labs/results/{result_id}", "patch", {"test_date", "entered_value", "entered_unit"}),
+    ):
+        body = _request_schema(path, method)
+        assert set(body["properties"]) == keys
+        assert set(body["required"]) == keys and body["additionalProperties"] is False
+    row = models["LabCreateRow"]
+    assert row["additionalProperties"] is False
+    assert set(row["properties"]) == {"test_key", "entered_value", "entered_unit"}
+    for field in row["properties"].values():
+        assert field["type"] == "string" and "enum" not in field
+    for field in ("entered_value", "display_value"):
+        assert models["LabResultResponse"]["properties"][field]["type"] == "string"
+    for field in ("low", "high"):
+        assert models["LabStatusZone"]["properties"][field]["anyOf"] == [
+            {"type": "string"}, {"type": "null"}
+        ]
+    assert "medical_rules_version" in models["LabResultResponse"]["required"]
+
+
 def _request_schema(path: str, method: str) -> dict[str, object]:
     return app.openapi()["paths"][path][method]["requestBody"]["content"]["application/json"][
         "schema"

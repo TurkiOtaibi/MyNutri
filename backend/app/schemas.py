@@ -974,6 +974,26 @@ class LabCatalogTest(BaseModel):
     panels: list[str]
 
 
+class LabCatalogCategory(BaseModel):
+    key: str
+    name_ar: str
+    order: int
+
+
+class LabCatalogPanel(BaseModel):
+    key: str
+    name_ar: str
+    name_en: str
+    test_keys: list[str]
+
+
+class LabCatalogResponse(BaseModel):
+    medical_rules_version: str
+    categories: list[LabCatalogCategory]
+    panels: list[LabCatalogPanel]
+    tests: list[LabCatalogTest]
+
+
 class LabOverviewItem(BaseModel):
     test_key: str
     latest: LabResultResponse
