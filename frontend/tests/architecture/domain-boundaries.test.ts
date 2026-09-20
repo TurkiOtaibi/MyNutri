@@ -71,6 +71,14 @@ const manifests = {
     "FoodDetailsLoading", "DetailServingMetric", "NutritionCompleteness",
     "NutrientGroup", "MetadataRow", "formatFoodDate",
   ],
+  "features/labs/lab-model.ts": [
+    "LabListItem", "LabSort", "toLabListItems", "filterLabs", "sortLabs",
+  ],
+  "features/labs/lab-query-keys.ts": ["labsQueryKeys"],
+  "features/labs/lab-batch-model.ts": [
+    "LabDraftRow", "BatchDraft", "LabRowErrors", "LabMappedErrors",
+    "normalizeLabNumber", "selectedTestKeys", "buildLabRows", "mapLabErrors",
+  ],
 } as const;
 
 function expectTransportBoundary(source: string) {
@@ -88,6 +96,11 @@ function expectTransportBoundary(source: string) {
   expect(source).not.toContain("/diary/days/");
   expect(source).not.toContain("If-Match");
   expect(source).toContain('throw new ApiError(message, response.status, detail, code)');
+  expect(source).toContain('apiFetch<LabCatalogResponse>("/labs/catalog"');
+  expect(source).toContain('apiFetch<LabOverviewResponse>("/labs"');
+  expect(source).toMatch(/apiFetchWithResponse<LabCreateReceipt>\(\s*"\/labs\/results"/);
+  expect(source).toContain('response.headers.get("Idempotent-Replayed")');
+  expect(source).toContain('`/admin/users/${encodeURIComponent(principalId)}/labs`');
 }
 
 function expectCriticalDialogSemantics(source: string) {
@@ -244,7 +257,7 @@ describe("domain boundaries", () => {
   });
 
   it("enforces private feature direction and generated transport ownership", () => {
-    for (const domain of ["profile", "diary", "foods"]) {
+    for (const domain of ["profile", "diary", "foods", "labs"]) {
       for (const path of walk(`features/${domain}`).filter((item) => /\.(?:ts|tsx)$/.test(item))) {
         expect(read(path), path).not.toMatch(new RegExp(`@/features/(?!${domain}/)`));
       }
@@ -252,6 +265,7 @@ describe("domain boundaries", () => {
     expect(read("lib/types.ts")).toContain('from "./generated/openapi"');
     expect(read("lib/api.ts")).toContain('from "./generated/openapi"');
     expect(read("components/AdminUserDetailsPage.tsx")).not.toMatch(/Record<string, unknown>|as unknown as/);
+    expect(featureSource("labs")).not.toMatch(/prediabetes_range|diabetes_range|toCanonical|resolveRule|referenceThreshold/);
   });
 
   it("moves representative exclusively owned selectors without global duplicates", () => {

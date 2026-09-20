@@ -8,6 +8,13 @@ import type {
   FoodPickerResponse,
   FoodResponse,
   FoodSort,
+  LabCatalogResponse,
+  LabCreateReceipt,
+  LabCreateRequest,
+  LabOverviewResponse,
+  LabResultPatch,
+  LabResultResponse,
+  LabTestDetailResponse,
   ProfileInput,
   ProfileResponse,
   NutritionRegistryResponse,
@@ -265,4 +272,79 @@ export function deleteDiaryEntry(entryId: string, accessToken: string | null | u
 
 export function getWeekSummary(start: string): Promise<WeekSummary> {
   return apiFetch<WeekSummary>(`/diary/week?start=${encodeURIComponent(start)}`);
+}
+
+export type LabsAuth = { accessToken: string; signal: AbortSignal };
+
+export function getLabCatalog(auth: LabsAuth): Promise<LabCatalogResponse> {
+  return apiFetch<LabCatalogResponse>("/labs/catalog", authorizedInit(auth.accessToken, auth.signal));
+}
+
+export function getLabs(auth: LabsAuth): Promise<LabOverviewResponse> {
+  return apiFetch<LabOverviewResponse>("/labs", authorizedInit(auth.accessToken, auth.signal));
+}
+
+export function getLabTest(testKey: string, auth: LabsAuth): Promise<LabTestDetailResponse> {
+  return apiFetch<LabTestDetailResponse>(
+    `/labs/tests/${encodeURIComponent(testKey)}`,
+    authorizedInit(auth.accessToken, auth.signal),
+  );
+}
+
+export async function createLabResults(
+  payload: LabCreateRequest,
+  idempotencyKey: string,
+  auth: LabsAuth,
+): Promise<{ receipt: LabCreateReceipt; replayed: boolean }> {
+  const { body, response } = await apiFetchWithResponse<LabCreateReceipt>(
+    "/labs/results",
+    authorizedInit(auth.accessToken, auth.signal, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify(payload),
+    }),
+  );
+  return {
+    receipt: body,
+    replayed: response.headers.get("Idempotent-Replayed")?.toLowerCase() === "true",
+  };
+}
+
+export function updateLabResult(
+  id: string,
+  payload: LabResultPatch,
+  auth: LabsAuth,
+): Promise<LabResultResponse> {
+  return apiFetch<LabResultResponse>(
+    `/labs/results/${encodeURIComponent(id)}`,
+    authorizedInit(auth.accessToken, auth.signal, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  );
+}
+
+export function deleteLabResult(id: string, auth: LabsAuth): Promise<void> {
+  return apiFetch<void>(
+    `/labs/results/${encodeURIComponent(id)}`,
+    authorizedInit(auth.accessToken, auth.signal, { method: "DELETE" }),
+  );
+}
+
+export function getAdminLabs(principalId: string, auth: LabsAuth): Promise<LabOverviewResponse> {
+  return apiFetch<LabOverviewResponse>(
+    `/admin/users/${encodeURIComponent(principalId)}/labs`,
+    authorizedInit(auth.accessToken, auth.signal),
+  );
+}
+
+export function getAdminLabTest(
+  principalId: string,
+  testKey: string,
+  auth: LabsAuth,
+): Promise<LabTestDetailResponse> {
+  return apiFetch<LabTestDetailResponse>(
+    `/admin/users/${encodeURIComponent(principalId)}/labs/tests/${encodeURIComponent(testKey)}`,
+    authorizedInit(auth.accessToken, auth.signal),
+  );
 }

@@ -34,6 +34,11 @@ describe("generated OpenAPI contracts", () => {
       "DiaryEntryResponse",
       "FoodResponse",
       "AdminUserDetail",
+      "LabCatalogResponse",
+      "LabOverviewResponse",
+      "LabTestDetailResponse",
+      "LabResultResponse",
+      "export namespace Labs",
       "export namespace Diary",
       "export namespace Foods",
     ]) {
