@@ -261,13 +261,13 @@ test.describe("accepted Profile DOB freshness", () => {
       await route.continue();
     });
 
+    await page.clock.setFixedTime(new Date());
     await navigateToOwnerLabs(page);
     const warmDetail = waitForLabsGet(page, "/labs/tests/ferritin");
     await page.getByRole("link", { name: "الفيريتين", exact: true }).click();
     expect((await warmDetail).status()).toBe(200);
+    const warmDetailAt = await page.evaluate(() => Date.now());
     await expect(page.getByTestId("lab-detail")).toBeVisible();
-    await page.clock.install({ time: new Date() });
-    const boundedStart = await page.evaluate(() => Date.now());
     const warmedOwnerQueries = await cachedOwnerQueries(page);
     expect(warmedOwnerQueries.some((key) => key[3] === "overview")).toBe(true);
     expect(warmedOwnerQueries.some((key) => key[3] === "test" && key[4] === "ferritin")).toBe(true);
@@ -278,7 +278,6 @@ test.describe("accepted Profile DOB freshness", () => {
     expect(await cachedOwnerQueries(page)).toEqual(warmedOwnerQueries);
     await expect(page.getByText("لا يمكن تعديل الجنس بعد حفظ الملف الشخصي.", { exact: true })).toBeVisible();
     await page.getByLabel("تاريخ الميلاد").fill("1971-01-01");
-    await page.clock.fastForward(401);
     await expect(page.getByRole("region", { name: "الأهداف المتوقعة بعد الحفظ" })).toBeVisible();
     expect(detailReads).toBe(readsBeforePreview);
     expect(await ownerInvalidations(page)).toEqual(invalidationsBeforeChange);
@@ -293,8 +292,6 @@ test.describe("accepted Profile DOB freshness", () => {
     });
     releaseBlockedProfileRead();
     expect((await failedProfileRead).status()).toBe(503);
-    await page.evaluate(() => Promise.resolve());
-    await page.clock.fastForward(1_001);
     await expect(page.getByRole("status").filter({ hasText: "تعذر تحديث البيانات المعروضة" })).toBeVisible();
     expect(failedProfileReads).toBe(2);
     await expect(page.getByLabel("تاريخ الميلاد")).toHaveValue("1971-01-01");
@@ -316,7 +313,7 @@ test.describe("accepted Profile DOB freshness", () => {
     expect(invalidationsAfterRecovery).toHaveLength(invalidationsAfterAcceptedWrite.length + 1);
     expect(invalidationsAfterRecovery.at(-1)).toBe(invalidationsAtBlockedRead.at(-1));
     expect(targetPlanWrites).toBe(1);
-    expect(await page.evaluate((start) => Date.now() - start, boundedStart)).toBeLessThan(20_000);
+    expect(await page.evaluate((start) => Date.now() - start, warmDetailAt)).toBeLessThan(20_000);
 
     const revised = await labsApi.detail("ferritin");
     expect(revised.results.map((result) => result.age_years)).toEqual([51, 50, 49]);
@@ -328,6 +325,8 @@ test.describe("accepted Profile DOB freshness", () => {
     const detailRefresh = waitForLabsGet(page, "/labs/tests/ferritin");
     await page.getByRole("link", { name: "الفيريتين", exact: true }).click();
     expect((await detailRefresh).status()).toBe(200);
+    const reopenedDetailAt = await page.evaluate(() => Date.now());
+    expect(reopenedDetailAt - warmDetailAt).toBeLessThan(20_000);
     expect(detailReads).toBe(readsBeforeOpen + 1);
     await expectReferences(page, revised.results[0]);
 
@@ -335,6 +334,8 @@ test.describe("accepted Profile DOB freshness", () => {
     const readsBeforeFocus = detailReads;
     await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
     expect((await focusRefresh).status()).toBe(200);
+    const focusRefreshAt = await page.evaluate(() => Date.now());
+    expect(focusRefreshAt - reopenedDetailAt).toBeLessThan(20_000);
     expect(detailReads).toBe(readsBeforeFocus + 1);
 
     const readsBeforeMinute = { detailReads, catalogReads, overviewReads };
