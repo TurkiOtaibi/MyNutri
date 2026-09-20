@@ -113,16 +113,7 @@ def create_results(
                 422, [field_error("INVALID_IDEMPOTENCY_KEY", "Idempotency-Key")]
             )
         request_hash = canonical_request_hash(payload)
-        actor = session.exec(
-            select(Principal)
-            .where(Principal.id == principal.principal_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        ).one_or_none()
-        if actor is None or actor.status != PrincipalStatus.active:
-            raise LabValidationError(401, [field_error("INVALID_CREDENTIAL")])
-        if actor.role == PrincipalRole.admin:
-            raise LabValidationError(403, [field_error("LAB_READ_ONLY")])
+        _lock_writer(session, principal)
 
         record = session.exec(
             select(IdempotencyRecord)
