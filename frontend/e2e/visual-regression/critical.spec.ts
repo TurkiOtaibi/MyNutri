@@ -1,6 +1,6 @@
 import { type Page, type Route } from "@playwright/test";
 
-import type { LabOverviewResponse, LabTestDetailResponse, ProfileResponse, TargetResponse, WeekSummary } from "../../lib/types";
+import type { LabChartZoneSegment, LabOverviewResponse, LabTestDetailResponse, ProfileResponse, TargetResponse, WeekSummary } from "../../lib/types";
 import { catalogFixture, ferritinAge51Segments, ferritinFemaleHistory } from "../../tests/unit/fixtures/labs";
 import {
   API_TOKEN,
@@ -109,6 +109,14 @@ function adminPage(items: ReturnType<typeof adminFood>[]) {
   };
 }
 
+const visualLabSegments: LabChartZoneSegment[] = ferritinAge51Segments.map((segment) => ({
+  ...segment,
+  zones: segment.zones.map((zone) => ({
+    ...zone,
+    status: { ...zone.status, tone: zone.status.code === "in_range" ? "within" : "outside" },
+  })),
+}));
+
 const visualLabResults = ferritinFemaleHistory.map((result, index) => ({
   ...result,
   display_value: index === 0 ? "5.900" : "12.40",
@@ -116,7 +124,7 @@ const visualLabResults = ferritinFemaleHistory.map((result, index) => ({
   status: index === 0
     ? { code: "low", label_ar: "منخفض", tone: "outside" }
     : { code: "in_range", label_ar: "ضمن النطاق", tone: "within" },
-  reference_zones: ferritinAge51Segments[index].zones,
+  reference_zones: visualLabSegments[index].zones,
 })).reverse();
 
 const visualLabOverview: LabOverviewResponse = {
@@ -134,7 +142,7 @@ const visualLabOverview: LabOverviewResponse = {
 const visualLabDetail: LabTestDetailResponse = {
   test: catalogFixture.tests[0],
   results: visualLabResults,
-  chart_zones: ferritinAge51Segments,
+  chart_zones: visualLabSegments,
   reference_at_date: visualLabResults[0].test_date,
   reference_zones: visualLabResults[0].reference_zones,
   eligibility: { allowed: true, reason: null },

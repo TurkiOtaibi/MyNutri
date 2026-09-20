@@ -80,6 +80,8 @@ test("the CBC value step names all twenty groups and wraps focus at the modal bo
   }
   const first = rows.first().getByRole("textbox", { name: "القيمة" });
   const last = dialog.getByRole("button", { name: "حفظ النتائج", exact: true });
+  await first.fill("1");
+  await expect(last).toBeEnabled();
   await last.focus();
   await page.keyboard.press("Tab");
   await expect(first).toBeFocused();
@@ -109,7 +111,7 @@ test("extreme converted history remains readable and chart points support keyboa
   await expect(page.locator("[data-history-result]")).toHaveCount(20);
   await expect(page.getByRole("heading", { name: "السجل الكامل" })).toBeVisible();
   await expect(page.getByRole("region", { name: "القيم المرجعية للنظام" })).toBeVisible();
-  await points.locator('[tabindex="0"]').focus();
+  await page.locator('[data-chart-point][tabindex="0"]').focus();
   await page.keyboard.press("Home");
   await expect(points.first()).toBeFocused();
   await page.keyboard.press("ArrowRight");

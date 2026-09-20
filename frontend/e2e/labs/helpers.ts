@@ -21,6 +21,7 @@ import type {
   ProfileInput,
 } from "../../lib/types";
 import { applyProfileThroughTargetPlan } from "../profile-api";
+import { createResultCleanupRegistry } from "./result-cleanup";
 
 export const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
 const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
@@ -57,6 +58,7 @@ export type LabsApi = {
   detail: (testKey: string) => Promise<LabTestDetailResponse>;
   patch: (id: string, data: LabResultPatch) => Promise<LabResultResponse>;
   remove: (id: string) => Promise<void>;
+  registerReceipt: (receipt: LabCreateReceipt) => void;
 };
 
 type LabsFixtures = {
@@ -116,8 +118,13 @@ export async function createActor(
 }
 
 export function createLabsApi(request: APIRequestContext, actor: LabsActor): LabsApi & { cleanup: () => Promise<void> } {
-  const resultIds = new Set<string>();
   const actorHeaders = () => headers(actor.token);
+  const cleanupRegistry = createResultCleanupRegistry(async (id) => {
+    const response = await request.delete(`${API_URL}/labs/results/${encodeURIComponent(id)}`, {
+      headers: actorHeaders(),
+    });
+    expect([204, 404]).toContain(response.status());
+  });
   const api: LabsApi & { cleanup: () => Promise<void> } = {
     actor,
     async create(date, rows, key = `e2e-labs-${randomUUID()}`) {
@@ -127,7 +134,7 @@ export function createLabsApi(request: APIRequestContext, actor: LabsActor): Lab
       });
       expect(response.status(), await response.text()).toBe(201);
       const receipt = await response.json() as LabCreateReceipt;
-      for (const id of receipt.result_ids) resultIds.add(id);
+      cleanupRegistry.register(receipt);
       return receipt;
     },
     async overview() {
@@ -155,21 +162,10 @@ export function createLabsApi(request: APIRequestContext, actor: LabsActor): Lab
         headers: actorHeaders(),
       });
       expect([204, 404]).toContain(response.status());
-      resultIds.delete(id);
+      cleanupRegistry.markRemoved(id);
     },
-    async cleanup() {
-      const failures: unknown[] = [];
-      for (const id of resultIds) {
-        try {
-          const response = await request.delete(`${API_URL}/labs/results/${encodeURIComponent(id)}`, {
-            headers: actorHeaders(),
-          });
-          expect([204, 404]).toContain(response.status());
-        } catch (error) { failures.push(error); }
-      }
-      resultIds.clear();
-      if (failures.length) throw new AggregateError(failures, "Labs fixture cleanup failed.");
-    },
+    registerReceipt: (receipt) => cleanupRegistry.register(receipt),
+    cleanup: () => cleanupRegistry.cleanup(),
   };
   return api;
 }

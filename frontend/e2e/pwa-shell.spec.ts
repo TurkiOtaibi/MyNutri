@@ -929,6 +929,11 @@ test("Labs private reads and successful writes never enter browser persistence o
   let initialId = "";
   let createdId = "";
   const privateMarker = "74.210987654";
+  const mutationRows = [{ test_key: "eosinophils_pct", entered_value: privateMarker, entered_unit: "%" }];
+  const mutationKey = `pwa-labs-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  let mutationDate = "";
+  let createAttempted = false;
+  let receiptRegistered = false;
   let primaryFailure: unknown;
   try {
     const today = (await api.overview()).server_today;
@@ -947,27 +952,43 @@ test("Labs private reads and successful writes never enter browser persistence o
     await page.goto("/labs/hba1c");
     await expect(page.getByTestId("lab-detail")).toBeVisible();
 
-    const mutation = await page.evaluate(async ({ apiUrl, token, date, resultId, marker }) => {
+    mutationDate = offsetIsoDate(today, -1);
+    createAttempted = true;
+    const created = await page.evaluate(async ({ apiUrl, token, date, key, rows }) => {
       const common = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-      const created = await fetch(`${apiUrl}/labs/results`, {
+      const response = await fetch(`${apiUrl}/labs/results`, {
         method: "POST",
-        headers: { ...common, "Idempotency-Key": `pwa-labs-${crypto.randomUUID()}` },
-        body: JSON.stringify({ test_date: date, results: [{ test_key: "eosinophils_pct", entered_value: marker, entered_unit: "%" }] }),
+        headers: { ...common, "Idempotency-Key": key },
+        body: JSON.stringify({ test_date: date, results: rows }),
       });
-      const receipt = await created.json() as { result_ids: string[] };
-      const patched = await fetch(`${apiUrl}/labs/results/${resultId}`, {
+      return { status: response.status, receipt: await response.json() as { result_ids: string[] } };
+    }, { apiUrl: API_URL, token: actor.token, date: mutationDate, key: mutationKey, rows: mutationRows });
+    if (created.receipt.result_ids.length) {
+      api.registerReceipt(created.receipt);
+      receiptRegistered = true;
+      createdId = created.receipt.result_ids[0];
+    }
+    expect(created.status).toBe(201);
+    expect(createdId).not.toBe("");
+
+    const patchedStatus = await page.evaluate(async ({ apiUrl, token, date, resultId, marker }) => {
+      const response = await fetch(`${apiUrl}/labs/results/${resultId}`, {
         method: "PATCH",
-        headers: common,
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ test_date: date, entered_value: marker, entered_unit: "%" }),
       });
-      const removed = await fetch(`${apiUrl}/labs/results/${receipt.result_ids[0]}`, {
+      return response.status;
+    }, { apiUrl: API_URL, token: actor.token, date: mutationDate, resultId: initialId, marker: privateMarker });
+    expect(patchedStatus).toBe(200);
+
+    const removedStatus = await page.evaluate(async ({ apiUrl, token, resultId }) => {
+      const response = await fetch(`${apiUrl}/labs/results/${resultId}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
-      return { statuses: [created.status, patched.status, removed.status], id: receipt.result_ids[0] };
-    }, { apiUrl: API_URL, token: actor.token, date: offsetIsoDate(today, -1), resultId: initialId, marker: privateMarker });
-    expect(mutation.statuses).toEqual([201, 200, 204]);
-    createdId = mutation.id;
+      return response.status;
+    }, { apiUrl: API_URL, token: actor.token, resultId: createdId });
+    expect(removedStatus).toBe(204);
 
     const storageAfter = await page.evaluate(() => ({
       local: Object.keys(localStorage).sort(),
@@ -1007,7 +1028,13 @@ test("Labs private reads and successful writes never enter browser persistence o
   } catch (error) { primaryFailure = error; }
   const cleanupFailures: unknown[] = [];
   try { if (context) await context.setOffline(false); } catch (error) { cleanupFailures.push(error); }
-  try { if (createdId) await api.remove(createdId); } catch (error) { cleanupFailures.push(error); }
+  if (createAttempted && !receiptRegistered) {
+    try {
+      const recovered = await api.create(mutationDate, mutationRows, mutationKey);
+      createdId = recovered.result_ids[0];
+      receiptRegistered = true;
+    } catch (error) { cleanupFailures.push(error); }
+  }
   try { await api.cleanup(); } catch (error) { cleanupFailures.push(error); }
   try { if (context) await context.close(); } catch (error) { cleanupFailures.push(error); }
   if (primaryFailure && cleanupFailures.length) {

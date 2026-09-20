@@ -239,6 +239,15 @@ async function e2eAuthAction(page: Page, action: "refresh" | "signOut" | "signIn
   expect(result.error).toBeNull();
 }
 
+function authorizationSubject(authorization: string | undefined): string | null {
+  if (!authorization?.startsWith("Bearer ")) return null;
+  try {
+    return tokenSubject(authorization.slice("Bearer ".length));
+  } catch {
+    return null;
+  }
+}
+
 type LabsIsolationActor = {
   email: string;
   token: string;
@@ -311,21 +320,29 @@ async function prepareLabsIsolation(browser: Browser, request: APIRequestContext
     throw primaryFailure;
   }
 
-  const holdGet = async (pathname: string, accessToken: string) => {
+  const holdGet = async (pathname: string, expectedSubject: string, excludedAccessToken?: string) => {
     const delivery = createReleaseGate();
     const started = createReleaseGate();
+    const targetUrl = new URL(pathname, API_URL).toString();
+    let heldIdentity: { subjectMatches: boolean; differsFromExcluded: boolean } | null = null;
     gates.add(delivery);
     const response = page.waitForResponse((candidate) => {
       const requestEvent = candidate.request();
-      return new URL(candidate.url()).pathname === pathname && requestEvent.method() === "GET"
-        && requestEvent.headers()["authorization"] === `Bearer ${accessToken}`;
+      return candidate.url() === targetUrl && requestEvent.method() === "GET"
+        && authorizationSubject(requestEvent.headers()["authorization"]) === expectedSubject;
     });
     void response.catch(() => undefined);
-    await page.route((url) => url.origin === new URL(API_URL).origin && url.pathname === pathname, async (route) => {
-      if (route.request().headers()["authorization"] !== `Bearer ${accessToken}`) {
+    await page.route((url) => url.toString() === targetUrl, async (route) => {
+      const authorization = route.request().headers()["authorization"];
+      if (route.request().method() !== "GET" || authorizationSubject(authorization) !== expectedSubject) {
         await route.continue();
         return;
       }
+      const browserAccessToken = authorization!.slice("Bearer ".length);
+      heldIdentity = {
+        subjectMatches: authorizationSubject(authorization) === expectedSubject,
+        differsFromExcluded: excludedAccessToken === undefined || browserAccessToken !== excludedAccessToken,
+      };
       const upstream = await route.fetch();
       started.release();
       await delivery.promise;
@@ -335,6 +352,10 @@ async function prepareLabsIsolation(browser: Browser, request: APIRequestContext
       started: started.promise,
       response,
       release() { delivery.release(); },
+      identity() {
+        if (!heldIdentity) throw new Error("Held browser Labs request identity is unavailable.");
+        return heldIdentity;
+      },
     };
   };
 
@@ -1131,10 +1152,13 @@ test("@strictmode Labs old owner detail cannot repopulate a new actor session", 
     }, { apiOrigin: new URL(API_URL).origin, path: "/labs/tests/hba1c" });
     await fixture.login(actorA, "/labs");
     await retainSessionSignalInspector(page);
-    const pending = await fixture.holdGet("/labs/tests/hba1c", actorA.token);
+    const browserSubject = await sessionSubjectKey(page);
+    expect(browserSubject).toBe(actorA.subject);
+    const pending = await fixture.holdGet("/labs/tests/hba1c", browserSubject, actorA.token);
     await page.getByRole("tab", { name: "كل التحاليل", exact: true }).click();
     await page.locator('[data-testid="lab-row"][data-test-key="hba1c"] a').click();
     await pending.started;
+    expect(pending.identity()).toEqual({ subjectMatches: true, differsFromExcluded: true });
     await installLeakObserver(page, [actorA.displayValue, actorA.resultId], [actorA.displayValue], true);
     await e2eAuthAction(page, "signIn", { email: actorB.email, password: PASSWORD });
     expect(await retainedSessionSignalAborted(page)).toBe(true);
@@ -1227,10 +1251,11 @@ test("@strictmode held selected-user Labs GET cannot repaint after admin changes
     }, { apiOrigin: new URL(API_URL).origin, path: heldPath });
     await fixture.login({ ...actorA, email: ADMIN_EMAIL }, `/admin/users/${actorA.principalId}/labs`, ADMIN_PASSWORD);
     expect(await sessionSignalAborted(page)).toBe(false);
-    const adminToken = await token(ADMIN_EMAIL, ADMIN_PASSWORD);
-    const pending = await fixture.holdGet(heldPath, adminToken);
+    const adminSubject = await sessionSubjectKey(page);
+    const pending = await fixture.holdGet(heldPath, adminSubject);
     await page.locator('[data-testid="lab-row"][data-test-key="hba1c"] a').click();
     await pending.started;
+    expect(pending.identity()).toEqual({ subjectMatches: true, differsFromExcluded: true });
     await installLeakObserver(page, [actorA.displayValue, actorA.resultId], [], true);
     await page.locator('a[href="/admin"]').click();
     await page.locator('a[href="/admin/users"]').click();
