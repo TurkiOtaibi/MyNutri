@@ -14,7 +14,14 @@ import {
 import { filterLabs, sortLabs, toLabListItems } from "@/features/labs/lab-model";
 import { labsQueryKeys } from "@/features/labs/lab-query-keys";
 import type { LabOverviewResponse } from "@/lib/types";
-import { catalogFixture, createFixture, overviewItem, resultFixture } from "./fixtures/labs";
+import {
+  catalogFixture,
+  createFixture,
+  historyFixture,
+  overviewItem,
+  resultFixture,
+  zoneFixture,
+} from "./fixtures/labs";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -138,6 +145,21 @@ describe("Labs list model", () => {
     read_only: false,
   };
 
+  it("builds 120 valid unique ascending history dates covered by the zone span", () => {
+    const dates = historyFixture(120).map((result) => result.test_date);
+
+    expect(dates).toHaveLength(120);
+    expect(new Set(dates).size).toBe(120);
+    expect(dates).toEqual([...dates].sort());
+    expect(dates.every((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))).toBe(true);
+    expect(dates.every((date) => new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) === date)).toBe(true);
+    expect(dates.at(0)).toBe("2026-05-23");
+    expect(dates.at(-1)).toBe("2026-09-19");
+    expect(zoneFixture.at(0)?.from_date).toBe(dates.at(0));
+    expect(zoneFixture.at(-1)?.to_date_exclusive).toBe("2026-09-20");
+    expect(dates.at(-1)! < zoneFixture.at(-1)!.to_date_exclusive).toBe(true);
+  });
+
   it("joins owned activity and all catalog tests without mutating inputs", () => {
     const owned = toLabListItems(catalogFixture, overview, "owned");
     const all = toLabListItems(catalogFixture, overview, "all");
@@ -155,6 +177,16 @@ describe("Labs list model", () => {
     expect(filterLabs(items, "FERRITIN", null).map((item) => item.test_key)).toEqual(["ferritin"]);
     expect(filterLabs(items, "hba1c", null).map((item) => item.test_key)).toEqual(["hba1c"]);
     expect(filterLabs(items, "", "blood").map((item) => item.test_key)).toEqual(["eosinophils_pct"]);
+  });
+
+  it("keeps English case-insensitive search independent of the browser locale", () => {
+    const localeLowerCase = String.prototype.toLocaleLowerCase;
+    vi.spyOn(String.prototype, "toLocaleLowerCase").mockImplementation(function (this: string) {
+      return localeLowerCase.call(this, "tr");
+    });
+
+    const items = toLabListItems(catalogFixture, overview, "all");
+    expect(filterLabs(items, "FERRITIN", null).map((item) => item.test_key)).toEqual(["ferritin"]);
   });
 
   it("sorts latest activity without replacing latest result date", () => {

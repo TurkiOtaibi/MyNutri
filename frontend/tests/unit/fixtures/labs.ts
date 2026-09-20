@@ -126,13 +126,15 @@ export function overviewItem(testKey: string, date: string, updated: string): La
 
 export function historyFixture(count: number): LabResultResponse[] {
   return Array.from({ length: count }, (_, index) => {
-    const day = String(19 - count + index + 1).padStart(2, "0");
-    return resultFixture("hba1c", `2026-09-${day}`, `2026-09-${day}`);
+    const date = new Date(Date.UTC(2026, 8, 19));
+    date.setUTCDate(date.getUTCDate() - (count - index - 1));
+    const day = date.toISOString().slice(0, 10);
+    return resultFixture("hba1c", day, day);
   });
 }
 
 export const zoneFixture: LabChartZoneSegment[] = [{
-  from_date: "2026-09-01",
+  from_date: "2026-05-23",
   to_date_exclusive: "2026-09-20",
   age_min: 30,
   zones: [],

@@ -21,7 +21,7 @@ function normalizeSearch(value: string): string {
     .normalize("NFKC")
     .replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/g, "")
     .replace(/[إأآٱ]/g, "ا")
-    .toLocaleLowerCase()
+    .toLowerCase()
     .trim();
 }
 
