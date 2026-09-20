@@ -12,6 +12,7 @@ type LabsViewProps = {
   category: string | null;
   sort: LabSort;
   readOnly: boolean;
+  onAddTest?: (testKey: string) => void;
   onSearchChange: (value: string) => void;
   onCategoryChange: (value: string | null) => void;
   onSortChange: (value: LabSort) => void;
@@ -64,7 +65,7 @@ function Controls({ catalog, search, category, sort, onSearchChange, onCategoryC
   </div>;
 }
 
-function LabRows({ rows, emptyMessage }: { rows: LabListItem[]; emptyMessage: string }) {
+function LabRows({ rows, emptyMessage, onAddTest }: { rows: LabListItem[]; emptyMessage: string; onAddTest?: (testKey: string) => void }) {
   if (rows.length === 0) return <div className={styles.empty}><strong>{emptyMessage}</strong><span>يمكنك تغيير البحث أو التصنيف لعرض نتائج أخرى.</span></div>;
   return <ul className={styles.rows}>
     {rows.map((item) => <li
@@ -82,7 +83,9 @@ function LabRows({ rows, emptyMessage }: { rows: LabListItem[]; emptyMessage: st
         <strong dir="ltr">{item.latest.display_value} {item.latest.display_unit}</strong>
         <span className={styles.status} data-tone={item.latest.status.tone}>{item.latest.status.label_ar}</span>
         <time dateTime={item.latest.test_date}>{formatDate(item.latest.test_date)} · {item.latest.test_date}</time>
-      </div> : <span className={styles.noResult}>لا توجد نتيجة مسجلة</span>}
+      </div> : <div className={styles.latest}><span className={styles.noResult}>لا توجد نتيجة مسجلة</span>
+        {onAddTest ? <button type="button" className="btn" onClick={() => onAddTest(item.test_key)}>إضافة نتيجة</button> : null}
+      </div>}
     </li>)}
   </ul>;
 }
@@ -95,7 +98,7 @@ function LabsView(props: LabsViewProps & { mode: "owned" | "catalog" }) {
     <EligibilityNotice eligibility={props.eligibility} />
     <Controls {...props} />
     <div className={styles.resultBar}><span>{props.rows.length} تحليلاً</span>{props.readOnly ? <strong>للقراءة فقط</strong> : null}</div>
-    <LabRows rows={props.rows} emptyMessage={emptyMessage} />
+    <LabRows rows={props.rows} emptyMessage={emptyMessage} onAddTest={!props.readOnly && props.eligibility.allowed ? props.onAddTest : undefined} />
   </section>;
 }
 

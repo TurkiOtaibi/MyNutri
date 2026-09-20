@@ -38,6 +38,23 @@
 .empty strong { color: var(--ink); }
 .loading { min-height: 220px; display: grid; place-items: center; color: var(--muted); }
 
+.batchBackdrop { position: fixed; inset: 0; z-index: 80; background: rgb(0 0 0 / 45%); }
+.batchDialog { position: fixed; inset: 50% auto auto 50%; transform: translate(-50%, -50%); z-index: 81; width: min(680px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; background: var(--surface); color: var(--ink); }
+.batchDialog h2 { margin-top: 0; }
+.batchSteps { display: flex; gap: 24px; padding-inline-start: 22px; color: var(--muted); }
+.batchSteps [aria-current="step"] { color: var(--ink); font-weight: 800; }
+.batchFields { display: grid; gap: 12px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.batchFields label { display: grid; gap: 6px; min-width: 0; }
+.batchFields input:not([type="checkbox"]), .batchFields select { min-width: 0; width: 100%; min-height: 44px; background: white; color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; }
+.batchFields input:focus, .batchFields select:focus { outline: 3px solid color-mix(in srgb, var(--accent) 22%, white); border-color: var(--accent); }
+.batchFields .batchChoice { display: flex; align-items: center; min-height: 44px; gap: 10px; }
+.batchChoice input { width: 20px; height: 20px; flex-shrink: 0; }
+.batchRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 150px); gap: 12px; padding-block: 14px; border-bottom: 1px solid var(--line); }
+.batchRow strong { grid-column: 1 / -1; }
+.batchError { color: #7a1b14; }
+.batchError p { margin: 6px 0; }
+.batchActions { display: flex; justify-content: end; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+
 @media (max-width: 700px) {
   .heading, .notice { align-items: stretch; flex-direction: column; }
   .controls { grid-template-columns: 1fr; }

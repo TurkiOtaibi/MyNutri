@@ -83,8 +83,9 @@ export const createFixture: LabCreateRequest = {
 
 export const draftFixture: BatchDraft = {
   actorId: "actor-a",
-  testDate: "2026-09-19",
-  rows: [{ testKey: "hba1c", value: "5.270", unit: "%" }],
+  date: "2026-09-19",
+  panelKeys: [], individualKeys: ["hba1c"], step: "values",
+  rows: { hba1c: { value: "5.270", unit: "%" } },
 };
 
 export function resultFixture(

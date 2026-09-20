@@ -144,7 +144,7 @@ function expectLabsOverviewOwnership(owner: string, admin: string, presentation:
 
   expect(admin).toContain("getAdminLabs");
   expect(admin).toContain("labsQueryKeys.adminOverview");
-  expect(admin).not.toMatch(/\b(?:createLabResults|updateLabResult|deleteLabResult|useMutation)\b/);
+  expect(admin).not.toMatch(/\b(?:createLabResults|updateLabResult|deleteLabResult|useMutation|useLabBatch)\b/);
 
   expect(presentation).not.toMatch(/@tanstack\/react-query|@\/lib\/api/);
   expect(presentation).not.toMatch(/\b(?:useQuery|useInfiniteQuery|useMutation|useState|useReducer)\b/);
@@ -315,6 +315,11 @@ describe("domain boundaries", () => {
     expect(() => expectLabsOverviewOwnership(
       owner,
       `${admin}\nconst leak = deleteLabResult;`,
+      presentation,
+    )).toThrow();
+    expect(() => expectLabsOverviewOwnership(
+      owner,
+      `${admin}\nimport { useLabBatch } from "./useLabBatch";`,
       presentation,
     )).toThrow();
     expect(() => expectLabsOverviewOwnership(
