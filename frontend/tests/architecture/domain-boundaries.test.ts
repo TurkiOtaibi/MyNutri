@@ -79,6 +79,7 @@ const manifests = {
     "LabDraftRow", "BatchDraft", "LabRowErrors", "LabMappedErrors",
     "normalizeLabNumber", "selectedTestKeys", "buildLabRows", "mapLabErrors",
   ],
+  "features/labs/labs-overview-view.tsx": ["OwnedLabsView", "LabCatalogView"],
 } as const;
 
 function expectTransportBoundary(source: string) {
@@ -124,6 +125,31 @@ function expectFoodsCatalogOwnership(page: string, presentation: string) {
   expect(presentation).not.toMatch(/@tanstack\/react-query|@\/lib\/api/);
   expect(presentation).not.toMatch(/\b(?:useQuery|useInfiniteQuery|useMutation|useState|useReducer)\b/);
   expect(presentation).not.toMatch(/\b(?:listFoodsPage|getNutritionRegistry|useFoodDelete|resetCollection|setMobileItems)\b/);
+}
+
+function expectLabsOverviewOwnership(owner: string, admin: string, presentation: string) {
+  expect(owner).toMatch(/\buseQuery\b/);
+  expect(owner).toContain("getLabCatalog");
+  expect(owner).toContain("getLabs");
+  expect(owner).toContain("labsQueryKeys.catalog");
+  expect(owner).toContain("labsQueryKeys.ownerOverview");
+  expect(owner).toMatch(/const \[search, setSearch\] = useState\(""\)/);
+  expect(owner).toMatch(/const \[category, setCategory\] = useState<string \| null>\(null\)/);
+  expect(owner).toMatch(/const \[sort, setSort\] = useState<LabSort>\("newest_updated"\)/);
+  expect(`${owner}\n${admin}`).toContain('staleTime: 0');
+  expect(`${owner}\n${admin}`).toContain('refetchOnMount: "always"');
+  expect(`${owner}\n${admin}`).toContain('refetchOnWindowFocus: "always"');
+  expect(`${owner}\n${admin}`).not.toContain("refetchInterval");
+  expect(`${owner}\n${admin}`).toContain("AbortSignal.any([signal, sessionSignal])");
+
+  expect(admin).toContain("getAdminLabs");
+  expect(admin).toContain("labsQueryKeys.adminOverview");
+  expect(admin).not.toMatch(/\b(?:createLabResults|updateLabResult|deleteLabResult|useMutation)\b/);
+
+  expect(presentation).not.toMatch(/@tanstack\/react-query|@\/lib\/api/);
+  expect(presentation).not.toMatch(/\b(?:useQuery|useInfiniteQuery|useMutation|useState|useReducer)\b/);
+  expect(presentation).toContain("OwnedLabsView");
+  expect(presentation).toContain("LabCatalogView");
 }
 
 const movedSelectors = [
@@ -266,6 +292,36 @@ describe("domain boundaries", () => {
     expect(read("lib/api.ts")).toContain('from "./generated/openapi"');
     expect(read("components/AdminUserDetailsPage.tsx")).not.toMatch(/Record<string, unknown>|as unknown as/);
     expect(featureSource("labs")).not.toMatch(/prediabetes_range|diabetes_range|toCanonical|resolveRule|referenceThreshold/);
+  });
+
+  it("keeps Labs owner/admin queries, volatile filters, and read-only presentation separated", () => {
+    const owner = read("components/LabsPage.tsx");
+    const admin = read("components/AdminUserLabsPage.tsx");
+    const presentation = read("features/labs/labs-overview-view.tsx");
+    expectLabsOverviewOwnership(owner, admin, presentation);
+    expect(read("components/AdminUserDetailsPage.tsx")).toContain("/labs");
+    expect(read("features/labs/labs.module.css")).toContain(".labsPage");
+  });
+
+  it("proves the Labs ownership oracle rejects query, write-import, and state regressions", () => {
+    const owner = read("components/LabsPage.tsx");
+    const admin = read("components/AdminUserLabsPage.tsx");
+    const presentation = read("features/labs/labs-overview-view.tsx");
+    expect(() => expectLabsOverviewOwnership(
+      owner.replace("labsQueryKeys.ownerOverview", "labsQueryKeys.ownerRoot"),
+      admin,
+      presentation,
+    )).toThrow();
+    expect(() => expectLabsOverviewOwnership(
+      owner,
+      `${admin}\nconst leak = deleteLabResult;`,
+      presentation,
+    )).toThrow();
+    expect(() => expectLabsOverviewOwnership(
+      owner,
+      admin,
+      `${presentation}\nconst leakedState = useState([]);`,
+    )).toThrow();
   });
 
   it("moves representative exclusively owned selectors without global duplicates", () => {

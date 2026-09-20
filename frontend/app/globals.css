@@ -1655,6 +1655,26 @@ a {
   box-shadow: 0 2px 7px rgba(15, 118, 110, 0.16);
 }
 
+@media (max-width: 360px) {
+  .top-nav-inner {
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .nav-links {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .nav-link {
+    min-width: 0;
+    gap: 4px;
+    padding: 7px 4px;
+    font-size: 12px;
+  }
+}
+
 /* Focused Add Food bottom sheet */
 
 
