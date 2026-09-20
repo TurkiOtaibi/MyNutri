@@ -7,7 +7,8 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from uuid import uuid4
+from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import create_engine, inspect, text
@@ -16,8 +17,74 @@ from sqlmodel import Session
 
 from app.models import ActivityLevel, Goal, Principal, Profile, Sex
 
+if TYPE_CHECKING:
+    from fastapi.testclient import TestClient
+
 
 BACKEND_ROOT = Path(__file__).parents[1]
+LABS_TODAY = date(2026, 9, 20)
+
+
+@dataclass
+class ProfileClient:
+    """Existing TargetPlan request harness with an intentionally retained preview."""
+
+    client: "TestClient"
+    session: Session
+    owner_id: UUID
+    payload: dict
+    preview_hash: str
+
+    def get(self, path):
+        return self.client.get(path)
+
+    def write_profile(self, **overrides):
+        key = overrides.pop("idempotency_key", str(uuid4()))
+        body = self.payload | {
+            "effective_from": LABS_TODAY.isoformat(),
+            "confirmed": True,
+            "expected_preview_hash": self.preview_hash,
+        } | overrides
+        return self.client.post("/target-plans", json=body, headers={"Idempotency-Key": key})
+
+
+@pytest.fixture
+def profile_client(target_plan_context, monkeypatch):
+    from datetime import datetime, timezone
+    from app.core.calendar import diary_calendar_authority
+    from test_target_plans import PRINCIPAL_A, profile_payload
+
+    client, session = target_plan_context
+    authority = diary_calendar_authority(datetime(2026, 9, 20, tzinfo=timezone.utc))
+    monkeypatch.setattr("app.services.target_plans.current_diary_date", lambda: LABS_TODAY)
+    monkeypatch.setattr("app.api.routes.target_plans.current_diary_date", lambda: LABS_TODAY)
+    monkeypatch.setattr("app.api.routes.profile.diary_calendar_authority", lambda: authority)
+    payload = profile_payload()
+    preview = client.post(
+        "/profile/preview", json=payload | {"effective_from": LABS_TODAY.isoformat()}
+    )
+    assert preview.status_code == 200, preview.text
+    return ProfileClient(client, session, PRINCIPAL_A, payload, preview.json()["preview_hash"])
+
+
+@pytest.fixture
+def profile_lab_result(profile_client):
+    """Same approved Lab fact on the TargetPlan request fixture's owner/session."""
+    from decimal import Decimal
+    from app.models import LabResult
+
+    assert profile_client.write_profile().status_code == 201
+    row = LabResult(
+        principal_id=profile_client.owner_id,
+        test_key="hba1c",
+        test_date=date(2026, 9, 19),
+        entered_value=Decimal("5.2"),
+        entered_unit="%",
+    )
+    profile_client.session.add(row)
+    profile_client.session.commit()
+    profile_client.session.refresh(row)
+    return row
 
 
 def safe_labs_database_url() -> str:
@@ -218,3 +285,55 @@ def seeded_lab_history(labs_postgresql_session, lab_owner):
         owner_id=lab_owner.id,
         january_updated_at=january_updated_at,
     )
+
+@pytest.fixture
+def run_owner_lock_race(labs_postgresql_database):
+    """Run two owner mutations after proving real PostgreSQL lock contention.
+
+    First owns Principal while second starts. Release only once PostgreSQL reports
+    second blocked by first. Events and bounded DB locks replace timing sleeps.
+    Callbacks own their validation, mutations, and commit/rollback.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from time import monotonic
+    from sqlmodel import select
+
+    def run(owner_id, first, second):
+        first_locked, second_started, release_first = Event(), Event(), Event()
+        pids = {}
+
+        def execute(name, callback):
+            with Session(labs_postgresql_database.engine) as session:
+                session.exec(text("SET LOCAL lock_timeout = '8s'"))
+                session.exec(text("SET LOCAL statement_timeout = '10s'"))
+                pids[name] = session.exec(text("SELECT pg_backend_pid()")).scalar_one()
+                if name == "first":
+                    session.exec(select(Principal).where(Principal.id == owner_id).with_for_update()).one()
+                    first_locked.set()
+                    assert release_first.wait(8), "First transaction release timed out"
+                else:
+                    second_started.set()
+                return callback(session)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first_future = executor.submit(execute, "first", first)
+            try:
+                assert first_locked.wait(5), "First transaction never acquired Principal"
+                second_future = executor.submit(execute, "second", second)
+                assert second_started.wait(5), "Second transaction never started"
+                deadline = monotonic() + 5
+                with labs_postgresql_database.engine.connect() as observer:
+                    while monotonic() < deadline:
+                        blockers = observer.execute(
+                            text("SELECT pg_blocking_pids(:pid)"), {"pid": pids["second"]}
+                        ).scalar_one()
+                        if pids["first"] in blockers:
+                            break
+                    else:
+                        pytest.fail("Second transaction did not block on the first owner's lock")
+            finally:
+                release_first.set()
+            return first_future.result(timeout=10), second_future.result(timeout=10)
+
+    return run

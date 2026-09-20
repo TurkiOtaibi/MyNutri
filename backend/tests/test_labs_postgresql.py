@@ -196,3 +196,74 @@ def test_date_fixtures_keep_history_order_separate_from_update_order(seeded_lab_
         (date(2026, 9, 1), Decimal("5.7")),
     ]
     assert rows[0].updated_at == seeded_lab_history.january_updated_at > rows[1].updated_at
+
+@pytest.mark.parametrize("labs_first", [True, False])
+def test_profile_dob_and_lab_insert_serialize_on_owner_lock(
+    labs_postgresql_database, labs_postgresql_session, lab_owner,
+    run_owner_lock_race, monkeypatch, labs_first,
+):
+    from sqlmodel import select
+    from app.core.auth import PrincipalContext
+    from app.core.calendar import age_on
+    from app.models import Profile, TargetPlan
+    from app.schemas import TargetPlanWriteRequest
+    from app.services.profile import to_target_response
+    from app.services.target_plans import TargetPlanError, write_target_plan
+    from labs_fixtures import LABS_TODAY
+    from test_target_plans import profile_payload
+
+    owner_id = lab_owner.id
+    labs_postgresql_session.rollback()
+    monkeypatch.setattr("app.services.target_plans._database_riyadh_date", lambda _: LABS_TODAY)
+    # This DOB is adult today, but 17 at yesterday's test date.
+    payload = TargetPlanWriteRequest.model_validate(profile_payload() | {
+        "sex": "female", "birth_date": "2008-09-20", "confirmed": True,
+        "effective_from": LABS_TODAY, "expected_preview_hash": "0" * 64,
+    })
+    payload.expected_preview_hash = to_target_response(payload, LABS_TODAY).preview_hash
+
+    def write_profile(session):
+        try:
+            response, replayed = write_target_plan(
+                session, PrincipalContext(owner_id), payload, "concurrent-dob",
+            )
+            assert not replayed
+            return response.plan.id
+        except TargetPlanError as error:
+            return error.code
+
+    def write_synthetic_lab(session):
+        session.exec(select(Principal).where(Principal.id == owner_id).with_for_update()).one()
+        profile = session.exec(
+            select(Profile).where(Profile.principal_id == owner_id).with_for_update()
+        ).one()
+        # Task5 replaces this synthetic locked insert with the real Labs service.
+        if age_on(profile.birth_date, date(2026, 9, 19)) < 18:
+            session.rollback()
+            return "adult_only"
+        row = result(owner_id)
+        session.add(row)
+        session.commit()
+        return row.id
+
+    first, second = run_owner_lock_race(
+        owner_id,
+        write_synthetic_lab if labs_first else write_profile,
+        write_profile if labs_first else write_synthetic_lab,
+    )
+    with Session(labs_postgresql_database.engine) as check:
+        profile = check.exec(select(Profile).where(Profile.principal_id == owner_id)).one()
+        labs = check.exec(select(models.LabResult)).all()
+        plans = check.exec(select(TargetPlan)).all()
+        receipts = check.exec(select(IdempotencyRecord)).all()
+        if labs_first:
+            assert second == "LABS_ADULT_HISTORY_REQUIRED"
+            assert len(labs) == 1 and labs[0].id == first
+            assert profile.birth_date == date(1990, 1, 1)
+            assert not plans and not receipts
+        else:
+            assert second == "adult_only"
+            assert profile.birth_date == date(2008, 9, 20)
+            assert len(plans) == 1 and plans[0].id == first
+            assert len(receipts) == 1
+            assert not labs
