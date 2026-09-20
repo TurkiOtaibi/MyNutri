@@ -61,6 +61,7 @@ export function LabsPage() {
     onCategoryChange: setCategory,
     onSortChange: setSort,
     onAddTest: (testKey: string) => openBatch([testKey]),
+    detailHref: (testKey: string) => `/labs/tests/${encodeURIComponent(testKey)}`,
   };
   return <div className={styles.labsPage}>
     <header className={styles.heading}><div><h1>تحاليلك</h1><p>تابع أحدث نتيجة محفوظة لكل تحليل وفق القيم المرجعية للنظام.</p></div>

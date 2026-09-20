@@ -303,6 +303,29 @@ describe("domain boundaries", () => {
     expect(read("features/labs/labs.module.css")).toContain(".labsPage");
   });
 
+  it("keeps shared Labs detail transport-free and admin detail mutation-free", () => {
+    const owner = read("components/LabTestPage.tsx");
+    const admin = read("components/AdminUserLabTestPage.tsx");
+    const assertDetail = (source: string) => {
+      expect(source).toContain("labsQueryKeys.adminTest");
+      expect(source).toContain("getAdminLabTest(principalId, testKey");
+      expect(source).not.toMatch(/\b(?:createLabResults|updateLabResult|deleteLabResult|useMutation|useLabBatch|LabBatchDialog|ownerActions)\b/);
+    };
+    assertDetail(admin);
+    expect(() => assertDetail(`${admin}\nconst forbidden = useLabBatch;`)).toThrow();
+    expect(owner).toContain("labsQueryKeys.ownerTest");
+    expect(owner).toContain("batch.open([testKey])");
+    for (const source of [owner, admin]) {
+      expect(source).toContain('refetchOnMount: "always"');
+      expect(source).toContain('refetchOnWindowFocus: "always"');
+      expect(source).toContain("AbortSignal.any([signal, sessionSignal])");
+      expect(source).not.toContain("refetchInterval");
+    }
+    for (const file of ["lab-test-view", "lab-history-chart", "lab-history-list"]) {
+      expect(read(`features/labs/${file}.tsx`)).not.toMatch(/@tanstack\/react-query|@\/lib\/api|useMutation/);
+    }
+  });
+
   it("proves the Labs ownership oracle rejects query, write-import, and state regressions", () => {
     const owner = read("components/LabsPage.tsx");
     const admin = read("components/AdminUserLabsPage.tsx");

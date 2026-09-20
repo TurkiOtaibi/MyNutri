@@ -60,6 +60,8 @@ export type LabsApi = {
 };
 
 type LabsFixtures = {
+  initialLabsProfile: Partial<Pick<ProfileInput, "sex" | "birth_date">>;
+  labsHasTouch: boolean;
   labsApi: LabsApi;
   labsPage: Page;
 };
@@ -80,7 +82,7 @@ function headers(token: string) {
   return { Authorization: `Bearer ${token}` };
 }
 
-async function createActor(request: APIRequestContext): Promise<LabsActor> {
+async function createActor(request: APIRequestContext, initialProfile: LabsFixtures["initialLabsProfile"]): Promise<LabsActor> {
   const email = `labs-owner-${randomUUID()}@example.test`;
   const tokenResponse = await fetch(`${AUTH_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
@@ -98,7 +100,7 @@ async function createActor(request: APIRequestContext): Promise<LabsActor> {
   expect(accountResponse.status(), await accountResponse.text()).toBe(200);
   const account = await accountResponse.json() as { principal_id: string; role: string };
   expect(account.role).toBe("user");
-  await applyProfileThroughTargetPlan(request, token, profile);
+  await applyProfileThroughTargetPlan(request, token, { ...profile, ...initialProfile });
   return {
     email,
     token,
@@ -165,8 +167,9 @@ function createLabsApi(request: APIRequestContext, actor: LabsActor): LabsApi & 
   return api;
 }
 
-async function loginOwner(browser: Browser, actor: LabsActor): Promise<{ context: BrowserContext; page: Page }> {
+async function loginOwner(browser: Browser, actor: LabsActor, hasTouch: boolean): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({
+    hasTouch,
     storageState: {
       cookies: actor.authCookies.map(({ name, value, expires }) => ({
         name,
@@ -218,8 +221,10 @@ export async function navigateToOwnerLabs(page: Page) {
 }
 
 export const test = base.extend<LabsFixtures>({
-  labsApi: async ({ request }, fixtureUse) => {
-    const actor = await createActor(request);
+  initialLabsProfile: [{}, { option: true }],
+  labsHasTouch: [false, { option: true }],
+  labsApi: async ({ request, initialLabsProfile }, fixtureUse) => {
+    const actor = await createActor(request, initialLabsProfile);
     const api = createLabsApi(request, actor);
     try {
       await fixtureUse(api);
@@ -227,8 +232,8 @@ export const test = base.extend<LabsFixtures>({
       await api.cleanup();
     }
   },
-  labsPage: async ({ browser, labsApi }, fixtureUse) => {
-    const { context, page } = await loginOwner(browser, labsApi.actor);
+  labsPage: async ({ browser, labsApi, labsHasTouch }, fixtureUse) => {
+    const { context, page } = await loginOwner(browser, labsApi.actor, labsHasTouch);
     try {
       await fixtureUse(page);
     } finally {

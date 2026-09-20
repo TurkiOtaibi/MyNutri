@@ -13,6 +13,7 @@ type LabsViewProps = {
   sort: LabSort;
   readOnly: boolean;
   onAddTest?: (testKey: string) => void;
+  detailHref?: (testKey: string) => string;
   onSearchChange: (value: string) => void;
   onCategoryChange: (value: string | null) => void;
   onSortChange: (value: LabSort) => void;
@@ -65,7 +66,7 @@ function Controls({ catalog, search, category, sort, onSearchChange, onCategoryC
   </div>;
 }
 
-function LabRows({ rows, emptyMessage, onAddTest }: { rows: LabListItem[]; emptyMessage: string; onAddTest?: (testKey: string) => void }) {
+function LabRows({ rows, emptyMessage, onAddTest, detailHref }: { rows: LabListItem[]; emptyMessage: string; onAddTest?: (testKey: string) => void; detailHref?: (testKey: string) => string }) {
   if (rows.length === 0) return <div className={styles.empty}><strong>{emptyMessage}</strong><span>يمكنك تغيير البحث أو التصنيف لعرض نتائج أخرى.</span></div>;
   return <ul className={styles.rows}>
     {rows.map((item) => <li
@@ -76,7 +77,7 @@ function LabRows({ rows, emptyMessage, onAddTest }: { rows: LabListItem[]; empty
       data-category={item.test.primary_category}
     >
       <div className={styles.identity}>
-        <strong>{item.test.name_ar}</strong>
+        <strong>{detailHref ? <Link href={detailHref(item.test_key)}>{item.test.name_ar}</Link> : item.test.name_ar}</strong>
         <span dir="ltr">{item.test.abbreviation ?? item.test.name_en}</span>
       </div>
       {item.latest ? <div className={styles.latest}>
@@ -98,7 +99,7 @@ function LabsView(props: LabsViewProps & { mode: "owned" | "catalog" }) {
     <EligibilityNotice eligibility={props.eligibility} />
     <Controls {...props} />
     <div className={styles.resultBar}><span>{props.rows.length} تحليلاً</span>{props.readOnly ? <strong>للقراءة فقط</strong> : null}</div>
-    <LabRows rows={props.rows} emptyMessage={emptyMessage} onAddTest={!props.readOnly && props.eligibility.allowed ? props.onAddTest : undefined} />
+    <LabRows rows={props.rows} emptyMessage={emptyMessage} detailHref={props.detailHref} onAddTest={!props.readOnly && props.eligibility.allowed ? props.onAddTest : undefined} />
   </section>;
 }
 
