@@ -19,6 +19,7 @@ from app.models import ActivityLevel, Goal, Principal, Profile, Sex
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
+    from app.core.auth import PrincipalContext
 
 
 BACKEND_ROOT = Path(__file__).parents[1]
@@ -40,11 +41,15 @@ class ProfileClient:
 
     def write_profile(self, **overrides):
         key = overrides.pop("idempotency_key", str(uuid4()))
-        body = self.payload | {
-            "effective_from": LABS_TODAY.isoformat(),
-            "confirmed": True,
-            "expected_preview_hash": self.preview_hash,
-        } | overrides
+        body = (
+            self.payload
+            | {
+                "effective_from": LABS_TODAY.isoformat(),
+                "confirmed": True,
+                "expected_preview_hash": self.preview_hash,
+            }
+            | overrides
+        )
         return self.client.post("/target-plans", json=body, headers={"Idempotency-Key": key})
 
 
@@ -176,25 +181,116 @@ def labs_postgresql_session(labs_postgresql_database) -> Iterator[Session]:
         yield session
 
 
-@pytest.fixture
-def lab_owner(labs_postgresql_session) -> Principal:
-    owner = Principal(auth_user_id=uuid4(), email=f"labs-{uuid4()}@example.test")
-    labs_postgresql_session.add(owner)
-    labs_postgresql_session.flush()
-    labs_postgresql_session.add(
-        Profile(
-            principal_id=owner.id,
-            sex=Sex.female,
-            birth_date=date(1990, 1, 1),
-            height_cm=165,
-            weight_kg=65,
-            activity_level=ActivityLevel.light,
-            goal=Goal.maintain,
-        )
+@dataclass(frozen=True)
+class LabActor:
+    id: UUID
+    profile: Profile
+    context: "PrincipalContext"
+
+
+def _lab_actor(session, role="user"):
+    from app.core.auth import PrincipalContext
+
+    owner = Principal(auth_user_id=uuid4(), email=f"labs-{uuid4()}@example.test", role=role)
+    session.add(owner)
+    session.flush()
+    profile = Profile(
+        principal_id=owner.id,
+        sex=Sex.female,
+        birth_date=date(1990, 1, 1),
+        height_cm=165,
+        weight_kg=65,
+        activity_level=ActivityLevel.light,
+        goal=Goal.maintain,
     )
-    labs_postgresql_session.commit()
-    labs_postgresql_session.refresh(owner)
-    return owner
+    session.add(profile)
+    session.commit()
+    return LabActor(owner.id, profile, PrincipalContext(owner.id, owner.auth_user_id, owner.role))
+
+
+@pytest.fixture
+def lab_owner(labs_postgresql_session):
+    return _lab_actor(labs_postgresql_session)
+
+
+@pytest.fixture
+def other_lab_owner(labs_postgresql_session):
+    return _lab_actor(labs_postgresql_session)
+
+
+@pytest.fixture
+def lab_admin(labs_postgresql_session):
+    return _lab_actor(labs_postgresql_session, "admin")
+
+
+@pytest.fixture
+def as_actor(lab_owner):
+    current = [lab_owner.context]
+
+    def switch(principal):
+        current[0] = getattr(principal, "context", principal)
+
+    switch.current = current
+    return switch
+
+
+@pytest.fixture
+def labs_client(labs_postgresql_session, as_actor, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.core.auth import get_principal_context
+    from app.db.session import get_session
+    from app.main import app
+
+    monkeypatch.setattr("app.services.labs.database_calendar_date", lambda _: LABS_TODAY)
+    previous = app.dependency_overrides.copy()
+    app.dependency_overrides[get_session] = lambda: labs_postgresql_session
+    app.dependency_overrides[get_principal_context] = lambda: as_actor.current[0]
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
+
+
+def request(day, rows):
+    from app.schemas import LabCreateRequest
+
+    return LabCreateRequest.model_validate(
+        {
+            "test_date": day,
+            "results": [
+                dict(zip(("test_key", "entered_value", "entered_unit"), row)) for row in rows
+            ],
+        }
+    )
+
+
+def count_results(session, owner_id, test_key=None):
+    from sqlalchemy import func
+    from sqlmodel import select
+    from app.models import LabResult
+
+    query = select(func.count()).select_from(LabResult).where(LabResult.principal_id == owner_id)
+    if test_key is not None:
+        query = query.where(LabResult.test_key == test_key)
+    return session.exec(query).one()
+
+
+def count_receipts(session, owner_id, key):
+    from sqlalchemy import func
+    from sqlmodel import select
+    from app.models import IdempotencyRecord
+
+    return session.exec(
+        select(func.count())
+        .select_from(IdempotencyRecord)
+        .where(
+            IdempotencyRecord.principal_id == owner_id,
+            IdempotencyRecord.operation == "lab_results.create.v1",
+            IdempotencyRecord.idempotency_key == key,
+        )
+    ).one()
 
 
 @pytest.fixture
@@ -286,6 +382,7 @@ def seeded_lab_history(labs_postgresql_session, lab_owner):
         january_updated_at=january_updated_at,
     )
 
+
 @pytest.fixture
 def run_owner_lock_race(labs_postgresql_database):
     """Run two owner mutations after proving real PostgreSQL lock contention.
@@ -309,7 +406,9 @@ def run_owner_lock_race(labs_postgresql_database):
                 session.exec(text("SET LOCAL statement_timeout = '10s'"))
                 pids[name] = session.exec(text("SELECT pg_backend_pid()")).scalar_one()
                 if name == "first":
-                    session.exec(select(Principal).where(Principal.id == owner_id).with_for_update()).one()
+                    session.exec(
+                        select(Principal).where(Principal.id == owner_id).with_for_update()
+                    ).one()
                     first_locked.set()
                     assert release_first.wait(8), "First transaction release timed out"
                 else:

@@ -1,5 +1,6 @@
 from datetime import date, datetime
 import math
+import re
 from typing import Any, Literal
 from uuid import UUID
 
@@ -7,9 +8,13 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    StrictStr,
     field_validator,
     model_validator,
 )
+from pydantic_core import PydanticCustomError
+
+from app.labs.numbers import normalize_decimal_text
 
 from app.models import (
     ActivityLevel,
@@ -835,3 +840,66 @@ class WeekSummary(BaseModel):
     end: date
     days: list[DaySummary]
     weekly_totals: NutritionTotals
+
+
+class LabCreateRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    test_key: StrictStr
+    entered_value: StrictStr
+    entered_unit: StrictStr
+
+    @field_validator("entered_value", mode="before")
+    @classmethod
+    def plain_decimal(cls, value: Any) -> str:
+        try:
+            return normalize_decimal_text(value)
+        except ValueError as error:
+            if str(error) == "The normalized decimal exceeds 128 characters":
+                raise PydanticCustomError(
+                    "LAB_VALUE_TOO_LONG", "تتجاوز القيمة حد التخزين المسموح."
+                ) from error
+            raise PydanticCustomError(
+                "LAB_DECIMAL_INVALID", "أدخل قيمة رقمية صريحة غير سالبة."
+            ) from error
+
+
+class LabCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    test_date: date
+    results: list[LabCreateRow] = Field(min_length=1, max_length=51)
+
+    @field_validator("test_date", mode="before")
+    @classmethod
+    def iso_date_string(cls, value: Any) -> date:
+        if not isinstance(value, str) or re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value) is None:
+            raise ValueError("A YYYY-MM-DD date string is required")
+        return date.fromisoformat(value)
+
+    @field_validator("results", mode="before")
+    @classmethod
+    def populated_batch(cls, value: Any) -> Any:
+        if isinstance(value, list) and not value:
+            raise PydanticCustomError("LAB_BATCH_EMPTY", "أدخل نتيجة واحدة على الأقل.")
+        return value
+
+
+class LabCreateReceipt(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    receipt_version: Literal[1] = 1
+    result_ids: list[UUID]
+
+
+class LabFieldError(BaseModel):
+    loc: list[str | int]
+    field: str | None = None
+    test_key: str | None = None
+    code: str | None = None
+    msg: str
+    type: str
+
+
+class LabErrorResponse(BaseModel):
+    detail: list[LabFieldError]

@@ -204,17 +204,20 @@ def test_profile_dob_and_lab_insert_serialize_on_owner_lock(
 ):
     from sqlmodel import select
     from app.core.auth import PrincipalContext
-    from app.core.calendar import age_on
+    from app.labs.catalog import load_catalog
     from app.models import Profile, TargetPlan
     from app.schemas import TargetPlanWriteRequest
     from app.services.profile import to_target_response
     from app.services.target_plans import TargetPlanError, write_target_plan
-    from labs_fixtures import LABS_TODAY
+    from app.services.labs import create_results
+    from app.services.labs_errors import LabValidationError
+    from labs_fixtures import LABS_TODAY, request
     from test_target_plans import profile_payload
 
     owner_id = lab_owner.id
     labs_postgresql_session.rollback()
     monkeypatch.setattr("app.services.target_plans._database_riyadh_date", lambda _: LABS_TODAY)
+    monkeypatch.setattr("app.services.labs.database_calendar_date", lambda _: LABS_TODAY)
     # This DOB is adult today, but 17 at yesterday's test date.
     payload = TargetPlanWriteRequest.model_validate(profile_payload() | {
         "sex": "female", "birth_date": "2008-09-20", "confirmed": True,
@@ -232,24 +235,19 @@ def test_profile_dob_and_lab_insert_serialize_on_owner_lock(
         except TargetPlanError as error:
             return error.code
 
-    def write_synthetic_lab(session):
-        session.exec(select(Principal).where(Principal.id == owner_id).with_for_update()).one()
-        profile = session.exec(
-            select(Profile).where(Profile.principal_id == owner_id).with_for_update()
-        ).one()
-        # Task5 replaces this synthetic locked insert with the real Labs service.
-        if age_on(profile.birth_date, date(2026, 9, 19)) < 18:
-            session.rollback()
-            return "adult_only"
-        row = result(owner_id)
-        session.add(row)
-        session.commit()
-        return row.id
+    def write_lab(session):
+        try:
+            receipt, replayed = create_results(session, lab_owner.context,
+                request("2026-09-19", [("hba1c", "5.2", "%")]), "concurrent-lab", load_catalog())
+            assert not replayed
+            return receipt.result_ids[0]
+        except LabValidationError as error:
+            return error.errors[0].code
 
     first, second = run_owner_lock_race(
         owner_id,
-        write_synthetic_lab if labs_first else write_profile,
-        write_profile if labs_first else write_synthetic_lab,
+        write_lab if labs_first else write_profile,
+        write_profile if labs_first else write_lab,
     )
     with Session(labs_postgresql_database.engine) as check:
         profile = check.exec(select(Profile).where(Profile.principal_id == owner_id)).one()
@@ -260,9 +258,10 @@ def test_profile_dob_and_lab_insert_serialize_on_owner_lock(
             assert second == "LABS_ADULT_HISTORY_REQUIRED"
             assert len(labs) == 1 and labs[0].id == first
             assert profile.birth_date == date(1990, 1, 1)
-            assert not plans and not receipts
+            assert not plans and len(receipts) == 1
+            assert receipts[0].operation == "lab_results.create.v1"
         else:
-            assert second == "adult_only"
+            assert second == "LAB_ADULT_REQUIRED"
             assert profile.birth_date == date(2008, 9, 20)
             assert len(plans) == 1 and plans[0].id == first
             assert len(receipts) == 1
