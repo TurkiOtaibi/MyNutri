@@ -14,7 +14,9 @@ export function chartGeometry(results: LabResultResponse[], segments: LabChartZo
   const top = 20, bottom = Math.max(120, height) - 38;
   const first = date(ordered[0].test_date), last = date(ordered.at(-1)!.test_date);
   const singleDate = first === last;
-  const x = (value: number) => singleDate ? (left + right) / 2 : left + (value - first) / (last - first) * (right - left);
+  // Preserve the final supplied half-open interval even when it starts at the newest result.
+  const domainEnd = segments.reduce((end, segment) => Math.max(end, date(segment.to_date_exclusive)), last);
+  const x = (value: number) => singleDate ? (left + right) / 2 : left + (value - first) / (domainEnd - first) * (right - left);
   // Number is confined to linear drawing coordinates; these are never medical decisions.
   let min = Number(ordered[0].display_value), max = min;
   const include = (value: string) => { min = Math.min(min, Number(value)); max = Math.max(max, Number(value)); };
@@ -30,7 +32,7 @@ export function chartGeometry(results: LabResultResponse[], segments: LabChartZo
     const start = date(segment.from_date), end = date(segment.to_date_exclusive);
     if (singleDate ? start > first || end <= first : start > last || end <= first) return [];
     const fromX = singleDate ? left : x(Math.max(first, start));
-    const toX = singleDate ? right : x(Math.min(last, end));
+    const toX = singleDate ? right : x(Math.min(domainEnd, end));
     return segment.zones.map(zone => ({ fromX, toX,
       lowY: zone.low === null ? bottom : y(Number(zone.low)),
       highY: zone.high === null ? top : y(Number(zone.high)), statusCode: zone.status.code,

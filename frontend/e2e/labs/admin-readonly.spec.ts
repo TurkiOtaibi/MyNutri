@@ -20,7 +20,7 @@ test("admin opens selected user's complete detail through scoped overview link w
   const response = await read;
   expect(response.status()).toBe(200);
   expect((await response.json() as LabTestDetailResponse).read_only).toBe(true);
-  await expect(page).toHaveURL(new RegExp(`${base}/tests/hba1c$`));
+  await expect(page).toHaveURL(new RegExp(`${base}/hba1c$`));
   await expect(page.getByText("للقراءة فقط", { exact: true })).toBeVisible();
   await expect(page.locator("[data-chart-point]")).toHaveCount(detail.results.length);
   await expect(page.locator("[data-history-result]")).toHaveCount(detail.results.length);
@@ -44,7 +44,7 @@ test("switching admin detail subject uses that subject's API results", async ({ 
   const owner = await labsApi.detail("hba1c");
   const ownerPath = `/admin/users/${labsApi.actor.principalId}/labs/tests/hba1c`;
   const first = waitForLabsGet(page, ownerPath);
-  await page.goto(ownerPath);
+  await page.goto(`/admin/users/${labsApi.actor.principalId}/labs/hba1c`);
   expect((await first).status()).toBe(200);
   await expect(page.locator(`[data-history-result="${owner.results[0].id}"]`)).toBeVisible();
   const account = await request.get(`${API_URL}/account/me`, { headers: adminHeaders() });
@@ -52,7 +52,7 @@ test("switching admin detail subject uses that subject's API results", async ({ 
   const { principal_id: principalId } = await account.json() as { principal_id: string };
   const nextPath = `/admin/users/${principalId}/labs/tests/hba1c`;
   const second = waitForLabsGet(page, nextPath);
-  await page.goto(nextPath);
+  await page.goto(`/admin/users/${principalId}/labs/hba1c`);
   const response = await second;
   expect(response.status()).toBe(200);
   const detail = await response.json() as LabTestDetailResponse;
@@ -63,7 +63,7 @@ test("switching admin detail subject uses that subject's API results", async ({ 
 
 test("admin's owner detail URL remains explicitly read-only", async ({ page }) => {
   const read = waitForLabsGet(page, "/labs/tests/hba1c");
-  await page.goto("/labs/tests/hba1c");
+  await page.goto("/labs/hba1c");
   const response = await read;
   expect(response.status()).toBe(200);
   expect((await response.json() as LabTestDetailResponse).read_only).toBe(true);

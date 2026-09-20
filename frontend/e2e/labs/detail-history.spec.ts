@@ -14,7 +14,7 @@ test.afterEach(async ({ labsApi }) => {
 
 async function openDetail(page: Page, key: string) {
   const read = waitForLabsGet(page, `/labs/tests/${key}`);
-  await page.goto(`/labs/tests/${key}`);
+  await page.goto(`/labs/${key}`);
   expect((await read).status()).toBe(200);
   await expect(page.getByTestId("lab-detail")).toBeVisible();
 }
@@ -63,7 +63,7 @@ const transitions = [
 for (const scenario of transitions) test.describe(`historical ${scenario.key}`, () => {
   test.use({ initialLabsProfile: { sex: scenario.sex, birth_date: scenario.birth_date } });
   test("draws the API birthday transition and selects exact historical reference/status", async ({ labsPage: page, labsApi }) => {
-    for (const date of ["2020-12-31", "2021-01-01", "2022-01-01"]) await labsApi.create(date, [{ test_key: scenario.key, entered_value: scenario.value, entered_unit: scenario.unit }]);
+    for (const date of ["2020-12-30", "2020-12-31", "2021-01-01"]) await labsApi.create(date, [{ test_key: scenario.key, entered_value: scenario.value, entered_unit: scenario.unit }]);
     const detail = await labsApi.detail(scenario.key);
     expect(detail.chart_zones).toHaveLength(2);
     expect(detail.chart_zones[0].to_date_exclusive).toBe("2021-01-01");
@@ -73,6 +73,9 @@ for (const scenario of transitions) test.describe(`historical ${scenario.key}`, 
     await openDetail(page, scenario.key);
     await expectFullDetail(page, detail);
     await expect(page.locator("[data-chart-band]")).toHaveCount(detail.chart_zones.reduce((count, segment) => count + segment.zones.length, 0));
+    for (const band of await page.locator("[data-chart-band]").all()) {
+      expect(await band.evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(0);
+    }
     await expectReferences(page, detail.results[0]);
     await page.locator(`[data-chart-point="${detail.results[0].id}"]`).focus();
     await page.keyboard.press("Home");

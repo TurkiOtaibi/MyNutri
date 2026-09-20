@@ -58,4 +58,19 @@ describe("Lab chart geometry", () => {
     expect(g.bands[2].lowY).toBeGreaterThan(g.bands[2].highY);
     expect(g.bands[2].lowY).toBeLessThan(g.bands[5].lowY);
   });
+  it("gives the final birthday segment its full positive calendar width when the newest point starts it", () => {
+    const points = ferritinFemaleHistory.map((point, index) => ({ ...point, test_date: index ? "2021-01-01" : "2020-12-31" }));
+    const segments = [
+      { ...ferritinAge51Segments[0], from_date: "2020-12-31" },
+      { ...ferritinAge51Segments[1], to_date_exclusive: "2021-01-02" },
+    ];
+    const g = chartGeometry(points, segments, 360, 240);
+    expect(g.bands).toHaveLength(6);
+    for (const band of g.bands.slice(3)) {
+      expect(band.fromX).toBe(g.points[1].x);
+      expect(band.toX).toBeGreaterThan(band.fromX);
+      // Both neighboring spans are exactly one supplied calendar day.
+      expect(band.toX - band.fromX).toBeCloseTo(g.points[1].x - g.points[0].x, 8);
+    }
+  });
 });

@@ -50,7 +50,7 @@ export function AdminUserLabsPage({ principalId }: { principalId: string }) {
       category={category}
       sort={sort}
       readOnly={overview.data.read_only}
-      detailHref={(testKey) => `/admin/users/${encodeURIComponent(principalId)}/labs/tests/${encodeURIComponent(testKey)}`}
+      detailHref={(testKey) => `/admin/users/${encodeURIComponent(principalId)}/labs/${encodeURIComponent(testKey)}`}
       onSearchChange={setSearch}
       onCategoryChange={setCategory}
       onSortChange={setSort}
