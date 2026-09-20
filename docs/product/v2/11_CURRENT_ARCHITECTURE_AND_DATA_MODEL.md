@@ -11,7 +11,7 @@ API boundary.
 
 ## Runtime entities and ownership
 
-There are six persisted application entities:
+There are seven persisted application entities:
 
 | Entity | Scope and purpose |
 |---|---|
@@ -19,6 +19,7 @@ There are six persisted application entities:
 | `Profile` | One per Principal; latest confirmed calculation inputs/preferences |
 | `TargetPlan` | Principal-owned immutable dated calculation revision |
 | `IdempotencyRecord` | Principal/operation/key-scoped replay and atomic completion record |
+| `LabResult` | Principal-owned entered laboratory facts; private backend persistence |
 | `Food` | Global shared catalog row; Admin-created/updated/deleted |
 | `DiaryEntry` | Principal-owned consumed Food measurement and optional TargetPlan binding |
 
@@ -42,6 +43,19 @@ or future; reads may resolve any date. GET resolution is pure read.
 No applicable plan returns `plan = null` and `targets = null`. Profile and a legacy
 snapshot never substitute. A first future plan updates Profile immediately while
 earlier dates remain without targets.
+
+## Labs persistence
+
+`LabResult` stores `id`, `principal_id`, `test_key`, `test_date`, `entered_value`,
+`entered_unit`, and timezone-aware `created_at`/`updated_at`. Entered values use
+unscaled `NUMERIC`; PostgreSQL preserves fractional trailing zeros and enforces
+finite nonnegative values and normalized text length at most 128. Test/unit keys
+are nonempty strings bounded to 64 characters. Ownership uses `ON DELETE RESTRICT`.
+The unique B-tree on `(principal_id, test_key, test_date)` also supports scoped
+reverse date scans without a separate descending index. Current interpretation,
+reference ranges, and canonical values are not stored authoritative facts.
+Time-dependent date validation and medical catalog rules belong to the backend.
+Direct table privileges for `PUBLIC`, `anon`, and `authenticated` are revoked.
 
 ## Diary binding and Food truth
 
@@ -77,6 +91,10 @@ strict adapter that validates legacy-equivalent hashes and reconstructs the curr
 response from the referenced TargetPlan. Stored legacy response JSON is never returned
 directly; ambiguous or conflicting reuse fails closed.
 
+`lab_results.create.v1` receipts are durable with null `expires_at`; all other
+operations require non-null expiry. The existing completion/uniqueness checks
+and expiry index remain. Target Plan expiry and replay data are unchanged.
+
 Diary client UUID replay remains separate. Retired Day-status idempotency is absent.
 
 ## API and navigation
@@ -90,7 +108,7 @@ no `/admin/foods` route.
 
 ## Migration and recovery
 
-The sole Alembic head is `d9f64a1c3e58`. Historical migrations remain immutable and
+The sole Alembic head is `e8b7a42f6c31`. Historical migrations remain immutable and
 reconstruct the schema. Destructive cutovers are forward-only: real rollback after
 removed schema or data requires a matching pre-cutover database restore and compatible
 application revision, not a synthesized downgrade.

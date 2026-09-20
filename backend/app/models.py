@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from enum import Enum
 from typing import Any
 
@@ -394,6 +395,11 @@ class IdempotencyRecord(SQLModel, table=True):
             "(state='completed' AND response_status IS NOT NULL AND response_document IS NOT NULL AND completed_at IS NOT NULL)",
             name="ck_idempotency_completion",
         ),
+        CheckConstraint(
+            "(operation = 'lab_results.create.v1' AND expires_at IS NULL) OR "
+            "(operation <> 'lab_results.create.v1' AND expires_at IS NOT NULL)",
+            name="ck_idempotency_operation_expiry",
+        ),
         Index("ix_idempotency_expiry", "expires_at"),
     )
 
@@ -415,7 +421,44 @@ class IdempotencyRecord(SQLModel, table=True):
         default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
     )
     completed_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
-    expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    expires_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+
+
+class LabResult(SQLModel, table=True):
+    __tablename__ = "lab_result"
+    __table_args__ = (
+        # The unique B-tree supports owner/test/date reads, including reverse date scans.
+        UniqueConstraint(
+            "principal_id", "test_key", "test_date", name="uq_lab_result_principal_test_date"
+        ),
+        CheckConstraint(
+            "entered_value >= 0 AND entered_value NOT IN "
+            "('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)",
+            name="ck_lab_result_value_finite_nonnegative",
+        ).ddl_if(dialect="postgresql"),
+        CheckConstraint(
+            "length(entered_value::text) <= 128", name="ck_lab_result_value_length"
+        ).ddl_if(dialect="postgresql"),
+        CheckConstraint("length(test_key) > 0", name="ck_lab_result_test_key_nonempty"),
+        CheckConstraint("length(entered_unit) > 0", name="ck_lab_result_entered_unit_nonempty"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False)
+    )
+    test_key: str = Field(sa_column=Column(String(64), nullable=False))
+    test_date: date = Field(nullable=False)
+    entered_value: Decimal = Field(sa_column=Column(Numeric(), nullable=False))
+    entered_unit: str = Field(sa_column=Column(String(64), nullable=False))
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    updated_at: datetime = Field(
+        default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
 
 
 FOOD_NUMERIC_COLUMNS = (

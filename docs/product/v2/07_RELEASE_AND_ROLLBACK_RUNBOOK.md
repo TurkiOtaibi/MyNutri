@@ -5,8 +5,8 @@ production mutation.
 
 ## Release identity
 
-The current migration head is Food catalog unification revision `d9f64a1c3e58`,
-with parent combined-retirement revision `c8e53f0b2d47`. Confirm the intended application
+The current migration head is private Labs persistence revision `e8b7a42f6c31`,
+with parent Food catalog unification revision `d9f64a1c3e58`. Confirm the intended application
 commit, generated contract, single Alembic head, and approved environment before
 any rollout action.
 
@@ -112,6 +112,12 @@ Only after a separately approved release window:
   no status, version, completion timestamp, or entry-count presence field.
 
 ## Rollback
+
+Labs revision `e8b7a42f6c31` refuses downgrade if any LabResult or
+`lab_results.create.v1` receipt exists. Only an online empty-Labs preflight permits
+removing its table/check and restoring receipt expiry to NOT NULL. Never delete
+facts or receipts to make rollback pass; production rollback remains separately
+authorized and subject to the matching backup/application restore policy.
 
 Do not downgrade below `d9f64a1c3e58`. Food archive state cannot be reconstructed,
 and permanent Food deletion may have cascaded Diary history. Earlier semantic-version,

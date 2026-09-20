@@ -34,7 +34,7 @@ APPROVED_MARKDOWN = frozenset(
     }
 )
 EXPECTED_MODELS = frozenset(
-    {"Principal", "Profile", "TargetPlan", "IdempotencyRecord", "Food", "DiaryEntry"}
+    {"Principal", "Profile", "TargetPlan", "IdempotencyRecord", "LabResult", "Food", "DiaryEntry"}
 )
 EXPECTED_FOOD_OPERATIONS = {
     "/foods": {"get", "post"},
@@ -46,7 +46,7 @@ EXPECTED_TARGET_PLAN_OPERATIONS = {
     "/target-plans/current": {"get"},
 }
 VALIDATOR_PATH = "docs/tools/validate_authoritative_docs.py"
-EXPECTED_ALEMBIC_HEAD = "d9f64a1c3e58"
+EXPECTED_ALEMBIC_HEAD = "e8b7a42f6c31"
 SPECIALIST_MESSAGE = (
     "لا يمكن حفظ هذا الهدف لأنه غير مناسب لحالتك الحالية. إذا رغبت في اتباع هذا الهدف، "
     "فاستشر أخصائي تغذية قبل اعتماده."
