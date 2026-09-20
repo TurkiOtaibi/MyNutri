@@ -1,10 +1,10 @@
 import React, { type ReactNode } from "react";
-import type { LabTestDetailResponse } from "@/lib/types";
+import type { LabResultResponse, LabTestDetailResponse } from "@/lib/types";
 import { LabHistoryChart } from "./lab-history-chart";
 import { LabHistoryList } from "./lab-history-list";
 import styles from "./labs.module.css";
 
-export function LabTestView(props: { detail: LabTestDetailResponse; selectedResultId: string | null; onSelectResult: (id: string) => void; ownerActions?: ReactNode }) {
+export function LabTestView(props: { detail: LabTestDetailResponse; selectedResultId: string | null; onSelectResult: (id: string) => void; ownerActions?: ReactNode; ownerResultActions?: (result: LabResultResponse) => ReactNode }) {
   const { detail, onSelectResult, ownerActions } = props;
   const selected = detail.results.find(result => result.id === props.selectedResultId) ?? detail.results[0];
   const selectedId = selected?.id ?? null;
@@ -27,6 +27,6 @@ export function LabTestView(props: { detail: LabTestDetailResponse; selectedResu
       </li>)}</ul>
       {detail.test.fasting_assumption === "fasting" ? <p>يفترض هذا التحليل الصيام.</p> : null}
     </section>
-    <LabHistoryList results={detail.results} selectedResultId={selectedId} onSelectResult={onSelectResult} />
+    <LabHistoryList results={detail.results} selectedResultId={selectedId} onSelectResult={onSelectResult} ownerResultActions={detail.read_only ? undefined : props.ownerResultActions} />
   </div>;
 }

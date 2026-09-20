@@ -18,6 +18,7 @@ const detail: LabTestDetailResponse = {
 const render = (data = detail, selectedResultId: string | null = null) => renderToStaticMarkup(createElement(LabTestView, {
   detail: data, selectedResultId, onSelectResult: () => undefined,
   ownerActions: createElement("button", null, "owner-add"),
+  ownerResultActions: (result) => createElement("button", null, `owner-edit-delete-${result.id}`),
 }));
 
 describe("shared Lab detail presentation", () => {
@@ -39,7 +40,13 @@ describe("shared Lab detail presentation", () => {
     const html = render({ ...detail, read_only: true }, "deleted-id");
     expect(html).toContain('data-reference-date="2026-09-19"');
     expect(html).not.toContain("owner-add");
+    expect(html).not.toContain("owner-edit-delete");
     expect(html).toContain("للقراءة فقط");
+  });
+  it("exposes per-result owner controls even when adding is ineligible", () => {
+    const html = render({ ...detail, eligibility: { allowed: false, reason: "profile_required" } });
+    expect(html).not.toContain("owner-add");
+    for (const result of results) expect(html).toContain(`owner-edit-delete-${result.id}`);
   });
   it("uses server empty reference and does not invent zones for ineligible profiles", () => {
     const html = render({ ...detail, results: [], chart_zones: [], reference_at_date: "2026-09-20" });

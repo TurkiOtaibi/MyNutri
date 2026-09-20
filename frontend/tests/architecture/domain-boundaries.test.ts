@@ -309,10 +309,11 @@ describe("domain boundaries", () => {
     const assertDetail = (source: string) => {
       expect(source).toContain("labsQueryKeys.adminTest");
       expect(source).toContain("getAdminLabTest(principalId, testKey");
-      expect(source).not.toMatch(/\b(?:createLabResults|updateLabResult|deleteLabResult|useMutation|useLabBatch|LabBatchDialog|ownerActions)\b/);
+      expect(source).not.toMatch(/\b(?:createLabResults|updateLabResult|deleteLabResult|useMutation|useLabBatch|LabBatchDialog|LabEditDialog|LabDeleteDialog|ownerActions|ownerResultActions)\b/);
     };
     assertDetail(admin);
     expect(() => assertDetail(`${admin}\nconst forbidden = useLabBatch;`)).toThrow();
+    expect(() => assertDetail(`${admin}\nconst forbidden = LabDeleteDialog;`)).toThrow();
     expect(owner).toContain("labsQueryKeys.ownerTest");
     expect(owner).toContain("batch.open([testKey])");
     for (const source of [owner, admin]) {
@@ -321,8 +322,8 @@ describe("domain boundaries", () => {
       expect(source).toContain("AbortSignal.any([signal, sessionSignal])");
       expect(source).not.toContain("refetchInterval");
     }
-    for (const file of ["lab-test-view", "lab-history-chart", "lab-history-list"]) {
-      expect(read(`features/labs/${file}.tsx`)).not.toMatch(/@tanstack\/react-query|@\/lib\/api|useMutation/);
+    for (const file of ["lab-test-view", "lab-history-chart", "lab-history-list", "lab-result-dialogs"]) {
+      expect(read(`features/labs/${file}.tsx`)).not.toMatch(/@tanstack\/react-query|@\/lib\/api|useMutation|AuthProvider|SessionQueryProvider/);
     }
   });
 
