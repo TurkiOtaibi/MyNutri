@@ -903,3 +903,87 @@ class LabFieldError(BaseModel):
 
 class LabErrorResponse(BaseModel):
     detail: list[LabFieldError]
+
+
+class LabStatus(BaseModel):
+    code: str
+    label_ar: str
+    tone: str
+
+
+class LabStatusZone(BaseModel):
+    status: LabStatus
+    low: str | None
+    high: str | None
+    low_inclusive: bool
+    high_inclusive: bool
+
+
+class LabEligibility(BaseModel):
+    allowed: bool
+    reason: Literal["profile_required", "adult_only", "read_only"] | None = None
+
+
+class LabResultResponse(BaseModel):
+    id: UUID
+    test_key: str
+    test_date: date
+    entered_value: str
+    entered_unit: str
+    created_at: datetime
+    updated_at: datetime
+    display_value: str
+    display_unit: str
+    display_is_approximate: bool
+    status: LabStatus
+    age_years: int
+    reference_zones: list[LabStatusZone]
+    medical_rules_version: str
+
+
+class LabCatalogTest(BaseModel):
+    test_key: str
+    name_ar: str
+    name_en: str
+    abbreviation: str | None
+    primary_category: str
+    measurement: str
+    specimen_context: str
+    default_input_unit: str
+    canonical_unit: str
+    supported_units: list[str]
+    fasting_assumption: str
+    panels: list[str]
+
+
+class LabOverviewItem(BaseModel):
+    test_key: str
+    latest: LabResultResponse
+    last_updated_at: datetime
+
+
+class LabOverviewResponse(BaseModel):
+    items: list[LabOverviewItem]
+    eligibility: LabEligibility
+    server_today: date
+    medical_rules_version: str
+    read_only: bool
+
+
+class LabChartZoneSegment(BaseModel):
+    from_date: date
+    to_date_exclusive: date
+    age_min: int
+    zones: list[LabStatusZone]
+
+
+class LabTestDetailResponse(BaseModel):
+    test: LabCatalogTest
+    results: list[LabResultResponse]
+    chart_zones: list[LabChartZoneSegment]
+    reference_at_date: date
+    reference_zones: list[LabStatusZone]
+    eligibility: LabEligibility
+    server_today: date
+    medical_rules_version: str
+    read_only: bool

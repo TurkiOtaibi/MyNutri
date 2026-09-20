@@ -482,23 +482,349 @@ def test_concurrent_batch_serializes_same_owner(
     assert count_results(labs_postgresql_session, lab_owner.id) == 1
 
 
+def _run_while_owner_locked(engine, owner_id, worker, wait_for_result=None):
+    from concurrent.futures import ThreadPoolExecutor
+
+    with Session(engine) as locked:
+        locked.exec(select(Principal).where(Principal.id == owner_id).with_for_update()).one()
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            try:
+                future = executor.submit(worker)
+                return wait_for_result(future) if wait_for_result else future.result(timeout=5)
+            finally:
+                # Release before executor.__exit__ joins even when waiting fails.
+                locked.rollback()
+
+
 def test_disjoint_owner_batch_does_not_wait_for_other_owner_lock(
     service, labs_postgresql_database, lab_owner, other_lab_owner
 ):
-    from concurrent.futures import ThreadPoolExecutor
+    from sqlalchemy import text
 
-    with Session(labs_postgresql_database.engine) as locked:
-        locked.exec(select(Principal).where(Principal.id == lab_owner.id).with_for_update()).one()
+    def create_other():
+        with Session(labs_postgresql_database.engine) as session:
+            session.exec(text("SET LOCAL lock_timeout = '4s'"))
+            session.exec(text("SET LOCAL statement_timeout = '5s'"))
+            return service.create_results(
+                session,
+                other_lab_owner.context,
+                request("2026-09-19", [("hba1c", "5.2", "%")]),
+                "other",
+                load_catalog(),
+            )
 
-        def create_other():
-            with Session(labs_postgresql_database.engine) as session:
-                return service.create_results(
-                    session,
-                    other_lab_owner.context,
-                    request("2026-09-19", [("hba1c", "5.2", "%")]),
-                    "other",
-                    load_catalog(),
-                )
+    assert (
+        _run_while_owner_locked(labs_postgresql_database.engine, lab_owner.id, create_other)[1]
+        is False
+    )
 
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            assert executor.submit(create_other).result(timeout=5)[1] is False
+
+def test_overview_latest_value_uses_test_date_not_edit_time(service, seeded_lab_history):
+    history = seeded_lab_history
+    response = service.read_labs(history.session, history.owner_id, False, load_catalog())
+    item = next(x for x in response.items if x.test_key == "hba1c")
+    assert item.latest.test_date == date(2026, 9, 1)
+    assert item.latest.display_value == "5.7"
+    assert item.last_updated_at == history.january_updated_at
+    assert item.latest.medical_rules_version == response.medical_rules_version
+
+
+@pytest.mark.parametrize("read_only", [False, True])
+def test_reference_empty_known_test_and_missing_profile(
+    service, labs_postgresql_session, lab_owner, read_only
+):
+    from fastapi import HTTPException
+
+    session = labs_postgresql_session
+    detail = service.read_lab_test(session, lab_owner.id, "ferritin", read_only, load_catalog())
+    assert detail.results == detail.chart_zones == []
+    assert detail.reference_at_date == detail.server_today == date(2026, 9, 20)
+    assert [(z.low, z.high) for z in detail.reference_zones] == [
+        (None, "6"),
+        ("6", "175"),
+        ("175", None),
+    ]
+    assert detail.eligibility.allowed is (not read_only)
+    assert detail.eligibility.reason == ("read_only" if read_only else None)
+    assert detail.test.test_key == "ferritin"
+    assert "provenance" not in detail.test.model_dump()
+    with pytest.raises(HTTPException) as caught:
+        service.read_lab_test(session, lab_owner.id, "unknown", read_only, load_catalog())
+    assert caught.value.status_code == 404
+    assert caught.value.detail["code"] == "RESOURCE_NOT_FOUND"
+    session.delete(session.exec(select(Profile).where(Profile.principal_id == lab_owner.id)).one())
+    session.commit()
+    missing = service.read_lab_test(session, lab_owner.id, "ferritin", read_only, load_catalog())
+    assert missing.reference_zones == missing.results == []
+    assert missing.eligibility.reason == ("read_only" if read_only else "profile_required")
+
+
+def test_reference_minor_has_no_invented_adult_reference(
+    service, labs_postgresql_session, lab_owner
+):
+    profile = labs_postgresql_session.get(Profile, lab_owner.profile.id)
+    profile.birth_date = date(2010, 1, 1)
+    labs_postgresql_session.add(profile)
+    labs_postgresql_session.commit()
+    response = service.read_lab_test(
+        labs_postgresql_session, lab_owner.id, "hba1c", False, load_catalog()
+    )
+    assert response.eligibility.reason == "adult_only"
+    assert response.reference_zones == []
+
+
+def test_history_mixed_units_complete_and_owner_scoped(
+    service, labs_postgresql_session, lab_owner, other_lab_owner
+):
+    from datetime import timedelta
+
+    session = labs_postgresql_session
+    catalog = load_catalog()
+    for index in range(35):
+        day = date(2026, 8, 1) + timedelta(days=index)
+        value, unit = ("88.4", "µmol/L") if index % 2 else ("1.000", "mg/dL")
+        service.create_results(
+            session,
+            lab_owner.context,
+            request(day.isoformat(), [("creatinine", value, unit)]),
+            str(index),
+            catalog,
+        )
+    service.create_results(
+        session,
+        other_lab_owner.context,
+        request("2026-09-19", [("creatinine", "99", "mg/dL")]),
+        "other",
+        catalog,
+    )
+    detail = service.read_lab_test(session, lab_owner.id, "creatinine", True, catalog)
+    overview = service.read_labs(session, lab_owner.id, True, catalog)
+    assert len(detail.results) == 35
+    assert [r.test_date for r in detail.results] == sorted(
+        [date(2026, 8, 1) + timedelta(days=i) for i in range(35)], reverse=True
+    )
+    assert {Decimal(r.display_value) for r in detail.results} == {Decimal(1)}
+    assert {r.display_unit for r in detail.results} == {"mg/dL"}
+    assert {r.status.code for r in detail.results} == {"in_range"}
+    assert all(not r.display_is_approximate for r in detail.results)
+    assert overview.items[0].latest == detail.results[0]
+    assert detail.reference_at_date == date(2026, 9, 4)
+    assert detail.chart_zones[0].from_date == date(2026, 8, 1)
+    assert detail.chart_zones[-1].to_date_exclusive == date(2026, 9, 5)
+    assert detail.eligibility.reason == "read_only"
+    assert len(detail.reference_zones) == 3
+
+
+def test_reinterpret_registry_and_dob_leave_entered_facts_unchanged(
+    service, labs_postgresql_session, lab_owner
+):
+    from fractions import Fraction
+    from types import MappingProxyType
+    from app.labs.types import Zone
+
+    session = labs_postgresql_session
+    catalog = load_catalog()
+    service.create_results(
+        session, lab_owner.context, request("2026-09-19", [("hba1c", "5.700", "%")]), "one", catalog
+    )
+    before = service.read_lab_test(session, lab_owner.id, "hba1c", False, catalog)
+    facts_before = session.exec(select(LabResult)).one().model_dump()
+    test = catalog.tests["hba1c"]
+    zones = (
+        Zone("normal", None, Fraction(6), False, False),
+        Zone("prediabetes_range", Fraction(6), None, True, False),
+    )
+    revised = replace(
+        catalog,
+        version="synthetic-b",
+        tests=MappingProxyType(
+            {
+                **catalog.tests,
+                "hba1c": replace(
+                    test, rule_slices=tuple(replace(rule, zones=zones) for rule in test.rule_slices)
+                ),
+            }
+        ),
+    )
+    after = service.read_lab_test(session, lab_owner.id, "hba1c", False, revised)
+    assert before.results[0].status.code == "prediabetes_range"
+    assert after.results[0].status.code == "normal"
+    assert after.results[0].medical_rules_version == after.medical_rules_version == "synthetic-b"
+    assert after.reference_zones[0].high == after.chart_zones[0].zones[0].high == "6"
+    profile = session.exec(select(Profile).where(Profile.principal_id == lab_owner.id)).one()
+    profile.birth_date = date(1980, 1, 1)
+    session.add(profile)
+    session.commit()
+    fresh = service.read_lab_test(session, lab_owner.id, "hba1c", False, revised)
+    assert (before.results[0].age_years, fresh.results[0].age_years) == (36, 46)
+    assert session.exec(select(LabResult)).one().model_dump() == facts_before
+
+
+@pytest.mark.parametrize(
+    "key,sex,age,old_low,old_high,new_low,new_high",
+    [
+        ("ferritin", "female", 51, "6", "175", "11", "328"),
+        ("calcium_total", "female", 60, "8.6", "10", "8.8", "10.2"),
+        ("alp", "male", 19, "55", "149", "40", "129"),
+        ("tsh", "female", 20, "0.5", "4.3", "0.3", "4.2"),
+        ("free_t4", "female", 20, "1", "1.6", "0.9", "1.7"),
+        ("free_t3", "male", 19, "3.3", "5.3", "2", "4.4"),
+    ],
+)
+def test_history_reference_uses_actual_birthday(
+    service, labs_postgresql_session, lab_owner, key, sex, age, old_low, old_high, new_low, new_high
+):
+    session = labs_postgresql_session
+    profile = session.exec(select(Profile).where(Profile.principal_id == lab_owner.id)).one()
+    profile.birth_date, profile.sex = date(2026 - age, 9, 1), sex
+    session.add(profile)
+    session.commit()
+    catalog = load_catalog()
+    for day in ("2026-08-31", "2026-09-02"):
+        service.create_results(
+            session,
+            lab_owner.context,
+            request(day, [(key, old_low, catalog.tests[key].canonical_unit)]),
+            day,
+            catalog,
+        )
+    response = service.read_lab_test(session, lab_owner.id, key, False, catalog)
+    assert [r.age_years for r in response.results] == [age, age - 1]
+    assert [(s.from_date, s.to_date_exclusive) for s in response.chart_zones] == [
+        (date(2026, 8, 31), date(2026, 9, 1)),
+        (date(2026, 9, 1), date(2026, 9, 3)),
+    ]
+    assert [(s.zones[1].low, s.zones[1].high) for s in response.chart_zones] == [
+        (old_low, old_high),
+        (new_low, new_high),
+    ]
+    assert response.reference_zones == response.results[0].reference_zones
+
+
+def test_history_reads_do_not_autoflush_and_have_bounded_queries(
+    service, labs_postgresql_session, lab_owner, seeded_lab_history
+):
+    session = labs_postgresql_session
+    # A stale/dirty identity map must neither alter the response nor write during GET.
+    profile = session.exec(select(Profile).where(Profile.principal_id == lab_owner.id)).one()
+    profile.birth_date = date(2000, 1, 1)
+    statements = []
+
+    def capture(connection, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(session.get_bind(), "before_cursor_execute", capture)
+    try:
+        overview = service.read_labs(session, lab_owner.id, False, load_catalog())
+        detail = service.read_lab_test(session, lab_owner.id, "hba1c", False, load_catalog())
+    finally:
+        event.remove(session.get_bind(), "before_cursor_execute", capture)
+        session.rollback()
+    assert overview.items[0].latest.age_years == detail.results[0].age_years == 36
+    assert len(statements) == 2  # Today is pinned by service fixture.
+    assert all(statement.lstrip().upper().startswith("SELECT") for statement in statements)
+
+
+@pytest.mark.parametrize(
+    "key,value,unit,display,status,approximate",
+    [
+        ("hba1c", "38", "mmol/mol", "5.62699", "normal", True),
+        ("hba1c", "0", "%", "0", "normal", False),
+        ("hba1c", "9" * 128, "%", "9" * 128, "diabetes_range", False),
+    ],
+)
+def test_history_single_point_exact_display_and_extremes(
+    service, labs_postgresql_session, lab_owner, key, value, unit, display, status, approximate
+):
+    service.create_results(
+        labs_postgresql_session,
+        lab_owner.context,
+        request("2026-09-19", [(key, value, unit)]),
+        "single",
+        load_catalog(),
+    )
+    detail = service.read_lab_test(
+        labs_postgresql_session, lab_owner.id, key, False, load_catalog()
+    )
+    result = detail.results[0]
+    assert (result.display_value, result.status.code, result.display_is_approximate) == (
+        display,
+        status,
+        approximate,
+    )
+    assert result.created_at == result.updated_at
+    assert result.reference_zones[0].high == "5.7"
+    assert result.reference_zones[0].high_inclusive is False
+    assert result.reference_zones[1].low_inclusive is True
+    assert len(detail.chart_zones) == 1
+    assert detail.chart_zones[0].to_date_exclusive == date(2026, 9, 20)
+
+
+def test_disjoint_owner_failure_cleanup_releases_lock_before_join(
+    labs_postgresql_database, lab_owner
+):
+    from concurrent.futures import TimeoutError
+    from threading import Event
+    from sqlalchemy import text
+
+    started, finished = Event(), Event()
+
+    def blocked_worker():
+        with Session(labs_postgresql_database.engine) as session:
+            session.exec(text("SET LOCAL lock_timeout = '2s'"))
+            started.set()
+            session.exec(
+                select(Principal).where(Principal.id == lab_owner.id).with_for_update()
+            ).one()
+            finished.set()
+
+    def forced_timeout(future):
+        assert started.wait(1)
+        raise TimeoutError("synthetic failure before executor join")
+
+    with pytest.raises(TimeoutError, match="synthetic failure"):
+        _run_while_owner_locked(
+            labs_postgresql_database.engine, lab_owner.id, blocked_worker, forced_timeout
+        )
+    assert finished.is_set(), "The lock must be released before executor shutdown waits"
+
+
+def test_reinterpret_accepted_dob_change_moves_ferritin_birthday(
+    service, labs_postgresql_session, lab_owner, monkeypatch
+):
+    from app.schemas import TargetPlanWriteRequest
+    from app.services.profile import to_target_response
+    from app.services.target_plans import write_target_plan
+    from test_target_plans import profile_payload
+
+    session = labs_postgresql_session
+    monkeypatch.setattr(
+        "app.services.target_plans._database_riyadh_date", lambda _: date(2026, 9, 20)
+    )
+    service.create_results(
+        session,
+        lab_owner.context,
+        request("2026-09-19", [("ferritin", "8.00", "ng/mL")]),
+        "ferritin",
+        load_catalog(),
+    )
+    before = service.read_lab_test(session, lab_owner.id, "ferritin", False, load_catalog())
+    facts_before = session.exec(select(LabResult)).one().model_dump()
+    payload = TargetPlanWriteRequest.model_validate(
+        profile_payload()
+        | {
+            "sex": "female",
+            "birth_date": "1975-09-19",
+            "confirmed": True,
+            "effective_from": date(2026, 9, 20),
+            "expected_preview_hash": "0" * 64,
+        }
+    )
+    payload.expected_preview_hash = to_target_response(payload, date(2026, 9, 20)).preview_hash
+    _, replayed = write_target_plan(session, lab_owner.context, payload, "dob-accepted")
+    assert replayed is False
+    after = service.read_lab_test(session, lab_owner.id, "ferritin", False, load_catalog())
+    assert (before.results[0].status.code, after.results[0].status.code) == ("in_range", "low")
+    assert (before.reference_zones[1].low, after.reference_zones[1].low) == ("6", "11")
+    assert after.chart_zones[0].age_min == after.results[0].age_years == 51
+    assert session.exec(select(LabResult)).one().model_dump() == facts_before

@@ -1,5 +1,6 @@
 """Owner-scoped Labs transactions and durable create receipts."""
 
+from datetime import date
 from hashlib import sha256
 import json
 from uuid import UUID
@@ -9,8 +10,14 @@ from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
 from app.core.calendar import age_on, database_calendar_date
-from app.labs.numbers import normalize_decimal_text, parse_entered_decimal, to_canonical
-from app.labs.types import Catalog
+from app.labs.interpretation import chart_zones, interpret, resolve_rule
+from app.labs.numbers import (
+    _terminating_text,
+    normalize_decimal_text,
+    parse_entered_decimal,
+    to_canonical,
+)
+from app.labs.types import Catalog, TestDefinition, Zone
 from app.models import (
     IdempotencyRecord,
     IdempotencyState,
@@ -21,7 +28,21 @@ from app.models import (
     Profile,
     utcnow,
 )
-from app.schemas import LabCreateReceipt, LabCreateRequest, LabFieldError
+from app.schemas import (
+    LabCreateReceipt,
+    LabCreateRequest,
+    LabFieldError,
+    LabStatus,
+    LabStatusZone,
+    LabResultResponse,
+    LabEligibility,
+    LabCatalogTest,
+    LabOverviewItem,
+    LabOverviewResponse,
+    LabChartZoneSegment,
+    LabTestDetailResponse,
+)
+from app.services.errors import resource_not_found
 from app.services.labs_errors import LabValidationError, field_error
 
 
@@ -159,6 +180,7 @@ def create_results(
                 409 if any(e.code == "LAB_DUPLICATE" for e in errors) else 422, errors
             )
 
+        created_at = utcnow()
         rows = [
             LabResult(
                 principal_id=principal.principal_id,
@@ -166,6 +188,8 @@ def create_results(
                 test_date=payload.test_date,
                 entered_value=parse_entered_decimal(row.entered_value),
                 entered_unit=row.entered_unit,
+                created_at=created_at,
+                updated_at=created_at,
             )
             for row in payload.results
         ]
@@ -207,3 +231,192 @@ def create_results(
     except Exception:
         session.rollback()
         raise
+
+
+def _status(code: str, catalog: Catalog) -> LabStatus:
+    metadata = catalog.statuses[code]
+    return LabStatus(code=code, label_ar=metadata.label_ar, tone=metadata.tone)
+
+
+def _zones(zones: tuple[Zone, ...], catalog: Catalog) -> list[LabStatusZone]:
+    def boundary(value):
+        if value is None:
+            return None
+        text = _terminating_text(value)
+        if text is None:
+            raise ValueError("Approved reference boundaries must be finite decimals")
+        return text
+
+    return [
+        LabStatusZone(
+            status=_status(zone.status, catalog),
+            low=boundary(zone.low),
+            high=boundary(zone.high),
+            low_inclusive=zone.low_inclusive,
+            high_inclusive=zone.high_inclusive,
+        )
+        for zone in zones
+    ]
+
+
+def project_result(row, profile, catalog: Catalog) -> LabResultResponse:
+    """Interpret captured facts only; also usable after a mutation has committed."""
+    result = interpret(
+        catalog.tests[row.test_key],
+        row.entered_value,
+        row.entered_unit,
+        profile.birth_date,
+        profile.sex,
+        row.test_date,
+        catalog.version,
+    )
+    return LabResultResponse(
+        id=row.id,
+        test_key=row.test_key,
+        test_date=row.test_date,
+        entered_value=format(row.entered_value, "f"),
+        entered_unit=row.entered_unit,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        display_value=result.display_value,
+        display_unit=result.display_unit,
+        display_is_approximate=result.display_is_approximate,
+        status=_status(result.status_code, catalog),
+        age_years=result.rule.age_years,
+        reference_zones=_zones(result.rule.zones, catalog),
+        medical_rules_version=catalog.version,
+    )
+
+
+def _read_snapshot(session: Session, principal_id: UUID, test_key: str | None = None):
+    # Select immutable scalar Rows, not ORM identities: an existing Session may
+    # hold stale or dirty Profile/results. One statement supplies one MVCC snapshot.
+    ownership = LabResult.principal_id == Principal.id
+    if test_key is not None:
+        ownership = ownership & (LabResult.test_key == test_key)
+    statement = (
+        select(
+            Principal.id.label("owner_id"),
+            Profile.birth_date,
+            Profile.sex,
+            LabResult.id,
+            LabResult.test_key,
+            LabResult.test_date,
+            LabResult.entered_value,
+            LabResult.entered_unit,
+            LabResult.created_at,
+            LabResult.updated_at,
+        )
+        .select_from(Principal)
+        .outerjoin(Profile, Profile.principal_id == Principal.id)
+        .outerjoin(LabResult, ownership)
+        .where(Principal.id == principal_id)
+        .order_by(LabResult.test_key, LabResult.test_date.desc())
+    )
+    with session.no_autoflush:
+        rows = session.exec(statement).all()
+    if not rows:
+        raise resource_not_found()
+    profile = rows[0] if rows[0].birth_date is not None else None
+    return profile, [row for row in rows if row.id is not None] if profile else []
+
+
+def _eligibility(profile, today: date, read_only: bool) -> LabEligibility:
+    if read_only:
+        return LabEligibility(allowed=False, reason="read_only")
+    if profile is None:
+        return LabEligibility(allowed=False, reason="profile_required")
+    if age_on(profile.birth_date, today) < 18:
+        return LabEligibility(allowed=False, reason="adult_only")
+    return LabEligibility(allowed=True)
+
+
+def project_catalog_test(test: TestDefinition) -> LabCatalogTest:
+    return LabCatalogTest(
+        test_key=test.key,
+        name_ar=test.name_ar,
+        name_en=test.name_en,
+        abbreviation=test.abbreviation,
+        primary_category=test.primary_category,
+        measurement=test.measurement,
+        specimen_context=test.specimen_context,
+        default_input_unit=test.default_input_unit,
+        canonical_unit=test.canonical_unit,
+        supported_units=list(test.supported_units),
+        fasting_assumption=test.fasting_assumption,
+        panels=list(test.panels),
+    )
+
+
+def read_labs(
+    session: Session,
+    principal_id: UUID,
+    read_only: bool,
+    catalog: Catalog,
+) -> LabOverviewResponse:
+    today = database_calendar_date(session)
+    profile, rows = _read_snapshot(session, principal_id)
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row.test_key, []).append(row)
+    return LabOverviewResponse(
+        items=[
+            LabOverviewItem(
+                test_key=key,
+                latest=project_result(history[0], profile, catalog),
+                last_updated_at=max(row.updated_at for row in history),
+            )
+            for key, history in grouped.items()
+        ],
+        eligibility=_eligibility(profile, today, read_only),
+        server_today=today,
+        medical_rules_version=catalog.version,
+        read_only=read_only,
+    )
+
+
+def read_lab_test(
+    session: Session,
+    principal_id: UUID,
+    test_key: str,
+    read_only: bool,
+    catalog: Catalog,
+) -> LabTestDetailResponse:
+    test = catalog.tests.get(test_key)
+    if test is None:
+        raise resource_not_found()
+    today = database_calendar_date(session)
+    profile, rows = _read_snapshot(session, principal_id, test_key)
+    results = [project_result(row, profile, catalog) for row in rows]
+    reference_at = results[0].test_date if results else today
+    # Reference availability depends on demographics, separately from permission
+    # to write. An administrator still sees the adult Profile's reference zones.
+    reference = (
+        _zones(resolve_rule(test, profile.birth_date, profile.sex, reference_at).zones, catalog)
+        if profile is not None and age_on(profile.birth_date, reference_at) >= 18
+        else []
+    )
+    segments = (
+        chart_zones(test, profile.birth_date, profile.sex, rows[-1].test_date, rows[0].test_date)
+        if rows
+        else ()
+    )
+    return LabTestDetailResponse(
+        test=project_catalog_test(test),
+        results=results,
+        chart_zones=[
+            LabChartZoneSegment(
+                from_date=segment.from_date,
+                to_date_exclusive=segment.to_date_exclusive,
+                age_min=segment.age_min,
+                zones=_zones(segment.zones, catalog),
+            )
+            for segment in segments
+        ],
+        reference_at_date=reference_at,
+        reference_zones=reference,
+        eligibility=_eligibility(profile, today, read_only),
+        server_today=today,
+        medical_rules_version=catalog.version,
+        read_only=read_only,
+    )

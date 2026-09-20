@@ -266,3 +266,70 @@ def test_profile_dob_and_lab_insert_serialize_on_owner_lock(
             assert len(plans) == 1 and plans[0].id == first
             assert len(receipts) == 1
             assert not labs
+
+
+@pytest.mark.parametrize("projection", ["overview", "detail"])
+def test_read_snapshot_survives_concurrent_dob_and_result_commit(
+    labs_postgresql_database,
+    labs_postgresql_session,
+    lab_owner,
+    lab_result,
+    monkeypatch,
+    projection,
+):
+    from sqlalchemy import event
+    from sqlmodel import select
+    from app.labs.catalog import load_catalog
+    from app.services import labs
+
+    monkeypatch.setattr(labs, "database_calendar_date", lambda _: date(2026, 9, 20))
+    owner_id, result_id = lab_owner.id, lab_result.id
+    # Warm stale identities too; scalar snapshot columns must bypass this cache.
+    labs_postgresql_session.get(models.Profile, lab_owner.profile.id)
+    written = False
+
+    def commit_after_snapshot(connection, cursor, statement, parameters, context, executemany):
+        nonlocal written
+        if (
+            written
+            or not statement.lstrip().upper().startswith("SELECT")
+            or "lab_result" not in statement
+        ):
+            return
+        written = True
+        with Session(labs_postgresql_database.engine) as writer:
+            writer.exec(text("SET LOCAL lock_timeout = '2s'"))
+            writer.exec(select(Principal).where(Principal.id == owner_id).with_for_update()).one()
+            profile = writer.exec(
+                select(models.Profile).where(models.Profile.principal_id == owner_id)
+            ).one()
+            profile.birth_date = date(1980, 1, 1)  # Still adult at every result date.
+            row = writer.get(models.LabResult, result_id)
+            row.entered_value = Decimal("6.7")
+            writer.add_all([profile, row])
+            writer.commit()
+
+    def read():
+        if projection == "overview":
+            return (
+                labs.read_labs(labs_postgresql_session, owner_id, False, load_catalog())
+                .items[0]
+                .latest
+            )
+        return labs.read_lab_test(
+            labs_postgresql_session, owner_id, "hba1c", False, load_catalog()
+        ).results[0]
+
+    event.listen(labs_postgresql_database.engine, "after_cursor_execute", commit_after_snapshot)
+    try:
+        old = read()
+    finally:
+        event.remove(labs_postgresql_database.engine, "after_cursor_execute", commit_after_snapshot)
+    assert written
+    assert (old.age_years, old.display_value, old.status.code) == (36, "5.2", "normal")
+    fresh = read()
+    assert (fresh.age_years, fresh.display_value, fresh.status.code) == (
+        46,
+        "6.7",
+        "diabetes_range",
+    )

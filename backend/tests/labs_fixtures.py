@@ -349,33 +349,30 @@ def get_result_fact(labs_postgresql_session, lab_owner):
 
 
 @pytest.fixture
-def seeded_lab_history(labs_postgresql_session, lab_owner):
+def seeded_lab_history(labs_postgresql_session, lab_owner, monkeypatch):
     from datetime import datetime, timezone
-    from decimal import Decimal
     from types import SimpleNamespace
+    from app.labs.catalog import load_catalog
     from app.models import LabResult
+    from app.services.labs import create_results
 
+    monkeypatch.setattr("app.services.labs.database_calendar_date", lambda _: LABS_TODAY)
     january_updated_at = datetime(2026, 9, 20, 10, tzinfo=timezone.utc)
-    rows = [
-        LabResult(
-            principal_id=lab_owner.id,
-            test_key="hba1c",
-            test_date=date(2026, 1, 1),
-            entered_value=Decimal("5.2"),
-            entered_unit="%",
-            updated_at=january_updated_at,
-        ),
-        LabResult(
-            principal_id=lab_owner.id,
-            test_key="hba1c",
-            test_date=date(2026, 9, 1),
-            entered_value=Decimal("5.7"),
-            entered_unit="%",
-            updated_at=datetime(2026, 9, 1, 10, tzinfo=timezone.utc),
-        ),
-    ]
-    labs_postgresql_session.add_all(rows)
-    labs_postgresql_session.commit()
+    for day, value, updated in (
+        ("2026-01-01", "5.2", january_updated_at),
+        ("2026-09-01", "5.7", datetime(2026, 9, 1, 10, tzinfo=timezone.utc)),
+    ):
+        receipt, _ = create_results(
+            labs_postgresql_session,
+            lab_owner.context,
+            request(day, [("hba1c", value, "%")]),
+            "seed-" + day,
+            load_catalog(),
+        )
+        row = labs_postgresql_session.get(LabResult, receipt.result_ids[0])
+        row.updated_at = updated
+        labs_postgresql_session.add(row)
+        labs_postgresql_session.commit()
     return SimpleNamespace(
         session=labs_postgresql_session,
         owner_id=lab_owner.id,
