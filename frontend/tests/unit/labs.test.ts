@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -13,6 +17,7 @@ import {
 } from "@/lib/api";
 import { filterLabs, sortLabs, toLabListItems } from "@/features/labs/lab-model";
 import { labsQueryKeys } from "@/features/labs/lab-query-keys";
+import { OwnedLabsView } from "@/features/labs/labs-overview-view";
 import type { LabOverviewResponse } from "@/lib/types";
 import {
   catalogFixture,
@@ -214,5 +219,85 @@ describe("Labs list model", () => {
     expect(sortLabs(sameName, "name_asc").map((item) => item.test_key)).toEqual(["eosinophils_pct", "ferritin", "hba1c"]);
     expect(sortLabs(sameName, "name_desc").map((item) => item.test_key)).toEqual(["eosinophils_pct", "ferritin", "hba1c"]);
     expect(sortLabs(base, "category").map((item) => item.test_key)).toEqual(["hba1c", "eosinophils_pct", "ferritin"]);
+  });
+});
+
+function hexChannels(value: string): [number, number, number] {
+  return [1, 3, 5].map((index) => Number.parseInt(value.slice(index, index + 2), 16)) as [number, number, number];
+}
+
+function relativeLuminance(value: string): number {
+  const channels = hexChannels(value).map((channel) => {
+    const normalized = channel / 255;
+    return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const [lighter, darker] = [relativeLuminance(foreground), relativeLuminance(background)].sort((a, b) => b - a);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function mixWithWhite(value: string, percentage: number): string {
+  const mixed = hexChannels(value).map((channel) => Math.round(channel * percentage + 255 * (1 - percentage)));
+  return `#${mixed.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
+describe("Labs governed status presentation", () => {
+  it("maps caution and outside response tones to readable warning and danger chips", () => {
+    const caution = {
+      ...resultFixture("hba1c", "2026-09-19", "2026-09-19"),
+      status: { code: "prediabetes_range", label_ar: "نطاق ما قبل السكري", tone: "caution" },
+    };
+    const outside = {
+      ...resultFixture("ferritin", "2026-09-18", "2026-09-18"),
+      status: { code: "low", label_ar: "منخفض", tone: "outside" },
+    };
+    const response: LabOverviewResponse = {
+      items: [
+        { test_key: "hba1c", latest: caution, last_updated_at: caution.updated_at },
+        { test_key: "ferritin", latest: outside, last_updated_at: outside.updated_at },
+      ],
+      eligibility: { allowed: true, reason: null },
+      server_today: "2026-09-20",
+      medical_rules_version: "labs-v1",
+      read_only: false,
+    };
+    const html = renderToStaticMarkup(createElement(OwnedLabsView, {
+      catalog: catalogFixture,
+      rows: toLabListItems(catalogFixture, response, "owned"),
+      eligibility: response.eligibility,
+      search: "",
+      category: null,
+      sort: "newest_updated",
+      readOnly: false,
+      onSearchChange: () => undefined,
+      onCategoryChange: () => undefined,
+      onSortChange: () => undefined,
+    }));
+
+    expect(html).toContain('data-tone="caution"');
+    expect(html).toContain('data-tone="outside"');
+
+    const moduleCss = readFileSync(resolve(process.cwd(), "features/labs/labs.module.css"), "utf8");
+    const globalsCss = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8");
+    const expectations = [
+      { tone: "caution", palette: "--warning", mix: 0.13 },
+      { tone: "outside", palette: "--danger", mix: 0.11 },
+    ] as const;
+
+    for (const expected of expectations) {
+      const rule = moduleCss.match(new RegExp(`\\.status\\[data-tone="${expected.tone}"\\]\\s*\\{([^}]*)\\}`));
+      expect(rule, `${expected.tone} must have an explicit governed-tone rule`).not.toBeNull();
+      const declarations = rule?.[1] ?? "";
+      expect(declarations).toContain(`background: color-mix(in srgb, var(${expected.palette}) ${expected.mix * 100}%, white)`);
+      const foreground = declarations.match(/(?:^|;)\s*color:\s*(#[0-9a-f]{6})/i)?.[1];
+      const palette = globalsCss.match(new RegExp(`${expected.palette}:\\s*(#[0-9a-f]{6})`, "i"))?.[1];
+      expect(foreground).toBeDefined();
+      expect(palette).toBeDefined();
+      const background = mixWithWhite(palette!, expected.mix);
+      expect(contrastRatio(foreground!, background)).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });
