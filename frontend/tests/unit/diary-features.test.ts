@@ -11,13 +11,16 @@ describe("diary feature query ownership", () => {
       ["week", "principal", "2026-09-14"],
       ["diary-food-picker", "principal", "rice"],
     ] as const;
+    const unrelatedQueryKey = ["profile", "principal"] as const;
 
     for (const queryKey of queryKeys) queryClient.setQueryData(queryKey, {});
+    queryClient.setQueryData(unrelatedQueryKey, {});
 
     await invalidateDiary(queryClient);
 
     for (const queryKey of queryKeys) {
       expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(true);
     }
+    expect(queryClient.getQueryState(unrelatedQueryKey)?.isInvalidated).toBe(false);
   });
 });

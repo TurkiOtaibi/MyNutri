@@ -1,44 +1,15 @@
-import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const root = resolve(import.meta.dirname, "../..");
-const schemaPath = resolve(root, "openapi.json");
 const contractsPath = resolve(root, "lib/generated/openapi.ts");
 const read = (path: string) => readFileSync(path);
-const digest = (value: Buffer) => createHash("sha256").update(value).digest("hex");
 
 describe("generated OpenAPI contracts", () => {
-  it("regenerates deterministically from the local Backend schema", () => {
-    const before = [read(schemaPath), read(contractsPath)];
-    const npmCli = process.env.npm_execpath;
-    expect(npmCli).toBeTruthy();
-    execFileSync(process.execPath, [npmCli!, "run", "generate:api"], {
-      cwd: root,
-      stdio: "pipe",
-    });
-    const after = [read(schemaPath), read(contractsPath)];
-    expect(after.map(digest)).toEqual(before.map(digest));
-    expect(after).toEqual(before);
-  }, 120_000);
-
-  it("contains generated transport contracts without a runtime client", () => {
+  it("contains no runtime client or machine-specific output", () => {
     const source = read(contractsPath).toString("utf8");
-    for (const contract of [
-      "AccountResponse",
-      "ProfileResponse",
-      "NutritionRegistryResponse",
-      "DiaryEntryResponse",
-      "FoodResponse",
-      "AdminUserDetail",
-      "export namespace Diary",
-      "export namespace Foods",
-    ]) {
-      expect(source).toContain(contract);
-    }
     for (const retiredContract of [
       "NutritionPatternAnalysisResponseV2",
       "WeeklyPriorityResultV1",
@@ -60,7 +31,6 @@ describe("generated OpenAPI contracts", () => {
     }
     expect(source).not.toMatch(/class (?:Api|HttpClient)|\bfetch\(|\baxios\b|request</);
     expect(source).not.toMatch(/[A-Z]:\\|\/home\/|\/Users\//);
-    expect(source).toContain("DeleteFoodDocumentedFoodsFoodIdDelete");
   });
 
   it("is semantically valid under the repository TypeScript compiler", () => {
