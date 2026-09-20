@@ -4,64 +4,86 @@ import {
   definitionsFromRegistry,
   formatNutrientValue,
   nutrientValue,
-  parseNutritionRegistry
+  parseNutritionRegistry,
 } from "@/lib/nutrients";
 
-describe("nutrient definitions and values", () => {
-  it("maps registry coverage and localizes known units", () => {
-    const registry = {
-      rules_manifest_hash: "a".repeat(64),
-      calculation_policy: {},
-      nutrients: [{
-        key: "vitamin_c_mg",
-        storage_field: "vitamin_c_mg",
-        label_ar: "فيتامين ج",
-        unit: "mg",
-        display_precision: 1,
-        display_order: 8,
-        target_type: "recommended",
-        target_source: "registry",
-        target_rule: {},
-        completeness_participation: true,
-        diary_coverage_participation: false
-      }],
-      target_types: ["recommended"],
-      primary_categories: ["other"],
-      food_taxonomy: [{
-        key: "other",
-        label_ar: "أخرى",
-        subcategories: [{ key: "other", label_ar: "أخرى" }]
-      }],
-      nutrition_data_sources: [{ key: "official", label_ar: "رسمي" }]
-    };
-    const definitions = definitionsFromRegistry(parseNutritionRegistry(registry));
-
-    expect(definitions[0]).toMatchObject({
+function registryFixture() {
+  return {
+    rules_manifest_hash: "a".repeat(64),
+    calculation_policy: {},
+    nutrients: [{
       key: "vitamin_c_mg",
+      storage_field: "vitamin_c_mg",
+      label_ar: "فيتامين ج",
+      unit: "mg",
+      display_precision: 1,
+      display_order: 8,
+      target_type: "recommended",
+      target_source: "registry",
+      target_rule: {},
+      completeness_participation: true,
+      diary_coverage_participation: false,
+    }],
+    target_types: ["recommended"],
+    primary_categories: ["other"],
+    food_taxonomy: [{
+      key: "other",
+      label_ar: "أخرى",
+      subcategories: [{ key: "other", label_ar: "أخرى" }],
+    }],
+    nutrition_data_sources: [{ key: "official", label_ar: "رسمي" }],
+  };
+}
+
+describe("nutrient definitions and values", () => {
+  it("maps Registry coverage and exact localized presentation metadata", () => {
+    const definitions = definitionsFromRegistry(parseNutritionRegistry(registryFixture()));
+
+    expect(definitions).toEqual([{
+      key: "vitamin_c_mg",
+      label: "فيتامين ج",
+      unit: "ملجم",
       precision: 1,
-      foodCompleteness: true
-    });
-    expect(definitions[0].unit).not.toBe("mg");
-    expect(() => parseNutritionRegistry({ ...registry, rules_manifest_hash: "bad" })).toThrow();
-    expect(() => parseNutritionRegistry({
-      ...registry,
-      nutrients: [...registry.nutrients, { ...registry.nutrients[0] }]
-    })).toThrow();
-    expect(() => parseNutritionRegistry({
-      ...registry,
-      food_taxonomy: [{
-        ...registry.food_taxonomy[0],
-        subcategories: [
-          registry.food_taxonomy[0].subcategories[0],
-          { ...registry.food_taxonomy[0].subcategories[0] }
-        ]
-      }]
-    })).toThrow();
-    expect(() => parseNutritionRegistry({
-      ...registry,
-      target_types: ["future_type"],
-      nutrients: [{ ...registry.nutrients[0], target_type: "future_type" }]
-    })).toThrow();
+      order: 8,
+      targetType: "recommended",
+      targetValue: null,
+      foodCompleteness: true,
+    }]);
+  });
+
+  it.each([
+    ["invalid manifest hash", () => ({ ...registryFixture(), rules_manifest_hash: "bad" })],
+    ["duplicate nutrient key", () => {
+      const registry = registryFixture();
+      return { ...registry, nutrients: [...registry.nutrients, { ...registry.nutrients[0] }] };
+    }],
+    ["duplicate taxonomy child", () => {
+      const registry = registryFixture();
+      return {
+        ...registry,
+        food_taxonomy: [{
+          ...registry.food_taxonomy[0],
+          subcategories: [
+            registry.food_taxonomy[0].subcategories[0],
+            { ...registry.food_taxonomy[0].subcategories[0] },
+          ],
+        }],
+      };
+    }],
+    ["target type outside the generated union", () => {
+      const registry = registryFixture();
+      return {
+        ...registry,
+        target_types: ["future_type"],
+        nutrients: [{ ...registry.nutrients[0], target_type: "future_type" }],
+      };
+    }],
+    ["nutrient target type absent from Registry target types", () => ({
+      ...registryFixture(),
+      target_types: ["minimum"],
+    })],
+  ])("rejects %s", (_name, buildInvalidRegistry) => {
+    expect(() => parseNutritionRegistry(buildInvalidRegistry())).toThrow();
   });
 
   it("rejects missing and non-finite nutrient values and formats finite values", () => {
