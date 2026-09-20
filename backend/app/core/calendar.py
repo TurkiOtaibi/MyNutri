@@ -2,6 +2,9 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import text
+from sqlmodel import Session
+
 from app.core.config import get_settings, validate_runtime_configuration
 
 
@@ -38,3 +41,21 @@ def current_diary_date(now: datetime | None = None) -> date:
 
 def following_diary_date(current_date: date) -> date:
     return current_date + timedelta(days=1)
+
+
+def age_on(birth_date: date, today: date | None = None) -> int:
+    current = today or current_diary_date()
+    years = current.year - birth_date.year
+    if (current.month, current.day) < (birth_date.month, birth_date.day):
+        years -= 1
+    return max(years, 0)
+
+
+def database_calendar_date(session: Session) -> date:
+    if session.get_bind().dialect.name != "postgresql":
+        return current_diary_date()
+    return (
+        session.connection()
+        .execute(text("SELECT (clock_timestamp() AT TIME ZONE 'Asia/Riyadh')::date"))
+        .scalar_one()
+    )

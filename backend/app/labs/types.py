@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from fractions import Fraction
 from typing import Literal, Mapping, TypeAlias
@@ -17,6 +18,32 @@ class Zone:
     high: Fraction | None
     low_inclusive: bool
     high_inclusive: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedRule:
+    test_key: str
+    age_years: int
+    zones: tuple[Zone, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Interpretation:
+    canonical_exact: Fraction
+    display_value: str
+    display_unit: str
+    display_is_approximate: bool
+    status_code: str
+    rule: ResolvedRule
+    medical_rules_version: str
+
+
+@dataclass(frozen=True, slots=True)
+class ChartZoneSegment:
+    from_date: date
+    to_date_exclusive: date
+    age_min: int
+    zones: tuple[Zone, ...]
 
 
 @dataclass(frozen=True, slots=True)

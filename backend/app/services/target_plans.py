@@ -8,12 +8,12 @@ import json
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, text
+from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
-from app.core.calendar import current_diary_date
+from app.core.calendar import current_diary_date, database_calendar_date
 from app.models import (
     DiaryEntry,
     IdempotencyRecord,
@@ -115,14 +115,10 @@ def to_plan_summary(plan: TargetPlan) -> TargetPlanSummary:
 
 
 def _database_riyadh_date(session: Session) -> date:
-    bind = session.get_bind()
-    if bind.dialect.name != "postgresql":
+    # Keep both legacy monkeypatch seams while sharing the authoritative DB clock.
+    if session.get_bind().dialect.name != "postgresql":
         return current_diary_date()
-    return (
-        session.connection()
-        .execute(text("SELECT (clock_timestamp() AT TIME ZONE 'Asia/Riyadh')::date"))
-        .scalar_one()
-    )
+    return database_calendar_date(session)
 
 
 def _load_owned_plan(

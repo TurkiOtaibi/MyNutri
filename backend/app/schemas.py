@@ -24,7 +24,7 @@ from app.models import (
     UnitBasis,
 )
 
-from app.nutrition_rules.calculation import age_on
+from app.core.calendar import age_on
 from app.nutrition_rules.registry import PRIMARY_CATEGORIES, SUBCATEGORIES_BY_PRIMARY
 from app.services.food_validation_errors import (
     ABOVE_MAX_MESSAGE,

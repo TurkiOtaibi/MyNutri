@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal, ROUND_HALF_EVEN
 from typing import Any
 
-from app.core.calendar import current_diary_date
+from app.core.calendar import age_on as calendar_age_on, current_diary_date
 from app.models import ActivityLevel, Goal, Sex
 from app.nutrition_rules.registry import NUTRIENTS
 
@@ -83,11 +83,8 @@ def decimal(value: object) -> Decimal:
 
 
 def age_on(birth_date: date, today: date | None = None) -> int:
-    current = today or current_diary_date()
-    years = current.year - birth_date.year
-    if (current.month, current.day) < (birth_date.month, birth_date.day):
-        years -= 1
-    return max(years, 0)
+    # Retain the old import and clock monkeypatch seam for existing consumers.
+    return calendar_age_on(birth_date, today or current_diary_date())
 
 
 def calculate_bmr(sex: Sex, weight_kg: object, height_cm: object, age: int) -> Decimal:
