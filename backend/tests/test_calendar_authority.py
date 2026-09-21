@@ -1,12 +1,15 @@
+from collections.abc import Generator
 from datetime import date, datetime, timezone
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlmodel import Session, SQLModel, create_engine
 
 from app.core.auth import PrincipalContext, get_principal_context, get_token_verifier
 from app.core.calendar import diary_calendar_authority, following_diary_date
 from app.main import app
+from app.models import Principal
 from app.schemas import TargetPlanPreviewRequest, TargetResponse
 from app.api.routes.profile import preview_profile
 
@@ -107,7 +110,20 @@ def _plan008_payload() -> TargetPlanPreviewRequest:
     )
 
 
-def test_preview_uses_the_explicit_effective_date(monkeypatch) -> None:
+@pytest.fixture
+def calendar_session() -> Generator[Session, None, None]:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(Principal(id=UUID(int=10)))
+        session.commit()
+        yield session
+    engine.dispose()
+
+
+def test_preview_uses_the_explicit_effective_date(
+    monkeypatch, calendar_session: Session
+) -> None:
     captured_date = None
 
     def preview(payload, effective_date):
@@ -118,6 +134,6 @@ def test_preview_uses_the_explicit_effective_date(monkeypatch) -> None:
     monkeypatch.setattr("app.api.routes.profile.preview_targets", preview)
 
     payload = _plan008_payload()
-    preview_profile(payload, PrincipalContext(UUID(int=10)), object())
+    preview_profile(payload, PrincipalContext(UUID(int=10)), calendar_session)
 
     assert captured_date == payload.effective_from
