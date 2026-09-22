@@ -370,7 +370,7 @@ async function prepareLabsIsolation(browser: Browser, request: APIRequestContext
     await expect(page.locator(`input[value="${actorA.displayValue}"]`)).toHaveCount(0);
     await expect(page.getByRole("dialog", { name: "إضافة نتائج" })).toHaveCount(0);
     await expect(page.getByText(/تم حفظ النتائج\.|تم حفظ التعديل\.|تعذر تأكيد الحفظ/)).toHaveCount(0);
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
     expect(await leakRecords(page)).toEqual([]);
   };
 
@@ -1161,7 +1161,7 @@ test("@strictmode Labs old owner detail cannot repopulate a new actor session", 
     await installLeakObserver(page, [actorA.displayValue, actorA.resultId], [actorA.displayValue], true);
     await e2eAuthAction(page, "signIn", { email: actorB.email, password: PASSWORD });
     expect(await retainedSessionSignalAborted(page)).toBe(true);
-    await expect(page.getByText(actorB.displayValue, { exact: false })).toBeVisible();
+    await expect(page.getByRole("region", { name: "السجل الكامل" }).getByText(actorB.displayValue, { exact: false })).toBeVisible();
     pending.release();
     expect((await pending.response).status()).toBe(200);
     await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));

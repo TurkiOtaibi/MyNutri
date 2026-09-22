@@ -72,7 +72,7 @@ test("all 15 categories and five sorts control the rendered catalog order", asyn
   ]);
   await navigateToOwnerLabs(page);
   await page.getByRole("tab", { name: "كل التحاليل" }).click();
-  const category = page.getByLabel("التصنيف");
+  const category = page.locator("label").filter({ hasText: /^التصنيف/ }).locator("select");
   const sort = page.getByLabel("الترتيب");
   const renderedKeys = () => page.getByTestId("lab-row").evaluateAll((rows) => (
     rows.map((row) => row.getAttribute("data-test-key"))
@@ -112,7 +112,7 @@ test("owned filters retain a clear empty-category state", async ({ labsPage: pag
     { test_key: "hba1c", entered_value: "5.20", entered_unit: "%" },
   ]);
   await navigateToOwnerLabs(page);
-  await page.getByLabel("التصنيف").selectOption("iron");
+  await page.locator("label").filter({ hasText: /^التصنيف/ }).locator("select").selectOption("iron");
   await expect(page.getByText("لا توجد نتائج ضمن هذا التصنيف.", { exact: true })).toBeVisible();
 });
 

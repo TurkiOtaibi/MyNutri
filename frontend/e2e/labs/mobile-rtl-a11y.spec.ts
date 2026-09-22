@@ -11,7 +11,8 @@ async function assertMobileSurface(page: Page) {
       .map((element) => {
         const label = element.matches('input[type="checkbox"], input[type="radio"]') ? element.closest("label") : null;
         const box = (label ?? element).getBoundingClientRect();
-        return { width: box.width, height: box.height, left: box.left, right: box.right };
+        return { width: box.width, height: box.height, left: box.left, right: box.right,
+          control: element.tagName.toLowerCase(), label: element.getAttribute("aria-label") ?? element.textContent?.trim().slice(0, 50) ?? "" };
       });
     return {
       dir: root.dir,
@@ -23,7 +24,7 @@ async function assertMobileSurface(page: Page) {
   expect(layout.dir).toBe("rtl");
   expect(layout.overflow).toBeLessThanOrEqual(1);
   expect(layout.visibleTargets.every(({ left, right }) => left >= -1 && right <= layout.viewport + 1)).toBe(true);
-  expect(layout.visibleTargets.every(({ width, height }) => width >= 44 && height >= 44)).toBe(true);
+  expect(layout.visibleTargets.filter(({ width, height }) => width < 44 || height < 44)).toEqual([]);
   const audit = await new AxeBuilder({ page }).analyze();
   expect(audit.violations.filter((violation) =>
     ["moderate", "serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);

@@ -202,7 +202,7 @@ test("confirmed PATCH remains saved when subsequent current-data GET fails", asy
   await page.locator("#lab-edit-value").fill("40.00"); await save(page);
   await expect(page.getByText("تم حفظ التعديل.", { exact: true })).toBeVisible();
   await expect(edit(page)).toHaveCount(0);
-  await expect(page.getByRole("alert")).toContainText("تعذر تحميل التحاليل الحالية.");
+  await expect(page.getByRole("alert").filter({ hasText: "تعذر تحميل التحاليل الحالية." })).toBeVisible();
   expect((await labsApi.detail("hba1c")).results[0].entered_value).toBe("40.00");
 });
 

@@ -61,5 +61,5 @@ export function CutIntensitySelector({ value, onChange }: { value: CutIntensity;
 }
 
 export function OptionList({ value, options, onChoose }: { value: string; options: Array<{ value: string; label: string; description?: string }>; onChoose: (value: string) => void }) {
-  return <div className="profile-option-list" role="radiogroup">{options.map((option) => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} onClick={() => onChoose(option.value)}><span><strong>{option.label}</strong>{option.description ? <small>{option.description}</small> : null}</span>{value === option.value ? <Check size={19} aria-label="محدد" /> : <span className="profile-radio-dot" />}</button>)}</div>;
+  return <div className="profile-option-list" role="radiogroup">{options.map((option) => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} onClick={() => onChoose(option.value)}><span><strong>{option.label}</strong>{option.description ? <small>{option.description}</small> : null}</span>{value === option.value ? <Check size={19} aria-hidden="true" /> : <span className="profile-radio-dot" />}</button>)}</div>;
 }
