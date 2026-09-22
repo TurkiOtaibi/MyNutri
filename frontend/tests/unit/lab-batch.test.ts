@@ -28,7 +28,7 @@ describe("Labs batch model", () => {
   });
   it("keeps invalid separator-only input populated while omitting raw whitespace", () => {
     expect(buildLabRows([{ testKey: "hba1c", value: "٬", unit: "%" }, { testKey: "ferritin", value: " \t", unit: "ng/mL" }]))
-      .toEqual([{ test_key: "hba1c", entered_value: "", entered_unit: "%" }]);
+      .toEqual([{ test_key: "hba1c", entered_value: "٬", entered_unit: "%" }]);
   });
 
   it("initializes at date with server today and fixed defaults; overlapping ownership retains edits", () => {
@@ -55,7 +55,7 @@ describe("Labs batch model", () => {
     const pending = freezeBatch(draft, "k");
     expect(pending.payload).toEqual({ test_date: "2026-09-20", results: [
       { test_key: "hba1c", entered_value: "0", entered_unit: "%" },
-      { test_key: "ferritin", entered_value: "", entered_unit: "ng/mL" },
+      { test_key: "ferritin", entered_value: "٬", entered_unit: "ng/mL" },
     ] });
     draft.rows.hba1c.value = "9";
     expect(pending.payload.results[0].entered_value).toBe("0");
@@ -97,6 +97,13 @@ describe("Labs batch model", () => {
     expect(normalizeLabNumber(" ١٬٢٣٤٫٥٠ ")).toBe("1234.50");
     expect(normalizeLabNumber("۰۱۲.۳۰")).toBe("012.30");
     expect(normalizeLabNumber("  ")).toBe("");
+  });
+
+  it("preserves malformed grouping so the backend rejects it instead of changing the value", () => {
+    expect(normalizeLabNumber("١٬٢")).toBe("1٬2");
+    expect(normalizeLabNumber("١٢٬٣٤")).toBe("12٬34");
+    expect(normalizeLabNumber("١٬٢٣٤٫٥٬٦")).toBe("1٬234.5٬6");
+    expect(normalizeLabNumber("١٢٬٣٤٥٫٦")).toBe("12345.6");
   });
 
   it("unions panels and individual selections in catalog order without duplicates", () => {

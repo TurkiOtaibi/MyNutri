@@ -105,12 +105,15 @@ const arabicDigits = "٠١٢٣٤٥٦٧٨٩";
 const persianDigits = "۰۱۲۳۴۵۶۷۸۹";
 
 export function normalizeLabNumber(raw: string): string {
-  return raw
+  const normalized = raw
     .trim()
     .replace(/[٠-٩]/g, (digit) => String(arabicDigits.indexOf(digit)))
     .replace(/[۰-۹]/g, (digit) => String(persianDigits.indexOf(digit)))
-    .replace(/٬/g, "")
     .replace(/٫/g, ".");
+  // Remove grouping only when it is unambiguous. Invalid text stays invalid for server validation.
+  return /^[0-9]{1,3}(?:٬[0-9]{3})+(?:\.[0-9]+)?$/.test(normalized)
+    ? normalized.replace(/٬/g, "")
+    : normalized;
 }
 
 export function selectedTestKeys(
