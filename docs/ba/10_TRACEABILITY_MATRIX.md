@@ -18,5 +18,14 @@ Status: supporting map. Exact executable coverage lives in tests and CI.
 | Registry integrity and preview binding | V2 `12` | manifest/Registry/Profile/Target Plan services | Registry API and Target Plan tests |
 | Release, cutover, recovery | V2 `06`, `07` | Alembic, deployment mechanism, CI | migration/preflight/offline SQL/container gates |
 | Arabic/RTL/mobile/a11y | this BA package | Next.js components/styles | Playwright, visual, axe, RTL, StrictMode tests |
+| Approved Labs catalog/package resource | V2 `01`, `11` | `app.labs` catalog/loader | golden keys/membership, integrity, package tests and docs validator |
+| Exact interpretation/current-rule history | V2 `01`, `11` | Labs numbers/interpretation/read projection | boundary, conversion, age-zone and registry-substitution tests |
+| Private Labs facts/migration/durable receipts | V2 `06`, `11` | LabResult, idempotency, Alembic | PostgreSQL preservation, constraint, privilege and downgrade tests |
+| Owner CRUD/admin read-only/404 privacy | V2 `03`, `11` | Labs services/routes/admin reads | transaction, concurrency, service/HTTP/security tests |
+| Profile sex/DOB guards and shared locking | V2 `01`, `11` | Profile constraints/TargetPlan and Labs services | demographic regression and PostgreSQL race tests |
+| Eight Labs operations/generated contracts | V2 `11` | FastAPI/OpenAPI/generated TypeScript | contract drift, API tests and docs-validator negative fixtures |
+| Labs six views/navigation/chart/history | V2 `01`, `11`; BA `07` | frontend Labs components/pages | unit, functional Playwright and Linux visual gates |
+| Labs accessibility/mobile/session privacy | V2 `01`, `03`, `11`; BA `07` | Labs UI/query/session boundaries | axe, keyboard, viewport, held-response and dev StrictMode gates |
+| Labs static-shell isolation/nutrition independence | V2 `01`, `11` | service worker/query/domain architecture | PWA successful-write/cache/storage/offline tests and domain regressions |
 
 The canonical test inventory and partition completeness are measured by `.github/workflows/ci.yml`; documentation does not hard-code collection totals.

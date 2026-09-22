@@ -18,7 +18,7 @@ async function open(page: Page, id: string, kind: "edit" | "delete" = "edit") {
   await expect(kind === "edit" ? edit(page) : deletion(page)).toBeVisible();
 }
 
-test("edit uses full entered precision and supported units, immutable identity and contained focus", async ({ labsPage: page, labsApi }) => {
+test("edit uses full entered precision and supported units, immutable identity and contained focus", async ({ labsPage: page, labsApi }, testInfo) => {
   const { id, date } = await seed(labsApi);
   await page.goto("/labs/hba1c"); await open(page, id);
   await expect(page.locator("#lab-edit-value")).toHaveValue("38.797950");
@@ -30,6 +30,9 @@ test("edit uses full entered precision and supported units, immutable identity a
   await expect(edit(page).locator("[data-tone]")).toHaveCount(0);
   await expect(edit(page).getByText("نطاق ما قبل السكري")).toHaveCount(0);
   await expect(edit(page).locator("select")).toHaveCount(1);
+  await testInfo.attach("labs-edit-entered-facts", {
+    body: await edit(page).screenshot(), contentType: "image/png",
+  });
   const firstEditControl = page.locator("#lab-edit-value");
   const lastEditControl = edit(page).getByRole("button", { name: "حفظ التعديل", exact: true });
   await lastEditControl.focus();

@@ -17,6 +17,7 @@ implementation authority.
 
 ## Domain and operations authority
 
+- Standalone Labs scope, permissions, facts and current-rule interpretation belong to V2 01/03/11. The packaged [Labs catalog](../backend/app/labs/catalog.v1.json) owns approved test keys, units, factors, age/sex rules, categories and panels; numeric rules are not duplicated in prose or the frontend.
 - [Food taxonomy](product/v2/05_FOOD_TAXONOMY_V2.md) owns stable taxonomy keys and Arabic labels.
 - [Data migration and cutover](product/v2/06_DATA_MIGRATION_AND_CUTOVER.md) owns the live migration topology and schema-transition boundaries.
 - [Release and rollback runbook](product/v2/07_RELEASE_AND_ROLLBACK_RUNBOOK.md) owns deployment, verification, and recovery procedure.

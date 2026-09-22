@@ -17,8 +17,8 @@ Status: supporting requirements. Backend schemas and database constraints are ex
 
 | Field | Required | Current rule |
 |---|---:|---|
-| `sex` | Yes | `male` or `female` |
-| `birth_date` | Yes | Valid Gregorian date; age 10–100 on effective date |
+| `sex` | Yes | `male` or `female`; immutable after first successful Profile save |
+| `birth_date` | Yes | Valid Gregorian date; Profile age 10–100 on effective date remains. Labs separately requires age >=18 on each test date; a DOB change cannot invalidate stored adult history |
 | `height_cm` | Yes | Finite, 100–250 |
 | `weight_kg` | Yes | Finite, 20–300 |
 | `activity_level` | Yes | `sedentary`, `light`, `moderate`, `active`, `very_active` |
@@ -74,3 +74,84 @@ No nutrition snapshot, target provenance, day status, or day version is persiste
 - Title: `حذف الطعام؟`
 - Body: `سيتم حذف هذا الطعام نهائيًا، كما سيتم حذف جميع سجلات اليوميات المرتبطة به لجميع المستخدمين. لا يمكن التراجع عن هذا الإجراء.`
 - Buttons: `إلغاء` / `حذف نهائي`
+
+## LabResult entered facts
+
+| Field | Rule |
+|---|---|
+| `id` | Server UUID |
+| `principal_id` | Derived authenticated owner; never a write input |
+| `test_key` | Approved catalog key; immutable |
+| `test_date` | Valid Gregorian DATE, no later than server Riyadh today; age >=18 |
+| `entered_value` | Explicit finite nonnegative decimal string; unscaled NUMERIC storage |
+| `entered_unit` | Unit supported by this catalog test |
+| `created_at`, `updated_at` | Backend timestamps; update activity is distinct from test date |
+
+Owner/test/date is unique. Normalize Arabic digits/decimal separator, trim outer
+space and redundant leading zeros, retain fractional trailing zeros. Plain decimal
+grammar is `[0-9]+(?:\.[0-9]+)?`, at most 128 normalized characters including the
+decimal point. No exponent, sign, inequality, qualitative value or medical maximum.
+Canonical values must also be nonnegative. Status, references and canonical display
+are derived, never stored facts. Numeric rules belong to the packaged Labs catalog.
+
+## Labs request and response fields
+
+Batch create takes shared `test_date` and nonempty `results[]` containing only
+`test_key`, `entered_value`, `entered_unit`, with `Idempotency-Key`. It returns
+`receipt_version` and `result_ids`; `Idempotent-Replayed` identifies an old success.
+The ID-only receipt is durable, survives edit/delete, and has no medical snapshot.
+PATCH accepts only date/value/unit; DELETE physically removes the owned result.
+Read models distinguish entered facts from `display_value`, `display_unit`,
+`display_is_approximate`, `status`, `reference`, `chart_zones`, and one current
+`medical_rules_version`. Overview adds `eligibility`, `server_today`, `read_only`,
+latest result by test date and `last_updated_at`; detail returns full history.
+
+## Exact governed Labs error copy
+
+| Code | Arabic message |
+|---|---|
+| `LAB_PROFILE_REQUIRED` | أكمل بيانات الملف الشخصي قبل إضافة نتائج التحاليل. |
+| `LAB_ADULT_REQUIRED` | يمكن إضافة نتائج أُجريت عند عمر 18 سنة فأكثر فقط. |
+| `LAB_DATE_FUTURE` | لا يمكن اختيار تاريخ في المستقبل. |
+| `LAB_DECIMAL_INVALID` | أدخل قيمة رقمية صريحة غير سالبة. |
+| `LAB_VALUE_TOO_LONG` | تتجاوز القيمة حد التخزين المسموح. |
+| `LAB_UNIT_UNSUPPORTED` | اختر وحدة مدعومة لهذا التحليل. |
+| `LAB_TEST_UNSUPPORTED` | هذا التحليل غير مدعوم. |
+| `LAB_DUPLICATE` | توجد نتيجة لهذا التحليل في التاريخ المحدد. |
+| `LAB_BATCH_EMPTY` | أدخل نتيجة واحدة على الأقل. |
+| `LAB_READ_ONLY` | التحاليل متاحة للمشرف للقراءة فقط. |
+| `LAB_IDEMPOTENCY_CONFLICT` | تغيّرت بيانات عملية سبق إرسالها بالمفتاح نفسه. |
+| `PROFILE_SEX_IMMUTABLE` | لا يمكن تعديل الجنس بعد حفظ الملف الشخصي. |
+| `LABS_ADULT_HISTORY_REQUIRED` | لا يمكن تعديل تاريخ الميلاد لأنه يجعل نتائج تحاليل مسجلة قبل عمر 18 سنة. |
+| `RESOURCE_NOT_FOUND` | المورد غير موجود. |
+
+## Exact governed Labs presentation copy
+
+Navigation/actions: `التحاليل`, `إضافة نتائج`, `تحاليلك`, `كل التحاليل`, `إكمال الملف`,
+`سيتم حفظ N نتائج`, `القيم المرجعية للنظام`,
+`تفسير النظام لهذا التحليل يفترض عينة صائمة`, `للقراءة فقط`.
+Delete prompt: `حذف نتيجة [التحليل] بتاريخ [التاريخ]؟`; buttons `حذف النتيجة` / `إلغاء`.
+Initial create success: `تم حفظ النتائج.`; replay: `تم تأكيد نجاح عملية الحفظ السابقة.`
+Ambiguous edit, matching readback: `تعذر تأكيد الحفظ، لكن النتيجة الحالية تطابق القيم التي أدخلتها. يمكنك إغلاق النافذة لمراجعتها.`
+Ambiguous edit, differing readback: `النتيجة الحالية تختلف عن القيم التي أدخلتها. أغلق النافذة لمراجعتها قبل تعديلها مجددًا.`
+These messages do not confirm PATCH success; current facts and the draft remain
+separate, with GET-only reread and explicit close before editing again.
+
+| Status | Arabic label |
+|---|---|
+| `low` | منخفض |
+| `in_range` | ضمن النطاق |
+| `high` | مرتفع |
+| `normal` | طبيعي |
+| `prediabetes_range` | نطاق ما قبل السكري |
+| `diabetes_range` | نطاق السكري |
+| `desirable` | مرغوب |
+| `above_desirable` | أعلى من المرغوب |
+| `borderline_high` | مرتفع حدّيًا |
+| `very_high` | مرتفع جدًا |
+| `acceptable` | مقبول |
+| `deficient` | نطاق النقص |
+| `inadequate` | غير كافٍ |
+| `adequate_for_most` | كافٍ لمعظم الأشخاص |
+| `borderline` | حدّي |
+| `in_reference` | ضمن النطاق المرجعي |

@@ -41,6 +41,14 @@ any rollout action.
   contracts are absent.
 - Historical Alembic revision hashes remain unchanged.
 - `git diff --check` and exact-path scope verification pass.
+- Labs catalog integrity/package resource, migration/model/privilege/preflight and
+  offline SQL gates pass. Sex/DOB guards, exact arithmetic/current-rule history,
+  atomic/idempotent owner CRUD, admin read-only/404 privacy and nutrition independence
+  pass, together with generated-contract drift and complete UI/session/PWA gates.
+- Preserve locked dependency reproduction and both backend/frontend audits; execute
+  every backend partition, all four functional shards and aggregate collectors,
+  Linux visual, PWA, development StrictMode and seven provider cases plus cleanup.
+  An unavailable or failing gate remains a blocker, not inferred success.
 
 ## Production preflight
 
@@ -66,6 +74,10 @@ is granted, perform read-only counts first for:
 
 Any non-zero blocking count stops the rollout. Do not delete, rewrite, or infer
 production data during preflight.
+For the Labs revision, after exact production access authorization, inspect the
+running revision/head and presence of facts and create receipts before deciding
+rollback eligibility. Their presence forbids downgrade, not forward deployment.
+Never print connection secrets or delete facts/receipts to permit a downgrade.
 
 ## Deployment order
 
@@ -85,7 +97,19 @@ Only after a separately approved release window:
 8. Confirm the Food archive schema is absent and the Diary Food FK is `ON DELETE CASCADE`.
 9. Confirm generated-contract and migration-head identities from runtime evidence.
 
+For Labs, separately authorize the exact revision and each production migration
+and deployment action: schema `e8b7a42f6c31` precedes its compatible backend,
+generated contract and frontend artifacts. A local commit, CI result or migration
+file does not prove any production action or running revision.
+
 ## Smoke checks
+
+The following mutation checks run in an explicitly disposable release environment.
+Production checks remain safe and non-mutating unless the exact broader action
+is separately authorized. Production-safe Labs checks inspect running revision,
+authenticated catalog/reads, `no-store` and admin read-only presentation. Disposable
+Labs checks cover owner create/edit/delete, retained receipt replay, DOB/sex guards,
+and unchanged Profile/TargetPlan/Diary/Food facts across Labs CRUD.
 
 - Create and edit a Food with a valid two-level taxonomy.
 - Confirm only `official` and `estimated` are accepted for nutrition provenance.

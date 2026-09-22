@@ -56,6 +56,15 @@ EXPECTED_LABS_OPERATIONS = {
 }
 VALIDATOR_PATH = "docs/tools/validate_authoritative_docs.py"
 EXPECTED_ALEMBIC_HEAD = "e8b7a42f6c31"
+EXPECTED_LABS_KEYS = frozenset("""
+hba1c total_cholesterol ldl_c hdl_c triglycerides wbc rbc hemoglobin hematocrit
+platelets mcv mch mchc rdw neutrophils_abs neutrophils_pct lymphocytes_abs
+lymphocytes_pct monocytes_abs monocytes_pct eosinophils_abs eosinophils_pct
+basophils_abs basophils_pct mpv ferritin serum_iron tibc transferrin_saturation
+vitamin_d_25oh vitamin_b12 vitamin_b6_plp zinc creatinine bun uric_acid sodium
+potassium chloride bicarbonate calcium_total corrected_calcium magnesium alt ast
+alp total_bilirubin albumin tsh free_t4 free_t3
+""".split())
 SPECIALIST_MESSAGE = (
     "لا يمكن حفظ هذا الهدف لأنه غير مناسب لحالتك الحالية. إذا رغبت في اتباع هذا الهدف، "
     "فاستشر أخصائي تغذية قبل اعتماده."
@@ -310,7 +319,7 @@ def _runtime_checks(root: Path, issues: list[str]) -> None:
         )
     actual_labs_operations = {
         path: {method for method in methods
-               if method in {"get", "post", "put", "delete", "patch"}}
+               if method in {"get", "post", "put", "delete", "patch", "options", "head", "trace"}}
         for path, methods in paths.items()
         if path == "/labs" or path.startswith("/labs/")
         or path.startswith("/admin/users/") and "/labs" in path
@@ -320,6 +329,20 @@ def _runtime_checks(root: Path, issues: list[str]) -> None:
             f"Labs OpenAPI operations are {actual_labs_operations!r}, "
             f"expected {EXPECTED_LABS_OPERATIONS!r}"
         )
+    catalog_path = root / "backend/app/labs/catalog.v1.json"
+    try:
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        keys = [item["test_key"] for item in catalog["tests"]]
+        categories = [item["key"] for item in catalog["categories"]]
+        panels = [item["key"] for item in catalog["panels"]]
+        if len(keys) != 51 or frozenset(keys) != EXPECTED_LABS_KEYS:
+            issues.append("Labs catalog must contain exactly the 51 approved unique test keys")
+        if len(categories) != 15 or len(set(categories)) != 15:
+            issues.append("Labs catalog must contain exactly 15 unique categories")
+        if len(panels) != 7 or len(set(panels)) != 7:
+            issues.append("Labs catalog must contain exactly 7 unique panels")
+    except (OSError, ValueError, KeyError, TypeError):
+        issues.append("Labs catalog is missing or malformed")
     get_foods_schema = (
         paths.get("/foods", {})
         .get("get", {})
@@ -435,6 +458,63 @@ def _self_test() -> int:
         )
         assert not _validate_documentation_estate(root, runtime_checks=False).ok
         print("self-test: secret-shaped assignment rejected")
+
+    with tempfile.TemporaryDirectory(prefix="mynutri-runtime-validator-") as temporary:
+        root = Path(temporary)
+        _write_fixture(root)
+        for name in ("06_DATA_MIGRATION_AND_CUTOVER", "07_RELEASE_AND_ROLLBACK_RUNBOOK"):
+            (root / f"docs/product/v2/{name}.md").write_text(EXPECTED_ALEMBIC_HEAD, encoding="utf-8")
+        models = root / "backend/app/models.py"
+        models.parent.mkdir(parents=True)
+        models.write_text("\n".join(f"class {name}(SQLModel, table=True): pass" for name in sorted(EXPECTED_MODELS)), encoding="utf-8")
+        migration = root / "backend/alembic/versions/current.py"
+        migration.parent.mkdir(parents=True)
+        migration.write_text(f'revision = "{EXPECTED_ALEMBIC_HEAD}"\ndown_revision = None\n', encoding="utf-8")
+        profile = root / "frontend/features/profile/profile-model.ts"
+        profile.parent.mkdir(parents=True)
+        profile.write_text(SPECIALIST_MESSAGE + VERY_LOW_MESSAGE, encoding="utf-8")
+        paths = {path: {method: {} for method in methods} for operations in (EXPECTED_FOOD_OPERATIONS, EXPECTED_TARGET_PLAN_OPERATIONS, EXPECTED_LABS_OPERATIONS) for path, methods in operations.items()}
+        paths["/foods"]["get"] = {"responses": {"200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/FoodListResponse"}}}}}}
+        contract = root / "frontend/openapi.json"
+        contract.write_text(json.dumps({"paths": paths}), encoding="utf-8")
+        catalog_path = root / "backend/app/labs/catalog.v1.json"
+        catalog_path.parent.mkdir(parents=True)
+        approved_catalog = json.loads((Path(__file__).resolve().parents[2] / "backend/app/labs/catalog.v1.json").read_text(encoding="utf-8"))
+        catalog_path.write_text(json.dumps(approved_catalog), encoding="utf-8")
+        assert _validate_documentation_estate(root).ok
+
+        for path, method in (("/labs/results", "get"), ("/admin/users/{principal_id}/labs/results", "post"), ("/labs/catalog", "options")):
+            changed = json.loads(contract.read_text(encoding="utf-8"))
+            changed["paths"].setdefault(path, {})[method] = {}
+            contract.write_text(json.dumps(changed), encoding="utf-8")
+            assert any("Labs OpenAPI operations" in issue for issue in _validate_documentation_estate(root).issues), (path, method)
+            contract.write_text(json.dumps({"paths": paths}), encoding="utf-8")
+        print("self-test: unexpected Labs operations rejected")
+        original_models = models.read_text(encoding="utf-8")
+        for changed in (original_models + "\nclass LabPanel(SQLModel, table=True): pass", original_models.replace("class LabResult(SQLModel, table=True): pass", "")):
+            models.write_text(changed, encoding="utf-8")
+            assert any("runtime entities" in issue for issue in _validate_documentation_estate(root).issues)
+        models.write_text(original_models, encoding="utf-8")
+        print("self-test: extra and missing entities rejected")
+        for mutation in ("missing", "duplicate", "substitute", "category", "panel"):
+            changed = json.loads(json.dumps(approved_catalog))
+            if mutation == "missing":
+                changed["tests"].pop()
+            elif mutation == "duplicate":
+                changed["tests"].append(changed["tests"][0])
+            elif mutation == "substitute":
+                changed["tests"][0]["test_key"] = "unapproved_test"
+            elif mutation == "category":
+                changed["categories"].pop()
+            else:
+                changed["panels"].pop()
+            catalog_path.write_text(json.dumps(changed), encoding="utf-8")
+            assert any("Labs catalog" in issue for issue in _validate_documentation_estate(root).issues), mutation
+        catalog_path.write_text(json.dumps(approved_catalog), encoding="utf-8")
+        print("self-test: Labs catalog drift rejected")
+        migration.write_text('revision = "unexpected"\ndown_revision = None\n', encoding="utf-8")
+        assert any("Alembic heads" in issue for issue in _validate_documentation_estate(root).issues)
+        print("self-test: unexpected head rejected")
 
     print("self-test: passed")
     return 0

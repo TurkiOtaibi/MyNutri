@@ -177,6 +177,17 @@ Before any release authorization:
 16. Confirm `d9f64a1c3e58` removed Food archive columns, installed the Diary Food
     `ON DELETE CASCADE`, preserved existing Food/Diary rows during migration, and
     revoked direct Food mutation from `PUBLIC`, `anon`, and `authenticated`.
+17. Confirm `e8b7a42f6c31` is the sole head and agrees with all seven models;
+    clean and populated-base upgrades preserve existing facts, grants and replay.
+18. Prove packaged Labs catalog availability, private privileges, finite/unscaled
+    numeric storage, unique owner/test/date, and operation-specific receipt expiry.
+19. Prove online empty-Labs downgrade succeeds, while any LabResult or in-progress/
+    completed Labs receipt refuses downgrade without deletion. Offline downgrade
+    must refuse. Preserve every historical migration hash.
+
+Development migration and production-config simulation preflight run only against
+an explicitly identified disposable loopback PostgreSQL database, with the target
+asserted before schema/row changes. They provide no production authorization.
 
 ## Downgrade boundary
 

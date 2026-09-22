@@ -1,13 +1,16 @@
 # myNutri V2 Scope and Decisions
 
 Status: Implementation authority
-Release: V2 multi-user, shared Food catalog, simplified Food model
+Release: V2 multi-user, shared Food catalog, simplified Food model, standalone Labs
 
 ## Objective
 
 V2 uses Supabase email/password accounts, durable Principal ownership, `user`
 and `admin` roles, read-only admin monitoring, and a global admin-managed Food
 catalog. Food taxonomy and provenance are intentionally small and stable.
+Standalone Labs lets adults record private numeric laboratory facts and follow
+their history using current system reference rules. Labs has no effect on Food,
+Diary, Target Plans, nutrition calculations, recommendations or Progress.
 
 ## Authoritative decisions
 
@@ -52,6 +55,39 @@ catalog. Food taxonomy and provenance are intentionally small and stable.
 - `normalized_name` remains system-generated and is not user-editable.
 
 ## Preserved behavior
+
+Labs uses the existing top navigation without removing a destination. Its six
+views are owner overview, batch add, detail/history, edit, admin-selected overview,
+and admin-selected detail. Arabic/RTL, keyboard/focus, responsive layouts and
+session isolation are acceptance requirements; runtime evidence lives in tests
+and CI, not in this authority document.
+
+## Labs decisions
+
+- The immutable packaged catalog has exactly 51 tests, 15 categories and 7 panels.
+  Panels select tests only; they are not stored entities. Numeric rules and exact
+  membership belong to `backend/app/labs/catalog.v1.json`.
+- `LabResult` entered value/unit/test/date are authoritative. Status, reference
+  zones and canonical values are derived from the current catalog on every fresh
+  read; rule changes reinterpret history without rewriting entered facts.
+- Complete Profile supplies sex and DOB. Labs requires complete Gregorian age
+  at least 18 on each test date, with the existing leap-day behavior. Profile's
+  nutrition age 10–100 rule remains separate. There is no pregnancy input.
+- Sex is immutable after the first successful Profile save. A DOB change cannot
+  make any stored result pre-adult. An accepted DOB change reinterprets history.
+- Users own CRUD; admins read own/selected-user Labs and cannot mutate Labs,
+  including their own. Owner/test/date is unique. Batch create and its durable
+  idempotency receipt commit atomically under the shared Principal lock.
+- Input is explicit finite nonnegative decimal text and an approved unit. Exact
+  rational conversion/classification precedes display rounding. The 128-character
+  normalized storage limit is technical, not a medical maximum.
+- Labs is online-only and volatile in the browser: no polling, personal persistence,
+  service-worker API cache, offline queue, sharing/export, editable catalog, custom
+  tests/units/ranges/panels, automatic biomarkers, diagnosis, treatment targets or
+  emergency workflow. Lipids and Iron Studies assume fasting without collecting
+  a fasting field. The UI calls references `القيم المرجعية للنظام`.
+
+## Preserved nutrition and application behavior
 
 Authentication, authorization, private Principal isolation, Target Plan
 revision history, legacy Target Plan API idempotency replay, Arabic-first RTL behavior,

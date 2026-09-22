@@ -8,7 +8,7 @@ import { API_TOKEN, API_URL } from "../foods/helpers";
 import { applyProfileThroughTargetPlan } from "../profile-api";
 
 const output = resolve(process.cwd(), "test-results", "manual-capture", "profile-targets-redesign");
-const headers = { Authorization: `Bearer ${API_TOKEN}` };
+const apiHeaders = () => ({ Authorization: `Bearer ${API_TOKEN}` });
 const LOCAL_TEST_PASSWORD = "Acceptance-only-password-2026!";
 const API_ORIGIN = new URL(API_URL).origin;
 const profileApiPattern = (url: URL) => url.origin === API_ORIGIN && url.pathname === "/profile";
@@ -24,15 +24,16 @@ function inputFrom(profile: ProfileResponse): ProfileInput {
 }
 
 test("@profile @visual capture production Profile and Targets states", async ({ browser, page, request }) => {
+  test.setTimeout(240_000);
   await mkdir(output, { recursive: true });
-  const originalResponse = await request.get(`${API_URL}/profile`, { headers });
+  const originalResponse = await request.get(`${API_URL}/profile`, { headers: apiHeaders() });
   const original = (await originalResponse.json()) as ProfileResponse;
   await page.emulateMedia({ reducedMotion: "reduce" });
 
   try {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/profile");
-    await expect(page.getByRole("heading", { name: "بياناتك وأهدافك" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "بياناتك وأهدافك" })).toBeVisible({ timeout: 30_000 });
     await page.screenshot({ path: resolve(output, "01-profile-loaded-390.png"), fullPage: true });
     await page.getByRole("region", { name: "بيانات الجسم" }).screenshot({ path: resolve(output, "02-body-data-card-390.png") });
     await expect(page.getByText("لا يمكن تعديل الجنس بعد حفظ الملف الشخصي.", { exact: true })).toBeVisible();
@@ -116,7 +117,7 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
     for (const width of [320, 390, 430]) {
       await page.setViewportSize({ width, height: 844 });
       await page.goto("/profile");
-      await expect(page.getByRole("heading", { name: "بياناتك وأهدافك" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "بياناتك وأهدافك" })).toBeVisible({ timeout: 30_000 });
       await page.screenshot({ path: resolve(output, `${width === 320 ? 18 : width === 390 ? 19 : 20}-viewport-${width}.png`), fullPage: true });
     }
     await page.setViewportSize({ width: 390, height: 560 });

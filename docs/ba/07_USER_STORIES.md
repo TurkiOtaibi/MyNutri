@@ -44,6 +44,59 @@ Acceptance: ownership is Principal-scoped; Food/TargetPlan references are valid;
 
 Acceptance: malformed or duplicate Registry definitions fail closed; the manifest hash/lock detect content drift; semantic version fields are absent.
 
-## Experience
+## Labs ownership and catalog
+
+- As an authenticated actor, I can browse exactly 51 approved tests, 15 categories
+  and 7 selection panels without editing the medical catalog.
+- As an owner, I can see my overview and full detail/history, create an atomic
+  batch, edit date/value/unit only, and physically delete a result.
+- As an owner, I retain original entered facts for editing while list/chart/history
+  show canonical values, current Status and age-aware system reference zones.
+- As an owner, I receive fresh current-rule interpretation after a rule or accepted
+  DOB change without a write to my recorded facts.
+
+Acceptance: exact decimal conversion/comparison precedes display rounding; each
+response uses one current catalog version. Owner/test/date is unique. No partial
+batch or failed receipt persists. Same key/body returns the ID-only success receipt
+after edit/delete/rule changes without recreating rows; changed scale/unit/body is
+409. Latest `test_date` and latest remaining update activity are separate, all five
+sorts preserve that distinction, and final deletion removes the owned row while
+the test remains in the catalog. Full history supplies every chart point.
+
+## Labs demographics, authorization and privacy
+
+- As an owner, I use Profile sex/DOB without entering them again in Labs; each
+  result must be at least age 18 on its test date.
+- As a Profile owner, I cannot change sex after first successful save or change
+  DOB so existing Labs history becomes pre-adult. Rejection changes neither
+  Profile, Target Plan nor Labs; accepted DOB changes reinterpret unchanged facts.
+- As an admin, I read own and selected-user Labs but cannot create/edit/delete,
+  including my own results. Another user's result ID remains non-enumerating.
+
+Acceptance: the backend derives ownership, rejects owner/test identity changes,
+returns 403 for every admin write and 404 for cross-owner IDs, and rechecks active
+actor/role under the Principal lock before replay. No medical values appear in
+URLs/logs/browser storage. Labs CRUD leaves Profile/TargetPlan/Diary/Food facts
+and nutrition calculations unchanged. Existing Profile nutrition age rules remain.
+
+## Labs experience acceptance
+
+The existing top navigation adds `التحاليل` and retains every destination. Owner
+overview/add/detail/edit and admin overview/detail provide six views. Panel and
+individual selection deduplicates, blank rows are omitted, explicit zero remains,
+and at least one populated row is required. A fresh session resets defaults;
+the announced save count matches submitted rows. No Status appears before save.
+Errors preserve draft/date/unit and focus the relevant field; ambiguous POST
+retains the same actor-scoped payload/key and permits only same-command retry.
+Confirmed success/replay refreshes current data by GET without resending a write.
+
+Arabic/RTL, 320/390/430 layouts, keyboard chart navigation, accessible text plus
+color, modal focus containment/restoration, reduced motion and full readable
+history are required. Account/selected-subject changes discard stale responses
+and volatile state; same-subject navigation preserves active current queries.
+There is no polling, personal browser persistence, service-worker API cache or
+offline mutation queue. The offline destination is only the generic static shell.
+
+## Shared experience
 
 The application remains Arabic-first and RTL, keyboard/focus accessible, responsive at supported mobile and desktop sizes, online-only for personal data, and a static-shell PWA without API caching or mutation queues.

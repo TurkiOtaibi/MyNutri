@@ -29,7 +29,7 @@ async function assertMobileSurface(page: Page) {
     ["moderate", "serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
 }
 
-test("Labs overview is responsive and exposes a complete RTL roving-tab pattern", async ({ labsPage: page, labsApi }) => {
+test("Labs overview is responsive and exposes a complete RTL roving-tab pattern", async ({ labsPage: page, labsApi }, testInfo) => {
   const today = (await labsApi.overview()).server_today;
   await labsApi.create(offsetIsoDate(today, -1), [{ test_key: "hba1c", entered_value: "5.27", entered_unit: "%" }]);
   for (const width of [320, 390, 430]) {
@@ -57,42 +57,47 @@ test("Labs overview is responsive and exposes a complete RTL roving-tab pattern"
     await expect(status).not.toHaveText("");
     expect(await status.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
     await assertMobileSurface(page);
+    if (width === 320) await testInfo.attach("labs-owner-overview-320", {
+      body: await page.screenshot({ fullPage: true }), contentType: "image/png",
+    });
   }
 });
 
 test("the CBC value step names all twenty groups and wraps focus at the modal boundary", async ({ labsPage: page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.setViewportSize({ width: 320, height: 760 });
-  await navigateToOwnerLabs(page);
-  const opener = page.getByRole("button", { name: "إضافة نتائج", exact: true });
-  await opener.click();
-  const dialog = page.getByRole("dialog", { name: "إضافة نتائج" });
-  await dialog.getByRole("button", { name: "التالي", exact: true }).click();
-  await page.locator('[data-panel-key="cbc"]').check();
-  await dialog.getByRole("button", { name: "التالي", exact: true }).click();
-  const rows = dialog.getByTestId("lab-batch-row");
-  await expect(rows).toHaveCount(20);
-  for (const row of await rows.all()) {
-    await expect(row).toHaveRole("group");
-    await expect(row).toHaveAccessibleName(/.+/);
-    await expect(row.getByRole("textbox", { name: "القيمة" })).toHaveCount(1);
-    await expect(row.getByRole("combobox", { name: "الوحدة" })).toHaveCount(1);
+  for (const width of [320, 390, 430]) {
+    await page.setViewportSize({ width, height: 760 });
+    await navigateToOwnerLabs(page);
+    const opener = page.getByRole("button", { name: "إضافة نتائج", exact: true });
+    await opener.click();
+    const dialog = page.getByRole("dialog", { name: "إضافة نتائج" });
+    await dialog.getByRole("button", { name: "التالي", exact: true }).click();
+    await page.locator('[data-panel-key="cbc"]').check();
+    await dialog.getByRole("button", { name: "التالي", exact: true }).click();
+    const rows = dialog.getByTestId("lab-batch-row");
+    await expect(rows).toHaveCount(20);
+    for (const row of await rows.all()) {
+      await expect(row).toHaveRole("group");
+      await expect(row).toHaveAccessibleName(/.+/);
+      await expect(row.getByRole("textbox", { name: "القيمة" })).toHaveCount(1);
+      await expect(row.getByRole("combobox", { name: "الوحدة" })).toHaveCount(1);
+    }
+    const first = rows.first().getByRole("textbox", { name: "القيمة" });
+    const last = dialog.getByRole("button", { name: "حفظ النتائج", exact: true });
+    await first.fill("1");
+    await expect(last).toBeEnabled();
+    await last.focus();
+    await page.keyboard.press("Tab");
+    await expect(first).toBeFocused();
+    await first.focus();
+    await page.keyboard.press("Shift+Tab");
+    await expect(last).toBeFocused();
+    expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+    await assertMobileSurface(page);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(opener).toBeFocused();
   }
-  const first = rows.first().getByRole("textbox", { name: "القيمة" });
-  const last = dialog.getByRole("button", { name: "حفظ النتائج", exact: true });
-  await first.fill("1");
-  await expect(last).toBeEnabled();
-  await last.focus();
-  await page.keyboard.press("Tab");
-  await expect(first).toBeFocused();
-  await first.focus();
-  await page.keyboard.press("Shift+Tab");
-  await expect(last).toBeFocused();
-  expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
-  await assertMobileSurface(page);
-  await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
-  await expect(opener).toBeFocused();
 });
 
 test("extreme converted history remains readable and chart points support keyboard navigation", async ({ labsPage: page, labsApi }) => {
@@ -104,27 +109,29 @@ test("extreme converted history remains readable and chart points support keyboa
       entered_unit: "mmol/mol",
     }]);
   }
-  await page.setViewportSize({ width: 320, height: 760 });
-  await page.goto("/labs/hba1c");
-  const points = page.locator("[data-chart-point]");
-  await expect(points).toHaveCount(20);
-  await expect(page.locator("[data-history-result]")).toHaveCount(20);
-  await expect(page.getByRole("heading", { name: "السجل الكامل" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "القيم المرجعية للنظام" })).toBeVisible();
-  await page.locator('[data-chart-point][tabindex="0"]').focus();
-  await page.keyboard.press("Home");
-  await expect(points.first()).toBeFocused();
-  await page.keyboard.press("ArrowRight");
-  await expect(points.nth(1)).toBeFocused();
-  await page.keyboard.press("End");
-  await expect(points.last()).toBeFocused();
-  await expect(page.locator("bdi").filter({ hasText: /mmol\/mol|%/ }).first()).toBeVisible();
-  expect(await page.locator("[data-history-result] span").evaluateAll((spans) =>
-    spans.some((span) => (span.textContent?.trim().length ?? 0) >= 100))).toBe(true);
-  await assertMobileSurface(page);
+  for (const width of [320, 390, 430]) {
+    await page.setViewportSize({ width, height: 760 });
+    await page.goto("/labs/hba1c");
+    const points = page.locator("[data-chart-point]");
+    await expect(points).toHaveCount(20);
+    await expect(page.locator("[data-history-result]")).toHaveCount(20);
+    await expect(page.getByRole("heading", { name: "السجل الكامل" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "القيم المرجعية للنظام" })).toBeVisible();
+    await page.locator('[data-chart-point][tabindex="0"]').focus();
+    await page.keyboard.press("Home");
+    await expect(points.first()).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(points.nth(1)).toBeFocused();
+    await page.keyboard.press("End");
+    await expect(points.last()).toBeFocused();
+    await expect(page.locator("bdi").filter({ hasText: /mmol\/mol|%/ }).first()).toBeVisible();
+    expect(await page.locator("[data-history-result] span").evaluateAll((spans) =>
+      spans.some((span) => (span.textContent?.trim().length ?? 0) >= 100))).toBe(true);
+    await assertMobileSurface(page);
+  }
 });
 
-test("selected-user admin Labs stays read-only and mobile safe", async ({ page, labsApi }) => {
+test("selected-user admin Labs stays read-only and mobile safe", async ({ page, labsApi }, testInfo) => {
   const today = (await labsApi.overview()).server_today;
   await labsApi.create(offsetIsoDate(today, -1), [{ test_key: "hba1c", entered_value: "5.27", entered_unit: "%" }]);
   for (const width of [320, 390, 430]) {
@@ -132,6 +139,10 @@ test("selected-user admin Labs stays read-only and mobile safe", async ({ page, 
     await page.goto(`/admin/users/${labsApi.actor.principalId}/labs`);
     await expect(page.getByText("للقراءة فقط", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: /إضافة|تعديل|حذف/ })).toHaveCount(0);
+    await assertMobileSurface(page);
+    if (width === 320) await testInfo.attach("labs-admin-overview-navigation-320", {
+      body: await page.screenshot({ fullPage: true }), contentType: "image/png",
+    });
     await page.getByRole("link", { name: /السكر التراكمي/ }).click();
     await expect(page.getByTestId("lab-detail")).toContainText("للقراءة فقط");
     await expect(page.getByRole("button", { name: /إضافة|تعديل|حذف/ })).toHaveCount(0);

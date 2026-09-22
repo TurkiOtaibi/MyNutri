@@ -7,6 +7,56 @@ import { API_URL, expect, offsetIsoDate, test, waitForLabsGet } from "./helpers"
 const TOKEN_FILE = path.join(process.cwd(), "e2e", ".auth", "access-token.txt");
 const adminHeaders = () => ({ Authorization: `Bearer ${readFileSync(TOKEN_FILE, "utf8").trim()}` });
 
+test("same-subject overview detail and back retain current queries while detail is active", async ({ page, labsApi }) => {
+  await labsApi.create((await labsApi.overview()).server_today, [{ test_key: "hba1c", entered_value: "5.270", entered_unit: "%" }]);
+  const base = `/admin/users/${labsApi.actor.principalId}/labs`;
+  const queryKeys = () => page.evaluate(() => {
+    const inspect = (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys;
+    if (!inspect) throw new Error("Query inspection unavailable");
+    return inspect().map((key) => JSON.parse(key) as string[]);
+  });
+  const currentKeys = async () => (await queryKeys()).filter((key) => key[0] === "labs" && key[2] === "admin" && key[3] === labsApi.actor.principalId);
+  await page.goto(base);
+  await expect(page.locator('[data-test-key="hba1c"]')).toBeVisible();
+  expect((await currentKeys()).some((key) => key[4] === "overview")).toBe(true);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let started!: () => void;
+  const pending = new Promise<void>((resolve) => { started = resolve; });
+  let completed!: () => void;
+  const delivered = new Promise<void>((resolve) => { completed = resolve; });
+  let requestFailed = false;
+  const detailUrl = `${API_URL}${base}/tests/hba1c`;
+  page.on("requestfailed", (request) => { if (request.url() === detailUrl) requestFailed = true; });
+  await page.route(detailUrl, async (route) => {
+    try {
+      const response = await route.fetch();
+      started();
+      await held;
+      await route.fulfill({ response });
+    } finally { completed(); }
+  });
+  try {
+    await page.locator('[data-test-key="hba1c"]').getByRole("link").click();
+    await pending;
+    const during = await currentKeys();
+    expect(during.some((key) => key[4] === "overview")).toBe(true);
+    expect(during.some((key) => key[4] === "test" && key[5] === "hba1c")).toBe(true);
+    release();
+    await delivered;
+    await expect(page.getByTestId("lab-detail")).toBeVisible();
+    expect(requestFailed).toBe(false);
+    await page.getByRole("link", { name: "رجوع إلى تحاليل المستخدم", exact: true }).click();
+    await expect(page.locator('[data-test-key="hba1c"]')).toBeVisible();
+    const after = await currentKeys();
+    expect(after.some((key) => key[4] === "overview")).toBe(true);
+    expect(after.some((key) => key[4] === "test" && key[5] === "hba1c")).toBe(true);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
+});
+
 test("admin opens selected user's complete detail through scoped overview link without writes", async ({ page, labsApi }) => {
   const today = (await labsApi.overview()).server_today;
   for (const [offset, value, unit] of [[-1, "42", "mmol/mol"], [0, "5.2", "%"]] as const) await labsApi.create(offsetIsoDate(today, offset), [{ test_key: "hba1c", entered_value: value, entered_unit: unit }]);

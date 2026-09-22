@@ -321,6 +321,7 @@ describe("domain boundaries", () => {
     expect(admin).toContain("isOtherAdminSubjectQuery");
     expect(admin).toContain("queryClient.removeQueries");
     for (const [name, source] of [["owner", owner], ["admin", admin]] as const) {
+      expect(source, `${name} detail staleness policy`).toContain("staleTime: 0");
       expect(source, `${name} detail mount policy`).toContain('refetchOnMount: "always"');
       expect(source, `${name} detail focus policy`).toContain('refetchOnWindowFocus: "always"');
       expect(source, `${name} detail combined abort signal`).toContain("AbortSignal.any([signal, sessionSignal])");

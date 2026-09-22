@@ -1522,6 +1522,54 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(page.getByRole("button", { name: "مراجعة المعاينة" })).toBeEnabled();
   });
 
+  test("@p1 first Profile sex selection stays accessible and draft-only at mobile widths", async ({ context }) => {
+    let targetPlanWrites = 0;
+    for (const width of [320, 360, 390, 430]) {
+      const page = await context.newPage();
+      try {
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await page.setViewportSize({ width, height: 844 });
+        await page.route(profilePath, (route) =>
+          route.request().method() === "GET" && route.request().resourceType() === "fetch"
+            ? route.fulfill({ status: 404, contentType: "application/json", json: { detail: "not found" } })
+            : route.continue()
+        );
+        await page.route(targetPlanWritePath, async (route) => {
+          if (route.request().method() !== "POST") return route.continue();
+          targetPlanWrites += 1;
+          await route.abort("blockedbyclient");
+        });
+        await page.goto(`/profile?first-profile-responsive=${width}`);
+        const opener = page.getByRole("button", { name: /تغيير الجنس/ });
+        await expect(opener).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+        const box = await opener.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.height).toBeGreaterThanOrEqual(44);
+        await opener.click();
+        const sheet = page.getByRole("dialog", { name: "اختر الجنس" });
+        await expect(sheet).toBeVisible();
+        await expect(sheet.getByRole("radio")).toHaveCount(2);
+        await expect(sheet.locator('[role="radio"][aria-checked="true"]')).toHaveCount(1);
+        const maleIsChecked = await sheet.getByRole("radio", { name: "ذكر", exact: true }).getAttribute("aria-checked") === "true";
+        const otherLabel = maleIsChecked ? "أنثى" : "ذكر";
+        await page.keyboard.press("Escape");
+        await expect(sheet).toHaveCount(0);
+        await expect(opener).toBeFocused();
+        await opener.click();
+        await sheet.getByRole("radio", { name: otherLabel, exact: true }).click();
+        await expect(sheet).toHaveCount(0);
+        await expect(opener).toHaveAccessibleName(`تغيير الجنس، القيمة الحالية ${otherLabel}`);
+        await expect(page.getByText("تغييرات غير محفوظة", { exact: true })).toBeVisible();
+        expect(targetPlanWrites).toBe(0);
+        await expect(page.locator('.profile-page [role="alert"]:empty')).toHaveCount(0);
+      } finally {
+        await page.close();
+      }
+    }
+    expect(targetPlanWrites).toBe(0);
+  });
+
   test("@p1 saved Profile lock remains accessible without overflow or empty alerts", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     for (const width of [320, 360, 390, 430]) {

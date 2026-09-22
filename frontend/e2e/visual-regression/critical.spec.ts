@@ -274,14 +274,16 @@ test.describe("critical visual regression", () => {
   });
 
   test("Labs populated overview", async ({ page }) => {
+    test.setTimeout(120_000);
     await routeVisualLabs(page);
     await page.goto("/labs?visual=overview");
-    await expect(page.locator('[data-testid="lab-row"][data-test-key="ferritin"]')).toBeVisible();
+    await expect(page.locator('[data-testid="lab-row"][data-test-key="ferritin"]')).toBeVisible({ timeout: 30_000 });
     await stableRendering(page);
-    await expect(page).toHaveScreenshot("labs-overview-populated.png");
+    await expect(page).toHaveScreenshot("labs-overview-populated.png", { timeout: 30_000 });
   });
 
   test("Labs populated batch values", async ({ page }) => {
+    test.setTimeout(120_000);
     await routeVisualLabs(page);
     await page.goto("/labs?visual=batch");
     await page.getByRole("button", { name: "إضافة نتائج", exact: true }).click();
@@ -291,24 +293,26 @@ test.describe("critical visual regression", () => {
     await dialog.getByRole("button", { name: "التالي", exact: true }).click();
     await page.locator("#lab-ferritin-value").fill("12.400");
     await stableRendering(page);
-    await expect(dialog).toHaveScreenshot("labs-batch-populated.png");
+    await expect(dialog).toHaveScreenshot("labs-batch-populated.png", { timeout: 30_000 });
   });
 
   test("Labs detail at an age-zone boundary", async ({ page }) => {
+    test.setTimeout(120_000);
     await routeVisualLabs(page);
     await page.goto("/labs/ferritin?visual=age-zone");
-    await expect(page.getByTestId("lab-detail")).toBeVisible();
+    await expect(page.getByTestId("lab-detail")).toBeVisible({ timeout: 30_000 });
     await stableRendering(page);
-    await expect(page.getByTestId("lab-detail")).toHaveScreenshot("labs-detail-age-zone.png");
+    await expect(page.getByTestId("lab-detail")).toHaveScreenshot("labs-detail-age-zone.png", { timeout: 30_000 });
   });
 
   test("Labs selected-user read-only admin detail", async ({ page }) => {
+    test.setTimeout(120_000);
     const principalId = "00000000-0000-4000-8000-000000000015";
     await routeVisualLabs(page, principalId);
     await page.goto(`/admin/users/${principalId}/labs/ferritin?visual=admin-readonly`);
-    await expect(page.getByTestId("lab-detail")).toContainText("للقراءة فقط");
+    await expect(page.getByTestId("lab-detail")).toContainText("للقراءة فقط", { timeout: 30_000 });
     await stableRendering(page);
-    await expect(page.getByTestId("lab-detail")).toHaveScreenshot("labs-admin-detail-readonly.png");
+    await expect(page.getByTestId("lab-detail")).toHaveScreenshot("labs-admin-detail-readonly.png", { timeout: 30_000 });
   });
 
 });

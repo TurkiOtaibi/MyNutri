@@ -1010,6 +1010,17 @@ test("Labs private reads and successful writes never enter browser persistence o
       return { leaked, mutationEntry };
     }, { marker: privateMarker, ids: [initialId, createdId] });
     expect(cachePrivacy).toEqual({ leaked: false, mutationEntry: false });
+    expect(await page.evaluate(() => caches.keys())).toEqual([CURRENT_CACHE]);
+    const successfulWriteEntries = await appCacheEntries(page);
+    expect(successfulWriteEntries.length).toBeGreaterThanOrEqual(3);
+    for (const entry of successfulWriteEntries) {
+      expect(entry.cacheName).toBe(CURRENT_CACHE);
+      expect(entry.method).toBe("GET");
+      expect(entry.origin).toBe(APP_ORIGIN);
+      expect(GENERIC_PATHS.has(entry.pathname) || entry.pathname.startsWith("/_next/static/")).toBe(true);
+      expect(entry.queryKeys).toEqual([]);
+      expect(entry.containsPrivateMarker).toBe(false);
+    }
     expect(await page.evaluate(() => indexedDB.databases().then((databases) => databases.length))).toBe(0);
 
     const offlineDocument = await page.evaluate(async () => {
@@ -1025,6 +1036,11 @@ test("Labs private reads and successful writes never enter browser persistence o
     await expect(page.locator("body")).not.toContainText(privateMarker);
     await expect(page.locator("body")).not.toContainText(initialId);
     await expect(page.locator("body")).not.toContainText(createdId);
+    expect(await page.evaluate(() => ({
+      local: Object.keys(localStorage).sort(),
+      session: Object.keys(sessionStorage).sort(),
+    }))).toEqual(storageBefore);
+    expect(await page.evaluate(() => indexedDB.databases().then((databases) => databases.length))).toBe(0);
   } catch (error) { primaryFailure = error; }
   const cleanupFailures: unknown[] = [];
   try { if (context) await context.setOffline(false); } catch (error) { cleanupFailures.push(error); }
