@@ -27,7 +27,6 @@ import type {
   AccountResponse,
   AdminUserDetail,
   AdminUserListResponse,
-  AdminUserSummary as GeneratedAdminUserSummary,
   CalendarAuthorityResponse
 } from "./generated/openapi";
 import { createClient } from "./supabase/client";
@@ -49,7 +48,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await apiFetchWithResponse<T>(path, init)).body;
 }
 
@@ -180,7 +179,7 @@ export function listFoodPicker(
   );
 }
 
-export interface FoodListOptions {
+interface FoodListOptions {
   search?: string;
   category?: string;
   sort?: FoodSort;
@@ -221,8 +220,7 @@ export function deleteFood(foodId: string, accessToken: string | null | undefine
   return apiFetch<void>(`/foods/${foodId}`, authorizedInit(accessToken, signal, { method: "DELETE" }));
 }
 
-export type AdminUserSummary = GeneratedAdminUserSummary;
-export type AdminUserList = AdminUserListResponse;
+type AdminUserList = AdminUserListResponse;
 
 export function listAdminUsers(search = "", page = 1): Promise<AdminUserList> {
   const params = new URLSearchParams({ page: String(page), page_size: "20" });

@@ -11,11 +11,13 @@ function waitForPublicFoodsResponse(
   {
     search,
     sort = "name",
-    category
+    category,
+    page: expectedPage = 1
   }: {
     search?: string | null;
     sort?: string;
     category?: string | null;
+    page?: number;
   } = {}
 ) {
   return page.waitForResponse((response) => {
@@ -24,8 +26,7 @@ function waitForPublicFoodsResponse(
       url.origin !== API_ORIGIN ||
       url.pathname !== "/foods" ||
       response.request().method() !== "GET" ||
-      response.request().resourceType() !== "fetch" ||
-      url.searchParams.get("page") !== "1" ||
+      url.searchParams.get("page") !== String(expectedPage) ||
       url.searchParams.get("page_size") !== "20" ||
       url.searchParams.get("sort") !== sort
     ) return false;
@@ -117,10 +118,10 @@ function plan024Food(idSuffix: number, name: string) {
   };
 }
 
-function plan024Page(items: ReturnType<typeof plan024Food>[], page = 1, totalPages = 1) {
+function plan024Page(items: ReturnType<typeof plan024Food>[], page = 1, totalPages = 1, total = items.length) {
   return {
     items,
-    total: totalPages > 1 ? 2 : items.length,
+    total,
     page,
     page_size: 20,
     total_pages: totalPages,
@@ -421,18 +422,36 @@ test.describe("Foods list, search, and states @foods", () => {
       updated_at: "2026-01-01T00:00:00Z"
     }));
     await page.route(/\/foods(?:\?.*)?$/, async (route) => {
-      if (route.request().resourceType() === "document") return route.continue();
-      const query = new URL(route.request().url()).searchParams.get("search")?.toLowerCase();
+      const url = new URL(route.request().url());
+      if (url.origin !== API_ORIGIN || route.request().method() !== "GET") return route.continue();
+      const query = url.searchParams.get("search")?.toLowerCase();
+      const requestedPage = Number(url.searchParams.get("page") ?? "1");
+      const pageSize = Number(url.searchParams.get("page_size") ?? "20");
       const result = query ? foods.filter((food) => food.name.toLowerCase().includes(query)) : foods;
+      const pageItems = result.slice((requestedPage - 1) * pageSize, requestedPage * pageSize);
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(plan024Page(result))
+        body: JSON.stringify({
+          items: pageItems,
+          total: result.length,
+          page: requestedPage,
+          page_size: pageSize,
+          total_pages: Math.ceil(result.length / pageSize),
+          categories: ["other"]
+        })
       });
     });
     const initialResponse = waitForPublicFoodsResponse(page);
     await page.goto("/foods");
-    expect(await foodsFromResponse(await initialResponse)).toHaveLength(200);
+    expect(await foodsFromResponse(await initialResponse)).toEqual(foods.slice(0, 20).map(({ id, name }) => ({ id, name })));
+    await expect(page.getByText("عرض 1-20 من 200 طعامًا")).toBeVisible();
+
+    const lastPageResponse = waitForPublicFoodsResponse(page, { page: 10 });
+    await page.getByRole("button", { name: "الصفحة 10" }).click();
+    expect(await foodsFromResponse(await lastPageResponse)).toEqual(foods.slice(180).map(({ id, name }) => ({ id, name })));
+    await expect(page.getByText("عرض 181-200 من 200 طعامًا")).toBeVisible();
+
     const searchedResponse = waitForPublicFoodsResponse(page, { search: "rice" });
     const search = page.getByLabel("بحث باسم الطعام");
     await search.fill("rice");
@@ -475,7 +494,7 @@ test.describe("Foods list, search, and states @foods", () => {
         return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan024Page([sorted])) });
       }
       const items = requestedPage === 1 ? [activeFirst] : [activeSecond];
-      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan024Page(items, requestedPage, 2)) });
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan024Page(items, requestedPage, 2, 2)) });
     });
 
     await page.setViewportSize({ width: 390, height: 844 });

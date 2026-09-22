@@ -14,7 +14,7 @@ export function formatShortDate(input: string): string {
 
 export function formatLongArabicDate(input: string): string {
   const { year, month, day, weekday } = parseGregorianDate(input);
-  return `${gregorianWeekdays[weekday]}، ${day} ${gregorianMonths[month - 1]} ${year}`;
+  return `${weekdays[weekday]}، ${day} ${gregorianMonths[month - 1]} ${year}`;
 }
 
 export function formatDayNumber(input: string): string {
@@ -36,7 +36,7 @@ const gregorianMonths = [
   "ديسمبر"
 ];
 
-const gregorianWeekdays = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+export const weekdays = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
 function parseGregorianDate(input: string): { year: number; month: number; day: number; weekday: number } {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input);

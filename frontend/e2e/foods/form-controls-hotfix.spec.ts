@@ -13,6 +13,7 @@ test.describe("Food two-level taxonomy controls", () => {
     await submitFoodForm(page);
     await expect(page).toHaveURL(/\/foods\/[0-9a-f-]+$/);
     const id = page.url().split("/").pop()!;
+    foodsApi.trackFood(id);
     const food = await foodsApi.get(id);
     expect(food.primary_category).toBe("bakery");
     expect(food.subcategory).toBe("bread");

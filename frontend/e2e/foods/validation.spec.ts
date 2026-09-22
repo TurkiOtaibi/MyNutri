@@ -93,10 +93,9 @@ test.describe("Food field validation @foods @validation", () => {
   }
 
   for (const item of [
-    { id: "FOOD-TC-069", field: "nutrition_basis", value: "per_serving" },
+    { id: "FOOD-TC-069][FOOD-TC-151", field: "nutrition_basis", value: "per_serving" },
     { id: "FOOD-TC-070", field: "default_unit_type", value: "bottle" },
-    { id: "FOOD-TC-072", field: "unit_basis", value: "oz" },
-    { id: "FOOD-TC-151", field: "nutrition_basis", value: "per_serving" }
+    { id: "FOOD-TC-072", field: "unit_basis", value: "oz" }
   ]) {
     test(`[${item.id}] @p0 rejects tampered ${item.field}`, async ({ foodsApi }) => {
       const response = await foodsApi.createRaw(validFood({ [item.field]: item.value } as never));

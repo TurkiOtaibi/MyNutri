@@ -132,8 +132,10 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     await Promise.all(pickerAudits);
 
     expect(getUrls.filter((url) => url.pathname === "/foods/picker").length).toBeGreaterThan(0);
-    expect(getUrls.filter((url) => url.pathname === "/foods" && !url.search)).toHaveLength(0);
-    expect(getUrls.filter((url) => url.pathname === "/diary" && !url.search)).toHaveLength(0);
+    expect(getUrls.filter((url) => url.pathname === "/foods")).toHaveLength(0);
+    expect(getUrls.filter((url) =>
+      url.pathname === "/diary/entries" && !url.searchParams.has("entry_date")
+    )).toHaveLength(0);
   });
 
   test("@plan014 @p0 pagination appends stable bounded pages without duplicate Food IDs", async ({ page }) => {
@@ -399,8 +401,12 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     const food = await foodsApi.create({ name: uniqueName("Dynamic label"), default_unit_type: "piece", unit_amount: 20, calories: 250, protein_g: 10, carb_g: 20, fat_g: 5 });
     const dialog = await openGeneral(page);
     await selectFood(page, food.name);
-    await expect(dialog.getByRole("radio", { name: "فطور" })).toHaveAttribute("aria-checked", "true");
-    await dialog.getByRole("radio", { name: "غداء" }).click();
+    const breakfast = dialog.getByRole("radio", { name: "فطور" });
+    const lunch = dialog.getByRole("radio", { name: "غداء" });
+    await expect(breakfast).toHaveAttribute("aria-checked", "true");
+    await breakfast.press("ArrowDown");
+    await expect(lunch).toBeFocused();
+    await expect(lunch).toHaveAttribute("aria-checked", "true");
     await expect(dialog.getByRole("button", { name: "إضافة إلى الغداء" })).toBeEnabled();
     await dialog.getByRole("textbox", { name: "الكمية", exact: true }).fill("2.5");
     const preview = dialog.getByLabel("معاينة القيم الغذائية");
@@ -429,6 +435,9 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     const save = dialog.getByRole("button", { name: "إضافة إلى العشاء" });
     await save.dblclick();
     await expect(dialog.getByRole("button", { name: /جارٍ الإضافة|تمت الإضافة/ })).toBeVisible();
+    await expect(dialog.getByRole("radio", { name: "عشاء" })).toBeDisabled();
+    await expect(dialog.getByRole("textbox", { name: "الكمية", exact: true })).toBeDisabled();
+    await expect(dialog.getByRole("button", { name: "تغيير الطعام" })).toBeDisabled();
     await expect(dialog).toHaveCount(0);
     await expect(trigger).toBeFocused();
     expect(posts).toBe(1);
@@ -452,6 +461,7 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     await expect(dialog.getByLabel(`الطعام المحدد: ${food.name}`)).toBeVisible();
     await expect(dialog.getByRole("radio", { name: "سناك" })).toHaveAttribute("aria-checked", "true");
     await expect(dialog.getByRole("textbox", { name: "الكمية", exact: true })).toHaveValue("1.5");
+    await expect(dialog.getByRole("textbox", { name: "الكمية", exact: true })).not.toHaveAttribute("aria-describedby");
   });
 
   test("@plan018 @p0 Add Food owns forward and backward keyboard focus", async ({ page }) => {

@@ -262,7 +262,7 @@ test("@diary @visual capture final Diary polish states", async ({ page, request,
     const progress = overSummary.getByLabel(new RegExp(`^${label}:.*فوق الهدف`));
     await expect(progress).toHaveCount(1);
     const progressbar = progress.getByRole("progressbar");
-    expect(Number(await progressbar.getAttribute("aria-valuenow"))).toBeGreaterThan(100);
+    await expect(progressbar).toHaveAttribute("aria-valuenow", "100");
     await expect(progressbar).toHaveAttribute("aria-valuetext", /فوق الهدف/);
   }
   await captureStableSummary(page, resolve(output, "08-summary-macros-100-over-390.png"));

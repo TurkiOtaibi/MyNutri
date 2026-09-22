@@ -9,11 +9,8 @@ function sundayStart(input: string): string {
 }
 
 async function selectDiaryDate(page: Page, value: string) {
-  await page.waitForFunction(() => {
-    const picker = document.querySelector('input[aria-label="اختيار تاريخ اليوميات"]');
-    return picker != null && Object.keys(picker).some((key) => key.startsWith("__reactProps$"));
-  });
   const picker = page.getByLabel("اختيار تاريخ اليوميات");
+  await expect(picker).toBeEditable();
   await picker.fill(value);
   await expect(picker).toHaveValue(value);
 }

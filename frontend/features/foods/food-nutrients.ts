@@ -1,11 +1,12 @@
-import type { FoodFormValues, FoodNutritionValues } from "@/lib/food";
+import type { FoodNutritionValues } from "@/lib/food";
 import { definitionsFromRegistry } from "@/lib/nutrients";
 import type { NutritionRegistryResponse } from "@/lib/types";
+import type { FoodFormValues } from "./food-form-model";
 
 type OptionalFoodNutrientField = Extract<keyof FoodFormValues, keyof FoodNutritionValues>;
 type FoodNutrientGroupKey = "sugar-fat" | "minerals" | "vitamins";
 
-export interface EditableFoodNutrient {
+interface EditableFoodNutrient {
   field: OptionalFoodNutrientField;
   label: string;
   unit: string;
@@ -23,13 +24,13 @@ export interface FoodNutrientSpec {
   registryKey: string | null;
 }
 
-export interface FoodNutrientGroup {
+interface FoodNutrientGroup {
   title: string;
   optional: boolean;
   nutrients: FoodNutrientSpec[];
 }
 
-export interface FoodNutrientAdapter {
+interface FoodNutrientAdapter {
   editable: EditableFoodNutrient[];
   groups: FoodNutrientGroup[];
 }
@@ -157,25 +158,28 @@ export function createFoodNutrientAdapter(registry?: NutritionRegistryResponse |
     })
     .sort((left, right) => byOrder(left.editable, right.editable));
 
-  const compatibility = compatibilityNutrients.map((item) => ({
-    group: item.group,
-    editable: {
-      field: item.field,
-      label: item.label,
-      unit: item.inputUnit,
-      precision: item.precision,
-      order: item.order,
-      registryKey: null,
-    } satisfies EditableFoodNutrient,
-    detail: {
-      key: item.field,
-      label: item.label,
-      unit: item.detailUnit,
-      precision: item.precision,
-      order: item.order,
-      registryKey: null,
-    } satisfies FoodNutrientSpec,
-  }));
+  const registeredFields = new Set(registered.map((item) => item.editable.field));
+  const compatibility = compatibilityNutrients
+    .filter((item) => !registeredFields.has(item.field))
+    .map((item) => ({
+      group: item.group,
+      editable: {
+        field: item.field,
+        label: item.label,
+        unit: item.inputUnit,
+        precision: item.precision,
+        order: item.order,
+        registryKey: null,
+      } satisfies EditableFoodNutrient,
+      detail: {
+        key: item.field,
+        label: item.label,
+        unit: item.detailUnit,
+        precision: item.precision,
+        order: item.order,
+        registryKey: null,
+      } satisfies FoodNutrientSpec,
+    }));
   const all = [...registered, ...compatibility];
   const fiber = registered.find((item) => item.editable.field === "fiber_g")?.detail;
 

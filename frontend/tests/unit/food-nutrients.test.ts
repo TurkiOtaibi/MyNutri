@@ -179,4 +179,44 @@ describe("food nutrient presentation adapter", () => {
       order: 20,
     });
   });
+
+  it("lets Registry metadata replace a matching compatibility nutrient without duplication", () => {
+    const source = registry();
+    source.nutrients.push({
+      key: "registry-sugar",
+      storage_field: "sugar_g",
+      label_ar: "سكر السجل",
+      unit: "mg",
+      display_precision: 3,
+      display_order: 7,
+      target_type: "recommended",
+      target_source: "registry",
+      target_rule: {},
+      completeness_participation: true,
+      diary_coverage_participation: true,
+    });
+
+    const adapter = createFoodNutrientAdapter(source);
+    const editableSugar = adapter.editable.filter((item) => item.field === "sugar_g");
+    const detailSugar = adapter.groups
+      .flatMap((group) => group.nutrients)
+      .filter((item) => item.key === "sugar_g");
+
+    expect(editableSugar).toEqual([{
+      field: "sugar_g",
+      label: "سكر سجل",
+      unit: "mg",
+      precision: 3,
+      order: 7,
+      registryKey: "registry-sugar",
+    }]);
+    expect(detailSugar).toEqual([{
+      key: "sugar_g",
+      label: "سكر السجل",
+      unit: "ملجم",
+      precision: 3,
+      order: 7,
+      registryKey: "registry-sugar",
+    }]);
+  });
 });

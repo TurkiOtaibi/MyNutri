@@ -23,7 +23,7 @@ test("Food API preserves exact nullable nutrients and simplified source metadata
   expect(food.subcategory).toBe("yogurt");
 });
 
-test("new Food UI consumes the approved taxonomy and source registry", async ({ page }) => {
+test("new Food UI consumes the approved taxonomy and source registry", async ({ page, foodsApi }) => {
   await page.goto("/foods/new");
   await expect(page.getByLabel("فيتامين A mcg", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("فولات mcg", { exact: true })).toHaveCount(0);
@@ -41,7 +41,10 @@ test("new Food UI consumes the approved taxonomy and source registry", async ({ 
     (response) => response.url().endsWith("/foods") && response.request().method() === "POST"
   );
   await page.getByRole("button", { name: "حفظ الطعام" }).click();
-  expect((await createResponse).status()).toBe(201);
+  const response = await createResponse;
+  expect(response.status()).toBe(201);
+  const created = await response.json() as { id: string };
+  foodsApi.trackFood(created.id);
 
   await expect(page).toHaveURL(/\/foods\/[0-9a-f-]+$/);
   await expect(page.getByText("الفواكه", { exact: true }).first()).toBeVisible();

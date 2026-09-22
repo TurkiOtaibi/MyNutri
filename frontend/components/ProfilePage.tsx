@@ -262,7 +262,7 @@ export function ProfilePage() {
       if (didConfirmedBirthDateChange(submission.previouslyConfirmedBirthDate, profile.birth_date) && subjectId) {
         void queryClient.invalidateQueries({ queryKey: labsQueryKeys.ownerRoot(subjectId) });
       }
-      transitionWrite({ kind: "committed", accepted });
+      transitionWrite({ kind: "committed" });
     } catch {
       if (!sessionSignal.aborted && mountedRef.current) {
         transitionWrite({ kind: "recovery", submission, accepted });
