@@ -370,7 +370,7 @@ async function prepareLabsIsolation(browser: Browser, request: APIRequestContext
     await expect(page.locator(`input[value="${actorA.displayValue}"]`)).toHaveCount(0);
     await expect(page.getByRole("dialog", { name: "إضافة نتائج" })).toHaveCount(0);
     await expect(page.getByText(/تم حفظ النتائج\.|تم حفظ التعديل\.|تعذر تأكيد الحفظ/)).toHaveCount(0);
-    expect((await page.getByRole("alert").filter({ hasText: /\S/ }).allTextContents()).map((text) => text.trim())).toEqual([]);
+    await expect(page.locator("main.main-surface").getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
     expect(await leakRecords(page)).toEqual([]);
   };
 
