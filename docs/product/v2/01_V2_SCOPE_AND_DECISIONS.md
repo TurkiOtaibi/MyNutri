@@ -29,14 +29,16 @@ Diary, Target Plans, nutrition calculations, recommendations or Progress.
   are preserved. Admin account management is separate from read-only monitoring
   of another user's Profile, Diary, Target Plans, and Labs.
 - An Admin creates a normal user with email, display name, and an initial
-  Admin-set password. They may edit display name, reset password, enable or
-  disable the user, and request permanent deletion. Email changes are out of
-  scope. Passwords are never stored, logged, or returned by myNutri.
+  Admin-set password. They may edit display name, reset password (revoking the
+  user's existing Supabase sessions through FastAPI), enable or disable the
+  user, and request permanent deletion. Email changes are out of scope.
+  Passwords are never stored, logged, or returned by myNutri.
 - Creation is resumable: a `provisioning` Principal with an idempotency key is
   committed before creating the Supabase Auth identity, then activated. A retry
   with the same key resumes; `provisioning` cannot authenticate.
-- Permanent deletion is a fail-closed, resumable saga: commit `deleting` under
-  the Principal lock; purge all Principal-owned private data in one locked
+- Permanent deletion is allowed for a `provisioning` account as well as other
+  normal-user states, using the same fail-closed, resumable saga: commit
+  `deleting` under the Principal lock; purge all Principal-owned private data in one locked
   transaction; delete the Supabase Auth identity (already absent succeeds);
   then scrub email/display name and clear the Auth link when marking `deleted`.
   Any failure leaves the account locked out in `deleting`, visible to the Admin

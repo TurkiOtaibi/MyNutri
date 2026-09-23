@@ -17,12 +17,17 @@ Status: supporting requirements. Backend schemas and database constraints are ex
 These account-lifecycle fields are approved target authority pending implementation;
 the docs-only change does not claim the current schema already supports them.
 Admin creates a normal user with email, display name, and an initial password.
-Admin may edit display name, reset password, and enable/disable; email and role
+Admin may edit display name, reset password while revoking the user's existing
+Supabase sessions through FastAPI, and enable/disable; email and role
 cannot be changed through the product. Passwords are input-only: never stored,
 logged, or returned by myNutri. Unknown and non-active identities receive the
 existing `401 INVALID_CREDENTIAL`. `deleting` remains locked out and Admin-visible
-as incomplete until a retry reaches the scrubbed `deleted` tombstone. Global
+as incomplete until a retry reaches the scrubbed `deleted` tombstone. A
+`provisioning` account may be deleted through the same saga; an absent Supabase
+identity counts as success. Global
 Foods retain creator/updater Principal IDs and display a neutral label.
+The irreversible-delete confirmation requires the Admin to type the target
+user's email; a mismatch prevents submission.
 
 ## Proposed Admin account-management Arabic copy — pending Product Owner approval
 
@@ -36,6 +41,10 @@ Existing approved authentication, Labs, and Food strings remain unchanged.
 | Create action | إضافة مستخدم |
 | Display-name field | الاسم المعروض |
 | Initial-password field | كلمة المرور الأولية |
+| Provisioning status | قيد الإنشاء |
+| Active status | نشط |
+| Disabled status | معطّل |
+| Creation retry action | إعادة محاولة الإنشاء |
 | Create submit | إنشاء المستخدم |
 | Edit action | تعديل المستخدم |
 | Save edit | حفظ التغييرات |
@@ -46,6 +55,8 @@ Existing approved authentication, Labs, and Food strings remain unchanged.
 | Permanent-delete action | حذف المستخدم نهائيًا |
 | Irreversible-delete dialog title | حذف المستخدم نهائيًا؟ |
 | Irreversible-delete dialog body | سيُحذف حساب هذا المستخدم وجميع بياناته الخاصة نهائيًا. لا يمكن التراجع عن هذا الإجراء. |
+| Delete confirmation instruction | اكتب البريد الإلكتروني للمستخدم لتأكيد الحذف النهائي. |
+| Delete confirmation mismatch | البريد الإلكتروني المدخل لا يطابق بريد المستخدم. |
 | Incomplete-deletion status | حذف غير مكتمل |
 | Incomplete-deletion explanation | تعذر إكمال حذف المستخدم. حسابه معطّل ويمكنك إعادة المحاولة. |
 | Deletion retry action | إعادة محاولة الحذف |
@@ -55,6 +66,7 @@ Existing approved authentication, Labs, and Food strings remain unchanged.
 | Duplicate-email rejection | هذا البريد الإلكتروني مستخدم بالفعل. |
 | Incomplete-create explanation | تعذر إكمال إنشاء المستخدم. أعد المحاولة. |
 | Password-reset failure | تعذر إعادة تعيين كلمة المرور. حاول مرة أخرى. |
+| Weak/rejected password (create or reset) | كلمة المرور غير مقبولة. اختر كلمة مرور أقوى وحاول مرة أخرى. |
 | Create success | تم إنشاء المستخدم. |
 | Edit success | تم حفظ تغييرات المستخدم. |
 | Enable/disable success | تم تحديث حالة المستخدم. |

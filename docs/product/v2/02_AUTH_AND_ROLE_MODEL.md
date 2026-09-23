@@ -43,15 +43,18 @@ must establish that one Admin exists. No product API creates or changes an Admin
 role. The Admin cannot change their own role, disable, or delete themselves.
 
 An Admin creates normal users with email, display name, and an initial password
-they set; they may edit display name, reset password, enable/disable, and request
-permanent deletion. Email changes are not supported. Passwords are never
+they set; they may edit display name, reset password (including revocation of
+the user's existing Supabase sessions through FastAPI), enable/disable, and
+request permanent deletion. Email changes are not supported. Passwords are never
 persisted, logged, or returned by myNutri. Creation commits a `provisioning`
 Principal and idempotency key before calling Supabase Auth; the same-key retry
 resumes creation and activation. `provisioning` never authenticates.
 
-Deletion commits `deleting` under the Principal lock, purges private dependent
-data in one locked transaction, removes the Supabase Auth identity (absence is
-success), then marks a scrubbed, unlinked `deleted` tombstone. Failure leaves a
+Deletion of a `provisioning` account is allowed and follows the same saga as
+deletion of another normal-user account: commit `deleting` under the Principal
+lock, purge private dependent data in one locked transaction, remove the Supabase
+Auth identity (absence is
+success), then mark a scrubbed, unlinked `deleted` tombstone. Failure leaves a
 locked-out `deleting` account for Admin-visible retry. Supabase JWTs issued
 before deletion are denied by the existing per-request Principal status check.
 

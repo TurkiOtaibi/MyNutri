@@ -18,8 +18,8 @@ boundaries continue unchanged.
 | Assign roles | No | No through product APIs |
 | Self-register or auto-provision from an unknown Auth identity | No | No |
 | Create a normal user with Admin-set initial password | No | Yes, through FastAPI |
-| Edit another user's display name or reset password | No | Yes, normal users only |
-| Enable/disable or permanently delete another account | No | Yes, normal users only |
+| Edit another user's display name or reset password | No | Yes, normal users only; reset revokes existing Supabase sessions through FastAPI |
+| Enable/disable or permanently delete another account | No | Yes, normal users only; deletion includes `provisioning` accounts via the same saga, with absent Auth identity counted as success |
 | Change email or grant/change Admin role | No | No |
 | Disable/delete own Admin account | No | No |
 | Read authenticated Labs catalog | Yes | Yes |

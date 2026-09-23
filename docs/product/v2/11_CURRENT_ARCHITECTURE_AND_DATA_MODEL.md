@@ -47,7 +47,8 @@ Existing Principals remain. Unknown or non-active Auth identities receive
 is removed.
 
 Only the Admin account-management surface creates normal users, edits display
-name, resets password, enables/disables, and starts/retries permanent deletion.
+name, resets password (revoking existing Supabase sessions through FastAPI),
+enables/disables, and starts/retries permanent deletion.
 Email is immutable in this surface. Initial and reset passwords are Admin-set
 input only: never persisted, logged, or returned. FastAPI alone calls privileged
 Supabase Auth using a backend-only Service Role credential for create, reset,
@@ -55,7 +56,8 @@ and delete; bootstrap remains permitted, and no other runtime route uses it.
 
 Creation commits a `provisioning` Principal with an idempotency key first,
 creates the Supabase identity second, and activates third. Same-key retries
-resume. A `provisioning` account never authenticates. Deletion commits
+resume. A `provisioning` account never authenticates and may be deleted through
+the same saga as another normal-user account. Deletion commits
 `deleting` under the Principal lock before any purge. The second transaction
 locks that Principal and purges all owned private rows, including Diary,
 Target Plans, Profile, Labs, idempotency records, and any other private

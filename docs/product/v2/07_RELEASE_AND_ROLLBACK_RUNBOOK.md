@@ -27,8 +27,11 @@ resumes with the same idempotency key; interrupted deletion remains `deleting`,
 rejects even pre-existing access tokens, is visible to Admin as incomplete,
 and resumes to a scrubbed `deleted` tombstone. Verify the locked purge removes
 all private dependents while global Foods and their attribution survive. A
-missing Supabase identity counts as a successful deletion retry. Validate
-concurrent writers cannot insert private data after the purge and that no API
+missing Supabase identity counts as a successful deletion retry. Verify that
+deleting a `provisioning` account follows the same saga and succeeds when its
+Supabase identity was never created. Verify that Admin password reset through
+FastAPI revokes the user's existing Supabase sessions (sign-out everywhere).
+Validate concurrent writers cannot insert private data after the purge and that no API
 can create or disable/delete the single Admin.
 
 Do not treat a partially completed saga as a successful deletion or re-enable
