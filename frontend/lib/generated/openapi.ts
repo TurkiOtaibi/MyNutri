@@ -1897,6 +1897,11 @@ export namespace Labs {
       /** Entered Value */
       entered_value: string;
       /**
+       * Expected Updated At
+       * @format date-time
+       */
+      expected_updated_at: string;
+      /**
        * Test Date
        * @format date
        */

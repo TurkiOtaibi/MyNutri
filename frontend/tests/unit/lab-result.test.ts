@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { enteredTriplet, freezeResultPatch, readbackResult, resultErrorTarget, resultFieldErrors } from "@/features/labs/lab-result-model";
+import { enteredTriplet, freezeResultPatch, isChangedResultConflict, readbackResult, resultErrorTarget, resultFieldErrors } from "@/features/labs/lab-result-model";
 import { historyFixture } from "./fixtures/labs";
 
 const result = { ...historyFixture(1)[0], id: "original", entered_value: "38.797950", entered_unit: "mmol/mol", display_value: "5.7", display_unit: "%" };
 describe("owner result facts and reconciliation", () => {
   it("seeds only the immutable result's entered triplet with full scale", () => {
-    expect(enteredTriplet(result)).toEqual({ test_date: "2026-09-19", entered_value: "38.797950", entered_unit: "mmol/mol" });
+    expect(enteredTriplet(result)).toEqual({ test_date: "2026-09-19", entered_value: "38.797950", entered_unit: "mmol/mol", expected_updated_at: result.updated_at });
   });
   it("freezes a normalized payload without changing the visible draft or leaking identity", () => {
-    const draft = { ...result, entered_value: " ٣٨٫٧٩٧٩٥٠ " };
+    const draft = { ...enteredTriplet(result), entered_value: " ٣٨٫٧٩٧٩٥٠ " };
     const payload = freezeResultPatch(draft);
-    expect(payload).toEqual({ test_date: "2026-09-19", entered_value: "38.797950", entered_unit: "mmol/mol" });
+    expect(payload).toEqual({ test_date: "2026-09-19", entered_value: "38.797950", entered_unit: "mmol/mol", expected_updated_at: result.updated_at });
     expect(Object.isFrozen(payload)).toBe(true);
     draft.entered_value = "9";
     expect(payload.entered_value).toBe("38.797950");
@@ -28,6 +28,13 @@ describe("owner result facts and reconciliation", () => {
     const value = { loc: ["body", "entered_value"], msg: "أدخل قيمة رقمية صريحة غير سالبة.", type: "value_error" };
     expect(resultFieldErrors([unit, { ...value, loc: [{}] }, value, { ...value, code: 6 }], "تعذر الحفظ")).toEqual([unit, value]);
     expect(resultFieldErrors({ detail: "private input" }, "تعذر الحفظ")).toEqual([{ loc: ["body"], msg: "تعذر الحفظ", type: "request_error" }]);
+  });
+  it("routes only a 409 result-version conflict into current-result readback", () => {
+    const changed = [{ loc: ["body", "expected_updated_at"], field: "expected_updated_at", code: "LAB_RESULT_CHANGED", msg: "تغيّرت هذه النتيجة منذ فتحها.", type: "LAB_RESULT_CHANGED" }];
+    expect(isChangedResultConflict(409, changed)).toBe(true);
+    expect(isChangedResultConflict(422, changed)).toBe(false);
+    expect(isChangedResultConflict(409, [{ ...changed[0], code: "LAB_DUPLICATE" }])).toBe(false);
+    expect(isChangedResultConflict(409, "private input")).toBe(false);
   });
   it("reports an exact same-id entered match as current state, never a receipt", () => {
     expect(readbackResult([result], "original", { test_date: "2026-09-19", entered_value: "38.797950", entered_unit: "mmol/mol" })).toEqual({ kind: "matches", current: result });

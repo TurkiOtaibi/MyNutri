@@ -91,6 +91,7 @@ describe("Labs transport", () => {
       test_date: "2026-09-18",
       entered_value: "5.270",
       entered_unit: "%",
+      expected_updated_at: updated.updated_at,
     }, auth)).resolves.toEqual(updated);
     await expect(deleteLabResult(updated.id, auth)).resolves.toBeUndefined();
 

@@ -1,7 +1,7 @@
 """Atomic Labs creation and durable receipts against real PostgreSQL."""
 
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -15,11 +15,12 @@ from app.models import IdempotencyRecord, LabResult, Principal, Profile
 from labs_fixtures import count_receipts, count_results, request
 
 
-def patch_request(day="2026-09-19", value="5.270", unit="%", **extra):
+def patch_request(day="2026-09-19", value="5.270", unit="%", *, expected_updated_at=None, **extra):
     from app.schemas import LabResultPatch
 
     return LabResultPatch.model_validate(
-        {"test_date": day, "entered_value": value, "entered_unit": unit, **extra}
+        {"test_date": day, "entered_value": value, "entered_unit": unit,
+         "expected_updated_at": expected_updated_at or datetime(2026, 9, 19, tzinfo=timezone.utc), **extra}
     )
 
 
@@ -33,7 +34,8 @@ def test_edit_schema_rejects_immutable_and_unknown_fields(field):
 def test_edit_schema_requires_complete_triplet(field):
     from app.schemas import LabResultPatch
 
-    body = {"test_date": "2026-09-19", "entered_value": "5.2", "entered_unit": "%"}
+    body = {"test_date": "2026-09-19", "entered_value": "5.2", "entered_unit": "%",
+            "expected_updated_at": datetime(2026, 9, 19, tzinfo=timezone.utc)}
     del body[field]
     with pytest.raises(ValidationError):
         LabResultPatch.model_validate(body)
@@ -43,6 +45,61 @@ def test_edit_schema_requires_complete_triplet(field):
 def test_edit_schema_rejects_invalid_decimal(value):
     with pytest.raises(ValidationError):
         patch_request(value=value)
+
+
+def test_edit_schema_requires_expected_version_and_rejects_extra_fields():
+    from app.schemas import LabResultPatch
+
+    body = {"test_date": "2026-09-19", "entered_value": "5.2", "entered_unit": "%"}
+    with pytest.raises(ValidationError) as missing:
+        LabResultPatch.model_validate(body)
+    assert missing.value.errors()[0]["loc"] == ("expected_updated_at",)
+    expected = datetime(2026, 9, 19, tzinfo=timezone.utc)
+    assert LabResultPatch.model_validate(body | {"expected_updated_at": expected}).expected_updated_at == expected
+    with pytest.raises(ValidationError) as extra:
+        LabResultPatch.model_validate(body | {"expected_updated_at": expected, "test_key": "hba1c"})
+    assert extra.value.errors()[0]["type"] == "extra_forbidden"
+
+
+def test_edit_rejects_stale_version_before_other_validation(
+    service, labs_postgresql_session, lab_owner, lab_result
+):
+    from app.services.labs_errors import LabValidationError
+
+    before = lab_result.model_dump()
+    stale = before["updated_at"].replace(microsecond=0)
+    with pytest.raises(LabValidationError) as caught:
+        service.update_result(
+            labs_postgresql_session, lab_owner.context, lab_result.id,
+            patch_request(day="2007-01-01", value="7.0", expected_updated_at=stale),
+            load_catalog(),
+        )
+    assert caught.value.status_code == 409
+    assert [(error.code, error.loc) for error in caught.value.errors] == [
+        ("LAB_RESULT_CHANGED", ["body", "expected_updated_at"])
+    ]
+    assert labs_postgresql_session.get(LabResult, lab_result.id).model_dump() == before
+
+
+def test_edit_version_advances_when_clock_has_not_advanced(
+    service, labs_postgresql_session, lab_owner, lab_result, monkeypatch
+):
+    from app.services.labs_errors import LabValidationError
+
+    before = lab_result.updated_at
+    monkeypatch.setattr(service, "utcnow", lambda: before)
+    saved = service.update_result(
+        labs_postgresql_session, lab_owner.context, lab_result.id,
+        patch_request(value="6.0", expected_updated_at=before), load_catalog(),
+    )
+    assert saved.updated_at > before
+    with pytest.raises(LabValidationError) as caught:
+        service.update_result(
+            labs_postgresql_session, lab_owner.context, lab_result.id,
+            patch_request(value="7.0", expected_updated_at=before), load_catalog(),
+        )
+    assert caught.value.status_code == 409
+    assert caught.value.errors[0].code == "LAB_RESULT_CHANGED"
 
 
 def test_edit_overwrites_only_owned_fact_and_enforces_duplicate(
@@ -56,7 +113,8 @@ def test_edit_overwrites_only_owned_fact_and_enforces_duplicate(
     other_before = get_result_fact(two_dated_results.second_id).model_dump()
     result = service.update_result(
         session, lab_owner.context, result_id,
-        patch_request("2026-08-01", "38.797950", "mmol/mol"), load_catalog(),
+        patch_request("2026-08-01", "38.797950", "mmol/mol",
+                      expected_updated_at=before["updated_at"]), load_catalog(),
     )
     assert result.entered_value == "38.797950"
     assert result.entered_unit == "mmol/mol" and result.test_date == date(2026, 8, 1)
@@ -66,7 +124,8 @@ def test_edit_overwrites_only_owned_fact_and_enforces_duplicate(
     assert get_result_fact(two_dated_results.second_id).model_dump() == other_before
     with pytest.raises(LabValidationError) as caught:
         service.update_result(session, lab_owner.context, result_id,
-            patch_request(two_dated_results.second_date.isoformat()), load_catalog())
+            patch_request(two_dated_results.second_date.isoformat(),
+                          expected_updated_at=result.updated_at), load_catalog())
     assert caught.value.status_code == 409
     assert [(e.code, e.loc) for e in caught.value.errors] == [
         ("LAB_DUPLICATE", ["body", "test_date"])
@@ -74,7 +133,7 @@ def test_edit_overwrites_only_owned_fact_and_enforces_duplicate(
     assert get_result_fact(result_id).test_date == date(2026, 8, 1)
     # Same date is allowed when the only matching row is this result itself.
     again = service.update_result(session, lab_owner.context, result_id,
-        patch_request("2026-08-01", "5.270"), load_catalog())
+        patch_request("2026-08-01", "5.270", expected_updated_at=result.updated_at), load_catalog())
     assert again.entered_value == "5.270" and again.display_value == "5.270"
 
 
@@ -92,7 +151,7 @@ def test_edit_invalid_replacement_leaves_all_facts_unchanged(
     before = lab_result.model_dump()
     with pytest.raises(LabValidationError) as caught:
         service.update_result(session, lab_owner.context, lab_result.id,
-            patch_request(day, unit=unit), load_catalog())
+            patch_request(day, unit=unit, expected_updated_at=before["updated_at"]), load_catalog())
     assert caught.value.status_code == 422
     assert code in [error.code for error in caught.value.errors]
     assert session.get(LabResult, before["id"]).model_dump() == before
@@ -163,7 +222,7 @@ def test_mutation_unexpected_commit_failure_rolls_back(
         with pytest.raises(RuntimeError, match="synthetic persistence failure"):
             if operation == "update":
                 service.update_result(session, lab_owner.context, before["id"],
-                    patch_request(), load_catalog())
+                    patch_request(expected_updated_at=before["updated_at"]), load_catalog())
             else:
                 service.delete_result(session, lab_owner.context, before["id"])
     assert session.get(LabResult, before["id"]).model_dump() == before
@@ -1053,6 +1112,7 @@ def test_http_labs_crud_receipt_replay_and_cors(labs_client):
     result_id = receipt["result_ids"][0]
     patch = labs_client.patch(f"/labs/results/{result_id}", json={
         "test_date": "2026-09-18", "entered_value": "5.1", "entered_unit": "%",
+        "expected_updated_at": detail.json()["results"][0]["updated_at"],
     })
     assert patch.status_code == 200 and patch.json()["entered_value"] == "5.1"
     deleted = labs_client.delete(f"/labs/results/{result_id}")
@@ -1062,6 +1122,38 @@ def test_http_labs_crud_receipt_replay_and_cors(labs_client):
     assert labs_client.get("/labs").json()["items"] == []
     for item in (catalog, response, replay, conflict, duplicate, overview, detail, patch, deleted):
         assert item.headers["Cache-Control"] == "no-store"
+
+
+def test_http_edit_version_conflict_and_sanitized_patch_shape(labs_client, lab_result):
+    result_id = str(lab_result.id)
+    current = labs_client.get("/labs/tests/hba1c").json()["results"][0]
+    body = {"test_date": current["test_date"], "entered_value": "6.0",
+            "entered_unit": "%", "expected_updated_at": current["updated_at"]}
+    for invalid in ({key: value for key, value in body.items() if key != "expected_updated_at"},
+                    body | {"test_key": "private-sentinel"}):
+        response = labs_client.patch(f"/labs/results/{result_id}", json=invalid)
+        assert response.status_code == 422
+        assert "input" not in response.text and "ctx" not in response.text
+        assert "private-sentinel" not in response.text
+        assert response.json()["detail"][0]["loc"][-1] in {"expected_updated_at", "test_key"}
+    stale = labs_client.patch(f"/labs/results/{result_id}", json=body | {
+        "test_date": "2007-01-01", "expected_updated_at": "2000-01-01T00:00:00Z",
+    })
+    assert stale.status_code == 409
+    assert [(error["code"], error["loc"]) for error in stale.json()["detail"]] == [
+        ("LAB_RESULT_CHANGED", ["body", "expected_updated_at"])
+    ]
+    assert stale.json()["detail"][0]["msg"] == (
+        "تغيّرت هذه النتيجة منذ فتحها. راجع قيمها الحالية قبل تعديلها مجددًا."
+    )
+    assert labs_client.get("/labs/tests/hba1c").json()["results"][0] == current
+    saved = labs_client.patch(f"/labs/results/{result_id}", json=body)
+    assert saved.status_code == 200 and saved.json()["entered_value"] == "6.0"
+    assert saved.json()["updated_at"] != current["updated_at"]
+    rejected = labs_client.patch(f"/labs/results/{result_id}", json=body | {"entered_value": "7.0"})
+    assert rejected.status_code == 409
+    assert rejected.json()["detail"][0]["code"] == "LAB_RESULT_CHANGED"
+    assert labs_client.get("/labs/tests/hba1c").json()["results"][0] == saved.json()
 
 
 @pytest.mark.parametrize("value,code", [(5.2, "LAB_DECIMAL_INVALID"), ("1e4", "LAB_DECIMAL_INVALID"),
@@ -1121,7 +1213,8 @@ def test_http_ownership_and_admin_reads_only(labs_client, lab_result, lab_owner,
     as_actor(other_lab_owner)
     assert labs_client.get("/labs").json()["items"] == []
     assert labs_client.get("/labs/tests/hba1c").json()["results"] == []
-    patch = {"test_date": "2026-09-19", "entered_value": "5", "entered_unit": "%"}
+    patch = {"test_date": "2026-09-19", "entered_value": "5", "entered_unit": "%",
+             "expected_updated_at": lab_result.updated_at.isoformat()}
     for method in ("patch", "delete"):
         foreign = labs_client.request(method, f"/labs/results/{result_id}", **({"json": patch} if method == "patch" else {}))
         missing = labs_client.request(method, f"/labs/results/{uuid4()}", **({"json": patch} if method == "patch" else {}))

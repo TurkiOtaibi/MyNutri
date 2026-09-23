@@ -2,8 +2,9 @@ import type { LabFieldError, LabResultPatch, LabResultResponse } from "@/lib/typ
 import { normalizeLabNumber } from "./lab-batch-model";
 
 export type ResultReadback = { kind: "matches" | "different"; current: LabResultResponse } | { kind: "absent" };
-export function enteredTriplet(result: LabResultPatch): LabResultPatch {
-  return { test_date: result.test_date, entered_value: result.entered_value, entered_unit: result.entered_unit };
+export function enteredTriplet(result: LabResultPatch | LabResultResponse): LabResultPatch {
+  return { test_date: result.test_date, entered_value: result.entered_value, entered_unit: result.entered_unit,
+    expected_updated_at: "updated_at" in result ? result.updated_at : result.expected_updated_at };
 }
 export function freezeResultPatch(draft: LabResultPatch): LabResultPatch {
   return Object.freeze({ ...enteredTriplet(draft), entered_value: normalizeLabNumber(draft.entered_value) });
@@ -27,7 +28,10 @@ export function resultFieldErrors(detail: unknown, fallback: string): LabFieldEr
   }
   return [{ loc: ["body"], msg: fallback, type: "request_error" }];
 }
-export function readbackResult(results: LabResultResponse[], id: string, submitted?: LabResultPatch): ResultReadback {
+export function isChangedResultConflict(status: number, detail: unknown): boolean {
+  return status === 409 && resultFieldErrors(detail, "").some(item => item.code === "LAB_RESULT_CHANGED");
+}
+export function readbackResult(results: LabResultResponse[], id: string, submitted?: Pick<LabResultPatch, "test_date" | "entered_value" | "entered_unit">): ResultReadback {
   const current = results.find(result => result.id === id);
   if (!current) return { kind: "absent" };
   return { kind: submitted && current.entered_value === submitted.entered_value

@@ -9,7 +9,7 @@ import { useLabBatch } from "@/components/useLabBatch";
 import { LabBatchDialog } from "@/features/labs/lab-batch-dialog";
 import { LabTestView } from "@/features/labs/lab-test-view";
 import { LabDeleteDialog, LabEditDialog } from "@/features/labs/lab-result-dialogs";
-import { freezeResultPatch, readbackResult, resultFieldErrors, type ResultReadback } from "@/features/labs/lab-result-model";
+import { freezeResultPatch, isChangedResultConflict, readbackResult, resultFieldErrors, type ResultReadback } from "@/features/labs/lab-result-model";
 import { labsQueryKeys } from "@/features/labs/lab-query-keys";
 import styles from "@/features/labs/labs.module.css";
 import { ApiError, deleteLabResult, getLabCatalog, getLabTest, updateLabResult } from "@/lib/api";
@@ -102,14 +102,16 @@ export function LabTestPage({ testKey }: { testKey: string }) {
     setResultMessage(target.kind === "edit" ? "تم حفظ التعديل." : "تم حذف النتيجة.");
     await refresh;
   }
-  async function reconcileResult(target: ResultDialog) {
+  async function reconcileResult(target: ResultDialog, changed = false) {
     if (!isCurrent(target.generation) || target.actorId !== actorId) return;
     const reading = { ...target, blocked: true, recovery: { kind: "reading" as const } };
     showDialog(reading);
     try {
       const fresh = await getLabTest(target.test.test_key, auth);
       if (!isCurrent(target.generation)) return;
-      const recovery = readbackResult(fresh.results, target.result.id, target.submitted);
+      const readback = readbackResult(fresh.results, target.result.id, target.submitted);
+      const recovery = changed && readback.kind !== "absent"
+        ? { kind: "different" as const, current: readback.current } : readback;
       if (target.kind === "delete" && recovery.kind === "absent") { await confirmResult(target); return; }
       showDialog({ ...target, recovery, blocked: true, deleteError: target.kind === "delete" ? "النتيجة ما زالت موجودة. يمكنك إعادة محاولة حذف النتيجة نفسها." : undefined });
       // Make the observed server version available to a subsequent fresh edit.
@@ -146,6 +148,8 @@ export function LabTestPage({ testKey }: { testKey: string }) {
       } else if (target.kind === "edit" && error.status === 404) {
         showDialog({ ...pending, blocked: true, recovery: { kind: "absent" } });
         await refreshResults(target.generation);
+      } else if (target.kind === "edit" && isChangedResultConflict(error.status, error.detail)) {
+        await reconcileResult(pending, true);
       } else {
         // 401/403 are request errors even if a server sends field-like detail.
         const errors = resultFieldErrors(error.status === 409 || error.status === 422 ? error.detail : undefined, error.message);

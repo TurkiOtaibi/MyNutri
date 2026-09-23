@@ -71,7 +71,10 @@ version and a consistent Profile/results snapshot. Exact rational conversions
 and comparisons derive canonical display, Status and age-aware chart zones before
 display-only rounding. No entered fact changes when rules or an accepted DOB change.
 All history is returned; latest `test_date` is distinct from latest remaining
-`updated_at`. Owner CRUD is allowed; every admin Labs surface is read-only.
+`updated_at`. Owner PATCH requires `expected_updated_at` matching the locked owned
+row; a changed result returns 409 `LAB_RESULT_CHANGED` before validation or mutation.
+Missing or cross-owner result IDs remain 404. Owner CRUD is allowed; every admin
+Labs surface is read-only.
 
 ## Diary binding and Food truth
 

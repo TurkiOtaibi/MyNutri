@@ -100,7 +100,9 @@ Batch create takes shared `test_date` and nonempty `results[]` containing only
 `test_key`, `entered_value`, `entered_unit`, with `Idempotency-Key`. It returns
 `receipt_version` and `result_ids`; `Idempotent-Replayed` identifies an old success.
 The ID-only receipt is durable, survives edit/delete, and has no medical snapshot.
-PATCH accepts only date/value/unit; DELETE physically removes the owned result.
+PATCH requires date/value/unit and `expected_updated_at` from the result shown when
+the edit dialog opened. A changed version returns 409 before any replacement;
+DELETE physically removes the owned result.
 Read models distinguish entered facts from `display_value`, `display_unit`,
 `display_is_approximate`, `status`, `reference`, `chart_zones`, and one current
 `medical_rules_version`. Overview adds `eligibility`, `server_today`, `read_only`,
@@ -121,6 +123,7 @@ latest result by test date and `last_updated_at`; detail returns full history.
 | `LAB_BATCH_EMPTY` | أدخل نتيجة واحدة على الأقل. |
 | `LAB_READ_ONLY` | التحاليل متاحة للمشرف للقراءة فقط. |
 | `LAB_IDEMPOTENCY_CONFLICT` | تغيّرت بيانات عملية سبق إرسالها بالمفتاح نفسه. |
+| `LAB_RESULT_CHANGED` | تغيّرت هذه النتيجة منذ فتحها. راجع قيمها الحالية قبل تعديلها مجددًا. |
 | `PROFILE_SEX_IMMUTABLE` | لا يمكن تعديل الجنس بعد حفظ الملف الشخصي. |
 | `LABS_ADULT_HISTORY_REQUIRED` | لا يمكن تعديل تاريخ الميلاد لأنه يجعل نتائج تحاليل مسجلة قبل عمر 18 سنة. |
 | `RESOURCE_NOT_FOUND` | المورد غير موجود. |

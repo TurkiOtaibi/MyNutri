@@ -5,6 +5,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
@@ -891,6 +892,7 @@ class LabResultPatch(BaseModel):
     test_date: date
     entered_value: StrictStr
     entered_unit: StrictStr
+    expected_updated_at: AwareDatetime
 
     @field_validator("entered_value", mode="before")
     @classmethod

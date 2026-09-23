@@ -367,7 +367,7 @@ def test_edit_response_survives_later_delete_and_profile_change(
     event.listen(session, "after_commit", after_commit)
     try:
         response = labs.update_result(session, lab_owner.context, result_id,
-            patch_request(value="6.700"), load_catalog())
+            patch_request(value="6.700", expected_updated_at=lab_result.updated_at), load_catalog())
     finally:
         event.remove(session, "after_commit", after_commit)
     assert projected == [result_id]
@@ -387,13 +387,14 @@ def test_concurrent_edit_and_create_duplicate_serialize(
     from test_labs import patch_request
 
     result_id = lab_result.id
+    expected_updated_at = lab_result.updated_at
     labs_postgresql_session.rollback()
     monkeypatch.setattr(labs, "database_calendar_date", lambda _: date(2026, 9, 20))
 
     def edit(session):
         try:
             return labs.update_result(session, lab_owner.context, result_id,
-                patch_request("2026-09-18"), load_catalog()).id
+                patch_request("2026-09-18", expected_updated_at=expected_updated_at), load_catalog()).id
         except LabValidationError as error:
             return error.errors[0].code
 
@@ -430,6 +431,7 @@ def test_profile_dob_and_edit_serialize_on_owner_lock(
     lab_result.test_date = LABS_TODAY
     labs_postgresql_session.add(lab_result)
     labs_postgresql_session.commit()
+    expected_updated_at = lab_result.updated_at
     monkeypatch.setattr(labs, "database_calendar_date", lambda _: LABS_TODAY)
     monkeypatch.setattr("app.services.target_plans._database_riyadh_date", lambda _: LABS_TODAY)
     payload = TargetPlanWriteRequest.model_validate(profile_payload() | {
@@ -441,7 +443,7 @@ def test_profile_dob_and_edit_serialize_on_owner_lock(
     def edit(session):
         try:
             return labs.update_result(session, lab_owner.context, result_id,
-                patch_request("2026-09-19"), load_catalog()).id
+                patch_request("2026-09-19", expected_updated_at=expected_updated_at), load_catalog()).id
         except LabValidationError as error:
             return error.errors[0].code
 

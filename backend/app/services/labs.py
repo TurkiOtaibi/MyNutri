@@ -1,6 +1,6 @@
 """Owner-scoped Labs transactions and durable create receipts."""
 
-from datetime import date
+from datetime import date, timedelta
 from hashlib import sha256
 import json
 from uuid import UUID
@@ -261,6 +261,8 @@ def update_result(
     try:
         _lock_writer(session, principal)
         row = _lock_owned_result(session, principal.principal_id, result_id)
+        if row.updated_at != payload.expected_updated_at:
+            raise LabValidationError(409, [field_error("LAB_RESULT_CHANGED", "expected_updated_at")])
         profile = session.exec(
             select(Profile)
             .where(Profile.principal_id == principal.principal_id)
@@ -301,7 +303,7 @@ def update_result(
         row.entered_value = parse_entered_decimal(payload.entered_value)
         row.entered_unit = payload.entered_unit
         row.test_date = payload.test_date
-        row.updated_at = utcnow()
+        row.updated_at = max(utcnow(), row.updated_at + timedelta(microseconds=1))
         session.add(row)
         session.flush()
         # Scalar Rows remain usable after commit expires ORM identities. Capture

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Page } from "@playwright/test";
 import type { LabTestDetailResponse } from "../../lib/types";
-import { API_URL, expect, offsetIsoDate, test, type LabsApi } from "./helpers";
+import { API_URL, expect, loginOwner, offsetIsoDate, test, type LabsApi } from "./helpers";
 
 const edit = (page: Page) => page.getByRole("dialog", { name: "تعديل النتيجة" });
 const deletion = (page: Page) => page.getByRole("alertdialog", { name: "حذف النتيجة" });
@@ -46,6 +46,27 @@ test("edit uses full entered precision and supported units, immutable identity a
   await expect(row(page, id).getByRole("button", { name: /^تعديل نتيجة/ })).toBeFocused();
 });
 
+test("a second browser context cannot overwrite a result changed after its dialog opened", async ({ labsPage: first, labsApi, browser }) => {
+  const { id } = await seed(labsApi);
+  const secondSession = await loginOwner(browser, labsApi.actor, false);
+  try {
+    await first.goto("/labs/hba1c");
+    await secondSession.page.goto("/labs/hba1c");
+    await open(first, id);
+    await open(secondSession.page, id);
+    await first.locator("#lab-edit-value").fill("40.00");
+    await save(first);
+    await expect(first.getByText("تم حفظ التعديل.", { exact: true })).toBeVisible();
+    await secondSession.page.locator("#lab-edit-value").fill("41.00");
+    await save(secondSession.page);
+    await expect(edit(secondSession.page)).toContainText("النتيجة الحالية تختلف عن القيم التي أدخلتها.");
+    await expect(secondSession.page.getByTestId("lab-current-facts")).toContainText("40.00 mmol/mol");
+    await expect(secondSession.page.locator("#lab-edit-value")).toHaveValue("41.00");
+    await expect(edit(secondSession.page).getByRole("button", { name: "حفظ التعديل" })).toHaveCount(0);
+    expect((await labsApi.detail("hba1c")).results.find(result => result.id === id)?.entered_value).toBe("40.00");
+  } finally { await secondSession.context.close(); }
+});
+
 test("duplicate edit preserves all fields and focuses backend test_date despite immutable test_key", async ({ labsPage: page, labsApi }) => {
   const first = await seed(labsApi, -3), second = await seed(labsApi, -1);
   await page.goto("/labs/hba1c"); await open(page, first.id);
@@ -85,12 +106,13 @@ test("confirmed edit changes unit, retained scale and independent batch date usi
   ]);
   const id = (await labsApi.detail("hba1c")).results[0].id;
   await page.goto("/labs/hba1c"); await open(page, id);
+  const openedUpdatedAt = (await labsApi.detail("hba1c")).results[0].updated_at;
   await page.locator("#lab-edit-date").fill(offsetIsoDate(date, 1));
   await page.locator("#lab-edit-value").fill(" ٥٫٧٠٠٠ ");
   await page.locator("#lab-edit-unit").selectOption("%");
   const sent = page.waitForRequest(request => request.method() === "PATCH" && request.url() === `${API_URL}/labs/results/${id}`);
   await save(page);
-  expect((await sent).postDataJSON()).toEqual({ test_date: offsetIsoDate(date, 1), entered_value: "5.7000", entered_unit: "%" });
+  expect((await sent).postDataJSON()).toEqual({ test_date: offsetIsoDate(date, 1), entered_value: "5.7000", entered_unit: "%", expected_updated_at: openedUpdatedAt });
   await expect(edit(page)).toHaveCount(0);
   await expect(page.getByText("تم حفظ التعديل.", { exact: true })).toBeVisible();
   expect((await labsApi.detail("hba1c")).results[0]).toMatchObject({ id, entered_value: "5.7000", entered_unit: "%", test_date: offsetIsoDate(date, 1) });
@@ -159,13 +181,14 @@ for (const outcome of ["matches", "different", "absent", "failed"] as const) {
   test(`ambiguous PATCH ${outcome} preserves frozen facts and offers GET-only recovery`, async ({ labsPage: page, labsApi }) => {
     const { id, date } = await seed(labsApi);
     await page.goto("/labs/hba1c"); await open(page, id);
+    const openedUpdatedAt = (await labsApi.detail("hba1c")).results.find(result => result.id === id)!.updated_at;
     let patches = 0, posts = 0, failRead = outcome === "failed";
     page.on("request", request => { if (request.method() === "POST" && request.url() === `${API_URL}/labs/results`) posts += 1; });
     await page.route(`${API_URL}/labs/results/${id}`, async route => {
       patches += 1;
-      expect(route.request().postDataJSON()).toEqual({ test_date: date, entered_value: "40.000", entered_unit: "mmol/mol" });
+      expect(route.request().postDataJSON()).toEqual({ test_date: date, entered_value: "40.000", entered_unit: "mmol/mol", expected_updated_at: openedUpdatedAt });
       const committed = await route.fetch(); expect(committed.status()).toBe(200);
-      if (outcome === "different") await labsApi.patch(id, { test_date: date, entered_value: "41.00", entered_unit: "mmol/mol" });
+      if (outcome === "different") await labsApi.patch(id, { test_date: date, entered_value: "41.00", entered_unit: "mmol/mol", expected_updated_at: (await labsApi.detail("hba1c")).results[0].updated_at });
       if (outcome === "absent") await labsApi.remove(id);
       await route.fulfill({ status: 500, json: { detail: "unknown outcome" } });
     });

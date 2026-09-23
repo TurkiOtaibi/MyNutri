@@ -205,7 +205,7 @@ test("focus refetch removes deleted selected point and defaults to new latest", 
   await expectReferences(page, detail.results[1]);
   // A remount must read the current server response even within the cache lifetime.
   await page.goto("/labs");
-  await labsApi.patch(detail.results[1].id, { test_date: detail.results[1].test_date, entered_unit: "%", entered_value: "6.7" });
+  await labsApi.patch(detail.results[1].id, { test_date: detail.results[1].test_date, entered_unit: "%", entered_value: "6.7", expected_updated_at: detail.results[1].updated_at });
   await openDetail(page, "hba1c");
   await expectReferences(page, (await labsApi.detail("hba1c")).results[0]);
 });
