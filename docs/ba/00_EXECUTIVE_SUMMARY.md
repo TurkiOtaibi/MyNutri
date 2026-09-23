@@ -38,8 +38,8 @@ the current immutable system catalog, independently of nutrition.
   deletion remains locked out and resumable. Global Foods survive user deletion.
 
 The Admin-managed lifecycle above is approved Product authority pending
-implementation. New Arabic UI/error copy is drafted in the field dictionary
-and requires Product Owner approval before use.
+implementation. Its Arabic UI/error copy is approved as exact text in the
+field dictionary.
 
 Deleting a Food permanently deletes every referencing Diary entry across all
 Principals. This is intentional and has no archive, restore, tombstone, or audit event.

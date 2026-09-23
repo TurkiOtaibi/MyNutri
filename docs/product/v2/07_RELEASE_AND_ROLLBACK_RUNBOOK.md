@@ -39,8 +39,8 @@ an account in `deleting`. Rollback across irreversible Auth/private-data
 deletion cannot reconstruct those records from code or a reverse migration;
 pause new lifecycle operations and use an explicitly authorized matching
 database/Auth recovery procedure or roll forward to complete the saga.
-New UI/error Arabic copy remains pending Product Owner approval in the BA field
-dictionary and cannot ship before approval.
+Use the Product Owner-approved exact Admin account-management Arabic UI/error
+copy in the BA field dictionary when implementing the lifecycle.
 
 ## Release identity
 

@@ -29,13 +29,13 @@ Foods retain creator/updater Principal IDs and display a neutral label.
 The irreversible-delete confirmation requires the Admin to type the target
 user's email; a mismatch prevents submission.
 
-## Proposed Admin account-management Arabic copy — pending Product Owner approval
+## Approved Admin account-management Arabic copy
 
-The following strings are drafts, **not approved exact copy**. Implementation
-must use only Product Owner-approved copy; this table authorizes no UI/API text.
+The following 34 strings are Product Owner-approved exact copy for the
+Admin account-management UI and API errors. Implementation is still pending.
 Existing approved authentication, Labs, and Food strings remain unchanged.
 
-| Context | Draft Arabic string — pending approval |
+| Context | Approved exact Arabic string |
 |---|---|
 | Account-management heading | إدارة المستخدمين |
 | Create action | إضافة مستخدم |
