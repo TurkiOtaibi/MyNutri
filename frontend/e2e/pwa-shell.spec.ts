@@ -939,6 +939,7 @@ test("Labs private reads and successful writes never enter browser persistence o
     const today = (await api.overview()).server_today;
     const initial = await api.create(offsetIsoDate(today, -2), [{ test_key: "hba1c", entered_value: "73.210987654", entered_unit: "%" }]);
     initialId = initial.result_ids[0];
+    const initialUpdatedAt = (await api.detail("hba1c")).results.find(({ id }) => id === initialId)!.updated_at;
     ({ context, page } = await loginOwner(browser, actor, false, true));
     await waitForWorkerControl(page);
     await page.goto("/profile");
@@ -971,14 +972,14 @@ test("Labs private reads and successful writes never enter browser persistence o
     expect(created.status).toBe(201);
     expect(createdId).not.toBe("");
 
-    const patchedStatus = await page.evaluate(async ({ apiUrl, token, date, resultId, marker }) => {
+    const patchedStatus = await page.evaluate(async ({ apiUrl, token, date, resultId, marker, expectedUpdatedAt }) => {
       const response = await fetch(`${apiUrl}/labs/results/${resultId}`, {
         method: "PATCH",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ test_date: date, entered_value: marker, entered_unit: "%" }),
+        body: JSON.stringify({ test_date: date, entered_value: marker, entered_unit: "%", expected_updated_at: expectedUpdatedAt }),
       });
       return response.status;
-    }, { apiUrl: API_URL, token: actor.token, date: mutationDate, resultId: initialId, marker: privateMarker });
+    }, { apiUrl: API_URL, token: actor.token, date: mutationDate, resultId: initialId, marker: privateMarker, expectedUpdatedAt: initialUpdatedAt });
     expect(patchedStatus).toBe(200);
 
     const removedStatus = await page.evaluate(async ({ apiUrl, token, resultId }) => {
