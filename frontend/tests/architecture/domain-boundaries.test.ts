@@ -67,7 +67,7 @@ describe("domain boundaries", () => {
   });
 
   it("keeps private feature dependencies within their owning domain", () => {
-    for (const domain of ["profile", "diary", "foods"]) {
+    for (const domain of ["profile", "diary", "foods", "labs"]) {
       for (const path of featurePaths(domain)) {
         const imports = [...read(path).matchAll(/(?:import|export)[\s\S]*?from\s+["']([^"']+)["']/g)]
           .map((match) => match[1]);
@@ -87,6 +87,50 @@ describe("domain boundaries", () => {
       .filter((item) => /\.(?:ts|tsx)$/.test(item))) {
       expect(read(path), path).not.toMatch(/@\/lib\/generated\//);
     }
+  });
+
+  it("keeps Labs interpretation out of UI and admin views read-only", () => {
+    const labSource = featurePaths("labs").map(read).join("\n");
+    expect(labSource).not.toMatch(/prediabetes_range|diabetes_range|toCanonical|resolveRule|referenceThreshold/);
+    const adminOverview = read("components/AdminUserLabsPage.tsx");
+    const adminDetail = read("components/AdminUserLabTestPage.tsx");
+    for (const source of [adminOverview, adminDetail]) {
+      expect(source).not.toMatch(/\b(?:createLabResults|updateLabResult|deleteLabResult|useMutation|useLabBatch)\b/);
+      expect(source).toContain("isOtherAdminSubjectQuery");
+      expect(source).toContain("queryClient.removeQueries");
+      expect(source).toContain('staleTime: 0');
+      expect(source).toContain('refetchOnMount: "always"');
+      expect(source).toContain('refetchOnWindowFocus: "always"');
+      expect(source).toContain("AbortSignal.any([signal, sessionSignal])");
+      expect(source).not.toContain("refetchInterval");
+    }
+    expect(adminDetail).not.toMatch(/\b(?:LabBatchDialog|LabEditDialog|LabDeleteDialog|ownerActions|ownerResultActions)\b/);
+    for (const file of ["labs-overview-view", "lab-test-view", "lab-history-chart", "lab-history-list", "lab-result-dialogs"]) {
+      expect(read(`features/labs/${file}.tsx`)).not.toMatch(/@tanstack\/react-query|@\/lib\/api|useMutation|AuthProvider|SessionQueryProvider/);
+    }
+  });
+
+  it("keeps Labs owner queries and volatile filters in the owner controller", () => {
+    const owner = read("components/LabsPage.tsx");
+    const admin = read("components/AdminUserLabsPage.tsx");
+    const presentation = read("features/labs/labs-overview-view.tsx");
+    for (const term of ["getLabCatalog", "getLabs", "labsQueryKeys.catalog", "labsQueryKeys.ownerOverview"])
+      expect(owner).toContain(term);
+    for (const term of ["getAdminLabs", "labsQueryKeys.adminOverview"])
+      expect(admin).toContain(term);
+    for (const source of [owner, admin]) {
+      expect(source).toContain('staleTime: 0');
+      expect(source).toContain('refetchOnMount: "always"');
+      expect(source).toContain('refetchOnWindowFocus: "always"');
+      expect(source).toContain("AbortSignal.any([signal, sessionSignal])");
+      expect(source).not.toContain("refetchInterval");
+    }
+    expect(owner).toContain('useState(""');
+    expect(owner).toContain('useState<string | null>(null)');
+    expect(owner).toContain('useState<LabSort>("newest_updated")');
+    expect(presentation).not.toMatch(/@tanstack\/react-query|@\/lib\/api|\b(?:useQuery|useMutation|useState)\b/);
+    expect(presentation).toContain("OwnedLabsView");
+    expect(presentation).toContain("LabCatalogView");
   });
 
   it("keeps migrated feature-owned selectors out of the global stylesheet", () => {

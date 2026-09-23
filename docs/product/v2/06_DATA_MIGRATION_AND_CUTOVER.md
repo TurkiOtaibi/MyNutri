@@ -23,10 +23,29 @@ Nutrition semantic versioning and legacy Target compatibility are retired in:
 - parent: `b7d42e9a1c36`
 
 The Food catalog is unified and permanent deletion receives its final cascade and
-database-privilege boundaries in the current sole head:
+database-privilege boundaries in:
 
 - revision: `d9f64a1c3e58`
 - parent: `c8e53f0b2d47`
+
+Private Labs persistence and durable create receipts are introduced in the current sole head:
+
+- revision: `e8b7a42f6c31`
+- parent: `d9f64a1c3e58`
+
+`lab_result` stores Principal-owned entered facts in unscaled `NUMERIC`, retaining
+fractional trailing zeros. PostgreSQL requires finite nonnegative values with
+normalized numeric text length at most 128, nonempty bounded test/unit keys,
+a non-null date, and `ON DELETE RESTRICT` ownership. The unique B-tree on
+`(principal_id, test_key, test_date)` supports scoped reads in either date order;
+no redundant descending index is needed. Time-dependent date validation and
+catalog thresholds remain backend rules, not database checks. All privileges
+on this private table are revoked from `PUBLIC` and existing `anon`/`authenticated`.
+Existing table grants are unchanged.
+
+Only `lab_results.create.v1` receipts require null `expires_at`; every other
+operation still requires expiry. Completion/uniqueness checks, the expiry index,
+Target Plan timestamps, and replay documents remain unchanged.
 
 Historical revisions remain unchanged so the base-to-head chain is
 reconstructable. Their retired tables, columns, and guards are removed only by
@@ -158,6 +177,17 @@ Before any release authorization:
 16. Confirm `d9f64a1c3e58` removed Food archive columns, installed the Diary Food
     `ON DELETE CASCADE`, preserved existing Food/Diary rows during migration, and
     revoked direct Food mutation from `PUBLIC`, `anon`, and `authenticated`.
+17. Confirm `e8b7a42f6c31` is the sole head and agrees with all seven models;
+    clean and populated-base upgrades preserve existing facts, grants and replay.
+18. Prove packaged Labs catalog availability, private privileges, finite/unscaled
+    numeric storage, unique owner/test/date, and operation-specific receipt expiry.
+19. Prove online empty-Labs downgrade succeeds, while any LabResult or in-progress/
+    completed Labs receipt refuses downgrade without deletion. Offline downgrade
+    must refuse. Preserve every historical migration hash.
+
+Development migration and production-config simulation preflight run only against
+an explicitly identified disposable loopback PostgreSQL database, with the target
+asserted before schema/row changes. They provide no production authorization.
 
 ## Downgrade boundary
 
@@ -183,3 +213,9 @@ Revision `d9f64a1c3e58` also fails closed on downgrade. Archive state cannot be
 reconstructed and post-cutover permanent Food deletion may already have removed
 Diary history. Recovery requires the matching pre-cutover database restore and
 application revision.
+
+Revision `e8b7a42f6c31` permits an online downgrade only when both LabResult facts
+and Labs create receipts are absent. It locks the affected tables before checking,
+refuses populated rollback without deleting data, and restores `expires_at NOT NULL`
+only in an empty Labs schema. Offline downgrade is unavailable; production recovery
+still requires explicit release authorization and the approved restore policy.

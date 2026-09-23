@@ -1,0 +1,3395 @@
+{
+  "catalog_version": "mynutri-labs-v1.0",
+  "categories": [
+    {
+      "key": "glycemic",
+      "name_ar": "السكر",
+      "order": 0
+    },
+    {
+      "key": "lipids",
+      "name_ar": "الدهون",
+      "order": 1
+    },
+    {
+      "key": "blood",
+      "name_ar": "الدم",
+      "order": 2
+    },
+    {
+      "key": "iron",
+      "name_ar": "الحديد",
+      "order": 3
+    },
+    {
+      "key": "vitamins_minerals",
+      "name_ar": "الفيتامينات والمعادن",
+      "order": 4
+    },
+    {
+      "key": "electrolytes",
+      "name_ar": "الإلكتروليتات",
+      "order": 5
+    },
+    {
+      "key": "liver",
+      "name_ar": "الكبد",
+      "order": 6
+    },
+    {
+      "key": "kidney",
+      "name_ar": "الكلى",
+      "order": 7
+    },
+    {
+      "key": "thyroid",
+      "name_ar": "الغدة الدرقية",
+      "order": 8
+    },
+    {
+      "key": "hormones",
+      "name_ar": "الهرمونات",
+      "order": 9
+    },
+    {
+      "key": "inflammation",
+      "name_ar": "الالتهابات",
+      "order": 10
+    },
+    {
+      "key": "coagulation",
+      "name_ar": "التجلط",
+      "order": 11
+    },
+    {
+      "key": "pancreas",
+      "name_ar": "البنكرياس",
+      "order": 12
+    },
+    {
+      "key": "cardiac",
+      "name_ar": "القلب",
+      "order": 13
+    },
+    {
+      "key": "other",
+      "name_ar": "أخرى",
+      "order": 14
+    }
+  ],
+  "panels": [
+    {
+      "key": "lipid_panel",
+      "name_ar": "تحليل الدهون",
+      "name_en": "Lipid Panel",
+      "test_keys": [
+        "total_cholesterol",
+        "ldl_c",
+        "hdl_c",
+        "triglycerides"
+      ]
+    },
+    {
+      "key": "cbc",
+      "name_ar": "صورة الدم",
+      "name_en": "CBC",
+      "test_keys": [
+        "wbc",
+        "rbc",
+        "hemoglobin",
+        "hematocrit",
+        "platelets",
+        "mcv",
+        "mch",
+        "mchc",
+        "rdw",
+        "neutrophils_abs",
+        "neutrophils_pct",
+        "lymphocytes_abs",
+        "lymphocytes_pct",
+        "monocytes_abs",
+        "monocytes_pct",
+        "eosinophils_abs",
+        "eosinophils_pct",
+        "basophils_abs",
+        "basophils_pct",
+        "mpv"
+      ]
+    },
+    {
+      "key": "iron_studies",
+      "name_ar": "دراسات الحديد",
+      "name_en": "Iron Studies",
+      "test_keys": [
+        "ferritin",
+        "serum_iron",
+        "tibc",
+        "transferrin_saturation"
+      ]
+    },
+    {
+      "key": "kidney_panel",
+      "name_ar": "تحاليل الكلى",
+      "name_en": "Kidney Panel",
+      "test_keys": [
+        "creatinine",
+        "bun"
+      ]
+    },
+    {
+      "key": "electrolytes_panel",
+      "name_ar": "الإلكتروليتات والمعادن",
+      "name_en": "Electrolytes Panel",
+      "test_keys": [
+        "sodium",
+        "potassium",
+        "chloride",
+        "bicarbonate",
+        "calcium_total",
+        "corrected_calcium",
+        "magnesium"
+      ]
+    },
+    {
+      "key": "liver_panel",
+      "name_ar": "تحاليل الكبد",
+      "name_en": "Liver Panel",
+      "test_keys": [
+        "alt",
+        "ast",
+        "alp",
+        "total_bilirubin",
+        "albumin"
+      ]
+    },
+    {
+      "key": "thyroid_panel",
+      "name_ar": "تحاليل الغدة الدرقية",
+      "name_en": "Thyroid Panel",
+      "test_keys": [
+        "tsh",
+        "free_t4",
+        "free_t3"
+      ]
+    }
+  ],
+  "tests": [
+    {
+      "test_key": "hba1c",
+      "name_ar": "السكر التراكمي",
+      "name_en": "Hemoglobin A1c",
+      "abbreviation": "HbA1c",
+      "primary_category": "glycemic",
+      "measurement": "Hemoglobin A1c",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "%",
+      "default_input_unit": "%",
+      "supported_units": [
+        "%",
+        "mmol/mol"
+      ],
+      "alternate_unit_conversion": {
+        "from": "%",
+        "to": "mmol/mol",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "-2.15",
+        "multiply": "10.929",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "decision_bands",
+        "bands": [
+          {
+            "status": "normal",
+            "min": null,
+            "min_inclusive": false,
+            "max": "5.7",
+            "max_inclusive": false
+          },
+          {
+            "status": "prediabetes_range",
+            "min": "5.7",
+            "min_inclusive": true,
+            "max": "6.5",
+            "max_inclusive": false
+          },
+          {
+            "status": "diabetes_range",
+            "min": "6.5",
+            "min_inclusive": true,
+            "max": null,
+            "max_inclusive": false
+          }
+        ]
+      },
+      "omit_unreachable_low": false,
+      "panels": [],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_decision_rule",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "total_cholesterol",
+      "name_ar": "الكوليسترول الكلي",
+      "name_en": "Total Cholesterol",
+      "abbreviation": null,
+      "primary_category": "lipids",
+      "measurement": "Total Cholesterol",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "fasting",
+      "canonical_unit": "mg/dL",
+      "default_input_unit": "mg/dL",
+      "supported_units": [
+        "mg/dL",
+        "mmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "mg/dL",
+        "to": "mmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1",
+        "divide": "38.67",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "decision_bands",
+        "bands": [
+          {
+            "status": "desirable",
+            "min": null,
+            "min_inclusive": false,
+            "max": "200",
+            "max_inclusive": false
+          },
+          {
+            "status": "borderline_high",
+            "min": "200",
+            "min_inclusive": true,
+            "max": "240",
+            "max_inclusive": false
+          },
+          {
+            "status": "high",
+            "min": "240",
+            "min_inclusive": true,
+            "max": null,
+            "max_inclusive": false
+          }
+        ]
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "lipid_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_decision_rule",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "ldl_c",
+      "name_ar": "الكوليسترول الضار",
+      "name_en": "Low-Density Lipoprotein Cholesterol",
+      "abbreviation": "LDL-C",
+      "primary_category": "lipids",
+      "measurement": "Low-Density Lipoprotein Cholesterol",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "fasting",
+      "canonical_unit": "mg/dL",
+      "default_input_unit": "mg/dL",
+      "supported_units": [
+        "mg/dL",
+        "mmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "mg/dL",
+        "to": "mmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1",
+        "divide": "38.67",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "decision_bands",
+        "bands": [
+          {
+            "status": "desirable",
+            "min": null,
+            "min_inclusive": false,
+            "max": "100",
+            "max_inclusive": false
+          },
+          {
+            "status": "above_desirable",
+            "min": "100",
+            "min_inclusive": true,
+            "max": "130",
+            "max_inclusive": false
+          },
+          {
+            "status": "borderline_high",
+            "min": "130",
+            "min_inclusive": true,
+            "max": "160",
+            "max_inclusive": false
+          },
+          {
+            "status": "high",
+            "min": "160",
+            "min_inclusive": true,
+            "max": "190",
+            "max_inclusive": false
+          },
+          {
+            "status": "very_high",
+            "min": "190",
+            "min_inclusive": true,
+            "max": null,
+            "max_inclusive": false
+          }
+        ]
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "lipid_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_decision_rule",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "hdl_c",
+      "name_ar": "الكوليسترول الجيد",
+      "name_en": "High-Density Lipoprotein Cholesterol",
+      "abbreviation": "HDL-C",
+      "primary_category": "lipids",
+      "measurement": "High-Density Lipoprotein Cholesterol",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "fasting",
+      "canonical_unit": "mg/dL",
+      "default_input_unit": "mg/dL",
+      "supported_units": [
+        "mg/dL",
+        "mmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "mg/dL",
+        "to": "mmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1",
+        "divide": "38.67",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "sex_decision",
+        "male": {
+          "kind": "decision_bands",
+          "bands": [
+            {
+              "status": "low",
+              "min": null,
+              "min_inclusive": false,
+              "max": "40",
+              "max_inclusive": false
+            },
+            {
+              "status": "acceptable",
+              "min": "40",
+              "min_inclusive": true,
+              "max": null,
+              "max_inclusive": false
+            }
+          ]
+        },
+        "female": {
+          "kind": "decision_bands",
+          "bands": [
+            {
+              "status": "low",
+              "min": null,
+              "min_inclusive": false,
+              "max": "50",
+              "max_inclusive": false
+            },
+            {
+              "status": "acceptable",
+              "min": "50",
+              "min_inclusive": true,
+              "max": null,
+              "max_inclusive": false
+            }
+          ]
+        }
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "lipid_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_decision_rule",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "triglycerides",
+      "name_ar": "الدهون الثلاثية",
+      "name_en": "Triglycerides",
+      "abbreviation": null,
+      "primary_category": "lipids",
+      "measurement": "Triglycerides",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "fasting",
+      "canonical_unit": "mg/dL",
+      "default_input_unit": "mg/dL",
+      "supported_units": [
+        "mg/dL",
+        "mmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "mg/dL",
+        "to": "mmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1",
+        "divide": "88.57",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "decision_bands",
+        "bands": [
+          {
+            "status": "normal",
+            "min": null,
+            "min_inclusive": false,
+            "max": "150",
+            "max_inclusive": false
+          },
+          {
+            "status": "borderline_high",
+            "min": "150",
+            "min_inclusive": true,
+            "max": "200",
+            "max_inclusive": false
+          },
+          {
+            "status": "high",
+            "min": "200",
+            "min_inclusive": true,
+            "max": "500",
+            "max_inclusive": false
+          },
+          {
+            "status": "very_high",
+            "min": "500",
+            "min_inclusive": true,
+            "max": null,
+            "max_inclusive": false
+          }
+        ]
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "lipid_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_decision_rule",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "wbc",
+      "name_ar": "كريات الدم البيضاء",
+      "name_en": "White Blood Cell Count",
+      "abbreviation": "WBC",
+      "primary_category": "blood",
+      "measurement": "White Blood Cell Count",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "×10⁹/L",
+      "default_input_unit": "×10⁹/L",
+      "supported_units": [
+        "×10⁹/L",
+        "×10³/µL"
+      ],
+      "alternate_unit_conversion": {
+        "from": "×10⁹/L",
+        "to": "×10³/µL",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "3.4",
+        "high": "9.6",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "rbc",
+      "name_ar": "كريات الدم الحمراء",
+      "name_en": "Red Blood Cell Count",
+      "abbreviation": "RBC",
+      "primary_category": "blood",
+      "measurement": "Red Blood Cell Count",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "×10¹²/L",
+      "default_input_unit": "×10¹²/L",
+      "supported_units": [
+        "×10¹²/L",
+        "×10⁶/µL"
+      ],
+      "alternate_unit_conversion": {
+        "from": "×10¹²/L",
+        "to": "×10⁶/µL",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "sex_reference",
+        "male": {
+          "kind": "reference",
+          "low": "4.35",
+          "high": "5.65",
+          "low_inclusive": true,
+          "high_inclusive": true
+        },
+        "female": {
+          "kind": "reference",
+          "low": "3.92",
+          "high": "5.13",
+          "low_inclusive": true,
+          "high_inclusive": true
+        }
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "hemoglobin",
+      "name_ar": "الهيموغلوبين",
+      "name_en": "Hemoglobin",
+      "abbreviation": null,
+      "primary_category": "blood",
+      "measurement": "Hemoglobin",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "g/dL",
+      "default_input_unit": "g/dL",
+      "supported_units": [
+        "g/dL",
+        "g/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "g/dL",
+        "to": "g/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "10",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "sex_reference",
+        "male": {
+          "kind": "reference",
+          "low": "13.2",
+          "high": "16.6",
+          "low_inclusive": true,
+          "high_inclusive": true
+        },
+        "female": {
+          "kind": "reference",
+          "low": "11.6",
+          "high": "15.0",
+          "low_inclusive": true,
+          "high_inclusive": true
+        }
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "hematocrit",
+      "name_ar": "الهيماتوكريت",
+      "name_en": "Hematocrit",
+      "abbreviation": null,
+      "primary_category": "blood",
+      "measurement": "Hematocrit",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "%",
+      "default_input_unit": "%",
+      "supported_units": [
+        "%",
+        "L/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "%",
+        "to": "L/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1",
+        "divide": "100",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "sex_reference",
+        "male": {
+          "kind": "reference",
+          "low": "38.3",
+          "high": "48.6",
+          "low_inclusive": true,
+          "high_inclusive": true
+        },
+        "female": {
+          "kind": "reference",
+          "low": "35.5",
+          "high": "44.9",
+          "low_inclusive": true,
+          "high_inclusive": true
+        }
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "platelets",
+      "name_ar": "الصفائح الدموية",
+      "name_en": "Platelets",
+      "abbreviation": null,
+      "primary_category": "blood",
+      "measurement": "Platelets",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "×10⁹/L",
+      "default_input_unit": "×10⁹/L",
+      "supported_units": [
+        "×10⁹/L",
+        "×10³/µL"
+      ],
+      "alternate_unit_conversion": {
+        "from": "×10⁹/L",
+        "to": "×10³/µL",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "sex_reference",
+        "male": {
+          "kind": "reference",
+          "low": "135",
+          "high": "317",
+          "low_inclusive": true,
+          "high_inclusive": true
+        },
+        "female": {
+          "kind": "reference",
+          "low": "157",
+          "high": "371",
+          "low_inclusive": true,
+          "high_inclusive": true
+        }
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "mcv",
+      "name_ar": "متوسط حجم الكرية",
+      "name_en": "Mean Corpuscular Volume",
+      "abbreviation": "MCV",
+      "primary_category": "blood",
+      "measurement": "Mean Corpuscular Volume",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "fL",
+      "default_input_unit": "fL",
+      "supported_units": [
+        "fL"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "78.2",
+        "high": "97.93",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "mch",
+      "name_ar": "متوسط هيموغلوبين الكرية",
+      "name_en": "Mean Corpuscular Hemoglobin",
+      "abbreviation": "MCH",
+      "primary_category": "blood",
+      "measurement": "Mean Corpuscular Hemoglobin",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "pg",
+      "default_input_unit": "pg",
+      "supported_units": [
+        "pg"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "sex_reference",
+        "male": {
+          "kind": "reference",
+          "low": "27",
+          "high": "33",
+          "low_inclusive": true,
+          "high_inclusive": true
+        },
+        "female": {
+          "kind": "reference",
+          "low": "26",
+          "high": "33",
+          "low_inclusive": true,
+          "high_inclusive": true
+        }
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "mchc",
+      "name_ar": "تركيز هيموغلوبين الكرية",
+      "name_en": "Mean Corpuscular Hemoglobin Concentration",
+      "abbreviation": "MCHC",
+      "primary_category": "blood",
+      "measurement": "Mean Corpuscular Hemoglobin Concentration",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "g/dL",
+      "default_input_unit": "g/dL",
+      "supported_units": [
+        "g/dL",
+        "g/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "g/dL",
+        "to": "g/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "10",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "32",
+        "high": "36",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "rdw",
+      "name_ar": "تباين حجم كريات الدم",
+      "name_en": "Red Cell Distribution Width",
+      "abbreviation": "RDW",
+      "primary_category": "blood",
+      "measurement": "RDW-CV; not RDW-SD",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "%",
+      "default_input_unit": "%",
+      "supported_units": [
+        "%"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "sex_reference",
+        "male": {
+          "kind": "reference",
+          "low": "11.8",
+          "high": "14.5",
+          "low_inclusive": true,
+          "high_inclusive": true
+        },
+        "female": {
+          "kind": "reference",
+          "low": "12.2",
+          "high": "16.1",
+          "low_inclusive": true,
+          "high_inclusive": true
+        }
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "neutrophils_abs",
+      "name_ar": "العدلات - العدد المطلق",
+      "name_en": "Absolute Neutrophil Count",
+      "abbreviation": null,
+      "primary_category": "blood",
+      "measurement": "Absolute Neutrophil Count",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "×10⁹/L",
+      "default_input_unit": "×10⁹/L",
+      "supported_units": [
+        "×10⁹/L",
+        "×10³/µL"
+      ],
+      "alternate_unit_conversion": {
+        "from": "×10⁹/L",
+        "to": "×10³/µL",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "1.56",
+        "high": "6.45",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "neutrophils_pct",
+      "name_ar": "نسبة العدلات",
+      "name_en": "Neutrophils %",
+      "abbreviation": null,
+      "primary_category": "blood",
+      "measurement": "Neutrophils %",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "%",
+      "default_input_unit": "%",
+      "supported_units": [
+        "%"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "37",
+        "high": "80",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "explicit_product_owner_system_range",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "lymphocytes_abs",
+      "name_ar": "الخلايا اللمفاوية - العدد المطلق",
+      "name_en": "Absolute Lymphocyte Count",
+      "abbreviation": null,
+      "primary_category": "blood",
+      "measurement": "Absolute Lymphocyte Count",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "×10⁹/L",
+      "default_input_unit": "×10⁹/L",
+      "supported_units": [
+        "×10⁹/L",
+        "×10³/µL"
+      ],
+      "alternate_unit_conversion": {
+        "from": "×10⁹/L",
+        "to": "×10³/µL",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "0.95",
+        "high": "3.07",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "lymphocytes_pct",
+      "name_ar": "نسبة الخلايا اللمفاوية",
+      "name_en": "Lymphocytes %",
+      "abbreviation": null,
+      "primary_category": "blood",
+      "measurement": "Lymphocytes %",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "%",
+      "default_input_unit": "%",
+      "supported_units": [
+        "%"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "20",
+        "high": "50",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "explicit_product_owner_system_range",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "monocytes_abs",
+      "name_ar": "الوحيدات - العدد المطلق",
+      "name_en": "Absolute Monocyte Count",
+      "abbreviation": null,
+      "primary_category": "blood",
+      "measurement": "Absolute Monocyte Count",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "×10⁹/L",
+      "default_input_unit": "×10⁹/L",
+      "supported_units": [
+        "×10⁹/L"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "0.26",
+        "high": "0.81",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "monocytes_pct",
+      "name_ar": "نسبة الوحيدات",
+      "name_en": "Monocytes %",
+      "abbreviation": null,
+      "primary_category": "blood",
+      "measurement": "Monocytes %",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "%",
+      "default_input_unit": "%",
+      "supported_units": [
+        "%"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "2",
+        "high": "8",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "explicit_product_owner_system_range",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "eosinophils_abs",
+      "name_ar": "الحمضات - العدد المطلق",
+      "name_en": "Absolute Eosinophil Count",
+      "abbreviation": null,
+      "primary_category": "blood",
+      "measurement": "Absolute Eosinophil Count",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "×10⁹/L",
+      "default_input_unit": "×10⁹/L",
+      "supported_units": [
+        "×10⁹/L"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "0.03",
+        "high": "0.48",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "eosinophils_pct",
+      "name_ar": "نسبة الحمضات",
+      "name_en": "Eosinophils %",
+      "abbreviation": null,
+      "primary_category": "blood",
+      "measurement": "Eosinophils %",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "%",
+      "default_input_unit": "%",
+      "supported_units": [
+        "%"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "0",
+        "high": "5",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": true,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "explicit_product_owner_system_range",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "basophils_abs",
+      "name_ar": "الأسسات - العدد المطلق",
+      "name_en": "Absolute Basophil Count",
+      "abbreviation": null,
+      "primary_category": "blood",
+      "measurement": "Absolute Basophil Count",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "×10⁹/L",
+      "default_input_unit": "×10⁹/L",
+      "supported_units": [
+        "×10⁹/L"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "0.01",
+        "high": "0.08",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "basophils_pct",
+      "name_ar": "نسبة الأسسات",
+      "name_en": "Basophils %",
+      "abbreviation": null,
+      "primary_category": "blood",
+      "measurement": "Basophils %",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "%",
+      "default_input_unit": "%",
+      "supported_units": [
+        "%"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "0",
+        "high": "2.5",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": true,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "explicit_product_owner_system_range",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "mpv",
+      "name_ar": "متوسط حجم الصفائح",
+      "name_en": "Mean Platelet Volume",
+      "abbreviation": "MPV",
+      "primary_category": "blood",
+      "measurement": "Mean Platelet Volume",
+      "specimen_context": "whole_blood",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "fL",
+      "default_input_unit": "fL",
+      "supported_units": [
+        "fL"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "8.34",
+        "high": "12.3",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "cbc"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "explicit_product_owner_system_range",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "ferritin",
+      "name_ar": "الفيريتين",
+      "name_en": "Ferritin",
+      "abbreviation": null,
+      "primary_category": "iron",
+      "measurement": "Ferritin",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "fasting",
+      "canonical_unit": "ng/mL",
+      "default_input_unit": "ng/mL",
+      "supported_units": [
+        "ng/mL",
+        "µg/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "ng/mL",
+        "to": "µg/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "sex_age_reference",
+        "male": {
+          "kind": "age_reference",
+          "age_bands": [
+            {
+              "min_age_inclusive": 18,
+              "max_age_exclusive": null,
+              "kind": "reference",
+              "low": "31",
+              "high": "409",
+              "low_inclusive": true,
+              "high_inclusive": true
+            }
+          ]
+        },
+        "female": {
+          "kind": "age_reference",
+          "age_bands": [
+            {
+              "min_age_inclusive": 18,
+              "max_age_exclusive": 51,
+              "kind": "reference",
+              "low": "6",
+              "high": "175",
+              "low_inclusive": true,
+              "high_inclusive": true
+            },
+            {
+              "min_age_inclusive": 51,
+              "max_age_exclusive": null,
+              "kind": "reference",
+              "low": "11",
+              "high": "328",
+              "low_inclusive": true,
+              "high_inclusive": true
+            }
+          ]
+        }
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "iron_studies"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "serum_iron",
+      "name_ar": "الحديد",
+      "name_en": "Serum Iron",
+      "abbreviation": null,
+      "primary_category": "iron",
+      "measurement": "Serum Iron",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "fasting",
+      "canonical_unit": "µg/dL",
+      "default_input_unit": "µg/dL",
+      "supported_units": [
+        "µg/dL",
+        "µmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "µg/dL",
+        "to": "µmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "0.1791",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "sex_reference",
+        "male": {
+          "kind": "reference",
+          "low": "50",
+          "high": "150",
+          "low_inclusive": true,
+          "high_inclusive": true
+        },
+        "female": {
+          "kind": "reference",
+          "low": "35",
+          "high": "145",
+          "low_inclusive": true,
+          "high_inclusive": true
+        }
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "iron_studies"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "tibc",
+      "name_ar": "السعة الكلية لارتباط الحديد",
+      "name_en": "Total Iron-Binding Capacity",
+      "abbreviation": "TIBC",
+      "primary_category": "iron",
+      "measurement": "Total Iron-Binding Capacity",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "fasting",
+      "canonical_unit": "µg/dL",
+      "default_input_unit": "µg/dL",
+      "supported_units": [
+        "µg/dL",
+        "µmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "µg/dL",
+        "to": "µmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "0.1791",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "250",
+        "high": "400",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "iron_studies"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "transferrin_saturation",
+      "name_ar": "تشبع الترانسفيرين",
+      "name_en": "Transferrin Saturation",
+      "abbreviation": null,
+      "primary_category": "iron",
+      "measurement": "laboratory-reported transferrin saturation; manual only",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "fasting",
+      "canonical_unit": "%",
+      "default_input_unit": "%",
+      "supported_units": [
+        "%"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "14",
+        "high": "50",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "iron_studies"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "vitamin_d_25oh",
+      "name_ar": "فيتامين د",
+      "name_en": "25-OH Vitamin D",
+      "abbreviation": null,
+      "primary_category": "vitamins_minerals",
+      "measurement": "total 25-hydroxyvitamin D; not 1,25-dihydroxy",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "ng/mL",
+      "default_input_unit": "ng/mL",
+      "supported_units": [
+        "ng/mL",
+        "nmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "ng/mL",
+        "to": "nmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "2.496",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "decision_bands",
+        "bands": [
+          {
+            "status": "deficient",
+            "min": null,
+            "min_inclusive": false,
+            "max": "12",
+            "max_inclusive": false
+          },
+          {
+            "status": "inadequate",
+            "min": "12",
+            "min_inclusive": true,
+            "max": "20",
+            "max_inclusive": false
+          },
+          {
+            "status": "adequate_for_most",
+            "min": "20",
+            "min_inclusive": true,
+            "max": "50",
+            "max_inclusive": true
+          },
+          {
+            "status": "high",
+            "min": "50",
+            "min_inclusive": false,
+            "max": null,
+            "max_inclusive": false
+          }
+        ]
+      },
+      "omit_unreachable_low": false,
+      "panels": [],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_decision_rule",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "vitamin_b12",
+      "name_ar": "فيتامين B12",
+      "name_en": "Vitamin B12",
+      "abbreviation": null,
+      "primary_category": "vitamins_minerals",
+      "measurement": "Vitamin B12",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "pg/mL",
+      "default_input_unit": "pg/mL",
+      "supported_units": [
+        "pg/mL",
+        "pmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "pg/mL",
+        "to": "pmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "0.7378",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "decision_bands",
+        "bands": [
+          {
+            "status": "deficient",
+            "min": null,
+            "min_inclusive": false,
+            "max": "150",
+            "max_inclusive": false
+          },
+          {
+            "status": "borderline",
+            "min": "150",
+            "min_inclusive": true,
+            "max": "400",
+            "max_inclusive": true
+          },
+          {
+            "status": "in_reference",
+            "min": "400",
+            "min_inclusive": false,
+            "max": "914",
+            "max_inclusive": true
+          },
+          {
+            "status": "high",
+            "min": "914",
+            "min_inclusive": false,
+            "max": null,
+            "max_inclusive": false
+          }
+        ]
+      },
+      "omit_unreachable_low": false,
+      "panels": [],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_decision_rule",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "vitamin_b6_plp",
+      "name_ar": "فيتامين B6",
+      "name_en": "Vitamin B6 (Pyridoxal-5-Phosphate)",
+      "abbreviation": null,
+      "primary_category": "vitamins_minerals",
+      "measurement": "pyridoxal-5-phosphate",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "mcg/L",
+      "default_input_unit": "mcg/L",
+      "supported_units": [
+        "mcg/L"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "5",
+        "high": "50",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "zinc",
+      "name_ar": "الزنك",
+      "name_en": "Zinc",
+      "abbreviation": null,
+      "primary_category": "vitamins_minerals",
+      "measurement": "Zinc",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "mcg/dL",
+      "default_input_unit": "mcg/dL",
+      "supported_units": [
+        "mcg/dL",
+        "µmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "mcg/dL",
+        "to": "µmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "0.1530",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "60",
+        "high": "106",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "creatinine",
+      "name_ar": "الكرياتينين",
+      "name_en": "Creatinine",
+      "abbreviation": null,
+      "primary_category": "kidney",
+      "measurement": "Creatinine",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "mg/dL",
+      "default_input_unit": "mg/dL",
+      "supported_units": [
+        "mg/dL",
+        "µmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "mg/dL",
+        "to": "µmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "88.4",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "sex_reference",
+        "male": {
+          "kind": "reference",
+          "low": "0.74",
+          "high": "1.35",
+          "low_inclusive": true,
+          "high_inclusive": true
+        },
+        "female": {
+          "kind": "reference",
+          "low": "0.59",
+          "high": "1.04",
+          "low_inclusive": true,
+          "high_inclusive": true
+        }
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "kidney_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "bun",
+      "name_ar": "نيتروجين اليوريا في الدم",
+      "name_en": "Blood Urea Nitrogen",
+      "abbreviation": "BUN",
+      "primary_category": "kidney",
+      "measurement": "blood urea nitrogen; not urea",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "mg/dL",
+      "default_input_unit": "mg/dL",
+      "supported_units": [
+        "mg/dL"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "sex_reference",
+        "male": {
+          "kind": "reference",
+          "low": "8",
+          "high": "24",
+          "low_inclusive": true,
+          "high_inclusive": true
+        },
+        "female": {
+          "kind": "reference",
+          "low": "6",
+          "high": "21",
+          "low_inclusive": true,
+          "high_inclusive": true
+        }
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "kidney_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "uric_acid",
+      "name_ar": "حمض اليوريك",
+      "name_en": "Uric Acid",
+      "abbreviation": null,
+      "primary_category": "other",
+      "measurement": "Uric Acid",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "mg/dL",
+      "default_input_unit": "mg/dL",
+      "supported_units": [
+        "mg/dL",
+        "µmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "mg/dL",
+        "to": "µmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "59.48",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "sex_reference",
+        "male": {
+          "kind": "reference",
+          "low": "3.7",
+          "high": "8.0",
+          "low_inclusive": true,
+          "high_inclusive": true
+        },
+        "female": {
+          "kind": "reference",
+          "low": "2.7",
+          "high": "6.1",
+          "low_inclusive": true,
+          "high_inclusive": true
+        }
+      },
+      "omit_unreachable_low": false,
+      "panels": [],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "sodium",
+      "name_ar": "الصوديوم",
+      "name_en": "Sodium",
+      "abbreviation": null,
+      "primary_category": "electrolytes",
+      "measurement": "Sodium",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "mmol/L",
+      "default_input_unit": "mmol/L",
+      "supported_units": [
+        "mmol/L",
+        "mEq/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "mmol/L",
+        "to": "mEq/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "135",
+        "high": "145",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "electrolytes_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "potassium",
+      "name_ar": "البوتاسيوم",
+      "name_en": "Potassium",
+      "abbreviation": null,
+      "primary_category": "electrolytes",
+      "measurement": "Potassium",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "mmol/L",
+      "default_input_unit": "mmol/L",
+      "supported_units": [
+        "mmol/L",
+        "mEq/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "mmol/L",
+        "to": "mEq/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "3.6",
+        "high": "5.2",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "electrolytes_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "chloride",
+      "name_ar": "الكلوريد",
+      "name_en": "Chloride",
+      "abbreviation": null,
+      "primary_category": "electrolytes",
+      "measurement": "Chloride",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "mmol/L",
+      "default_input_unit": "mmol/L",
+      "supported_units": [
+        "mmol/L",
+        "mEq/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "mmol/L",
+        "to": "mEq/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "98",
+        "high": "107",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "electrolytes_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "bicarbonate",
+      "name_ar": "البيكربونات",
+      "name_en": "Bicarbonate",
+      "abbreviation": null,
+      "primary_category": "electrolytes",
+      "measurement": "Bicarbonate",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "mmol/L",
+      "default_input_unit": "mmol/L",
+      "supported_units": [
+        "mmol/L",
+        "mEq/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "mmol/L",
+        "to": "mEq/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "22",
+        "high": "29",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "electrolytes_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "calcium_total",
+      "name_ar": "الكالسيوم الكلي",
+      "name_en": "Total Calcium",
+      "abbreviation": null,
+      "primary_category": "vitamins_minerals",
+      "measurement": "Total Calcium",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "mg/dL",
+      "default_input_unit": "mg/dL",
+      "supported_units": [
+        "mg/dL",
+        "mmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "mg/dL",
+        "to": "mmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "0.2495",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "age_reference",
+        "age_bands": [
+          {
+            "min_age_inclusive": 18,
+            "max_age_exclusive": 60,
+            "kind": "reference",
+            "low": "8.6",
+            "high": "10.0",
+            "low_inclusive": true,
+            "high_inclusive": true
+          },
+          {
+            "min_age_inclusive": 60,
+            "max_age_exclusive": null,
+            "kind": "reference",
+            "low": "8.8",
+            "high": "10.2",
+            "low_inclusive": true,
+            "high_inclusive": true
+          }
+        ]
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "electrolytes_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "corrected_calcium",
+      "name_ar": "الكالسيوم المصحح",
+      "name_en": "Corrected Calcium",
+      "abbreviation": null,
+      "primary_category": "vitamins_minerals",
+      "measurement": "laboratory-reported corrected calcium; manual only",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "mg/dL",
+      "default_input_unit": "mg/dL",
+      "supported_units": [
+        "mg/dL",
+        "mmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "mg/dL",
+        "to": "mmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "0.2495",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "8.6",
+        "high": "10.2",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "electrolytes_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "explicit_product_owner_system_range",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "magnesium",
+      "name_ar": "المغنيسيوم",
+      "name_en": "Magnesium",
+      "abbreviation": null,
+      "primary_category": "vitamins_minerals",
+      "measurement": "Magnesium",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "mg/dL",
+      "default_input_unit": "mg/dL",
+      "supported_units": [
+        "mg/dL",
+        "mmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "mg/dL",
+        "to": "mmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "0.4114",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "1.7",
+        "high": "2.3",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "electrolytes_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "alt",
+      "name_ar": "إنزيم الكبد ALT",
+      "name_en": "Alanine Aminotransferase",
+      "abbreviation": "ALT / GPT",
+      "primary_category": "liver",
+      "measurement": "Alanine Aminotransferase",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "U/L",
+      "default_input_unit": "U/L",
+      "supported_units": [
+        "U/L"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "sex_reference",
+        "male": {
+          "kind": "reference",
+          "low": "7",
+          "high": "55",
+          "low_inclusive": true,
+          "high_inclusive": true
+        },
+        "female": {
+          "kind": "reference",
+          "low": "7",
+          "high": "45",
+          "low_inclusive": true,
+          "high_inclusive": true
+        }
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "liver_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "ast",
+      "name_ar": "إنزيم الكبد AST",
+      "name_en": "Aspartate Aminotransferase",
+      "abbreviation": "AST / GOT",
+      "primary_category": "liver",
+      "measurement": "Aspartate Aminotransferase",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "U/L",
+      "default_input_unit": "U/L",
+      "supported_units": [
+        "U/L"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "sex_reference",
+        "male": {
+          "kind": "reference",
+          "low": "8",
+          "high": "48",
+          "low_inclusive": true,
+          "high_inclusive": true
+        },
+        "female": {
+          "kind": "reference",
+          "low": "8",
+          "high": "43",
+          "low_inclusive": true,
+          "high_inclusive": true
+        }
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "liver_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "alp",
+      "name_ar": "الفوسفاتاز القلوي",
+      "name_en": "Alkaline Phosphatase",
+      "abbreviation": "ALP",
+      "primary_category": "liver",
+      "measurement": "Alkaline Phosphatase",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "U/L",
+      "default_input_unit": "U/L",
+      "supported_units": [
+        "U/L"
+      ],
+      "alternate_unit_conversion": null,
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "sex_age_reference",
+        "male": {
+          "kind": "age_reference",
+          "age_bands": [
+            {
+              "min_age_inclusive": 18,
+              "max_age_exclusive": 19,
+              "kind": "reference",
+              "low": "55",
+              "high": "149",
+              "low_inclusive": true,
+              "high_inclusive": true
+            },
+            {
+              "min_age_inclusive": 19,
+              "max_age_exclusive": null,
+              "kind": "reference",
+              "low": "40",
+              "high": "129",
+              "low_inclusive": true,
+              "high_inclusive": true
+            }
+          ]
+        },
+        "female": {
+          "kind": "age_reference",
+          "age_bands": [
+            {
+              "min_age_inclusive": 18,
+              "max_age_exclusive": null,
+              "kind": "reference",
+              "low": "35",
+              "high": "104",
+              "low_inclusive": true,
+              "high_inclusive": true
+            }
+          ]
+        }
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "liver_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "explicit_product_owner_system_range",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "total_bilirubin",
+      "name_ar": "البيليروبين الكلي",
+      "name_en": "Total Bilirubin",
+      "abbreviation": null,
+      "primary_category": "liver",
+      "measurement": "Total Bilirubin",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "mg/dL",
+      "default_input_unit": "mg/dL",
+      "supported_units": [
+        "mg/dL",
+        "µmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "mg/dL",
+        "to": "µmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "17.1",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "0",
+        "high": "1.2",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": true,
+      "panels": [
+        "liver_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "albumin",
+      "name_ar": "الألبومين",
+      "name_en": "Albumin",
+      "abbreviation": null,
+      "primary_category": "liver",
+      "measurement": "Albumin",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "g/dL",
+      "default_input_unit": "g/dL",
+      "supported_units": [
+        "g/dL",
+        "g/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "g/dL",
+        "to": "g/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "10",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "reference",
+        "low": "3.5",
+        "high": "5.0",
+        "low_inclusive": true,
+        "high_inclusive": true
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "liver_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "tsh",
+      "name_ar": "الهرمون المحفز للغدة الدرقية",
+      "name_en": "Thyroid-Stimulating Hormone",
+      "abbreviation": "TSH",
+      "primary_category": "thyroid",
+      "measurement": "Thyroid-Stimulating Hormone",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "mIU/L",
+      "default_input_unit": "mIU/L",
+      "supported_units": [
+        "mIU/L",
+        "µIU/mL"
+      ],
+      "alternate_unit_conversion": {
+        "from": "mIU/L",
+        "to": "µIU/mL",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "age_reference",
+        "age_bands": [
+          {
+            "min_age_inclusive": 18,
+            "max_age_exclusive": 20,
+            "kind": "reference",
+            "low": "0.5",
+            "high": "4.3",
+            "low_inclusive": true,
+            "high_inclusive": true
+          },
+          {
+            "min_age_inclusive": 20,
+            "max_age_exclusive": null,
+            "kind": "reference",
+            "low": "0.3",
+            "high": "4.2",
+            "low_inclusive": true,
+            "high_inclusive": true
+          }
+        ]
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "thyroid_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "free_t4",
+      "name_ar": "الثيروكسين الحر",
+      "name_en": "Free Thyroxine",
+      "abbreviation": "Free T4",
+      "primary_category": "thyroid",
+      "measurement": "Free Thyroxine",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "ng/dL",
+      "default_input_unit": "ng/dL",
+      "supported_units": [
+        "ng/dL",
+        "pmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "ng/dL",
+        "to": "pmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "12.87",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "age_reference",
+        "age_bands": [
+          {
+            "min_age_inclusive": 18,
+            "max_age_exclusive": 20,
+            "kind": "reference",
+            "low": "1.0",
+            "high": "1.6",
+            "low_inclusive": true,
+            "high_inclusive": true
+          },
+          {
+            "min_age_inclusive": 20,
+            "max_age_exclusive": null,
+            "kind": "reference",
+            "low": "0.9",
+            "high": "1.7",
+            "low_inclusive": true,
+            "high_inclusive": true
+          }
+        ]
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "thyroid_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    },
+    {
+      "test_key": "free_t3",
+      "name_ar": "ثلاثي يودوثيرونين الحر",
+      "name_en": "Free Triiodothyronine",
+      "abbreviation": "Free T3",
+      "primary_category": "thyroid",
+      "measurement": "Free Triiodothyronine",
+      "specimen_context": "serum_or_plasma_biochemistry",
+      "min_age_inclusive": 18,
+      "max_age_exclusive": null,
+      "sex_applicability": [
+        "male",
+        "female"
+      ],
+      "pregnancy_rules": false,
+      "fasting_assumption": "not_required",
+      "canonical_unit": "pg/mL",
+      "default_input_unit": "pg/mL",
+      "supported_units": [
+        "pg/mL",
+        "pmol/L"
+      ],
+      "alternate_unit_conversion": {
+        "from": "pg/mL",
+        "to": "pmol/L",
+        "formula": "alternate = (canonical + pre_offset) * multiply / divide",
+        "pre_offset": "0",
+        "multiply": "1.536",
+        "divide": "1",
+        "inverse": "canonical = alternate * divide / multiply - pre_offset"
+      },
+      "input_validation": {
+        "finite_decimal": true,
+        "entered_min_inclusive": "0",
+        "canonical_min_inclusive": "0",
+        "medical_max": null,
+        "max_plain_decimal_characters": 128,
+        "no_fixed_scale": true
+      },
+      "rule": {
+        "kind": "age_reference",
+        "age_bands": [
+          {
+            "min_age_inclusive": 18,
+            "max_age_exclusive": 19,
+            "kind": "reference",
+            "low": "3.3",
+            "high": "5.3",
+            "low_inclusive": true,
+            "high_inclusive": true
+          },
+          {
+            "min_age_inclusive": 19,
+            "max_age_exclusive": null,
+            "kind": "reference",
+            "low": "2.0",
+            "high": "4.4",
+            "low_inclusive": true,
+            "high_inclusive": true
+          }
+        ]
+      },
+      "omit_unreachable_low": false,
+      "panels": [
+        "thyroid_panel"
+      ],
+      "provenance": {
+        "authority": "Product Owner Medical Catalog V1, message dated 2026-09-20",
+        "source_id": "PO-LABS-MEDICAL-CATALOG-V1-2026-09-20",
+        "rule_revision": "mynutri-labs-v1.0",
+        "origin": "product_owner_approved_system_reference",
+        "external_clinical_endorsement_claimed": false
+      }
+    }
+  ]
+}

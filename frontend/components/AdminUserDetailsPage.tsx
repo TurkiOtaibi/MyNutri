@@ -88,7 +88,7 @@ export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
 
   return <>
     <div className="selected-user-banner"><strong>عرض مستخدم آخر: {selectedName}</strong><span>وضع قراءة فقط</span></div>
-    <div className="page-head"><div><h1 className="page-title">تفاصيل المستخدم</h1><p className="page-kicker">بيانات الحساب والتغذية المعروضة للمراقبة دون صلاحية تعديل.</p></div><Link className="btn" href="/admin/users">رجوع</Link></div>
+    <div className="page-head"><div><h1 className="page-title">تفاصيل المستخدم</h1><p className="page-kicker">بيانات الحساب والتغذية المعروضة للمراقبة دون صلاحية تعديل.</p></div><div className="actions"><Link className="btn" href={`/admin/users/${encodeURIComponent(principalId)}/labs`}>عرض التحاليل</Link><Link className="btn" href="/admin/users">رجوع</Link></div></div>
     <section className="section-panel"><h2>ملخص الحساب</h2><ReadOnlyFields data={account} keys={["display_name", "email", "status", "role", "created_at"]} /></section>
     <section className="section-panel"><h2>الملف</h2><ReadOnlyFields data={profile} keys={["goal", "weight_kg", "height_cm", "activity_level"]} /></section>
     <section className="section-panel"><h2>الأهداف المطبقة اليوم</h2><ReadOnlyFields data={target?.plan ?? null} keys={["effective_from", "revision", "created_at"]} /></section>

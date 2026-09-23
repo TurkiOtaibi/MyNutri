@@ -10,6 +10,10 @@ const read = (path: string) => readFileSync(path);
 describe("generated OpenAPI contracts", () => {
   it("contains no runtime client or machine-specific output", () => {
     const source = read(contractsPath).toString("utf8");
+    for (const contract of [
+      "LabCatalogResponse", "LabOverviewResponse", "LabTestDetailResponse",
+      "LabResultResponse", "export namespace Labs",
+    ]) expect(source).toContain(contract);
     for (const retiredContract of [
       "NutritionPatternAnalysisResponseV2",
       "WeeklyPriorityResultV1",

@@ -9,6 +9,7 @@ from app.db.session import get_session
 from app.nutrition_rules.calculation import CalculationError
 from app.schemas import ProfileResponse, TargetPlanPreviewRequest, TargetResponse
 from app.services.profile import get_profile, preview_targets, to_profile_response
+from app.services.profile_constraints import validate_profile_constraints
 from app.core.calendar import diary_calendar_authority
 
 router = APIRouter(prefix="/profile", tags=["profile"])
@@ -44,6 +45,10 @@ def preview_profile(
     session: Session = Depends(get_session),
 ) -> TargetResponse | JSONResponse:
     try:
+        validate_profile_constraints(
+            session, principal.principal_id, get_profile(session, principal),
+            payload.sex, payload.birth_date,
+        )
         return preview_targets(payload, payload.effective_from)
     except CalculationError as error:
         return JSONResponse(

@@ -5,10 +5,15 @@ import type { ProfileInput, ProfileResponse, TargetPlanWriteResponse, TargetResp
 import {
   blankDraft,
   blockingSafetyMessage,
+  didConfirmedBirthDateChange,
   isPreviewActivatable,
   mapProfileApiErrors,
+  mappedProfileErrorFocusField,
   profileMatchesAcceptedPlan,
+  targetPlanSubmissionMatches,
   validateDraft,
+  withUpdatedSex,
+  withoutProfileFieldError,
   type DraftProfile,
   type TargetPlanSubmission,
 } from "@/features/profile/profile-model";
@@ -26,6 +31,44 @@ function validDraft(overrides: Partial<DraftProfile> = {}): DraftProfile {
 }
 
 describe("profile feature model", () => {
+  it.each([
+    ["PROFILE_SEX_IMMUTABLE", { sex: "لا يمكن تعديل الجنس بعد حفظ الملف الشخصي." }],
+    ["LABS_ADULT_HISTORY_REQUIRED", { birth_date: "لا يمكن تعديل تاريخ الميلاد لأنه يجعل نتائج تحاليل مسجلة قبل عمر 18 سنة." }],
+  ])("maps %s to governed field copy", (code, expected) => {
+    expect(mapProfileApiErrors(new ApiError("server message", 409, undefined, code))).toEqual(expected);
+  });
+
+  it("uses sex and DOB focus targets for governed errors", () => {
+    expect(mappedProfileErrorFocusField({ height_cm: "height" })).toBeNull();
+    expect(mappedProfileErrorFocusField({ birth_date: "dob" })).toBe("birth_date");
+    expect(mappedProfileErrorFocusField({ sex: "sex", birth_date: "dob" })).toBe("sex");
+  });
+
+  it("compares confirmed DOB and preserves custom fat when changing the first Profile sex", () => {
+    expect(didConfirmedBirthDateChange("1990-01-01", "1990-01-01")).toBe(false);
+    expect(didConfirmedBirthDateChange("1990-01-01", "1991-01-01")).toBe(true);
+    expect(withUpdatedSex(blankDraft(), "female")).toMatchObject({ sex: "female", fat_percent: "30" });
+    expect(withUpdatedSex({ ...blankDraft(), fat_percent: "22" }, "female")).toMatchObject({ sex: "female", fat_percent: "22" });
+  });
+
+  it("reuses a failed write key only for its exact payload, date and preview", () => {
+    const payload: ProfileInput = {
+      sex: "male", birth_date: "1990-01-01", height_cm: 170, weight_kg: 70,
+      activity_level: "moderate", goal: "maintain", selected_cut_intensity: 0.2,
+      protein_per_kg: 1.2, fat_pct: 0.25,
+    };
+    const submission = { payload, effectiveFrom: "2026-09-21", preview: { preview_hash: "hash-1" } };
+    expect(targetPlanSubmissionMatches(submission, payload, "2026-09-21", "hash-1")).toBe(true);
+    expect(targetPlanSubmissionMatches(submission, { ...payload, weight_kg: 71 }, "2026-09-21", "hash-1")).toBe(false);
+    expect(targetPlanSubmissionMatches(submission, payload, "2026-09-22", "hash-1")).toBe(false);
+    expect(targetPlanSubmissionMatches(submission, payload, "2026-09-21", "hash-2")).toBe(false);
+  });
+
+  it("clears only the edited Profile field error", () => {
+    expect(withoutProfileFieldError({ birth_date: "dob", weight_kg: "weight" }, "birth_date"))
+      .toEqual({ weight_kg: "weight" });
+  });
+
   it("keeps local and API field validation on the exact governed messages", () => {
     const draft = validDraft({
       birth_date: "2030-01-01",
@@ -125,6 +168,7 @@ describe("profile feature model", () => {
       effectiveFrom: "2026-09-20",
       preview: { preview_hash: "preview-hash" } as TargetResponse & { preview_hash: string },
       idempotencyKey: "idempotency-key",
+      previouslyConfirmedBirthDate: "1990-01-01",
     };
     const serverProfile = { ...payload } as ProfileResponse;
     const accepted = { plan: { effective_from: "2026-09-20" } } as TargetPlanWriteResponse;

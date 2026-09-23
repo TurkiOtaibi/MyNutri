@@ -88,3 +88,15 @@ export type WeekSummary = Omit<DeepRequired<OpenApi.WeekSummary>, "weekly_totals
   weekly_totals: NutritionTotals;
   days: DaySummary[];
 };
+
+export type LabCatalogResponse = OpenApi.LabCatalogResponse;
+export type LabCatalogTest = OpenApi.LabCatalogTest;
+export type LabChartZoneSegment = OpenApi.LabChartZoneSegment;
+export type LabCreateRequest = OpenApi.Labs.AddResultsLabsResultsPost.RequestBody;
+export type LabCreateReceipt = OpenApi.LabCreateReceipt;
+export type LabResultPatch = OpenApi.Labs.EditResultLabsResultsResultIdPatch.RequestBody;
+export type LabResultResponse = OpenApi.LabResultResponse;
+export type LabOverviewResponse = OpenApi.LabOverviewResponse;
+export type LabTestDetailResponse = OpenApi.LabTestDetailResponse;
+export type LabFieldError = OpenApi.LabFieldError;
+export type LabErrorResponse = OpenApi.LabErrorResponse;

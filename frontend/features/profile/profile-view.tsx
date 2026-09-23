@@ -11,6 +11,7 @@ const PROFILE_WRITE_ERROR = "تعذر حفظ التغييرات";
 
 type ProfileViewState = {
   dirty: boolean;
+  hasSavedProfile: boolean;
   hasPendingServerProfile: boolean;
   draft: DraftProfile;
   errors: FieldErrors;
@@ -20,6 +21,7 @@ type ProfileViewState = {
   activeSheet: SheetKind;
   advancedOpen: boolean;
   restoreOpen: boolean;
+  sexRef: RefObject<HTMLDivElement | null>;
   effectiveFromRef: RefObject<HTMLInputElement | null>;
   birthRef: RefObject<HTMLInputElement | null>;
   heightRef: RefObject<HTMLInputElement | null>;
@@ -99,8 +101,8 @@ export function ProfileView({
   intents,
 }: ProfileViewProps) {
   const {
-    dirty, hasPendingServerProfile, draft, errors, effectiveFrom, authoritativeDate,
-    displayBirthDate, activeSheet, advancedOpen, restoreOpen, effectiveFromRef,
+    dirty, hasSavedProfile, hasPendingServerProfile, draft, errors, effectiveFrom, authoritativeDate,
+    displayBirthDate, activeSheet, advancedOpen, restoreOpen, sexRef, effectiveFromRef,
     birthRef, heightRef, weightRef, proteinRef, fatRef,
   } = profile;
   const { savedTargets, registry, history, preview } = targets;
@@ -124,13 +126,32 @@ export function ProfileView({
         ) : null}
         <section className="profile-settings-card body-data-card" aria-labelledby="body-data-title">
           <h2 id="body-data-title">بيانات الجسم</h2>
-          <SettingsButton
-            icon={<UserRound size={19} />}
-            label="الجنس"
-            value={sexLabels[draft.sex]}
-            onClick={() => intents.openSheet("sex")}
-            ariaLabel={`تغيير الجنس، القيمة الحالية ${sexLabels[draft.sex]}`}
-          />
+          {hasSavedProfile ? (
+            <div
+              ref={sexRef}
+              className={`profile-setting-row ${errors.sex ? "has-error" : ""}`}
+              tabIndex={-1}
+              aria-invalid={Boolean(errors.sex)}
+              aria-describedby="profile-sex-message"
+            >
+              <UserRound size={19} aria-hidden="true" />
+              <span className="profile-setting-copy">
+                <strong>الجنس</strong>
+                <bdi>{sexLabels[draft.sex]}</bdi>
+                <small id="profile-sex-message" className={errors.sex ? "profile-field-error" : undefined}>
+                  {errors.sex ?? "لا يمكن تعديل الجنس بعد حفظ الملف الشخصي."}
+                </small>
+              </span>
+            </div>
+          ) : (
+            <SettingsButton
+              icon={<UserRound size={19} />}
+              label="الجنس"
+              value={sexLabels[draft.sex]}
+              onClick={() => intents.openSheet("sex")}
+              ariaLabel={`تغيير الجنس، القيمة الحالية ${sexLabels[draft.sex]}`}
+            />
+          )}
           <label className={`profile-setting-row profile-date-row ${errors.birth_date ? "has-error" : ""}`}>
             <CalendarDays size={19} aria-hidden="true" />
             <span className="profile-setting-copy"><strong>تاريخ الميلاد</strong><bdi>{displayBirthDate}</bdi></span>
@@ -313,7 +334,7 @@ export function ProfileView({
         </div>
       ) : null}
 
-      {activeSheet === "sex" ? (
+      {activeSheet === "sex" && !hasSavedProfile ? (
         <ProfileSheet title="اختر الجنس" onClose={intents.closeSheet}>
           <OptionList
             value={draft.sex}

@@ -24,6 +24,30 @@ const calendarPath = (url: URL) => url.pathname === "/account/calendar";
 const targetPlanWritePath = (url: URL) =>
   url.pathname === "/target-plans";
 
+async function ownerInvalidations(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const inspect = (window as Window & {
+      __mynutriE2EQueryInvalidations?: () => string[];
+    }).__mynutriE2EQueryInvalidations;
+    if (!inspect) throw new Error("E2E query invalidation inspection hook is unavailable.");
+    return inspect().filter((serialized) => {
+      const key = JSON.parse(serialized) as unknown;
+      return Array.isArray(key) && key.length === 3 && key[0] === "labs" && key[2] === "owner";
+    });
+  });
+}
+
+async function warmLabsThenOpenProfile(page: Page): Promise<void> {
+  const overview = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.origin === API_ORIGIN && url.pathname === "/labs" && response.request().method() === "GET";
+  });
+  await page.goto("/labs");
+  expect((await overview).status()).toBe(200);
+  await page.getByRole("link", { name: "الملف", exact: true }).click();
+  await expect(page).toHaveURL(/\/profile$/);
+}
+
 function addIsoDays(value: string, days: number): string {
   const [year, month, day] = value.split("-").map(Number);
   const result = new Date(Date.UTC(year, month - 1, day + days));
@@ -157,18 +181,50 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(page.locator(".profile-selection-card")).toHaveCount(2);
   });
 
-  test("@p0 sex sheet is accessible and changes draft without persistence", async ({ page, request, originalProfile }) => {
+  test("@p0 saved sex is immutable and retained in later preview and write payloads", async ({ page, request, originalProfile }) => {
+    const previewPayloads: ProfileInput[] = [];
+    const writePayloads: ProfileInput[] = [];
+    await page.route(previewPath, async (route) => {
+      if (route.request().method() === "POST") previewPayloads.push(route.request().postDataJSON() as ProfileInput);
+      await route.continue();
+    });
+    await page.route(targetPlanWritePath, async (route) => {
+      if (route.request().method() === "POST") writePayloads.push(route.request().postDataJSON() as ProfileInput);
+      await route.continue();
+    });
     await page.goto("/profile");
     const currentLabel = originalProfile.sex === "male" ? "ذكر" : "أنثى";
-    const nextLabel = originalProfile.sex === "male" ? "أنثى" : "ذكر";
-    await page.getByRole("button", { name: new RegExp(`تغيير الجنس، القيمة الحالية ${currentLabel}`) }).click();
-    const sheet = page.getByRole("dialog", { name: "اختر الجنس" });
-    await expect(sheet).toBeVisible();
-    await expect(sheet.getByRole("radio", { name: currentLabel })).toHaveAttribute("aria-checked", "true");
-    await sheet.getByRole("radio", { name: nextLabel }).click();
-    await expect(page.getByRole("button", { name: new RegExp(`القيمة الحالية ${nextLabel}`) })).toBeVisible();
-    await expect(page.getByText("تغييرات غير محفوظة")).toBeVisible();
+    const body = page.getByRole("region", { name: "بيانات الجسم" });
+    await expect(body.getByText(currentLabel, { exact: true })).toBeVisible();
+    await expect(body.getByText("لا يمكن تعديل الجنس بعد حفظ الملف الشخصي.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /تغيير الجنس/ })).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "اختر الجنس" })).toHaveCount(0);
+
+    const calendarResponse = await request.get(`${API_URL}/account/calendar`, { headers: apiHeaders() });
+    expect(calendarResponse.status()).toBe(200);
+    const calendar = await calendarResponse.json() as CalendarAuthority;
+    const tamper = await request.post(`${API_URL}/profile/preview`, {
+      headers: apiHeaders(),
+      data: {
+        ...inputFrom(originalProfile),
+        sex: originalProfile.sex === "male" ? "female" : "male",
+        effective_from: calendar.current_diary_date
+      }
+    });
+    expect(tamper.status()).toBe(422);
+    expect((await tamper.json()).error).toMatchObject({
+      code: "PROFILE_SEX_IMMUTABLE",
+      message_ar: "لا يمكن تعديل الجنس بعد حفظ الملف الشخصي."
+    });
     expect((await readProfile(request)).sex).toBe(originalProfile.sex);
+
+    await changedWeight(page, originalProfile);
+    await expect.poll(() => previewPayloads.at(-1)?.sex).toBe(originalProfile.sex);
+    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+    await page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" }).getByRole("button", { name: "حفظ الخطة" }).click();
+    await expect.poll(() => writePayloads.at(-1)?.sex).toBe(originalProfile.sex);
+    await expect(page.getByText("تم حفظ التغييرات")).toBeVisible();
+    await expect(page.getByRole("button", { name: /تغيير الجنس/ })).toHaveCount(0);
   });
 
   test("@p0 birth date is Gregorian Arabic with Western numerals and numeric units are stable", async ({ page, originalProfile }) => {
@@ -330,6 +386,100 @@ test.describe("@profile Profile and targets redesign", () => {
     } finally {
       await context.close();
     }
+  });
+
+  test("@p0 rejected DOB history rule keeps the draft focused and does not refresh Labs", async ({ page, originalProfile }) => {
+    const proposedDob = addIsoDays(originalProfile.birth_date, 1);
+    let previewRequests = 0;
+    let writeRequests = 0;
+    await page.route(previewPath, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      previewRequests += 1;
+      await route.fulfill({
+        status: 422,
+        contentType: "application/json",
+        json: { error: {
+          code: "LABS_ADULT_HISTORY_REQUIRED",
+          message_ar: "لا يمكن تعديل تاريخ الميلاد لأنه يجعل نتائج تحاليل مسجلة قبل عمر 18 سنة."
+        } }
+      });
+    });
+    await page.route(targetPlanWritePath, async (route) => {
+      if (route.request().method() === "POST") writeRequests += 1;
+      await route.continue();
+    });
+
+    await warmLabsThenOpenProfile(page);
+    const invalidationsBeforePreview = await ownerInvalidations(page);
+    const birthDate = page.getByLabel("تاريخ الميلاد");
+    await birthDate.fill(proposedDob);
+    await expect.poll(() => previewRequests).toBe(1);
+    await expect(birthDate).toHaveValue(proposedDob);
+    await expect(birthDate).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByText("لا يمكن تعديل تاريخ الميلاد لأنه يجعل نتائج تحاليل مسجلة قبل عمر 18 سنة.", { exact: true })).toBeVisible();
+    await expect(birthDate).toBeFocused();
+    await expect(page.getByText("تم حفظ التغييرات")).toHaveCount(0);
+    expect(writeRequests).toBe(0);
+    expect(await ownerInvalidations(page)).toEqual(invalidationsBeforePreview);
+  });
+
+  test("@p0 ordinary mapped write rejection restores the confirmation opener", async ({ page, originalProfile }) => {
+    let writeRequests = 0;
+    await page.route(targetPlanWritePath, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      writeRequests += 1;
+      await route.fulfill({
+        status: 422,
+        contentType: "application/json",
+        json: { detail: [{ type: "less_than_equal", loc: ["body", "height_cm"], msg: "invalid", input: 251 }] }
+      });
+    });
+
+    await page.goto("/profile?ordinary-write-rejection=1");
+    const height = page.getByLabel("الطول");
+    await height.fill(String(originalProfile.height_cm + 1));
+    const review = page.getByRole("button", { name: "مراجعة وتأكيد" });
+    await review.click();
+    await page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" })
+      .getByRole("button", { name: "حفظ الخطة" }).click();
+
+    await expect(page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" })).toHaveCount(0);
+    await expect(page.getByText("أدخل طولًا صحيحًا", { exact: true })).toBeVisible();
+    await expect(height).toHaveValue(String(originalProfile.height_cm + 1));
+    await expect(review).toBeFocused();
+    expect(writeRequests).toBe(1);
+  });
+
+  test("@p0 governed DOB write rejection focuses DOB and does not invalidate warm Labs", async ({ page, originalProfile }) => {
+    let writeRequests = 0;
+    await page.route(targetPlanWritePath, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      writeRequests += 1;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        json: { error: {
+          code: "LABS_ADULT_HISTORY_REQUIRED",
+          message_ar: "لا يمكن تعديل تاريخ الميلاد لأنه يجعل نتائج تحاليل مسجلة قبل عمر 18 سنة."
+        } }
+      });
+    });
+
+    await warmLabsThenOpenProfile(page);
+    const invalidationsBeforeWrite = await ownerInvalidations(page);
+    const proposedDob = addIsoDays(originalProfile.birth_date, 1);
+    const birthDate = page.getByLabel("تاريخ الميلاد");
+    await birthDate.fill(proposedDob);
+    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+    await page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" })
+      .getByRole("button", { name: "حفظ الخطة" }).click();
+
+    await expect(page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" })).toHaveCount(0);
+    await expect(page.getByText("لا يمكن تعديل تاريخ الميلاد لأنه يجعل نتائج تحاليل مسجلة قبل عمر 18 سنة.", { exact: true })).toBeVisible();
+    await expect(birthDate).toHaveValue(proposedDob);
+    await expect(birthDate).toBeFocused();
+    expect(await ownerInvalidations(page)).toEqual(invalidationsBeforeWrite);
+    expect(writeRequests).toBe(1);
   });
 
   test("@p0 effective date accepts today or future, rejects the past, and is sent to the unified write", async ({ page, originalProfile }) => {
@@ -629,6 +779,8 @@ test.describe("@profile Profile and targets redesign", () => {
   test("@plan011 first Profile plan write retains accepted truth when reconciliation is empty", async ({ page, originalProfile }) => {
     const targets = await mockPlan011Preview(page, originalProfile);
     const acceptedPlan = plan011WrittenPlan(originalProfile, targets);
+    const previewPayloads: ProfileInput[] = [];
+    const acceptedPayloads: ProfileInput[] = [];
     let activationRequests = 0;
     await page.route(profilePath, (route) =>
       route.request().method() === "GET" && route.request().resourceType() === "fetch"
@@ -638,14 +790,28 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.route(targetPlanWritePath, async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       activationRequests += 1;
+      acceptedPayloads.push(route.request().postDataJSON() as ProfileInput);
       await route.fulfill({
         status: 201,
         contentType: "application/json",
         json: { plan: acceptedPlan, replaced_plan: null }
       });
     });
+    await page.route(previewPath, async (route) => {
+      if (route.request().method() === "POST") previewPayloads.push(route.request().postDataJSON() as ProfileInput);
+      await route.fallback();
+    });
 
     await page.goto("/profile?plan011-first-profile=1");
+    const sexButton = page.getByRole("button", { name: /تغيير الجنس/ });
+    expect((await sexButton.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await sexButton.click();
+    const sexSheet = page.getByRole("dialog", { name: "اختر الجنس" });
+    await expect(sexSheet).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(sexButton).toBeFocused();
+    await sexButton.click();
+    await sexSheet.getByRole("radio", { name: "أنثى" }).click();
     await page.getByLabel("تاريخ الميلاد").fill("1990-01-01");
     await page.getByLabel("الطول").fill("170");
     await page.getByLabel("الوزن").fill("70");
@@ -655,6 +821,12 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(page.getByRole("status").filter({ hasText: "تعذر تحديث البيانات المعروضة" })).toBeVisible();
     await expect(page.getByLabel("الوزن")).toHaveValue("70");
     await expect(page.getByRole("region", { name: "الأهداف اليومية" })).toContainText("1777");
+    expect(previewPayloads.at(-1)?.sex).toBe("female");
+    expect(acceptedPayloads.at(-1)?.sex).toBe("female");
+    await expect(page.getByRole("region", { name: "بيانات الجسم" }).getByText("أنثى", { exact: true })).toBeVisible();
+    await expect(page.getByText("لا يمكن تعديل الجنس بعد حفظ الملف الشخصي.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /تغيير الجنس/ })).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "اختر الجنس" })).toHaveCount(0);
     expect(activationRequests).toBe(1);
   });
 
@@ -1350,19 +1522,63 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(page.getByRole("button", { name: "مراجعة المعاينة" })).toBeEnabled();
   });
 
-  test("@p1 responsive layout, touch targets, alerts, and focus restoration hold", async ({ page }) => {
+  test("@p1 first Profile sex selection stays accessible and draft-only at mobile widths", async ({ context }) => {
+    let targetPlanWrites = 0;
+    for (const width of [320, 360, 390, 430]) {
+      const page = await context.newPage();
+      try {
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await page.setViewportSize({ width, height: 844 });
+        await page.route(profilePath, (route) =>
+          route.request().method() === "GET" && route.request().resourceType() === "fetch"
+            ? route.fulfill({ status: 404, contentType: "application/json", json: { detail: "not found" } })
+            : route.continue()
+        );
+        await page.route(targetPlanWritePath, async (route) => {
+          if (route.request().method() !== "POST") return route.continue();
+          targetPlanWrites += 1;
+          await route.abort("blockedbyclient");
+        });
+        await page.goto(`/profile?first-profile-responsive=${width}`);
+        const opener = page.getByRole("button", { name: /تغيير الجنس/ });
+        await expect(opener).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+        const box = await opener.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.height).toBeGreaterThanOrEqual(44);
+        await opener.click();
+        const sheet = page.getByRole("dialog", { name: "اختر الجنس" });
+        await expect(sheet).toBeVisible();
+        await expect(sheet.getByRole("radio")).toHaveCount(2);
+        await expect(sheet.locator('[role="radio"][aria-checked="true"]')).toHaveCount(1);
+        const maleIsChecked = await sheet.getByRole("radio", { name: "ذكر", exact: true }).getAttribute("aria-checked") === "true";
+        const otherLabel = maleIsChecked ? "أنثى" : "ذكر";
+        await page.keyboard.press("Escape");
+        await expect(sheet).toHaveCount(0);
+        await expect(opener).toBeFocused();
+        await opener.click();
+        await sheet.getByRole("radio", { name: otherLabel, exact: true }).click();
+        await expect(sheet).toHaveCount(0);
+        await expect(opener).toHaveAccessibleName(`تغيير الجنس، القيمة الحالية ${otherLabel}`);
+        await expect(page.getByText("تغييرات غير محفوظة", { exact: true })).toBeVisible();
+        expect(targetPlanWrites).toBe(0);
+        await expect(page.locator('.profile-page [role="alert"]:empty')).toHaveCount(0);
+      } finally {
+        await page.close();
+      }
+    }
+    expect(targetPlanWrites).toBe(0);
+  });
+
+  test("@p1 saved Profile lock remains accessible without overflow or empty alerts", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     for (const width of [320, 360, 390, 430]) {
       await page.setViewportSize({ width, height: 844 });
       await page.goto("/profile");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-      const sexButton = page.getByRole("button", { name: /تغيير الجنس/ });
-      expect((await sexButton.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-      await sexButton.click();
-      const sheet = page.getByRole("dialog", { name: "اختر الجنس" });
-      await expect(sheet).toBeVisible();
-      await page.keyboard.press("Escape");
-      await expect(sexButton).toBeFocused();
+      await expect(page.getByText("لا يمكن تعديل الجنس بعد حفظ الملف الشخصي.", { exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: /تغيير الجنس/ })).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "اختر الجنس" })).toHaveCount(0);
       await expect(page.locator('.profile-page [role="alert"]:empty')).toHaveCount(0);
     }
   });

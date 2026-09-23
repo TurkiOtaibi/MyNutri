@@ -18,7 +18,8 @@ import { useSessionAbortSignal } from "./SessionQueryProvider";
 import { useUnsavedChanges } from "./UnsavedChangesProvider";
 import { ProfileLoadError, ProfileSkeleton } from "@/features/profile/profile-dialogs";
 import { ProfileView } from "@/features/profile/profile-view";
-import { FAT_DEFAULTS, PROTEIN_DEFAULT, blankDraft, formatArabicGregorianDate, isPreviewActivatable, mapProfileApiErrors, normalizeDraft, normalizeNumber, profileMatchesAcceptedPlan, toDraft, validateDraft, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type ProfileField, type SheetKind, type TargetPlanSubmission, type TargetPlanWritePhase } from "@/features/profile/profile-model";
+import { labsQueryKeys } from "@/features/labs/lab-query-keys";
+import { FAT_DEFAULTS, PROTEIN_DEFAULT, blankDraft, didConfirmedBirthDateChange, formatArabicGregorianDate, isPreviewActivatable, mapProfileApiErrors, mappedProfileErrorFocusField, normalizeDraft, normalizeNumber, profileMatchesAcceptedPlan, targetPlanSubmissionMatches, toDraft, validateDraft, withUpdatedSex, withoutProfileFieldError, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type ProfileField, type SheetKind, type TargetPlanSubmission, type TargetPlanWritePhase } from "@/features/profile/profile-model";
 
 export function ProfilePage() {
   const { session } = useAuth();
@@ -28,6 +29,7 @@ export function ProfilePage() {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<DraftProfile>(blankDraft);
   const [savedDraft, setSavedDraft] = useState<DraftProfile | null>(null);
+  const [hasSavedProfile, setHasSavedProfile] = useState(false);
   const [effectiveFrom, setEffectiveFrom] = useState("");
   const [savedEffectiveFrom, setSavedEffectiveFrom] = useState<string | null>(null);
   const [savedTargets, setSavedTargets] = useState<TargetResponse | null>(null);
@@ -48,6 +50,7 @@ export function ProfilePage() {
   const heightRef = useRef<HTMLInputElement>(null);
   const weightRef = useRef<HTMLInputElement>(null);
   const birthRef = useRef<HTMLInputElement>(null);
+  const sexRef = useRef<HTMLDivElement>(null);
   const proteinRef = useRef<HTMLInputElement>(null);
   const fatRef = useRef<HTMLInputElement>(null);
   const safetyRef = useRef<HTMLDivElement>(null);
@@ -61,6 +64,12 @@ export function ProfilePage() {
   function transitionWrite(next: TargetPlanWritePhase) {
     writePhaseRef.current = next;
     setWritePhase(next);
+  }
+  function focusMappedProfileError(mapped: FieldErrors) {
+    const field = mappedProfileErrorFocusField(mapped);
+    const target = field === "sex" ? sexRef : field === "birth_date" ? birthRef : null;
+    if (target?.current) window.setTimeout(() => target.current?.focus(), 0);
+    return Boolean(target?.current);
   }
 
   useEffect(() => () => {
@@ -102,6 +111,7 @@ export function ProfilePage() {
   useEffect(() => {
     if (profileQuery.data === undefined) return;
     if (["reconciling", "recovery"].includes(writePhaseRef.current.kind)) return;
+    if (profileQuery.data === null && hasSavedProfile) return;
     const nextDraft = profileQuery.data ? toDraft(profileQuery.data) : blankDraft();
     const responsePhaseOwnsAuthority = ["reconciling", "recovery", "committed"].includes(writePhaseRef.current.kind);
     const savedProfileBelongsToSubject = savedProfileSubjectRef.current === subjectId;
@@ -115,6 +125,7 @@ export function ProfilePage() {
     }
     setDraft(nextDraft);
     setSavedDraft(nextDraft);
+    setHasSavedProfile((known) => known || profileQuery.data !== null);
     savedProfileSubjectRef.current = subjectId;
     setSavedTargets(profileQuery.data?.targets ?? null);
     setPreview(null);
@@ -141,6 +152,7 @@ export function ProfilePage() {
     if (formSubjectRef.current === subjectId) return;
     formSubjectRef.current = subjectId;
     savedProfileSubjectRef.current = undefined;
+    setHasSavedProfile(false);
     setDraft(blankDraft());
     setSavedDraft(null);
     setEffectiveFrom("");
@@ -185,6 +197,7 @@ export function ProfilePage() {
         const mapped = mapProfileApiErrors(error);
         if (Object.keys(mapped).length > 0) {
           setErrors((current) => ({ ...current, ...mapped }));
+          focusMappedProfileError(mapped);
         }
         setPreview(null);
         setPreviewDraftHash(null);
@@ -240,11 +253,15 @@ export function ProfilePage() {
       queryClient.setQueryData(profileQueryKey, profile);
       setDraft(confirmed);
       setSavedDraft(confirmed);
+      setHasSavedProfile(true);
       savedProfileSubjectRef.current = subjectId;
       setEffectiveFrom(submission.effectiveFrom);
       setSavedEffectiveFrom(submission.effectiveFrom);
       setSavedTargets(profile.targets);
       setPendingServerProfile(undefined);
+      if (didConfirmedBirthDateChange(submission.previouslyConfirmedBirthDate, profile.birth_date) && subjectId) {
+        void queryClient.invalidateQueries({ queryKey: labsQueryKeys.ownerRoot(subjectId) });
+      }
       transitionWrite({ kind: "committed" });
     } catch {
       if (!sessionSignal.aborted && mountedRef.current) {
@@ -268,9 +285,14 @@ export function ProfilePage() {
         sessionSignal
       );
       if (sessionSignal.aborted || !mountedRef.current) return;
+      const labsDobChanged = didConfirmedBirthDateChange(
+        submission.previouslyConfirmedBirthDate,
+        submission.payload.birth_date
+      );
       const committedDraft = toDraft(submission.payload);
       setDraft(committedDraft);
       setSavedDraft(committedDraft);
+      setHasSavedProfile(true);
       savedProfileSubjectRef.current = subjectId;
       setEffectiveFrom(submission.effectiveFrom);
       setSavedEffectiveFrom(submission.effectiveFrom);
@@ -284,11 +306,17 @@ export function ProfilePage() {
       setWriteSafetyOutcome(null);
       setSafetyAttemptSequence(0);
       void queryClient.invalidateQueries({ queryKey: ["target-plan-history"] });
+      if (labsDobChanged && subjectId) {
+        void queryClient.invalidateQueries({ queryKey: labsQueryKeys.ownerRoot(subjectId) });
+      }
       await reconcileAcceptedPlan(submission, accepted);
     } catch (error) {
       if (sessionSignal.aborted || !mountedRef.current) return;
       const mapped = mapProfileApiErrors(error);
-      if (Object.keys(mapped).length > 0) setErrors(mapped);
+      if (Object.keys(mapped).length > 0) {
+        setErrors(mapped);
+        restoreWriteFocusRef.current = !focusMappedProfileError(mapped);
+      }
       else if (error instanceof ApiError && ["SPECIALIST_REVIEW_REQUIRED", "VERY_LOW_ENERGY_TARGET_BLOCKED"].includes(error.code ?? "")) {
         restoreWriteFocusRef.current = false;
         setWriteSafetyOutcome(
@@ -328,11 +356,7 @@ export function ProfilePage() {
 
   function update<K extends keyof DraftProfile>(key: K, value: DraftProfile[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
-    setErrors((current) => {
-      const next = { ...current };
-      delete next[key];
-      return next;
-    });
+    setErrors((current) => withoutProfileFieldError(current, key));
     transitionWrite({ kind: "idle" });
     setWriteErrorCode(null);
     setWriteSafetyOutcome(null);
@@ -340,15 +364,7 @@ export function ProfilePage() {
   }
 
   function updateSex(nextSex: Sex) {
-    setDraft((current) => {
-      const currentFat = normalizeNumber(current.fat_percent);
-      const previousDefault = FAT_DEFAULTS[current.sex] * 100;
-      return {
-        ...current,
-        sex: nextSex,
-        fat_percent: currentFat === previousDefault ? String(FAT_DEFAULTS[nextSex] * 100) : current.fat_percent
-      };
-    });
+    setDraft((current) => withUpdatedSex(current, nextSex));
     setErrors((current) => { const next = { ...current }; delete next.sex; delete next.fat_percent; return next; });
     transitionWrite({ kind: "idle" });
     setWriteErrorCode(null);
@@ -386,9 +402,7 @@ export function ProfilePage() {
       ? writePhaseRef.current.submission
       : null;
     const idempotencyKey = failedSubmission &&
-      normalizeDraft(toDraft(failedSubmission.payload)) === normalizeDraft(toDraft(result.payload)) &&
-      failedSubmission.effectiveFrom === selectedEffectiveFrom &&
-      failedSubmission.preview.preview_hash === currentPreview.preview_hash
+      targetPlanSubmissionMatches(failedSubmission, result.payload, selectedEffectiveFrom, currentPreview.preview_hash)
       ? failedSubmission.idempotencyKey
       : crypto.randomUUID();
     transitionWrite({
@@ -397,7 +411,8 @@ export function ProfilePage() {
         payload: result.payload,
         effectiveFrom: selectedEffectiveFrom,
         preview: currentPreview,
-        idempotencyKey
+        idempotencyKey,
+        previouslyConfirmedBirthDate: hasSavedProfile ? savedDraft?.birth_date ?? null : null
       }
     });
   }
@@ -406,9 +421,14 @@ export function ProfilePage() {
     const serverProfile = pendingServerProfile;
     if (serverProfile === undefined) return;
     requestDiscard(() => {
+      if (serverProfile === null && hasSavedProfile) {
+        setPendingServerProfile(undefined);
+        return;
+      }
       const nextDraft = serverProfile ? toDraft(serverProfile) : blankDraft();
       setDraft(nextDraft);
       setSavedDraft(nextDraft);
+      setHasSavedProfile(serverProfile !== null);
       setSavedTargets(serverProfile?.targets ?? null);
       setPreview(null);
       setPreviewDraftHash(null);
@@ -419,7 +439,7 @@ export function ProfilePage() {
 
   function changeEffectiveFrom(value: string) {
     setEffectiveFrom(value);
-    setErrors((current) => { const next = { ...current }; delete next.effective_from; return next; });
+    setErrors((current) => withoutProfileFieldError(current, "effective_from"));
     transitionWrite({ kind: "idle" });
     setWriteErrorCode(null);
   }
@@ -457,6 +477,7 @@ export function ProfilePage() {
     <ProfileView
       profile={{
         dirty,
+        hasSavedProfile,
         hasPendingServerProfile: pendingServerProfile !== undefined,
         draft,
         errors,
@@ -466,6 +487,7 @@ export function ProfilePage() {
         activeSheet,
         advancedOpen,
         restoreOpen,
+        sexRef,
         effectiveFromRef,
         birthRef,
         heightRef,
@@ -505,9 +527,9 @@ export function ProfilePage() {
         acceptServerProfile,
         updateField: update,
         changeEffectiveFrom,
-        openSheet: setActiveSheet,
+        openSheet: (sheet) => { if (sheet !== "sex" || !hasSavedProfile) setActiveSheet(sheet); },
         closeSheet: () => setActiveSheet(null),
-        selectSex: (sex: Sex) => { updateSex(sex); setActiveSheet(null); },
+        selectSex: (sex: Sex) => { if (!hasSavedProfile) updateSex(sex); setActiveSheet(null); },
         selectActivity: (activity: ActivityLevel) => { update("activity_level", activity); setActiveSheet(null); },
         selectGoal: (goal: Goal) => { update("goal", goal); setActiveSheet(null); },
         toggleAdvanced: () => setAdvancedOpen((current) => !current),

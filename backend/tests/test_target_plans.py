@@ -3,6 +3,7 @@ import inspect
 from uuid import UUID
 
 import pytest
+from labs_fixtures import LABS_TODAY
 from fastapi import Request
 from fastapi.testclient import TestClient
 from sqlalchemy import event
@@ -681,3 +682,134 @@ def test_profile_response_has_no_pending_plan(target_plan_context) -> None:
     assert response.status_code == 200
     assert "pending_plan" not in response.json()
     assert response.json()["effective_plan"]["revision"] == 1
+
+@pytest.mark.parametrize("sex", ["male", "female"])
+def test_first_profile_sex_selection_and_same_sex_retained(target_plan_context, sex):
+    client, session = target_plan_context
+    payload = profile_payload() | {"sex": sex}
+    assert write_plan(client, payload, "first-sex").status_code == 201
+    assert write_plan(client, payload | {"weight_kg": 81}, "same-sex").status_code == 201
+    assert session.exec(select(Profile)).one().sex.value == sex
+
+
+@pytest.mark.parametrize("path", ["/profile/preview", "/target-plans"])
+def test_changed_saved_sex_rejected(profile_client, path):
+    assert profile_client.write_profile().status_code == 201
+    before = profile_client.get("/profile").json()
+    history = profile_client.get("/target-plans").json()
+    if path == "/profile/preview":
+        response = profile_client.client.post(path, json=profile_client.payload | {
+            "sex": "female", "effective_from": LABS_TODAY.isoformat(),
+        })
+    else:
+        response = profile_client.write_profile(sex="female")
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "PROFILE_SEX_IMMUTABLE"
+    assert response.json()["error"]["message_ar"] == "لا يمكن تعديل الجنس بعد حفظ الملف الشخصي."
+    assert profile_client.get("/profile").json() == before
+    assert profile_client.get("/target-plans").json() == history
+
+
+@pytest.mark.parametrize("path", ["/profile/preview", "/target-plans"])
+def test_dob_rejection_rolls_back_target_plan_profile_and_diary(profile_client, profile_lab_result, path):
+    food = seed_food(profile_client.session)
+    create_diary_entry(profile_client.client, food, LABS_TODAY)
+    before = profile_client.get("/profile").json()
+    history = profile_client.get("/target-plans").json()
+    diary = profile_client.session.execute(select(DiaryEntry.__table__)).all()
+    receipts = len(profile_client.session.exec(select(IdempotencyRecord)).all())
+    if path == "/profile/preview":
+        response = profile_client.client.post(path, json=profile_client.payload | {
+            "birth_date": "2009-09-20", "effective_from": LABS_TODAY.isoformat(),
+        })
+    else:
+        response = profile_client.write_profile(
+            birth_date="2009-09-20", effective_from="2026-09-20",
+            idempotency_key="dob-becomes-under18",
+        )
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "LABS_ADULT_HISTORY_REQUIRED"
+    assert response.json()["error"]["message_ar"] == (
+        "لا يمكن تعديل تاريخ الميلاد لأنه يجعل نتائج تحاليل مسجلة قبل عمر 18 سنة."
+    )
+    assert profile_client.get("/profile").json() == before
+    assert profile_client.get("/target-plans").json() == history
+    assert profile_client.session.execute(select(DiaryEntry.__table__)).all() == diary
+    assert len(profile_client.session.exec(select(IdempotencyRecord)).all()) == receipts
+
+
+@pytest.mark.parametrize("dob", ["1990-01-01", "1991-01-01", "2008-09-19"])
+def test_dob_unchanged_correction_and_exact18_accepted(profile_client, profile_lab_result, dob):
+    payload = profile_client.payload | {"birth_date": dob}
+    result = preview(profile_client.client, payload, LABS_TODAY)
+    response = profile_client.write_profile(birth_date=dob, expected_preview_hash=result["preview_hash"])
+    assert response.status_code == 201, response.text
+    assert profile_client.get("/profile").json()["birth_date"] == dob
+
+
+def test_dob_uses_earliest_owned_lab_and_exact_birthday(profile_client, profile_lab_result):
+    from app.models import LabResult
+
+    # The latest result permits this DOB; the earlier one is one day before 18.
+    profile_client.session.add(LabResult(
+        principal_id=profile_client.owner_id, test_key="ferritin",
+        test_date=date(2026, 7, 1), entered_value="5.2", entered_unit="%",
+    ))
+    profile_client.session.commit()
+    response = profile_client.write_profile(birth_date="2008-07-02")
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "LABS_ADULT_HISTORY_REQUIRED"
+
+
+def test_dob_ignores_other_owner_labs(profile_client):
+    from app.models import LabResult
+
+    assert profile_client.write_profile().status_code == 201
+    profile_client.session.add(LabResult(
+        principal_id=PRINCIPAL_B, test_key="hba1c", test_date=date(2000, 1, 1),
+        entered_value="5.2", entered_unit="%",
+    ))
+    profile_client.session.commit()
+    payload = profile_client.payload | {"birth_date": "2000-01-01"}
+    result = preview(profile_client.client, payload, LABS_TODAY)
+    response = profile_client.write_profile(**payload, expected_preview_hash=result["preview_hash"])
+    assert response.status_code == 201, response.text
+
+
+@pytest.mark.parametrize("operation", ["target_plan.write", "target_plan.activate", "target_plan.replace"])
+@pytest.mark.parametrize("changed_field", ["sex", "birth_date"])
+def test_old_demographic_request_replay_preserves_current_profile(
+    profile_client, operation, changed_field,
+):
+    from app.models import LabResult, Sex
+
+    first = profile_client.write_profile(idempotency_key="old-demographics")
+    assert first.status_code == 201, first.text
+    record = profile_client.session.exec(select(IdempotencyRecord)).one()
+    body = profile_client.payload | {
+        "effective_from": LABS_TODAY.isoformat(), "confirmed": True,
+        "expected_preview_hash": profile_client.preview_hash,
+    }
+    if operation != "target_plan.write":
+        record.operation = operation
+        record.request_hash = _legacy_hash(TargetPlanWriteRequest.model_validate(body), operation)
+        profile_client.session.add(record)
+    profile = profile_client.session.exec(select(Profile)).one()
+    if changed_field == "sex":
+        # Simulate a historical successful change before sex became immutable.
+        profile.sex = Sex.female
+    else:
+        profile.birth_date = date(1970, 1, 1)
+        profile_client.session.add(LabResult(
+            principal_id=profile_client.owner_id, test_key="hba1c", test_date=date(2000, 1, 1),
+            entered_value="5.2", entered_unit="%",
+        ))
+    profile_client.session.add(profile)
+    profile_client.session.commit()
+    before = profile_client.get("/profile").json()
+    replay = profile_client.write_profile(idempotency_key="old-demographics")
+    assert replay.status_code == 201, replay.text
+    assert replay.headers["Idempotent-Replayed"] == "true"
+    assert replay.json() == first.json()
+    assert profile_client.get("/profile").json() == before
+    assert len(profile_client.session.exec(select(TargetPlan)).all()) == 1

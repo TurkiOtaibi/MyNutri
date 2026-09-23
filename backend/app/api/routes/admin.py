@@ -6,11 +6,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
+from app.api.routes.labs import ERROR_RESPONSES, LabsRoute
+from app.labs.catalog import get_catalog
+from app.labs.types import Catalog
+from app.services import labs as labs_service
 from app.core.auth import PrincipalContext, require_admin
 from app.core.calendar import current_diary_date
 from app.db.session import get_session
 from app.models import DiaryEntry, Principal, Profile
 from app.schemas import (
+    LabOverviewResponse,
+    LabTestDetailResponse,
     AdminUserDetail,
     AdminDiaryPage,
     AdminUserListResponse,
@@ -161,3 +167,33 @@ def user_diary(
         return admin_diary_page(session, selected, limit, cursor, entry_date)
     except AdminDiaryCursorError as error:
         raise HTTPException(status_code=422, detail={"code": "INVALID_CURSOR"}) from error
+
+
+# A separate route class keeps the privacy boundary scoped to Labs monitoring.
+labs_router = APIRouter(route_class=LabsRoute, responses=ERROR_RESPONSES)
+
+
+@labs_router.get("/users/{principal_id}/labs", response_model=LabOverviewResponse)
+def user_labs(
+    principal_id: UUID,
+    _admin: PrincipalContext = Depends(require_admin),
+    session: Session = Depends(get_session),
+    catalog: Catalog = Depends(get_catalog),
+) -> LabOverviewResponse:
+    _get_principal(session, principal_id)
+    return labs_service.read_labs(session, principal_id, True, catalog)
+
+
+@labs_router.get("/users/{principal_id}/labs/tests/{test_key}", response_model=LabTestDetailResponse)
+def user_lab_test(
+    principal_id: UUID,
+    test_key: str,
+    _admin: PrincipalContext = Depends(require_admin),
+    session: Session = Depends(get_session),
+    catalog: Catalog = Depends(get_catalog),
+) -> LabTestDetailResponse:
+    _get_principal(session, principal_id)
+    return labs_service.read_lab_test(session, principal_id, test_key, True, catalog)
+
+
+router.include_router(labs_router)

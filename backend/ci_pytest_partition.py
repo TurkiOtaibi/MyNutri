@@ -16,6 +16,8 @@ POSTGRES_SHARDS = 2
 POSTGRES_FIXTURES = frozenset(
     {
         "isolated_postgresql_session",
+        "labs_postgresql_database",
+        "labs_postgresql_session",
         "plan013_postgresql_session",
         "plan014_postgresql_session",
         "plan015_postgresql_session",

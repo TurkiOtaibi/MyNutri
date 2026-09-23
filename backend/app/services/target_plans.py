@@ -8,12 +8,12 @@ import json
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, text
+from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
-from app.core.calendar import current_diary_date
+from app.core.calendar import current_diary_date, database_calendar_date
 from app.models import (
     DiaryEntry,
     IdempotencyRecord,
@@ -33,6 +33,7 @@ from app.schemas import (
     TargetSourceResponse,
 )
 from app.services.profile import to_target_response
+from app.services.profile_constraints import ProfileConstraintError, validate_profile_constraints
 
 
 class TargetPlanError(RuntimeError):
@@ -115,14 +116,10 @@ def to_plan_summary(plan: TargetPlan) -> TargetPlanSummary:
 
 
 def _database_riyadh_date(session: Session) -> date:
-    bind = session.get_bind()
-    if bind.dialect.name != "postgresql":
+    # Keep both legacy monkeypatch seams while sharing the authoritative DB clock.
+    if session.get_bind().dialect.name != "postgresql":
         return current_diary_date()
-    return (
-        session.connection()
-        .execute(text("SELECT (clock_timestamp() AT TIME ZONE 'Asia/Riyadh')::date"))
-        .scalar_one()
-    )
+    return database_calendar_date(session)
 
 
 def _load_owned_plan(
@@ -297,6 +294,10 @@ def write_target_plan(
             session.rollback()
             return legacy_replay, True
 
+        validate_profile_constraints(
+            session, principal.principal_id, profile, payload.sex, payload.birth_date
+        )
+
         if payload.effective_from < captured_date:
             raise _date_conflict("TARGET_PLAN_EFFECTIVE_DATE_PAST")
 
@@ -393,6 +394,9 @@ def write_target_plan(
             raise _date_conflict("TARGET_PLAN_DATE_BOUNDARY_CHANGED")
         session.commit()
         return response, False
+    except ProfileConstraintError as error:
+        session.rollback()
+        raise TargetPlanError(error.code, 422, error.message_ar) from error
     except TargetPlanError:
         session.rollback()
         raise

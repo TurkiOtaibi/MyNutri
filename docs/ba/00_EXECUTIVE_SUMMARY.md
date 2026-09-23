@@ -8,6 +8,8 @@ myNutri is an Arabic-first, responsive, online-only nutrition application. Supab
 email/password authentication identifies a durable Backend Principal. Each Principal
 owns private Profile, Target Plan, Diary, and idempotency data. Foods are a shared
 global catalog.
+Private LabResult facts form a standalone adult Labs domain interpreted using
+the current immutable system catalog, independently of nutrition.
 
 ## User capabilities
 
@@ -18,10 +20,14 @@ global catalog.
 - Browse, search, filter, sort, and inspect the Food catalog.
 - Create, update, delete, and read Diary entries for past, current, or future dates.
 - Read day/week nutrition totals, targets, and nutrient coverage.
+- Browse the authenticated Labs catalog; read own overview, canonical detail/chart
+  and complete history; create an atomic batch, edit date/value/unit and delete.
+  Complete Profile and age >=18 on each result date are prerequisites.
 
 ## Admin capabilities
 
-- Everything available to a normal user.
+- The existing account/nutrition capabilities above; Labs is read-only even for
+  the admin's own results, with additional selected-user overview/detail access.
 - Add, edit, and permanently delete global Foods from the same `/foods` experience.
 - Read user-monitoring pages without mutating another Principal's private data.
 
@@ -37,9 +43,16 @@ Principals. This is intentional and has no archive, restore, tombstone, or audit
 - Optional nutrient unknown is null, never zero.
 - The Nutrition Registry and integrity hashes remain; semantic Nutrition versions do not.
 - The PWA is a static shell. Personal API data is not cached for offline authority and mutations are not queued.
+- Labs stores entered facts, not Status/reference/canonical interpretation. Fresh
+  reads apply current rules and accepted DOB. Sex is immutable after first Profile
+  save; DOB cannot invalidate stored adult history. There is no nutrition effect,
+  browser personal-data persistence, polling, API caching or offline mutation queue.
 
 ## Explicitly absent
 
 Day completion/reopen status, Target Plan lifecycle labels, pending plans, legacy
 Target fallback, Food Archive/Restore, a second Admin Food UI, Sync APIs/queues,
 Food V3 schema aliases, uncategorized sentinels, and `/admin/foods` do not exist.
+Labs excludes custom tests/units/ranges/panels, editable medical catalogs, admin
+medical editing, diagnosis/treatment/emergency claims, export/sharing, pregnancy
+interpretation, automatic biomarkers and nutrition integration.

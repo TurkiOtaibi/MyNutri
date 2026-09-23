@@ -45,4 +45,5 @@ include = ["app*"]
 exclude = ["alembic*", "tests*"]
 
 [tool.setuptools.package-data]
+"app.labs" = ["*.json"]
 "app.nutrition_rules" = ["*.json"]

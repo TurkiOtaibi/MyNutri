@@ -1,15 +1,21 @@
 from datetime import date, datetime
 import math
+import re
 from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
+    StrictStr,
     field_validator,
     model_validator,
 )
+from pydantic_core import PydanticCustomError
+
+from app.labs.numbers import normalize_decimal_text
 
 from app.models import (
     ActivityLevel,
@@ -24,7 +30,7 @@ from app.models import (
     UnitBasis,
 )
 
-from app.nutrition_rules.calculation import age_on
+from app.core.calendar import age_on
 from app.nutrition_rules.registry import PRIMARY_CATEGORIES, SUBCATEGORIES_BY_PRIMARY
 from app.services.food_validation_errors import (
     ABOVE_MAX_MESSAGE,
@@ -835,3 +841,189 @@ class WeekSummary(BaseModel):
     end: date
     days: list[DaySummary]
     weekly_totals: NutritionTotals
+
+
+class LabCreateRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    test_key: StrictStr
+    entered_value: StrictStr
+    entered_unit: StrictStr
+
+    @field_validator("entered_value", mode="before")
+    @classmethod
+    def plain_decimal(cls, value: Any) -> str:
+        try:
+            return normalize_decimal_text(value)
+        except ValueError as error:
+            if str(error) == "The normalized decimal exceeds 128 characters":
+                raise PydanticCustomError(
+                    "LAB_VALUE_TOO_LONG", "تتجاوز القيمة حد التخزين المسموح."
+                ) from error
+            raise PydanticCustomError(
+                "LAB_DECIMAL_INVALID", "أدخل قيمة رقمية صريحة غير سالبة."
+            ) from error
+
+
+class LabCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    test_date: date
+    results: list[LabCreateRow] = Field(min_length=1, max_length=51)
+
+    @field_validator("test_date", mode="before")
+    @classmethod
+    def iso_date_string(cls, value: Any) -> date:
+        if not isinstance(value, str) or re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value) is None:
+            raise ValueError("A YYYY-MM-DD date string is required")
+        return date.fromisoformat(value)
+
+    @field_validator("results", mode="before")
+    @classmethod
+    def populated_batch(cls, value: Any) -> Any:
+        if isinstance(value, list) and not value:
+            raise PydanticCustomError("LAB_BATCH_EMPTY", "أدخل نتيجة واحدة على الأقل.")
+        return value
+
+
+class LabResultPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    test_date: date
+    entered_value: StrictStr
+    entered_unit: StrictStr
+    expected_updated_at: AwareDatetime
+
+    @field_validator("entered_value", mode="before")
+    @classmethod
+    def plain_decimal(cls, value: Any) -> str:
+        return LabCreateRow.plain_decimal(value)
+
+    @field_validator("test_date", mode="before")
+    @classmethod
+    def iso_date_string(cls, value: Any) -> date:
+        return LabCreateRequest.iso_date_string(value)
+
+
+class LabCreateReceipt(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    receipt_version: Literal[1] = 1
+    result_ids: list[UUID]
+
+
+class LabFieldError(BaseModel):
+    loc: list[str | int]
+    field: str | None = None
+    test_key: str | None = None
+    code: str | None = None
+    msg: str
+    type: str
+
+
+class LabErrorResponse(BaseModel):
+    detail: list[LabFieldError]
+
+
+class LabStatus(BaseModel):
+    code: str
+    label_ar: str
+    tone: str
+
+
+class LabStatusZone(BaseModel):
+    status: LabStatus
+    low: str | None
+    high: str | None
+    low_inclusive: bool
+    high_inclusive: bool
+
+
+class LabEligibility(BaseModel):
+    allowed: bool
+    reason: Literal["profile_required", "adult_only", "read_only"] | None = None
+
+
+class LabResultResponse(BaseModel):
+    id: UUID
+    test_key: str
+    test_date: date
+    entered_value: str
+    entered_unit: str
+    created_at: datetime
+    updated_at: datetime
+    display_value: str
+    display_unit: str
+    display_is_approximate: bool
+    status: LabStatus
+    age_years: int
+    reference_zones: list[LabStatusZone]
+    medical_rules_version: str
+
+
+class LabCatalogTest(BaseModel):
+    test_key: str
+    name_ar: str
+    name_en: str
+    abbreviation: str | None
+    primary_category: str
+    measurement: str
+    specimen_context: str
+    default_input_unit: str
+    canonical_unit: str
+    supported_units: list[str]
+    fasting_assumption: str
+    panels: list[str]
+
+
+class LabCatalogCategory(BaseModel):
+    key: str
+    name_ar: str
+    order: int
+
+
+class LabCatalogPanel(BaseModel):
+    key: str
+    name_ar: str
+    name_en: str
+    test_keys: list[str]
+
+
+class LabCatalogResponse(BaseModel):
+    medical_rules_version: str
+    categories: list[LabCatalogCategory]
+    panels: list[LabCatalogPanel]
+    tests: list[LabCatalogTest]
+
+
+class LabOverviewItem(BaseModel):
+    test_key: str
+    latest: LabResultResponse
+    last_updated_at: datetime
+
+
+class LabOverviewResponse(BaseModel):
+    items: list[LabOverviewItem]
+    eligibility: LabEligibility
+    server_today: date
+    medical_rules_version: str
+    read_only: bool
+
+
+class LabChartZoneSegment(BaseModel):
+    from_date: date
+    to_date_exclusive: date
+    age_min: int
+    zones: list[LabStatusZone]
+
+
+class LabTestDetailResponse(BaseModel):
+    test: LabCatalogTest
+    results: list[LabResultResponse]
+    chart_zones: list[LabChartZoneSegment]
+    reference_at_date: date
+    reference_zones: list[LabStatusZone]
+    eligibility: LabEligibility
+    server_today: date
+    medical_rules_version: str
+    read_only: bool

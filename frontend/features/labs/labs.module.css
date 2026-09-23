@@ -1,0 +1,89 @@
+.labsPage {
+  display: grid;
+  gap: 18px;
+}
+.labsPage > a, .identity a { display: inline-flex; align-items: center; width: fit-content; min-height: 44px; }
+
+.heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.heading h1 { margin: 0; font-size: 1.8rem; }
+.heading p { margin: 6px 0 0; color: var(--muted); }
+
+.tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); }
+.tabs button { min-height: 44px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--muted); padding: 8px 14px; font-weight: 800; }
+.tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--ink); }
+
+.panel { display: grid; gap: 14px; }
+.notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-inline-start: 4px solid var(--accent); border-radius: var(--radius); background: var(--surface-strong); padding: 12px 14px; }
+.controls { display: grid; grid-template-columns: minmax(220px, 1fr) repeat(2, minmax(150px, auto)); gap: 12px; align-items: end; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 14px; }
+.controls label { display: grid; gap: 5px; color: var(--muted); font-size: .8rem; font-weight: 800; }
+.controls input, .controls select { min-width: 0; min-height: 44px; border: 1px solid var(--line); border-radius: var(--radius); background: white; color: var(--ink); padding: 8px 10px; }
+.controls input:focus, .controls select:focus { border-color: var(--accent); outline: 3px solid color-mix(in srgb, var(--accent) 22%, white); }
+.resultBar { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .85rem; }
+.resultBar strong { color: var(--accent-strong); }
+.rows { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 14px 16px; box-shadow: 0 3px 14px rgba(20, 32, 24, .04); }
+.identity, .latest { display: grid; gap: 4px; }
+.identity bdi, .latest time, .noResult { color: var(--muted); font-size: .82rem; }
+.latest { justify-items: end; text-align: end; }
+.status { width: fit-content; border-radius: 999px; padding: 3px 9px; font-size: .78rem; font-weight: 800; }
+.status[data-tone="within"] { background: color-mix(in srgb, var(--accent) 12%, white); color: var(--accent-strong); }
+.status[data-tone="caution"] { background: color-mix(in srgb, var(--warning) 13%, white); color: #6b4300; }
+.status[data-tone="outside"] { background: color-mix(in srgb, var(--danger) 11%, white); color: #7a1b14; }
+.empty { display: grid; justify-items: center; gap: 6px; min-height: 190px; align-content: center; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--surface); color: var(--muted); text-align: center; padding: 24px; }
+.empty strong { color: var(--ink); }
+.loading { min-height: 220px; display: grid; place-items: center; color: var(--muted); }
+
+.historyFigure { margin: 0; min-width: 0; border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; background: var(--surface); }
+.historyFigure h2, .referencePanel h2 { margin-top: 0; }
+.historyFigure figcaption { color: var(--muted); font-size: .85rem; }
+.chartUnit { text-align: start; overflow-wrap: anywhere; }
+.chartPlot { position: relative; width: 100%; height: 280px; }
+.chartPlot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.chartPlot text { fill: var(--ink); font-size: 10px; }
+.chartBand { fill: var(--surface-strong); }
+.chartBand[data-tone="within"] { fill: color-mix(in srgb, var(--accent) 14%, white); }
+.chartBand[data-tone="caution"] { fill: color-mix(in srgb, var(--warning) 16%, white); }
+.chartBand[data-tone="outside"] { fill: color-mix(in srgb, var(--danger) 12%, white); }
+.chartGrid { stroke: var(--line); stroke-width: .5; }
+.chartLine { fill: none; stroke: var(--accent-strong); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.chartPoint { position: absolute; transform: translate(-50%, -50%); width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
+.chartPoint span { width: 9px; height: 9px; border: 2px solid var(--accent-strong); border-radius: 50%; background: white; }
+.chartPoint[aria-pressed="true"] { z-index: 1; }
+.chartPoint[aria-pressed="true"] span { background: var(--accent-strong); }
+.chartPoint:focus-visible { z-index: 2; outline: 3px solid var(--accent-strong); outline-offset: -4px; }
+.referencePanel { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+.referenceZones { display: grid; gap: 10px; padding: 0; list-style: none; }
+.referenceZones li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; min-width: 0; }
+.exactValue { min-width: 0; overflow-wrap: anywhere; }
+.historyRow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); padding-block: 12px; }
+@media (max-width: 500px) { .historyRow { grid-template-columns: minmax(0, 1fr); justify-items: start; } }
+
+.batchBackdrop { position: fixed; inset: 0; z-index: 80; background: rgb(0 0 0 / 45%); }
+.batchDialog { position: fixed; inset: 50% auto auto 50%; transform: translate(-50%, -50%); z-index: 81; width: min(680px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; background: var(--surface); color: var(--ink); }
+.batchDialog h2 { margin-top: 0; }
+.batchSteps { display: flex; gap: 24px; padding-inline-start: 22px; color: var(--muted); }
+.batchSteps [aria-current="step"] { color: var(--ink); font-weight: 800; }
+.batchFields { display: grid; gap: 12px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.batchFields label { display: grid; gap: 6px; min-width: 0; }
+.batchFields input:not([type="checkbox"]), .batchFields select { min-width: 0; width: 100%; min-height: 44px; background: white; color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; }
+.batchFields input:focus, .batchFields select:focus { outline: 3px solid color-mix(in srgb, var(--accent) 22%, white); border-color: var(--accent); }
+.batchFields .batchChoice { display: flex; align-items: center; min-height: 44px; gap: 10px; }
+.batchChoice input { width: 20px; height: 20px; flex-shrink: 0; }
+.batchRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 150px); gap: 12px; min-width: 0; margin: 0; padding: 14px 0; border: 0; border-bottom: 1px solid var(--line); }
+.batchRow legend { grid-column: 1 / -1; max-width: 100%; padding: 0; overflow-wrap: anywhere; }
+.batchError { color: #7a1b14; }
+.batchError p { margin: 6px 0; }
+.batchActions { display: flex; justify-content: end; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+
+@media (max-width: 700px) {
+  .heading, .notice { align-items: stretch; flex-direction: column; }
+  .controls { grid-template-columns: 1fr; }
+  .row { grid-template-columns: 1fr; }
+  .latest { justify-items: start; text-align: start; }
+}

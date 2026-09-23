@@ -85,10 +85,12 @@ test("admin navigation and monitoring remain explicit and read-only", async ({ p
   await page.goto("/admin/users");
   await expect(page.getByRole("heading", { name: "المستخدمون" })).toBeVisible();
   await expect(page.getByRole("link", { name: "الإدارة" })).toBeVisible();
+  await expect(page.locator('nav a[href="/labs"]')).toHaveText("التحاليل");
   const firstUser = page.locator(".admin-user-row").first();
   await expect(firstUser).toBeVisible();
   await firstUser.click();
   await expect(page.getByText("وضع قراءة فقط")).toBeVisible();
+  await expect(page.getByRole("link", { name: "عرض التحاليل", exact: true })).toHaveAttribute("href", /\/admin\/users\/[^/]+\/labs$/);
   await expect(page.getByRole("button", { name: /حفظ|تعديل|حذف/ })).toHaveCount(0);
   await expect(page.locator("pre")).toHaveCount(0);
 });
