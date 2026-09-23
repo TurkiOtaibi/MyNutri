@@ -7,11 +7,70 @@ Status: supporting requirements. Backend schemas and database constraints are ex
 | Field | Required | Rule |
 |---|---:|---|
 | `id` | Yes | Durable UUID ownership key |
-| `auth_user_id` | No | Unique Supabase subject when linked/provisioned |
-| `email` | No | Unique case-insensitively when present; maximum 320 |
-| `display_name` | No | Maximum 120 |
-| `role` | Yes | `user` or `admin`; never accepted from browser metadata |
-| `status` | Yes | `active` or `disabled` |
+| `auth_user_id` | No | Unique Supabase subject when linked; cleared only after confirmed Auth deletion |
+| `email` | No | Unique case-insensitively when present; maximum 320; erased on deleted tombstone |
+| `display_name` | No | Maximum 120; erased on deleted tombstone |
+| `role` | Yes | `user` or `admin`; never accepted from browser metadata or account-management input; partial unique index permits at most one Admin |
+| `status` | Yes | Approved lifecycle target: `provisioning`, `active`, `disabled`, `deleting`, `deleted` |
+| creation idempotency key | For Admin creation | Stored with the `provisioning` Principal so the same-key retry resumes rather than creates another account |
+
+These account-lifecycle fields are approved target authority pending implementation;
+the docs-only change does not claim the current schema already supports them.
+Admin creates a normal user with email, display name, and an initial password.
+Admin may edit display name, reset password while revoking the user's existing
+Supabase sessions through FastAPI, and enable/disable; email and role
+cannot be changed through the product. Passwords are input-only: never stored,
+logged, or returned by myNutri. Unknown and non-active identities receive the
+existing `401 INVALID_CREDENTIAL`. `deleting` remains locked out and Admin-visible
+as incomplete until a retry reaches the scrubbed `deleted` tombstone. A
+`provisioning` account may be deleted through the same saga; an absent Supabase
+identity counts as success. Global
+Foods retain creator/updater Principal IDs and display a neutral label.
+The irreversible-delete confirmation requires the Admin to type the target
+user's email; a mismatch prevents submission.
+
+## Approved Admin account-management Arabic copy
+
+The following 34 strings are Product Owner-approved exact copy for the
+Admin account-management UI and API errors. Implementation is still pending.
+Existing approved authentication, Labs, and Food strings remain unchanged.
+
+| Context | Approved exact Arabic string |
+|---|---|
+| Account-management heading | إدارة المستخدمين |
+| Create action | إضافة مستخدم |
+| Display-name field | الاسم المعروض |
+| Initial-password field | كلمة المرور الأولية |
+| Provisioning status | قيد الإنشاء |
+| Active status | نشط |
+| Disabled status | معطّل |
+| Creation retry action | إعادة محاولة الإنشاء |
+| Create submit | إنشاء المستخدم |
+| Edit action | تعديل المستخدم |
+| Save edit | حفظ التغييرات |
+| Password-reset action | إعادة تعيين كلمة المرور |
+| New-password field | كلمة المرور الجديدة |
+| Enable action | تفعيل المستخدم |
+| Disable action | تعطيل المستخدم |
+| Permanent-delete action | حذف المستخدم نهائيًا |
+| Irreversible-delete dialog title | حذف المستخدم نهائيًا؟ |
+| Irreversible-delete dialog body | سيُحذف حساب هذا المستخدم وجميع بياناته الخاصة نهائيًا. لا يمكن التراجع عن هذا الإجراء. |
+| Delete confirmation instruction | اكتب البريد الإلكتروني للمستخدم لتأكيد الحذف النهائي. |
+| Delete confirmation mismatch | البريد الإلكتروني المدخل لا يطابق بريد المستخدم. |
+| Incomplete-deletion status | حذف غير مكتمل |
+| Incomplete-deletion explanation | تعذر إكمال حذف المستخدم. حسابه معطّل ويمكنك إعادة المحاولة. |
+| Deletion retry action | إعادة محاولة الحذف |
+| Deleted Food-attribution label | مستخدم محذوف |
+| Admin self-mutation rejection | لا يمكن تعطيل حساب المشرف أو حذفه أو تغيير دوره. |
+| Second-Admin rejection | لا يمكن إنشاء مشرف آخر. |
+| Duplicate-email rejection | هذا البريد الإلكتروني مستخدم بالفعل. |
+| Incomplete-create explanation | تعذر إكمال إنشاء المستخدم. أعد المحاولة. |
+| Password-reset failure | تعذر إعادة تعيين كلمة المرور. حاول مرة أخرى. |
+| Weak/rejected password (create or reset) | كلمة المرور غير مقبولة. اختر كلمة مرور أقوى وحاول مرة أخرى. |
+| Create success | تم إنشاء المستخدم. |
+| Edit success | تم حفظ تغييرات المستخدم. |
+| Enable/disable success | تم تحديث حالة المستخدم. |
+| Permanent-delete success | تم حذف المستخدم نهائيًا. |
 
 ## Profile input
 

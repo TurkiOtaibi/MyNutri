@@ -2,6 +2,9 @@
 
 Status: current architecture and data authority.
 
+The Admin-managed account lifecycle in this document is an approved target,
+pending code and migration. The docs-only record does not claim it runs today.
+
 ## System shape
 
 myNutri has a Next.js Arabic/RTL frontend, FastAPI Backend, PostgreSQL schema
@@ -31,6 +34,49 @@ Principal's Profile. Food is deliberately global. Private routes derive the owne
 from `PrincipalContext`; clients do not submit another user's Principal ID.
 Catalog tests, categories, panels, statuses, reference zones, canonical values
 and medical-rule versions are not database entities.
+
+## Admin-managed account lifecycle (pending implementation)
+
+`Principal` remains the durable identity and Food-attribution target. A database
+partial unique index on `role='admin'` enforces at most one Admin; bootstrap
+refuses a second, while release preflight verifies one exists. No API changes
+roles or manages the Admin's own role/status/deletion. The normal-user lifecycle
+statuses are `provisioning`, `active`, `disabled`, `deleting`, and `deleted`.
+Existing Principals remain. Unknown or non-active Auth identities receive
+`401 INVALID_CREDENTIAL` without Principal creation. Public self-registration
+is removed.
+
+Only the Admin account-management surface creates normal users, edits display
+name, resets password (revoking existing Supabase sessions through FastAPI),
+enables/disables, and starts/retries permanent deletion.
+Email is immutable in this surface. Initial and reset passwords are Admin-set
+input only: never persisted, logged, or returned. FastAPI alone calls privileged
+Supabase Auth using a backend-only Service Role credential for create, reset,
+and delete; bootstrap remains permitted, and no other runtime route uses it.
+
+Creation commits a `provisioning` Principal with an idempotency key first,
+creates the Supabase identity second, and activates third. Same-key retries
+resume. A `provisioning` account never authenticates and may be deleted through
+the same saga as another normal-user account. Deletion commits
+`deleting` under the Principal lock before any purge. The second transaction
+locks that Principal and purges all owned private rows, including Diary,
+Target Plans, Profile, Labs, idempotency records, and any other private
+dependent table. Supabase Auth deletion follows; an already absent identity
+is success. Only then does the app clear the Auth link and erase email/display
+name while marking the durable row `deleted`. Failure at any step leaves a
+locked-out `deleting` state visible to Admin as incomplete with a retry action.
+An old JWT cannot bypass the per-request Principal status check.
+
+`Food.created_by_principal_id` and `Food.updated_by_principal_id` keep pointing
+to the deleted Principal tombstone. Global Food rows and their attribution IDs
+are never rewritten by account deletion; UI presents the scrubbed owner with
+a neutral deleted-user label. Every writer of Principal-owned data must lock
+the Principal first and recheck `active`; this serializes writes with purge so
+no private row can be inserted after it.
+
+Admin account mutation routes are distinct from selected-user monitoring.
+Selected Profile, Diary, Target Plan, and Labs data remain read-only to Admin;
+the lifecycle does not add a general impersonation or private-data write path.
 
 ## Profile and TargetPlan
 

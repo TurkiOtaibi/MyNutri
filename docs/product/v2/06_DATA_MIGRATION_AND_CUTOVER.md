@@ -1,5 +1,50 @@
 # V2 Data Migration and Cutover
 
+The Admin-managed lifecycle below is approved migration authority pending a
+future implementation revision. This docs-only record creates no migration and
+does not change the current sole head `e8b7a42f6c31`.
+
+## Admin-managed account lifecycle transition (pending implementation)
+
+- Preflight inventories Principals by role/status and their Supabase Auth links.
+  More than one Admin, ambiguous Auth links, or private rows without a resolvable
+  owner stop cutover. A partial unique index on `role='admin'` enforces at most
+  one Admin; bootstrap and release preflight establish exactly one. Existing
+  Principals and their private data are not removed by this transition.
+- Expand Principal status to `active`, `disabled`, `provisioning`, `deleting`,
+  and `deleted`, with a durable creation idempotency key and the indexes and
+  constraints required for resumable lifecycle operations. An unknown or
+  non-active Supabase identity returns `401 INVALID_CREDENTIAL`; automatic
+  Principal provisioning and public signup are retired. The public signup
+  setting must be disabled as part of the coordinated cutover.
+- Introduce backend-only Service Role configuration for FastAPI Admin account
+  creation, password reset, and Auth deletion; bootstrap remains permitted.
+  No frontend variable, response, or log may contain the credential or a
+  user password. Rollout must prove these settings before enabling management.
+- Deletion retains the Principal row as a scrubbed `deleted` tombstone so
+  global `Food.created_by_principal_id` and `Food.updated_by_principal_id`
+  continue to reference it. Private `DiaryEntry`, `TargetPlan`, `Profile`,
+  `LabResult`, `IdempotencyRecord`, and every other Principal-owned dependent
+  row are purged in one Principal-locked transaction, in dependency-safe order.
+  Food rows and attribution IDs are never deleted or rewritten by user deletion.
+- Every Principal-owned-data writer must take the Principal lock and verify
+  `active` before insertion/update, including writes concurrent with deletion.
+  No private row can appear after the locked purge. The lifecycle cutover is
+  blocked until this holds for all writers, not only new account endpoints.
+- Cross-system work is resumable, not a single database transaction. Creation
+  commits `provisioning` plus key, creates the Auth identity, then activates.
+  Deletion commits `deleting`, purges private rows transactionally, deletes the
+  Auth identity (already absent succeeds), then scrubs and marks `deleted`.
+  Any failure remains locked out in `deleting`, visible for Admin retry; do not
+  clear the Auth link before confirmed Auth deletion. Retry must not create a
+  second identity or re-create purged private data.
+
+Clean and populated disposable PostgreSQL migration tests must prove the
+single-Admin index, status/ownership constraints, preservation of existing
+accounts and Foods, and both complete and interrupted lifecycle states. A
+production migration or Auth configuration change requires its own release
+authorization and preflight; this document does not perform either action.
+
 ## Migration topology
 
 The simplified Food/current-Diary contract is introduced by Alembic revision:
