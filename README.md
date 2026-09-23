@@ -45,7 +45,9 @@ Backend variable names:
 - `SUPABASE_JWKS_NEGATIVE_CACHE_MAX_ENTRIES`
 - `SUPABASE_JWKS_MAX_KEYS`
 - `SUPABASE_JWT_KID_MAX_LENGTH`
-- `SUPABASE_SERVICE_ROLE_KEY` for explicitly authorized server-side administrative tools only
+- `SUPABASE_SERVICE_ROLE_KEY` for Admin bootstrap and, after the approved
+  account-lifecycle implementation, only FastAPI Admin account creation,
+  password reset, and Auth identity deletion; never other runtime paths
 - `ALLOWED_ORIGINS`
 - `CALENDAR_TIMEZONE`
 

@@ -3,6 +3,9 @@
 Status: Implementation authority
 Release: V2 multi-user, shared Food catalog, simplified Food model, standalone Labs
 
+The Admin-managed account lifecycle below is approved Product authority pending
+implementation. It does not describe behavior already shipped by this docs-only change.
+
 ## Objective
 
 V2 uses Supabase email/password accounts, durable Principal ownership, `user`
@@ -15,6 +18,38 @@ Diary, Target Plans, nutrition calculations, recommendations or Progress.
 ## Authoritative decisions
 
 - `Principal.id` is the durable private-resource ownership key.
+- Exactly one Admin is permitted. Only the bootstrap tool establishes that Admin;
+  a database partial unique index on `role='admin'` prevents a second one, and
+  bootstrap refuses when an Admin already exists. No product API grants or
+  changes the Admin role. The Admin cannot change their own role, disable
+  themselves, or delete themselves.
+- Accounts are Admin-created only. Self-registration and automatic Principal
+  provisioning for unknown Supabase identities are retired. Unknown and
+  non-active identities receive `401 INVALID_CREDENTIAL`; existing Principals
+  are preserved. Admin account management is separate from read-only monitoring
+  of another user's Profile, Diary, Target Plans, and Labs.
+- An Admin creates a normal user with email, display name, and an initial
+  Admin-set password. They may edit display name, reset password, enable or
+  disable the user, and request permanent deletion. Email changes are out of
+  scope. Passwords are never stored, logged, or returned by myNutri.
+- Creation is resumable: a `provisioning` Principal with an idempotency key is
+  committed before creating the Supabase Auth identity, then activated. A retry
+  with the same key resumes; `provisioning` cannot authenticate.
+- Permanent deletion is a fail-closed, resumable saga: commit `deleting` under
+  the Principal lock; purge all Principal-owned private data in one locked
+  transaction; delete the Supabase Auth identity (already absent succeeds);
+  then scrub email/display name and clear the Auth link when marking `deleted`.
+  Any failure leaves the account locked out in `deleting`, visible to the Admin
+  as incomplete with a retry action. Existing tokens fail the per-request
+  Principal status check.
+- Global Foods survive deletion. Their creator/updater attribution retains the
+  scrubbed Principal tombstone and displays a neutral deleted-user label.
+  No Food history is rewritten. Every Principal-owned-data writer rechecks
+  `active` under the Principal lock so nothing private can be written after purge.
+- Privileged Supabase Auth calls for Admin creation, password reset, and identity
+  deletion run only through FastAPI using a backend-only Service Role credential;
+  the bootstrap tool remains permitted. The credential is never exposed to the
+  frontend, logged, or returned, and no other runtime path may use it.
 - Foods form a global catalog; Food mutation requires `admin`.
 - Food taxonomy has exactly `primary_category` and `subcategory`.
 - Food nutrition provenance is only `nutrition_data_source`, with `official`

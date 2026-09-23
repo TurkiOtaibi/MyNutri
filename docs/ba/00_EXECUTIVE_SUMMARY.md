@@ -13,7 +13,8 @@ the current immutable system catalog, independently of nutrition.
 
 ## User capabilities
 
-- Sign up, sign in, recover/reset a password, and sign out.
+- Sign in, recover/reset their own password, and sign out. Self-registration is
+  retired; accounts are created only through Admin management.
 - Maintain the latest confirmed Profile inputs and preview calculated targets.
 - Create immutable Target Plan revisions effective on Riyadh today or a future date.
 - Read current, historical, and future-effective Target Plans by date.
@@ -30,6 +31,15 @@ the current immutable system catalog, independently of nutrition.
   the admin's own results, with additional selected-user overview/detail access.
 - Add, edit, and permanently delete global Foods from the same `/foods` experience.
 - Read user-monitoring pages without mutating another Principal's private data.
+- Create normal-user accounts with Admin-set initial passwords; edit display
+  names, reset passwords, enable/disable, and permanently delete those accounts
+  through the separate account-management surface. Exactly one Admin exists;
+  the Admin cannot disable/delete self or change roles. Interrupted creation or
+  deletion remains locked out and resumable. Global Foods survive user deletion.
+
+The Admin-managed lifecycle above is approved Product authority pending
+implementation. New Arabic UI/error copy is drafted in the field dictionary
+and requires Product Owner approval before use.
 
 Deleting a Food permanently deletes every referencing Diary entry across all
 Principals. This is intentional and has no archive, restore, tombstone, or audit event.

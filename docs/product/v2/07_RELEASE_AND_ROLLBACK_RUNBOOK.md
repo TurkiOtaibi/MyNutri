@@ -3,6 +3,42 @@
 Status: Operational authority. This document does not authorize a deployment or
 production mutation.
 
+## Admin-managed account lifecycle release gates (pending implementation)
+
+The approved account lifecycle requires a separate release review and does not
+change the current deployed revision by this documentation update. Before
+cutover, verify exactly one bootstrap Admin, the partial unique Admin-role
+index, existing Principal/Auth-link integrity, full private-FK inventory, and
+Food attribution to Principals. A count above one Admin, unresolved ownership,
+or an unsafe migration stops rollout. Establish the single Admin before making
+Admin-created accounts the only admission path.
+
+Release backend admission and all Principal-owned writer status/lock checks
+together with the lifecycle schema. Configure the Service Role credential only
+for FastAPI Admin create/reset/delete and bootstrap; verify it is absent from
+frontend/public variables, responses, and logs. Disable public Supabase signup
+and remove the sign-up UI in the coordinated cutover. Direct signup, unknown
+Auth identities, and all non-active statuses must fail application admission.
+Keep the current Admin's ability to read selected Profile/Diary/Labs without
+write access to those resources.
+
+In an explicitly authorized disposable environment, verify interrupted create
+resumes with the same idempotency key; interrupted deletion remains `deleting`,
+rejects even pre-existing access tokens, is visible to Admin as incomplete,
+and resumes to a scrubbed `deleted` tombstone. Verify the locked purge removes
+all private dependents while global Foods and their attribution survive. A
+missing Supabase identity counts as a successful deletion retry. Validate
+concurrent writers cannot insert private data after the purge and that no API
+can create or disable/delete the single Admin.
+
+Do not treat a partially completed saga as a successful deletion or re-enable
+an account in `deleting`. Rollback across irreversible Auth/private-data
+deletion cannot reconstruct those records from code or a reverse migration;
+pause new lifecycle operations and use an explicitly authorized matching
+database/Auth recovery procedure or roll forward to complete the saga.
+New UI/error Arabic copy remains pending Product Owner approval in the BA field
+dictionary and cannot ship before approval.
+
 ## Release identity
 
 The current migration head is private Labs persistence revision `e8b7a42f6c31`,
