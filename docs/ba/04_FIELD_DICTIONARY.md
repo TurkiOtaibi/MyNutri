@@ -34,8 +34,8 @@ user's email; a mismatch prevents submission.
 
 ## Approved Admin account-management Arabic copy
 
-The following 34 strings are Product Owner-approved exact copy for the
-Admin account-management UI and API errors. Implementation is still pending.
+The following 38 strings are Product Owner-approved exact copy for the
+Admin account-management UI and API errors. Production activation is still pending.
 Existing approved authentication, Labs, and Food strings remain unchanged.
 
 | Context | Approved exact Arabic string |
@@ -68,10 +68,14 @@ Existing approved authentication, Labs, and Food strings remain unchanged.
 | Second-Admin rejection | لا يمكن إنشاء مشرف آخر. |
 | Duplicate-email rejection | هذا البريد الإلكتروني مستخدم بالفعل. |
 | Incomplete-create explanation | تعذر إكمال إنشاء المستخدم. أعد المحاولة. |
+| Edit failure | تعذر حفظ تغييرات المستخدم. حاول مرة أخرى. |
+| Enable/disable failure | تعذر تحديث حالة المستخدم. حاول مرة أخرى. |
+| Network/unreachable server (any action) | تعذر الاتصال بالخادم. حاول مرة أخرى. |
 | Password-reset failure | تعذر إعادة تعيين كلمة المرور. حاول مرة أخرى. |
 | Weak/rejected password (create or reset) | كلمة المرور غير مقبولة. اختر كلمة مرور أقوى وحاول مرة أخرى. |
 | Create success | تم إنشاء المستخدم. |
 | Edit success | تم حفظ تغييرات المستخدم. |
+| Password-reset success | تمت إعادة تعيين كلمة المرور. |
 | Enable/disable success | تم تحديث حالة المستخدم. |
 | Permanent-delete success | تم حذف المستخدم نهائيًا. |
 

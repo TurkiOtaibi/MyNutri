@@ -3,20 +3,16 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import {
-  ApiError, type AdminAccount, createAdminAccount, deleteAdminAccount, editAdminAccount,
+  type AdminAccount, createAdminAccount, deleteAdminAccount, editAdminAccount,
   listAdminAccounts, resetAdminAccountPassword, retryAdminAccountCreation,
   retryAdminAccountDeletion, setAdminAccountEnabled
 } from "@/lib/api";
+import { accountActionErrorMessage, accountActionSuccessMessage, type AccountAction } from "@/lib/admin-account-messages";
 
 const statusLabels: Record<AdminAccount["status"], string> = {
   active: "نشط", disabled: "معطّل", provisioning: "قيد الإنشاء",
   deleting: "حذف غير مكتمل", deleted: "مستخدم محذوف"
 };
-
-function message(error: unknown): string {
-  if (error instanceof ApiError && error.message && !error.message.startsWith("API request")) return error.message;
-  return "تعذر إكمال إنشاء المستخدم. أعد المحاولة.";
-}
 
 function DeleteDialog({ account, onClose, onDelete }: {
   account: AdminAccount;
@@ -43,7 +39,7 @@ function DeleteDialog({ account, onClose, onDelete }: {
     }
     setBusy(true);
     try { await onDelete(email.trim()); }
-    catch (failure) { setError(message(failure)); setBusy(false); emailInput.current?.focus(); }
+    catch (failure) { setError(accountActionErrorMessage(failure, "delete")); setBusy(false); emailInput.current?.focus(); }
   }
   return <dialog ref={dialog} className="account-delete-dialog" onClose={onClose} aria-labelledby="delete-account-title" aria-describedby="delete-account-body">
     <form onSubmit={submit}>
@@ -72,10 +68,10 @@ export function AdminAccountsPage() {
   const [deleteTarget, setDeleteTarget] = useState<AdminAccount | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
-  async function execute(action: () => Promise<unknown>, success: string) {
+  async function execute(action: () => Promise<unknown>, kind: AccountAction) {
     setBusy(true); setNotice("");
-    try { await action(); await client.invalidateQueries({ queryKey: ["admin-accounts"] }); setNotice(success); setMode(null); setSelected(null); setPassword(""); }
-    catch (error) { setNotice(message(error)); }
+    try { await action(); await client.invalidateQueries({ queryKey: ["admin-accounts"] }); setNotice(accountActionSuccessMessage(kind)); setMode(null); setSelected(null); setPassword(""); }
+    catch (error) { setNotice(accountActionErrorMessage(error, kind)); }
     finally { setBusy(false); }
   }
   function select(account: AdminAccount, nextMode: "edit" | "password" | "retry-create") {
@@ -90,8 +86,8 @@ export function AdminAccountsPage() {
         try {
           await createAdminAccount({ email, display_name: createName, initial_password: createPassword }, key);
           await client.invalidateQueries({ queryKey: ["admin-accounts"] });
-          setEmail(""); setCreateName(""); setCreatePassword(""); setKey(crypto.randomUUID()); setNotice("تم إنشاء المستخدم.");
-        } catch (error) { setNotice(message(error)); }
+          setEmail(""); setCreateName(""); setCreatePassword(""); setKey(crypto.randomUUID()); setNotice(accountActionSuccessMessage("create"));
+        } catch (error) { setNotice(accountActionErrorMessage(error, "create")); }
         finally { setBusy(false); }
       }}>
         <label>البريد الإلكتروني<input type="email" dir="ltr" autoComplete="off" required value={email} onChange={event => { setEmail(event.target.value); setKey(crypto.randomUUID()); }} /></label>
@@ -109,11 +105,11 @@ export function AdminAccountsPage() {
         <div><span>{statusLabels[account.status]}</span>
           <div className="actions">
             {account.status === "provisioning" && <button className="btn" onClick={() => select(account, "retry-create")}>إعادة محاولة الإنشاء</button>}
-            {account.status === "deleting" && <button className="btn" disabled={busy} onClick={() => execute(() => retryAdminAccountDeletion(account.principal_id), "تم حذف المستخدم نهائيًا.")}>إعادة محاولة الحذف</button>}
+            {account.status === "deleting" && <button className="btn" disabled={busy} onClick={() => execute(() => retryAdminAccountDeletion(account.principal_id), "retry-delete")}>إعادة محاولة الحذف</button>}
             {(account.status === "active" || account.status === "disabled") && <>
               <button className="btn" onClick={() => select(account, "edit")}>تعديل المستخدم</button>
               <button className="btn" onClick={() => select(account, "password")}>إعادة تعيين كلمة المرور</button>
-              <button className="btn" disabled={busy} onClick={() => execute(() => setAdminAccountEnabled(account.principal_id, account.status !== "active"), "تم تحديث حالة المستخدم.")}>{account.status === "active" ? "تعطيل المستخدم" : "تفعيل المستخدم"}</button>
+              <button className="btn" disabled={busy} onClick={() => execute(() => setAdminAccountEnabled(account.principal_id, account.status !== "active"), "status")}>{account.status === "active" ? "تعطيل المستخدم" : "تفعيل المستخدم"}</button>
             </>}
             {account.status !== "deleting" && <button className="btn" onClick={() => setDeleteTarget(account)}>حذف المستخدم نهائيًا</button>}
           </div>
@@ -129,9 +125,9 @@ export function AdminAccountsPage() {
       <h2>{mode === "edit" ? "تعديل المستخدم" : mode === "password" ? "إعادة تعيين كلمة المرور" : "إعادة محاولة الإنشاء"}</h2>
       <form className="account-form" onSubmit={event => {
         event.preventDefault();
-        if (mode === "edit") void execute(() => editAdminAccount(selected.principal_id, { display_name: displayName }), "تم حفظ تغييرات المستخدم.");
-        else if (mode === "password") void execute(() => resetAdminAccountPassword(selected.principal_id, password), "تم حفظ تغييرات المستخدم.");
-        else void execute(() => retryAdminAccountCreation(selected.principal_id, password), "تم إنشاء المستخدم.");
+        if (mode === "edit") void execute(() => editAdminAccount(selected.principal_id, { display_name: displayName }), "edit");
+        else if (mode === "password") void execute(() => resetAdminAccountPassword(selected.principal_id, password), "password");
+        else void execute(() => retryAdminAccountCreation(selected.principal_id, password), "retry-create");
       }}>
         {mode === "edit" ? <label>الاسم المعروض<input required value={displayName} onChange={event => setDisplayName(event.target.value)} /></label>
           : <label>{mode === "password" ? "كلمة المرور الجديدة" : "كلمة المرور الأولية"}<input type="password" autoComplete="new-password" required value={password} onChange={event => setPassword(event.target.value)} /></label>}
@@ -140,7 +136,7 @@ export function AdminAccountsPage() {
     </section>}
     {deleteTarget && <DeleteDialog account={deleteTarget} onClose={() => setDeleteTarget(null)} onDelete={async confirmedEmail => {
       await deleteAdminAccount(deleteTarget.principal_id, confirmedEmail);
-      setDeleteTarget(null); setNotice("تم حذف المستخدم نهائيًا.");
+      setDeleteTarget(null); setNotice(accountActionSuccessMessage("delete"));
       await client.invalidateQueries({ queryKey: ["admin-accounts"] });
     }} />}
   </div>;

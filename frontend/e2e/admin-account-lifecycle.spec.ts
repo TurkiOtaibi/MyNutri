@@ -23,6 +23,7 @@ test("@p0 Admin manages a user and confirms permanent deletion by email", async 
   await editor.getByLabel("كلمة المرور الجديدة").fill("New-password-2026!");
   await editor.getByRole("button", { name: "إعادة تعيين كلمة المرور" }).click();
   await expect(editor).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveText("تمت إعادة تعيين كلمة المرور.");
 
   await row.getByRole("button", { name: "تعطيل المستخدم" }).click();
   await expect(row).toContainText("معطّل");
