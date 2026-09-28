@@ -63,7 +63,6 @@ test("incomplete creation and deletion have retry actions", async ({ page }) => 
   await form.getByLabel("كلمة المرور الأولية").fill("Initial-password-2026!");
   await form.getByRole("button", { name: "إنشاء المستخدم" }).click();
   await expect(page.getByRole("status")).toContainText("تعذر إكمال إنشاء المستخدم. أعد المحاولة.");
-  await page.reload();
   const createRow = page.locator(".account-row").filter({ hasText: createEmail });
   await expect(createRow).toContainText("قيد الإنشاء");
   await createRow.getByRole("button", { name: "إعادة محاولة الإنشاء" }).click();
@@ -84,7 +83,6 @@ test("incomplete creation and deletion have retry actions", async ({ page }) => 
   await dialog.getByRole("button", { name: "حذف المستخدم نهائيًا" }).click();
   await expect(dialog.getByRole("alert")).toContainText("تعذر إكمال حذف المستخدم. حسابه معطّل ويمكنك إعادة المحاولة.");
   await dialog.getByRole("button", { name: "إلغاء" }).click();
-  await page.reload();
   await expect(deleteRow).toContainText("حذف غير مكتمل");
   await deleteRow.getByRole("button", { name: "إعادة محاولة الحذف" }).click();
   await expect(deleteRow).toHaveCount(0);

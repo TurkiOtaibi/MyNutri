@@ -71,7 +71,10 @@ export function AdminAccountsPage() {
   async function execute(action: () => Promise<unknown>, kind: AccountAction) {
     setBusy(true); setNotice("");
     try { await action(); await client.invalidateQueries({ queryKey: ["admin-accounts"] }); setNotice(accountActionSuccessMessage(kind)); setMode(null); setSelected(null); setPassword(""); }
-    catch (error) { setNotice(accountActionErrorMessage(error, kind)); }
+    catch (error) {
+      setNotice(accountActionErrorMessage(error, kind));
+      await client.invalidateQueries({ queryKey: ["admin-accounts"] });
+    }
     finally { setBusy(false); }
   }
   function select(account: AdminAccount, nextMode: "edit" | "password" | "retry-create") {
@@ -87,7 +90,10 @@ export function AdminAccountsPage() {
           await createAdminAccount({ email, display_name: createName, initial_password: createPassword }, key);
           await client.invalidateQueries({ queryKey: ["admin-accounts"] });
           setEmail(""); setCreateName(""); setCreatePassword(""); setKey(crypto.randomUUID()); setNotice(accountActionSuccessMessage("create"));
-        } catch (error) { setNotice(accountActionErrorMessage(error, "create")); }
+        } catch (error) {
+          setNotice(accountActionErrorMessage(error, "create"));
+          await client.invalidateQueries({ queryKey: ["admin-accounts"] });
+        }
         finally { setBusy(false); }
       }}>
         <label>البريد الإلكتروني<input type="email" dir="ltr" autoComplete="off" required value={email} onChange={event => { setEmail(event.target.value); setKey(crypto.randomUUID()); }} /></label>
@@ -135,9 +141,12 @@ export function AdminAccountsPage() {
       </form>
     </section>}
     {deleteTarget && <DeleteDialog account={deleteTarget} onClose={() => setDeleteTarget(null)} onDelete={async confirmedEmail => {
-      await deleteAdminAccount(deleteTarget.principal_id, confirmedEmail);
-      setDeleteTarget(null); setNotice(accountActionSuccessMessage("delete"));
-      await client.invalidateQueries({ queryKey: ["admin-accounts"] });
+      try {
+        await deleteAdminAccount(deleteTarget.principal_id, confirmedEmail);
+        setDeleteTarget(null); setNotice(accountActionSuccessMessage("delete"));
+      } finally {
+        await client.invalidateQueries({ queryKey: ["admin-accounts"] });
+      }
     }} />}
   </div>;
 }
