@@ -138,6 +138,47 @@ def test_two_concurrent_deletes_leave_one_scrubbed_tombstone(labs_postgresql_dat
 
 
 @pytest.mark.migration
+def test_delete_resuming_after_other_delete_preserves_retired_identity(labs_postgresql_database) -> None:
+    engine = labs_postgresql_database.engine
+    admin_id, user_id, gateway = _actors(engine)
+    gateway.delete_entered = Event()
+    gateway.finish_delete = Event()
+    second_purged = Event()
+    first_finished = Event()
+    now = datetime.now(timezone.utc)
+
+    class PausingSession(Session):
+        def commit(self) -> None:
+            super().commit()
+            second_purged.set()
+            assert first_finished.wait(timeout=15)
+
+    def first_delete() -> None:
+        with Session(engine) as session:
+            delete_account(session, admin_id, user_id, gateway, now, 10)
+        first_finished.set()
+
+    def second_delete() -> None:
+        with PausingSession(engine) as session:
+            delete_account(session, admin_id, user_id, gateway, now, 10)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(first_delete)
+        assert gateway.delete_entered.wait(timeout=15)
+        second = pool.submit(second_delete)
+        assert second_purged.wait(timeout=15)
+        gateway.finish_delete.set()
+        first.result(timeout=15)
+        second.result(timeout=15)
+
+    with Session(engine) as session:
+        row = session.get(Principal, user_id)
+        assert row.status == PrincipalStatus.deleted
+        assert row.auth_user_id is None
+        assert row.retired_auth_user_id is not None
+
+
+@pytest.mark.migration
 def test_concurrent_same_key_creates_one_account_and_identity(labs_postgresql_database) -> None:
     engine = labs_postgresql_database.engine
     admin_id, _, gateway = _actors(engine)

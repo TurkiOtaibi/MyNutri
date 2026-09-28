@@ -369,6 +369,8 @@ def delete_account(
             raise AdminAuthError("identity_present")
 
     row = _target(session, admin_id, principal_id)
+    if row.status == PrincipalStatus.deleted:
+        return row
     row.auth_user_id = None
     row.retired_auth_user_id = auth_id
     row.email = None
