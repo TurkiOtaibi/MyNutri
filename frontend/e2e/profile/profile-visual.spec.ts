@@ -6,6 +6,7 @@ import { expect, test } from "@playwright/test";
 import type { ProfileInput, ProfileResponse } from "../../lib/types";
 import { API_TOKEN, API_URL } from "../foods/helpers";
 import { applyProfileThroughTargetPlan } from "../profile-api";
+import { provisionUser } from "../provision-user";
 
 const output = resolve(process.cwd(), "test-results", "manual-capture", "profile-targets-redesign");
 const apiHeaders = () => ({ Authorization: `Bearer ${API_TOKEN}` });
@@ -47,9 +48,11 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
     });
     const freshPage = await freshContext.newPage();
     try {
+      const freshEmail = `profile-visual-${Date.now()}@example.test`;
+      await provisionUser(freshEmail, LOCAL_TEST_PASSWORD);
       await freshPage.setViewportSize({ width: 390, height: 844 });
       await freshPage.goto("/auth/login");
-      await freshPage.locator('input[type="email"]').fill(`profile-visual-${Date.now()}@example.test`);
+      await freshPage.locator('input[type="email"]').fill(freshEmail);
       await freshPage.locator('input[type="password"]').fill(LOCAL_TEST_PASSWORD);
       await freshPage.locator('button[type="submit"]').click();
       await freshPage.waitForURL(/\/diary$/);

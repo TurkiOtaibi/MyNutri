@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Page } from "@playwright/test";
 import type { LabTestDetailResponse } from "../../lib/types";
+import { provisionUser } from "../provision-user";
 import { API_URL, expect, loginOwner, offsetIsoDate, test, type LabsApi } from "./helpers";
 
 const edit = (page: Page) => page.getByRole("dialog", { name: "تعديل النتيجة" });
@@ -331,6 +332,8 @@ for (const kind of ["edit", "delete"] as const) {
 
 for (const method of ["PATCH", "DELETE"] as const) {
   test(`delivered ${method} after actor takeover cannot restore draft, feedback or old cache`, async ({ labsPage: page, labsApi }) => {
+    const takeoverEmail = `labs-crud-takeover-${randomUUID()}@example.test`;
+    await provisionUser(takeoverEmail, "Labs-owner-password-2026!");
     const { id } = await seed(labsApi);
     await page.addInitScript(method => {
       const original = window.fetch.bind(window);
@@ -358,7 +361,7 @@ for (const method of ["PATCH", "DELETE"] as const) {
         const signIn = (window as Window & { __mynutriE2ESignInWithPassword?: (email: string, password: string) => Promise<{ error: unknown }> }).__mynutriE2ESignInWithPassword;
         if (!signIn) throw Error("Missing local auth fixture control");
         return signIn(email, "Labs-owner-password-2026!");
-      }, `labs-crud-takeover-${randomUUID()}@example.test`);
+      }, takeoverEmail);
       expect(switched.error).toBeNull();
       await expect(edit(page)).toHaveCount(0); await expect(deletion(page)).toHaveCount(0);
       const delivered = page.waitForResponse(response => response.url() === `${API_URL}/labs/results/${id}` && response.request().method() === method);

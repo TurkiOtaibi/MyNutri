@@ -183,7 +183,7 @@ def test_downgrade_refuses_any_labs_data_without_deletion(
     assert "LABS_V1_DOWNGRADE_BLOCKED" in rejected.stdout + rejected.stderr
     with labs_postgresql_database.engine.connect() as connection:
         assert (
-            connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == LABS_HEAD
+            connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == CURRENT_HEAD
         )
         assert (
             connection.execute(
