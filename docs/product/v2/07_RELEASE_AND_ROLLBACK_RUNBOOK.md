@@ -27,9 +27,19 @@ resumes with the same idempotency key; interrupted deletion remains `deleting`,
 rejects even pre-existing access tokens, is visible to Admin as incomplete,
 and resumes to a scrubbed `deleted` tombstone. Verify the locked purge removes
 all private dependents while global Foods and their attribution survive. A
-missing Supabase identity counts as a successful deletion retry. Verify that
-deleting a `provisioning` account follows the same saga and succeeds when its
-Supabase identity was never created. Verify that Admin password reset through
+missing Supabase identity counts as a successful deletion retry only after
+verified absence. Verify pre-assigned UUID creation and the
+`identity_requested_at` lease of `max(5 minutes, 10 x bounded Admin HTTP
+timeout)`: deletion of `provisioning` within the lease returns 409 with the
+approved creation-incomplete copy, while deletion after it follows the same
+saga, including when Auth creation never happened. Verify that a late identity
+is denied admission by permanent `retired_auth_user_id` and deleted by
+reconciliation. Exercise all four triggers: completed/retried deletion, a
+bounded non-blocking Admin-list batch for tombstones from the last 30 days,
+the idempotent full-sweep ops command, and create with an email held by a
+retired ID. Confirm a non-retired duplicate is rejected, reconciliation errors
+are sanitized and counted by type only, and no tombstone or private data is
+revived. Verify that Admin password reset through
 FastAPI revokes the user's existing Supabase sessions (sign-out everywhere).
 Validate concurrent writers cannot insert private data after the purge and that no API
 can create or disable/delete the single Admin.

@@ -33,17 +33,35 @@ Diary, Target Plans, nutrition calculations, recommendations or Progress.
   user's existing Supabase sessions through FastAPI), enable or disable the
   user, and request permanent deletion. Email changes are out of scope.
   Passwords are never stored, logged, or returned by myNutri.
-- Creation is resumable: a `provisioning` Principal with an idempotency key is
-  committed before creating the Supabase Auth identity, then activated. A retry
-  with the same key resumes; `provisioning` cannot authenticate.
+- Creation is resumable: the backend commits a `provisioning` Principal with an
+  idempotency key and pre-assigned Supabase Auth UUID before sending create with
+  that UUID. It records `identity_requested_at` on each create attempt. A retry
+  with the same key resumes; `provisioning` cannot authenticate. The Admin HTTP
+  timeout is explicit and bounded. A provisioning account cannot be deleted
+  until `now > identity_requested_at + max(5 minutes, 10 x timeout)`; an attempt
+  during that lease returns 409 with the approved creation-incomplete copy.
 - Permanent deletion is allowed for a `provisioning` account as well as other
   normal-user states, using the same fail-closed, resumable saga: commit
   `deleting` under the Principal lock; purge all Principal-owned private data in one locked
-  transaction; delete the Supabase Auth identity (already absent succeeds);
-  then scrub email/display name and clear the Auth link when marking `deleted`.
+  transaction; delete the stored Supabase Auth UUID and verify its absence with
+  a supported Admin API (already absent succeeds); then scrub email/display
+  name and move the UUID from the Auth link to unique, permanent
+  `retired_auth_user_id` when marking `deleted`. Creation retry is refused once
+  `deleting` is committed.
   Any failure leaves the account locked out in `deleting`, visible to the Admin
   as incomplete with a retry action. Existing tokens fail the per-request
   Principal status check.
+- After deletion completes, no Supabase identity for that account can ever be
+  admitted to myNutri: an unknown or retired UUID receives 401
+  `INVALID_CREDENTIAL`. A delayed provider-side create may temporarily leave
+  an Auth identity; reconciliation deletes it by retired UUID, verifies absence,
+  and never restores private data or reactivates the tombstone. Reconciliation
+  runs after each completed/retried deletion, asynchronously in bounded batches
+  for tombstones from the last 30 days when the Admin list loads, via an
+  idempotent full-sweep ops command, and before creation when Supabase reports
+  an email taken by a retired UUID. A non-retired duplicate retains the approved
+  duplicate-email error. Failures are sanitized, logged only by count/type,
+  and retried on the next trigger; they never block the Admin list.
 - Global Foods survive deletion. Their creator/updater attribution retains the
   scrubbed Principal tombstone and displays a neutral deleted-user label.
   No Food history is rewritten. Every Principal-owned-data writer rechecks

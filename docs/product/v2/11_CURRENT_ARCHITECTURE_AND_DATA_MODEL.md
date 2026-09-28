@@ -54,18 +54,34 @@ input only: never persisted, logged, or returned. FastAPI alone calls privileged
 Supabase Auth using a backend-only Service Role credential for create, reset,
 and delete; bootstrap remains permitted, and no other runtime route uses it.
 
-Creation commits a `provisioning` Principal with an idempotency key first,
-creates the Supabase identity second, and activates third. Same-key retries
+Creation commits a `provisioning` Principal with an idempotency key and a
+backend-generated, pre-assigned Auth UUID first, records `identity_requested_at`
+for each call, creates the Supabase identity with that ID second, and activates
+third. The explicit bounded Admin HTTP timeout sets a lease of
+`max(5 minutes, 10 x timeout)`; deleting `provisioning` during the lease returns
+409 with the approved creation-incomplete copy. Same-key retries
 resume. A `provisioning` account never authenticates and may be deleted through
 the same saga as another normal-user account. Deletion commits
 `deleting` under the Principal lock before any purge. The second transaction
 locks that Principal and purges all owned private rows, including Diary,
 Target Plans, Profile, Labs, idempotency records, and any other private
-dependent table. Supabase Auth deletion follows; an already absent identity
-is success. Only then does the app clear the Auth link and erase email/display
-name while marking the durable row `deleted`. Failure at any step leaves a
+dependent table. Supabase Auth deletion by the stored UUID follows, then a
+supported Admin API verifies absence; an already absent identity succeeds.
+Only then does the app move the UUID to unique permanent
+`retired_auth_user_id`, clear the Auth link, and erase email/display name while
+marking the durable row `deleted`. Creation retry is refused after `deleting`.
+Failure at any step leaves a
 locked-out `deleting` state visible to Admin as incomplete with a retry action.
 An old JWT cannot bypass the per-request Principal status check.
+Unknown and retired UUIDs receive 401 `INVALID_CREDENTIAL` forever. A delayed
+provider-side create can leave a temporary Auth identity but never admission.
+Idempotent reconciliation deletes by retired UUID and verifies absence after
+every completed/retried deletion, in a bounded non-blocking batch for tombstones
+deleted within the last 30 days when the Admin list loads, through a full-sweep
+ops command, and before creation when an email is held by a retired identity.
+Other duplicate emails retain the approved duplicate-email error. Failures are
+sanitized, logged by count/type only, and retried at the next trigger; no
+private data or active state is restored.
 
 `Food.created_by_principal_id` and `Food.updated_by_principal_id` keep pointing
 to the deleted Principal tombstone. Global Food rows and their attribution IDs
