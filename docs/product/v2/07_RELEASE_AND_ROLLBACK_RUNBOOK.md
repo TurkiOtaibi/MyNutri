@@ -43,6 +43,11 @@ retired ID. Confirm a non-retired duplicate is rejected, reconciliation errors
 are sanitized and counted by type only, and no tombstone or private data is
 revived. Verify that Admin password reset through
 FastAPI revokes the user's existing Supabase sessions (sign-out everywhere).
+For provider acceptance, sign in, reset via the Admin API, attempt refresh,
+and confirm that the old session cannot access myNutri: refresh may be rejected
+by Supabase, and any token refreshed from the old session must receive 401
+`INVALID_CREDENTIAL` from FastAPI based on its unchanged `amr` authentication
+time. A fresh sign-in after the rounded-up cutoff must work.
 Validate concurrent writers cannot insert private data after the purge and that no API
 can create or disable/delete the single Admin.
 

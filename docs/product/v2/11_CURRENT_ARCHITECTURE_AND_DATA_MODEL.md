@@ -53,6 +53,11 @@ Email is immutable in this surface. Initial and reset passwords are Admin-set
 input only: never persisted, logged, or returned. FastAPI alone calls privileged
 Supabase Auth using a backend-only Service Role credential for create, reset,
 and delete; bootstrap remains permitted, and no other runtime route uses it.
+Password reset uses the supported Admin password-update operation, which
+revokes Supabase refresh sessions. Password reset and status changes also set
+`sessions_valid_after` to the next whole second. Admission compares it with
+the latest valid `amr[].timestamp` authentication time, never the refreshed
+access token's `iat`; missing or malformed AMR always fails closed.
 
 Creation commits a `provisioning` Principal with an idempotency key and a
 backend-generated, pre-assigned Auth UUID first, records `identity_requested_at`

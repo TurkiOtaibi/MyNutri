@@ -1,14 +1,15 @@
 """Admin account mutations, separate from read-only selected-user monitoring."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from threading import Lock
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext, require_admin
@@ -82,6 +83,33 @@ router = APIRouter(prefix="/admin/accounts", tags=["admin-accounts"], route_clas
 logger = logging.getLogger(__name__)
 
 
+class _RecentReconciliationThrottle:
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._running = False
+        self._last_success: datetime | None = None
+
+    def begin(self, now: datetime) -> bool:
+        with self._lock:
+            if self._running or (
+                self._last_success is not None
+                and timedelta(0) <= now - self._last_success < timedelta(minutes=5)
+            ):
+                return False
+            self._running = True
+            return True
+
+    def finish(self, now: datetime, *, succeeded: bool) -> None:
+        with self._lock:
+            if succeeded:
+                self._last_success = now
+            self._running = False
+
+
+_list_reconciliation_throttle = _RecentReconciliationThrottle()
+_LIST_RECONCILIATION_LOCK_KEY = 0x4D794E7574726941
+
+
 def _summary(row: Principal) -> AdminAccountSummary:
     return AdminAccountSummary(
         principal_id=row.id,
@@ -102,18 +130,43 @@ def _normal_target(
     return _target(session, admin.principal_id, principal_id)
 
 
-def _background_reconcile_recent(now: datetime) -> None:
+def _background_reconcile_recent(now: datetime, list_load: bool = False) -> None:
     # A new session and credential scope keep slow Auth calls off the page read.
     from app.services.admin_lifecycle import reconcile_recent_tombstones
 
+    if list_load and not _list_reconciliation_throttle.begin(now):
+        return
+    succeeded = False
     try:
         gateway = get_admin_auth_gateway(get_settings())
-        with Session(engine) as session:
-            reconcile_recent_tombstones(session, gateway, now, limit=100)
+        if list_load and engine.dialect.name == "postgresql":
+            with engine.connect() as lock_connection:
+                locked = bool(lock_connection.execute(
+                    text("SELECT pg_try_advisory_lock(:key)"),
+                    {"key": _LIST_RECONCILIATION_LOCK_KEY},
+                ).scalar_one())
+                if not locked:
+                    return
+                try:
+                    with Session(engine) as session:
+                        outcome = reconcile_recent_tombstones(session, gateway, now, limit=100)
+                    succeeded = outcome["failed"] == 0
+                finally:
+                    lock_connection.execute(
+                        text("SELECT pg_advisory_unlock(:key)"),
+                        {"key": _LIST_RECONCILIATION_LOCK_KEY},
+                    )
+        else:
+            with Session(engine) as session:
+                outcome = reconcile_recent_tombstones(session, gateway, now, limit=100)
+            succeeded = outcome["failed"] == 0
     except AdminAuthError as error:
         logger.warning("retired identity reconciliation failed: type=%s count=1", error.kind)
     except Exception:
         logger.warning("retired identity reconciliation failed: type=unexpected count=1")
+    finally:
+        if list_load:
+            _list_reconciliation_throttle.finish(datetime.now(timezone.utc), succeeded=succeeded)
 
 
 @router.get("", response_model=AdminAccountList)
@@ -136,7 +189,7 @@ def list_accounts(
         statement.order_by(Principal.created_at.desc(), Principal.id.desc())
         .offset((page - 1) * page_size).limit(page_size)
     ).all()
-    background_tasks.add_task(_background_reconcile_recent, datetime.now(timezone.utc))
+    background_tasks.add_task(_background_reconcile_recent, datetime.now(timezone.utc), True)
     return AdminAccountList(
         items=[_summary(row) for row in rows], total=total, page=page, page_size=page_size
     )

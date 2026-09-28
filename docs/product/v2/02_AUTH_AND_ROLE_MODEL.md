@@ -46,7 +46,13 @@ An Admin creates normal users with email, display name, and an initial password
 they set; they may edit display name, reset password (including revocation of
 the user's existing Supabase sessions through FastAPI), enable/disable, and
 request permanent deletion. Email changes are not supported. Passwords are never
-persisted, logged, or returned by myNutri. Creation commits a `provisioning`
+persisted, logged, or returned by myNutri. Password reset and status changes
+set `sessions_valid_after` to the next whole second. FastAPI compares that
+cutoff to the latest valid Supabase
+`amr[].timestamp` authentication time, not access-token `iat`; missing or
+malformed AMR always fails closed, so refreshing an older
+session cannot restore admission. The supported Admin password-update call
+also revokes Supabase refresh sessions. Creation commits a `provisioning`
 Principal and idempotency key before calling Supabase Auth; the same-key retry
 resumes creation and activation. Before the create call, the Principal also
 stores a backend-generated Supabase Auth UUID; the call uses that pre-assigned

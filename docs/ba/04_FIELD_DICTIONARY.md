@@ -10,7 +10,7 @@ Status: supporting requirements. Backend schemas and database constraints are ex
 | `auth_user_id` | No | Unique Supabase subject when linked; cleared only after confirmed Auth deletion |
 | `retired_auth_user_id` | Deleted tombstone | Permanent unique former Auth subject; never used for admission or relinked to a Principal |
 | `identity_requested_at` | Provisioning after create request | Starts the bounded creation lease; refreshed before every provider create attempt |
-| `sessions_valid_after` | After password reset or status change | Access tokens issued before this rounded-up cutoff are rejected |
+| `sessions_valid_after` | After password reset or status change | A token is rejected when its latest valid Supabase `amr[].timestamp` authentication time is before this rounded-up cutoff, including after access-token refresh; missing or malformed AMR is always rejected |
 | `email` | No | Unique case-insensitively when present; maximum 320; erased on deleted tombstone |
 | `display_name` | No | Maximum 120; erased on deleted tombstone |
 | `role` | Yes | `user` or `admin`; never accepted from browser metadata or account-management input; partial unique index permits at most one Admin |

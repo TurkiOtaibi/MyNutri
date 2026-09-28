@@ -94,8 +94,8 @@ export function AdminAccountsPage() {
         } catch (error) { setNotice(message(error)); }
         finally { setBusy(false); }
       }}>
-        <label>البريد الإلكتروني<input type="email" dir="ltr" autoComplete="off" required value={email} onChange={event => setEmail(event.target.value)} /></label>
-        <label>الاسم المعروض<input required value={createName} onChange={event => setCreateName(event.target.value)} /></label>
+        <label>البريد الإلكتروني<input type="email" dir="ltr" autoComplete="off" required value={email} onChange={event => { setEmail(event.target.value); setKey(crypto.randomUUID()); }} /></label>
+        <label>الاسم المعروض<input required value={createName} onChange={event => { setCreateName(event.target.value); setKey(crypto.randomUUID()); }} /></label>
         <label>كلمة المرور الأولية<input type="password" autoComplete="new-password" required value={createPassword} onChange={event => setCreatePassword(event.target.value)} /></label>
         <button className="btn primary" type="submit" disabled={busy}>إنشاء المستخدم</button>
       </form>

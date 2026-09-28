@@ -99,9 +99,12 @@ class AuthState:
             "app_metadata": {"provider": "email", "providers": ["email"]},
         }
 
-    def session(self, email: str, *, recovery: bool = False) -> dict[str, object]:
+    def session(
+        self, email: str, *, recovery: bool = False, authenticated_at: int | None = None
+    ) -> dict[str, object]:
         user = self.user_for_email(email)
         now = datetime.now(timezone.utc)
+        auth_time = authenticated_at if authenticated_at is not None else int(now.timestamp())
         expires = now + timedelta(hours=2)
         session_id = str(uuid4())
         claims = {
@@ -110,6 +113,7 @@ class AuthState:
                 "aud": "authenticated",
                 "iss": self.issuer,
                 "iat": int(now.timestamp()),
+                "amr": [{"method": "password", "timestamp": auth_time}],
                 "exp": int(expires.timestamp()),
                 "jti": session_id,
                 "user_metadata": user["user_metadata"],
@@ -128,7 +132,7 @@ class AuthState:
             "token_type": "bearer",
             "expires_in": 7200,
             "expires_at": int(expires.timestamp()),
-            "refresh_token": f"e2e-refresh:{user['email']}",
+            "refresh_token": f"e2e-refresh:{user['email']}:{auth_time}",
             "user": user,
         }
 
@@ -198,8 +202,13 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if grant == "refresh_token":
                 refresh = str(payload.get("refresh_token", ""))
-                email = refresh.removeprefix("e2e-refresh:") or ADMIN_EMAIL
-                self._send(200, self.state.session(email))
+                try:
+                    email, auth_time = refresh.removeprefix("e2e-refresh:").rsplit(":", 1)
+                    authenticated_at = int(auth_time)
+                except ValueError:
+                    self._send(400, {"message": "Invalid refresh token"})
+                    return
+                self._send(200, self.state.session(email, authenticated_at=authenticated_at))
                 return
         if parsed.path == "/auth/v1/signup":
             self._send(403, {"message": "self-registration disabled"})

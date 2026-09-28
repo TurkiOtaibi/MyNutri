@@ -43,9 +43,9 @@ USER_AUTH_ID = UUID("10000000-0000-0000-0000-0000000000bb")
 class _Verifier:
     def verify(self, token: str) -> AuthClaims:
         if token == "admin":
-            return AuthClaims(ADMIN_AUTH_ID, "admin@example.com", "Admin")
+            return AuthClaims(ADMIN_AUTH_ID, "admin@example.com", "Admin", 1_780_000_002)
         if token == "user":
-            return AuthClaims(USER_AUTH_ID, "user@example.com", "User")
+            return AuthClaims(USER_AUTH_ID, "user@example.com", "User", 1_780_000_002)
         raise ValueError("invalid token")
 
 

@@ -88,3 +88,26 @@ test("incomplete creation and deletion have retry actions", async ({ page }) => 
   await deleteRow.getByRole("button", { name: "إعادة محاولة الحذف" }).click();
   await expect(deleteRow).toHaveCount(0);
 });
+
+test("changing create identity rotates the idempotency key", async ({ page }) => {
+  const keys: string[] = [];
+  await page.route("**/admin/accounts", async route => {
+    if (route.request().method() !== "POST") return route.continue();
+    keys.push(route.request().headers()["idempotency-key"]);
+    await route.fulfill({ status: 503, json: { error: { code: "CREATION_INCOMPLETE", message_ar: "تعذر إكمال إنشاء المستخدم. أعد المحاولة." } } });
+  });
+  await page.goto("/admin/accounts");
+  const form = page.locator(".account-management > .section-panel form").first();
+  await form.getByLabel("البريد الإلكتروني").fill("first@example.test");
+  await form.getByLabel("الاسم المعروض").fill("First");
+  await form.getByLabel("كلمة المرور الأولية").fill("Initial-password-2026!");
+  await form.getByRole("button", { name: "إنشاء المستخدم" }).click();
+  await expect.poll(() => keys.length).toBe(1);
+  await form.getByLabel("البريد الإلكتروني").fill("second@example.test");
+  await form.getByRole("button", { name: "إنشاء المستخدم" }).click();
+  await expect.poll(() => keys.length).toBe(2);
+  await form.getByLabel("الاسم المعروض").fill("Second");
+  await form.getByRole("button", { name: "إنشاء المستخدم" }).click();
+  await expect.poll(() => keys.length).toBe(3);
+  expect(new Set(keys).size).toBe(3);
+});

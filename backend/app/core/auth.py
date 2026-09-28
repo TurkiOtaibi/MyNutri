@@ -31,7 +31,26 @@ class AuthClaims:
     auth_user_id: UUID
     email: str | None
     display_name: str | None
-    issued_at: int | None = None
+    authenticated_at: int | None = None
+
+
+def latest_authentication_time(amr: object) -> int | None:
+    if not isinstance(amr, list) or not amr or not all(
+        isinstance(entry, dict)
+        and isinstance(entry.get("method"), str)
+        and bool(entry["method"])
+        and isinstance(entry.get("timestamp"), int)
+        and not isinstance(entry["timestamp"], bool)
+        and entry["timestamp"] >= 0
+        for entry in amr
+    ):
+        return None
+    latest = max(entry["timestamp"] for entry in amr)
+    try:
+        datetime.fromtimestamp(latest, timezone.utc)
+    except (ValueError, OverflowError, OSError):
+        return None
+    return latest
 
 
 class SupabaseTokenVerifier:
@@ -82,7 +101,10 @@ class SupabaseTokenVerifier:
         issued_at = payload["iat"]
         if not isinstance(issued_at, int) or isinstance(issued_at, bool):
             raise ValueError("Invalid issued-at claim")
-        return AuthClaims(auth_user_id, email, display_name, issued_at)
+        authenticated_at = latest_authentication_time(payload.get("amr"))
+        if authenticated_at is None:
+            raise ValueError("Invalid authentication-method reference claim")
+        return AuthClaims(auth_user_id, email, display_name, authenticated_at)
 
 
 @lru_cache(maxsize=8)
@@ -173,6 +195,8 @@ def get_principal_context(
         claims = verifier.verify(credential)
     except (PyJWTError, ValueError, RuntimeError):
         raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
+    if claims.authenticated_at is None:
+        raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
     principal = session.exec(
         select(Principal).where(Principal.auth_user_id == claims.auth_user_id)
     ).one_or_none()
@@ -182,9 +206,14 @@ def get_principal_context(
         cutoff = principal.sessions_valid_after
         if cutoff.tzinfo is None:
             cutoff = cutoff.replace(tzinfo=timezone.utc)
-        if claims.issued_at is None or datetime.fromtimestamp(
-            claims.issued_at, timezone.utc
-        ) < cutoff:
+        try:
+            authenticated_at = (
+                datetime.fromtimestamp(claims.authenticated_at, timezone.utc)
+                if claims.authenticated_at is not None else None
+            )
+        except (ValueError, OverflowError, OSError):
+            authenticated_at = None
+        if authenticated_at is None or authenticated_at < cutoff:
             raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
     return PrincipalContext(
         principal_id=principal.id,

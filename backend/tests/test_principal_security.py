@@ -45,12 +45,14 @@ AUTH_NEW = UUID("10000000-0000-0000-0000-00000000000c")
 class FakeVerifier:
     def verify(self, token: str) -> AuthClaims:
         mapping = {
-            "admin-a": AuthClaims(AUTH_A, "admin@example.com", "Admin"),
-            "rotated-admin-a": AuthClaims(AUTH_A, "admin@example.com", "Admin"),
-            "user-b": AuthClaims(AUTH_B, "user@example.com", "User B"),
-            "new-user": AuthClaims(AUTH_NEW, "new@example.com", "New User"),
+            "admin-a": AuthClaims(AUTH_A, "admin@example.com", "Admin", 1_780_000_002),
+            "rotated-admin-a": AuthClaims(AUTH_A, "admin@example.com", "Admin", 1_780_000_002),
+            "user-b": AuthClaims(AUTH_B, "user@example.com", "User B", 1_780_000_002),
+            "missing-amr-user": AuthClaims(AUTH_B, "user@example.com", "User B"),
+            "new-user": AuthClaims(AUTH_NEW, "new@example.com", "New User", 1_780_000_002),
             "old-user": AuthClaims(AUTH_B, "user@example.com", "User B", 1_780_000_000),
             "same-second-user": AuthClaims(AUTH_B, "user@example.com", "User B", 1_780_000_001),
+            "refreshed-old-user": AuthClaims(AUTH_B, "user@example.com", "User B", 1_780_000_000),
             "fresh-user": AuthClaims(AUTH_B, "user@example.com", "User B", 1_780_000_002),
         }
         if token not in mapping:
@@ -455,11 +457,32 @@ def test_session_cutoff_rejects_old_and_same_second_but_allows_next_second(secur
     principal.sessions_valid_after = datetime.fromtimestamp(1_780_000_002, tz=timezone.utc)
     session.add(principal)
     session.commit()
-    for token in ("old-user", "same-second-user"):
+    for token in ("old-user", "same-second-user", "refreshed-old-user", "missing-amr-user"):
         response = client.get("/account/me", headers=headers(token))
         assert response.status_code == 401
         assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
     assert client.get("/account/me", headers=headers("fresh-user")).status_code == 200
+
+
+def test_missing_amr_is_rejected_even_without_a_cutoff(security_context) -> None:
+    client, _ = security_context
+    response = client.get("/account/me", headers=headers("missing-amr-user"))
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
+
+
+def test_list_reconciliation_throttle_skips_concurrent_and_recent_loads() -> None:
+    from app.api.routes.admin_accounts import _RecentReconciliationThrottle
+
+    throttle = _RecentReconciliationThrottle()
+    now = datetime(2026, 9, 28, 12, tzinfo=timezone.utc)
+    assert throttle.begin(now)
+    assert not throttle.begin(now)
+    throttle.finish(now, succeeded=True)
+    assert not throttle.begin(now + timedelta(minutes=4, seconds=59))
+    assert throttle.begin(now + timedelta(minutes=5))
+    throttle.finish(now + timedelta(minutes=5), succeeded=False)
+    assert throttle.begin(now + timedelta(minutes=5))
 
 
 def test_disabled_principal_is_rejected(security_context) -> None:
@@ -788,6 +811,7 @@ def _jwt(verifier: SupabaseTokenVerifier, private_key, **overrides) -> str:
         "aud": verifier.audience,
         "iat": now,
         "exp": now + timedelta(minutes=5),
+        "amr": [{"method": "password", "timestamp": int(now.timestamp())}],
     }
     payload.update(overrides)
     return jwt.encode(payload, private_key, algorithm="RS256", headers={"kid": "test"})
@@ -814,6 +838,33 @@ def test_supabase_verifier_validates_signature_expiry_issuer_and_audience(monkey
         verifier.verify(_jwt(verifier, private_key, iss="https://wrong.example/auth/v1"))
     with pytest.raises(jwt.InvalidAudienceError):
         verifier.verify(_jwt(verifier, private_key, aud="wrong"))
+
+
+@pytest.mark.parametrize(
+    ("amr", "expected"),
+    [
+        ([{"method": "password", "timestamp": 100}, {"method": "mfa", "timestamp": 101}], 101),
+        (None, None),
+        ([], None),
+        ([{"method": "password", "timestamp": "100"}], None),
+        ([{"method": "password", "timestamp": True}], None),
+        ([{"method": "password", "timestamp": 100}, {}], None),
+        ([{"timestamp": 100}], None),
+        ([{"method": "password", "timestamp": -1}], None),
+        ([{"method": "password", "timestamp": 10**100}], None),
+        ("password", None),
+    ],
+)
+def test_supabase_verifier_extracts_latest_valid_authentication_time(monkeypatch, amr, expected) -> None:
+    verifier = SupabaseTokenVerifier(Settings(environment="test", supabase_url="https://project.supabase.co"))
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    monkeypatch.setattr(verifier.jwks, "get_signing_key_from_jwt", lambda _token: SimpleNamespace(key=private_key.public_key()))
+    token = _jwt(verifier, private_key, amr=amr)
+    if expected is None:
+        with pytest.raises(ValueError, match="authentication-method"):
+            verifier.verify(token)
+    else:
+        assert verifier.verify(token).authenticated_at == expected
 
 
 def test_supabase_verifier_rejects_signed_non_uuid_subject(monkeypatch) -> None:
