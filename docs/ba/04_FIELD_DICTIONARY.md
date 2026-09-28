@@ -8,14 +8,17 @@ Status: supporting requirements. Backend schemas and database constraints are ex
 |---|---:|---|
 | `id` | Yes | Durable UUID ownership key |
 | `auth_user_id` | No | Unique Supabase subject when linked; cleared only after confirmed Auth deletion |
+| `retired_auth_user_id` | Deleted tombstone | Permanent unique former Auth subject; never used for admission or relinked to a Principal |
+| `identity_requested_at` | Provisioning after create request | Starts the bounded creation lease; refreshed before every provider create attempt |
+| `sessions_valid_after` | After password reset or status change | A token is rejected when its latest valid Supabase `amr[].timestamp` authentication time is before this rounded-up cutoff, including after access-token refresh; missing or malformed AMR is always rejected |
 | `email` | No | Unique case-insensitively when present; maximum 320; erased on deleted tombstone |
 | `display_name` | No | Maximum 120; erased on deleted tombstone |
 | `role` | Yes | `user` or `admin`; never accepted from browser metadata or account-management input; partial unique index permits at most one Admin |
 | `status` | Yes | Approved lifecycle target: `provisioning`, `active`, `disabled`, `deleting`, `deleted` |
 | creation idempotency key | For Admin creation | Stored with the `provisioning` Principal so the same-key retry resumes rather than creates another account |
 
-These account-lifecycle fields are approved target authority pending implementation;
-the docs-only change does not claim the current schema already supports them.
+These account-lifecycle fields are implemented in the forward lifecycle revision;
+Production activation remains a separate release action.
 Admin creates a normal user with email, display name, and an initial password.
 Admin may edit display name, reset password while revoking the user's existing
 Supabase sessions through FastAPI, and enable/disable; email and role
@@ -31,8 +34,8 @@ user's email; a mismatch prevents submission.
 
 ## Approved Admin account-management Arabic copy
 
-The following 34 strings are Product Owner-approved exact copy for the
-Admin account-management UI and API errors. Implementation is still pending.
+The following 38 strings are Product Owner-approved exact copy for the
+Admin account-management UI and API errors. Production activation is still pending.
 Existing approved authentication, Labs, and Food strings remain unchanged.
 
 | Context | Approved exact Arabic string |
@@ -65,10 +68,14 @@ Existing approved authentication, Labs, and Food strings remain unchanged.
 | Second-Admin rejection | لا يمكن إنشاء مشرف آخر. |
 | Duplicate-email rejection | هذا البريد الإلكتروني مستخدم بالفعل. |
 | Incomplete-create explanation | تعذر إكمال إنشاء المستخدم. أعد المحاولة. |
+| Edit failure | تعذر حفظ تغييرات المستخدم. حاول مرة أخرى. |
+| Enable/disable failure | تعذر تحديث حالة المستخدم. حاول مرة أخرى. |
+| Network/unreachable server (any action) | تعذر الاتصال بالخادم. حاول مرة أخرى. |
 | Password-reset failure | تعذر إعادة تعيين كلمة المرور. حاول مرة أخرى. |
 | Weak/rejected password (create or reset) | كلمة المرور غير مقبولة. اختر كلمة مرور أقوى وحاول مرة أخرى. |
 | Create success | تم إنشاء المستخدم. |
 | Edit success | تم حفظ تغييرات المستخدم. |
+| Password-reset success | تمت إعادة تعيين كلمة المرور. |
 | Enable/disable success | تم تحديث حالة المستخدم. |
 | Permanent-delete success | تم حذف المستخدم نهائيًا. |
 

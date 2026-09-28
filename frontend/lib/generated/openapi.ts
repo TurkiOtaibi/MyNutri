@@ -67,6 +67,106 @@ export interface AdditionalNutrientTarget {
   unit: string;
 }
 
+/** AdminAccountCreate */
+export interface AdminAccountCreate {
+  /**
+   * Display Name
+   * @minLength 1
+   * @maxLength 120
+   */
+  display_name: string;
+  /**
+   * Email
+   * @minLength 3
+   * @maxLength 320
+   */
+  email: string;
+  /**
+   * Initial Password
+   * @minLength 1
+   * @maxLength 256
+   */
+  initial_password: string;
+}
+
+/** AdminAccountDelete */
+export interface AdminAccountDelete {
+  /** Confirm Email */
+  confirm_email: string;
+}
+
+/** AdminAccountEdit */
+export interface AdminAccountEdit {
+  /**
+   * Display Name
+   * @minLength 1
+   * @maxLength 120
+   */
+  display_name: string;
+}
+
+/** AdminAccountEnable */
+export interface AdminAccountEnable {
+  /** Enabled */
+  enabled: boolean;
+}
+
+/** AdminAccountList */
+export interface AdminAccountList {
+  /** Items */
+  items: AdminAccountSummary[];
+  /** Page */
+  page: number;
+  /** Page Size */
+  page_size: number;
+  /** Total */
+  total: number;
+}
+
+/** AdminAccountPasswordReset */
+export interface AdminAccountPasswordReset {
+  /**
+   * New Password
+   * @minLength 1
+   * @maxLength 256
+   */
+  new_password: string;
+}
+
+/** AdminAccountRetryCreate */
+export interface AdminAccountRetryCreate {
+  /**
+   * Initial Password
+   * @minLength 1
+   * @maxLength 256
+   */
+  initial_password: string;
+}
+
+/** AdminAccountSummary */
+export interface AdminAccountSummary {
+  /**
+   * Created At
+   * @format date-time
+   */
+  created_at: string;
+  /** Display Name */
+  display_name: string | null;
+  /** Email */
+  email: string | null;
+  /**
+   * Principal Id
+   * @format uuid
+   */
+  principal_id: string;
+  status: PrincipalStatus;
+  /**
+   * Updated At
+   * @format date-time
+   */
+  updated_at: string;
+}
+
 /** AdminDiaryItem */
 export interface AdminDiaryItem {
   /**
@@ -379,6 +479,8 @@ export interface FoodResponse {
    * @format date-time
    */
   created_at: string;
+  /** Created By Label */
+  created_by_label?: string | null;
   default_unit_type: DefaultUnitType;
   /**
    * Fat G
@@ -448,6 +550,8 @@ export interface FoodResponse {
    * @format date-time
    */
   updated_at: string;
+  /** Updated By Label */
+  updated_by_label?: string | null;
   /** Vitamin A Mcg */
   vitamin_a_mcg?: number | null;
   /** Vitamin A Rae Mcg */
@@ -846,7 +950,12 @@ export interface NutritionTotals {
 export type PrincipalRole = "user" | "admin";
 
 /** PrincipalStatus */
-export type PrincipalStatus = "active" | "disabled";
+export type PrincipalStatus =
+  | "provisioning"
+  | "active"
+  | "disabled"
+  | "deleting"
+  | "deleted";
 
 /** ProfileResponse */
 export interface ProfileResponse {
@@ -1244,6 +1353,103 @@ export namespace Account {
 export namespace Admin {
   /**
    * No description
+   * @tags admin-accounts
+   * @name ChangeStatusAdminAccountsPrincipalIdStatusPut
+   * @summary Change Status
+   * @request PUT:/admin/accounts/{principal_id}/status
+   * @secure
+   */
+  export namespace ChangeStatusAdminAccountsPrincipalIdStatusPut {
+    export type RequestParams = {
+      /**
+       * Principal Id
+       * @format uuid
+       */
+      principalId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = AdminAccountEnable;
+    export type RequestHeaders = {};
+    export type ResponseBody = AdminAccountSummary;
+  }
+
+  /**
+   * No description
+   * @tags admin-accounts
+   * @name CreateAdminAccountsPost
+   * @summary Create
+   * @request POST:/admin/accounts
+   * @secure
+   */
+  export namespace CreateAdminAccountsPost {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = AdminAccountCreate;
+    export type RequestHeaders = {
+      /**
+       * Idempotency-Key
+       * @minLength 1
+       * @maxLength 128
+       */
+      "Idempotency-Key": string;
+    };
+    export type ResponseBody = AdminAccountSummary;
+  }
+
+  /**
+   * No description
+   * @tags admin-accounts
+   * @name EditAdminAccountsPrincipalIdPatch
+   * @summary Edit
+   * @request PATCH:/admin/accounts/{principal_id}
+   * @secure
+   */
+  export namespace EditAdminAccountsPrincipalIdPatch {
+    export type RequestParams = {
+      /**
+       * Principal Id
+       * @format uuid
+       */
+      principalId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = AdminAccountEdit;
+    export type RequestHeaders = {};
+    export type ResponseBody = AdminAccountSummary;
+  }
+
+  /**
+   * No description
+   * @tags admin-accounts
+   * @name ListAccountsAdminAccountsGet
+   * @summary List Accounts
+   * @request GET:/admin/accounts
+   * @secure
+   */
+  export namespace ListAccountsAdminAccountsGet {
+    export type RequestParams = {};
+    export type RequestQuery = {
+      /**
+       * Page
+       * @min 1
+       * @default 1
+       */
+      page?: number;
+      /**
+       * Page Size
+       * @min 1
+       * @max 100
+       * @default 20
+       */
+      page_size?: number;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = AdminAccountList;
+  }
+
+  /**
+   * No description
    * @tags admin
    * @name ListUsersAdminUsersGet
    * @summary List Users
@@ -1272,6 +1478,94 @@ export namespace Admin {
     export type RequestBody = never;
     export type RequestHeaders = {};
     export type ResponseBody = AdminUserListResponse;
+  }
+
+  /**
+   * No description
+   * @tags admin-accounts
+   * @name RemoveAdminAccountsPrincipalIdDelete
+   * @summary Remove
+   * @request DELETE:/admin/accounts/{principal_id}
+   * @secure
+   */
+  export namespace RemoveAdminAccountsPrincipalIdDelete {
+    export type RequestParams = {
+      /**
+       * Principal Id
+       * @format uuid
+       */
+      principalId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = AdminAccountDelete;
+    export type RequestHeaders = {};
+    export type ResponseBody = AdminAccountSummary;
+  }
+
+  /**
+   * No description
+   * @tags admin-accounts
+   * @name ResetPasswordAdminAccountsPrincipalIdPasswordPut
+   * @summary Reset Password
+   * @request PUT:/admin/accounts/{principal_id}/password
+   * @secure
+   */
+  export namespace ResetPasswordAdminAccountsPrincipalIdPasswordPut {
+    export type RequestParams = {
+      /**
+       * Principal Id
+       * @format uuid
+       */
+      principalId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = AdminAccountPasswordReset;
+    export type RequestHeaders = {};
+    export type ResponseBody = void;
+  }
+
+  /**
+   * No description
+   * @tags admin-accounts
+   * @name RetryCreateAdminAccountsPrincipalIdRetryCreatePost
+   * @summary Retry Create
+   * @request POST:/admin/accounts/{principal_id}/retry-create
+   * @secure
+   */
+  export namespace RetryCreateAdminAccountsPrincipalIdRetryCreatePost {
+    export type RequestParams = {
+      /**
+       * Principal Id
+       * @format uuid
+       */
+      principalId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = AdminAccountRetryCreate;
+    export type RequestHeaders = {};
+    export type ResponseBody = AdminAccountSummary;
+  }
+
+  /**
+   * No description
+   * @tags admin-accounts
+   * @name RetryDeleteAdminAccountsPrincipalIdRetryDeletePost
+   * @summary Retry Delete
+   * @request POST:/admin/accounts/{principal_id}/retry-delete
+   * @secure
+   */
+  export namespace RetryDeleteAdminAccountsPrincipalIdRetryDeletePost {
+    export type RequestParams = {
+      /**
+       * Principal Id
+       * @format uuid
+       */
+      principalId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = AdminAccountSummary;
   }
 
   /**

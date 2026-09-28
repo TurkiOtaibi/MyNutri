@@ -1,10 +1,10 @@
 # V2 Data Migration and Cutover
 
-The Admin-managed lifecycle below is approved migration authority pending a
-future implementation revision. This docs-only record creates no migration and
-does not change the current sole head `e8b7a42f6c31`.
+The Admin-managed lifecycle below is approved migration authority implemented
+by forward revision `b6e4c2a78190`, following private Labs revision
+`e8b7a42f6c31`.
 
-## Admin-managed account lifecycle transition (pending implementation)
+## Admin-managed account lifecycle transition
 
 - Preflight inventories Principals by role/status and their Supabase Auth links.
   More than one Admin, ambiguous Auth links, or private rows without a resolvable
@@ -12,7 +12,8 @@ does not change the current sole head `e8b7a42f6c31`.
   one Admin; bootstrap and release preflight establish exactly one. Existing
   Principals and their private data are not removed by this transition.
 - Expand Principal status to `active`, `disabled`, `provisioning`, `deleting`,
-  and `deleted`, with a durable creation idempotency key and the indexes and
+  and `deleted`, with a durable creation idempotency key, pre-assigned Auth UUID,
+  `identity_requested_at`, unique permanent `retired_auth_user_id`, and the indexes and
   constraints required for resumable lifecycle operations. An unknown or
   non-active Supabase identity returns `401 INVALID_CREDENTIAL`; automatic
   Principal provisioning and public signup are retired. The public signup
@@ -32,12 +33,26 @@ does not change the current sole head `e8b7a42f6c31`.
   No private row can appear after the locked purge. The lifecycle cutover is
   blocked until this holds for all writers, not only new account endpoints.
 - Cross-system work is resumable, not a single database transaction. Creation
-  commits `provisioning` plus key, creates the Auth identity, then activates.
+  commits `provisioning`, key, and backend-generated Auth UUID, records
+  `identity_requested_at` for every call, creates with that UUID, then activates.
+  The explicit bounded Admin HTTP timeout yields a lease of
+  `max(5 minutes, 10 x timeout)`; deletion of `provisioning` is refused with
+  409 until `now > identity_requested_at + lease`.
   Deletion commits `deleting`, purges private rows transactionally, deletes the
-  Auth identity (already absent succeeds), then scrubs and marks `deleted`.
+  stored Auth UUID, verifies absence via a supported Admin API (already absent
+  succeeds), then scrubs and marks `deleted`, moving that UUID from the Auth link
+  to `retired_auth_user_id`.
   Any failure remains locked out in `deleting`, visible for Admin retry; do not
-  clear the Auth link before confirmed Auth deletion. Retry must not create a
+  clear the Auth link before verified absence. Creation retry is forbidden after
+  `deleting`. Retry must not create a
   second identity or re-create purged private data.
+- A late provider create after tombstoning may temporarily leave an Auth
+  identity. Admission of retired or unknown IDs remains 401. Idempotent
+  reconciliation deletes by retired ID and verifies absence after deletion,
+  on a bounded non-blocking recent-tombstone Admin-list trigger, through an
+  ops full sweep, and before creating with an email held by a retired ID.
+  Reconciliation failure is sanitized, logged by count/type only, and retried;
+  a tombstone and its purged private data are never reversed.
 
 Clean and populated disposable PostgreSQL migration tests must prove the
 single-Admin index, status/ownership constraints, preservation of existing
@@ -73,10 +88,15 @@ database-privilege boundaries in:
 - revision: `d9f64a1c3e58`
 - parent: `c8e53f0b2d47`
 
-Private Labs persistence and durable create receipts are introduced in the current sole head:
+Private Labs persistence and durable create receipts are introduced in:
 
 - revision: `e8b7a42f6c31`
 - parent: `d9f64a1c3e58`
+
+Admin-managed account lifecycle fields and constraints are introduced in the sole head:
+
+- revision: `b6e4c2a78190`
+- parent: `e8b7a42f6c31`
 
 `lab_result` stores Principal-owned entered facts in unscaled `NUMERIC`, retaining
 fractional trailing zeros. PostgreSQL requires finite nonnegative values with
@@ -222,7 +242,7 @@ Before any release authorization:
 16. Confirm `d9f64a1c3e58` removed Food archive columns, installed the Diary Food
     `ON DELETE CASCADE`, preserved existing Food/Diary rows during migration, and
     revoked direct Food mutation from `PUBLIC`, `anon`, and `authenticated`.
-17. Confirm `e8b7a42f6c31` is the sole head and agrees with all seven models;
+17. Confirm `b6e4c2a78190` is the sole head and agrees with all seven models;
     clean and populated-base upgrades preserve existing facts, grants and replay.
 18. Prove packaged Labs catalog availability, private privileges, finite/unscaled
     numeric storage, unique owner/test/date, and operation-specific receipt expiry.

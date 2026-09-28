@@ -234,6 +234,12 @@ def test_admin_bootstrap_links_existing_principal_without_changing_id(bootstrap_
         assert principal.role == PrincipalRole.admin
 
 
+def test_admin_bootstrap_refuses_when_an_admin_already_exists(bootstrap_engine) -> None:
+    bootstrap_admin(request(dry_run=False))
+    with pytest.raises(RuntimeError, match="Admin already exists"):
+        bootstrap_admin(request(dry_run=True))
+
+
 def test_admin_bootstrap_refuses_ambiguous_identity(bootstrap_engine) -> None:
     with Session(bootstrap_engine) as session:
         session.add(Principal(auth_user_id=AUTH_ID, email="other@example.test"))

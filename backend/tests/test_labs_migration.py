@@ -11,7 +11,8 @@ from labs_fixtures import run_labs_alembic, safe_labs_database_url
 
 pytestmark = pytest.mark.migration
 BASE = "d9f64a1c3e58"
-HEAD = "e8b7a42f6c31"
+CURRENT_HEAD = "b6e4c2a78190"
+LABS_HEAD = "e8b7a42f6c31"
 
 
 def test_labs_migration_installs_exact_schema_and_clean_model(labs_postgresql_database):
@@ -58,7 +59,7 @@ def test_labs_migration_installs_exact_schema_and_clean_model(labs_postgresql_da
         "ck_idempotency_state",
         "ck_idempotency_operation_expiry",
     }
-    assert run_labs_alembic("heads").stdout.strip() == f"{HEAD} (head)"
+    assert run_labs_alembic("heads").stdout.strip() == f"{CURRENT_HEAD} (head)"
     assert "No new upgrade operations detected" in run_labs_alembic("check").stdout
 
 
@@ -132,7 +133,7 @@ def test_populated_existing_data_and_expiry_survive_upgrade(
                 "diary_entry",
             )
         }
-    run_labs_alembic("upgrade", HEAD)
+    run_labs_alembic("upgrade", LABS_HEAD)
     with labs_postgresql_database.engine.connect() as connection:
         after = {
             name: connection.execute(text(f"SELECT row_to_json(t) FROM {name} t ORDER BY id"))
@@ -182,7 +183,7 @@ def test_downgrade_refuses_any_labs_data_without_deletion(
     assert "LABS_V1_DOWNGRADE_BLOCKED" in rejected.stdout + rejected.stderr
     with labs_postgresql_database.engine.connect() as connection:
         assert (
-            connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == HEAD
+            connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == CURRENT_HEAD
         )
         assert (
             connection.execute(
@@ -209,7 +210,7 @@ def test_empty_downgrade_restores_not_null_and_can_upgrade_again(labs_postgresql
     assert "ck_idempotency_operation_expiry" not in {
         item["name"] for item in inspector.get_check_constraints("idempotency_record")
     }
-    run_labs_alembic("upgrade", HEAD)
+    run_labs_alembic("upgrade", LABS_HEAD)
 
 
 def test_private_grants_preserve_backend_and_unrelated_tables(labs_postgresql_database):
@@ -245,7 +246,7 @@ def test_private_grants_preserve_backend_and_unrelated_tables(labs_postgresql_da
                     "SELECT relname, relacl::text FROM pg_class WHERE relnamespace='public'::regnamespace ORDER BY relname"
                 )
             ).all()
-        run_labs_alembic("upgrade", HEAD)
+        run_labs_alembic("upgrade", LABS_HEAD)
         with engine.connect() as connection:
             after = connection.execute(
                 text(
@@ -294,11 +295,11 @@ def test_private_grants_preserve_backend_and_unrelated_tables(labs_postgresql_da
 
 
 def test_offline_upgrade_sql_and_downgrade_refusal():
-    sql = run_labs_alembic("upgrade", f"{BASE}:{HEAD}", "--sql").stdout
+    sql = run_labs_alembic("upgrade", f"{BASE}:{LABS_HEAD}", "--sql").stdout
     assert "CREATE TABLE lab_result" in sql
     assert "entered_value NUMERIC NOT NULL" in sql
     assert "DROP NOT NULL" in sql
     assert "REVOKE ALL PRIVILEGES" in sql
-    rejected = run_labs_alembic("downgrade", f"{HEAD}:{BASE}", "--sql", check=False)
+    rejected = run_labs_alembic("downgrade", f"{LABS_HEAD}:{BASE}", "--sql", check=False)
     assert rejected.returncode != 0
     assert "online empty-table preflight" in rejected.stdout + rejected.stderr

@@ -10,10 +10,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  EXPECTED_FUNCTIONAL_PLAYWRIGHT_TESTS: "447"
-  EXPECTED_BACKEND_TESTS: "1644"
-  EXPECTED_BACKEND_UNIT_TESTS: "1416"
-  EXPECTED_BACKEND_POSTGRES_TESTS: "228"
+  EXPECTED_FUNCTIONAL_PLAYWRIGHT_TESTS: "433"
+  EXPECTED_BACKEND_TESTS: "1708"
+  EXPECTED_BACKEND_UNIT_TESTS: "1467"
+  EXPECTED_BACKEND_POSTGRES_TESTS: "241"
 
 jobs:
   backend-static:
@@ -601,6 +601,7 @@ jobs:
       NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:8765
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: e2e-public-key
+      SUPABASE_SERVICE_ROLE_KEY: e2e-disposable-service-key
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
       PLAYWRIGHT_API_URL: http://127.0.0.1:8000
       PLAYWRIGHT_SUPABASE_URL: http://127.0.0.1:8765
@@ -961,6 +962,24 @@ jobs:
           database_url="${DB_URL/postgresql:\/\//postgresql+psycopg:\/\/}"
           unset SECRET_KEY SERVICE_ROLE_KEY DB_URL DATABASE_URL JWT_SECRET ANON_KEY PUBLISHABLE_KEY API_URL MAILPIT_URL
           DATABASE_URL="$database_url" alembic upgrade head
+      - name: Verify reset session cutoff against real loopback Auth
+        working-directory: backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          source /tmp/plan020-supabase.env
+          database_url="${DB_URL/postgresql:\/\//postgresql+psycopg:\/\/}"
+          provider_url="$API_URL"
+          provider_public_key="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
+          provider_admin_key="${SECRET_KEY:-${SERVICE_ROLE_KEY:-}}"
+          provider_jwt_secret="${JWT_SECRET:-}"
+          unset SECRET_KEY SERVICE_ROLE_KEY DB_URL JWT_SECRET ANON_KEY PUBLISHABLE_KEY API_URL MAILPIT_URL
+          DATABASE_URL="$database_url" SUPABASE_URL="$provider_url" \
+            SUPABASE_SERVICE_ROLE_KEY="$provider_admin_key" \
+            PROVIDER_ACCEPTANCE_PUBLIC_KEY="$provider_public_key" \
+            PROVIDER_ACCEPTANCE_JWT_SECRET="$provider_jwt_secret" \
+            PROVIDER_ACCEPTANCE_DISPOSABLE="$PLAN020_PROJECT_ID" \
+            python scripts/provider_session_cutoff_acceptance.py
       - name: Build and start loopback application
         working-directory: frontend
         shell: bash

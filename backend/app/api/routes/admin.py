@@ -13,7 +13,7 @@ from app.services import labs as labs_service
 from app.core.auth import PrincipalContext, require_admin
 from app.core.calendar import current_diary_date
 from app.db.session import get_session
-from app.models import DiaryEntry, Principal, Profile
+from app.models import DiaryEntry, Principal, PrincipalStatus, Profile
 from app.schemas import (
     LabOverviewResponse,
     LabTestDetailResponse,
@@ -108,7 +108,9 @@ def list_users(
     _admin: PrincipalContext = Depends(require_admin),
     session: Session = Depends(get_session),
 ) -> AdminUserListResponse:
-    conditions = []
+    # Lifecycle-incomplete accounts belong to the separate account-management
+    # surface, not the existing read-only user monitoring list.
+    conditions = [Principal.status.in_([PrincipalStatus.active, PrincipalStatus.disabled])]
     if search and search.strip():
         pattern = f"%{search.strip()}%"
         conditions.append(

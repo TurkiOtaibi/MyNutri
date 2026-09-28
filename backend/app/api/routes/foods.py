@@ -19,10 +19,9 @@ from app.schemas import (
 from app.services.food import (
     create_food_response,
     delete_food,
-    get_food,
+    get_food_response_with_attribution,
     list_food_picker,
     list_foods_page,
-    to_food_response,
     to_food_responses,
     update_food_response,
 )
@@ -51,7 +50,7 @@ def read_foods(
         page_size=page_size,
     )
     return FoodListResponse(
-        items=to_food_responses(result.items),
+        items=to_food_responses(result.items, result.deleted_principals),
         total=result.total,
         page=result.page,
         page_size=result.page_size,
@@ -108,7 +107,7 @@ def read_food(
     principal: PrincipalContext = Depends(get_principal_context),
     session: Session = Depends(get_session),
 ) -> FoodResponse:
-    return to_food_response(get_food(session, food_id))
+    return get_food_response_with_attribution(session, food_id)
 
 
 @router.put("/{food_id}", response_model=FoodResponse)

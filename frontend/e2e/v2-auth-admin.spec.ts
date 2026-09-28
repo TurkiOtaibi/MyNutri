@@ -1,11 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { provisionUser } from "./provision-user";
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
 const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
 const USER_PASSWORD = "E2e-user-password-2026!";
 
 async function localToken(email: string): Promise<string> {
+  await provisionUser(email, USER_PASSWORD);
   const response = await fetch(`${AUTH_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: { apikey: "e2e-public-key", "Content-Type": "application/json" },

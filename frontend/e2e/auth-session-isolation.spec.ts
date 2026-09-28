@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type Browser, type BrowserContext
 import type { ProfileInput } from "../lib/types";
 import { fillRequiredFoodForm, submitFoodForm } from "./foods/helpers";
 import { applyProfileThroughTargetPlan } from "./profile-api";
+import { provisionUser } from "./provision-user";
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
 const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
@@ -10,6 +11,7 @@ const ADMIN_EMAIL = "admin.e2e@example.test";
 const ADMIN_PASSWORD = "E2e-only-password-2026!";
 
 async function token(email: string, password = PASSWORD): Promise<string> {
+  await provisionUser(email, password);
   const response = await fetch(`${AUTH_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: { apikey: "e2e-public-key", "Content-Type": "application/json" },
@@ -89,12 +91,11 @@ const postLoginReturnPathCases: ReturnPathCase[] = [
   { name: "encoded internal profile", next: "/profile", destination: "/profile" }
 ];
 
-function authUrl(mode: "login" | "sign-up", next: string | null) {
-  return `/auth/${mode}${next === null ? "" : `?next=${encodeURIComponent(next)}`}`;
+function authUrl(next: string | null) {
+  return `/auth/login${next === null ? "" : `?next=${encodeURIComponent(next)}`}`;
 }
 
-async function submitAuthForm(page: Page, mode: "login" | "sign-up", email: string) {
-  if (mode === "sign-up") await page.locator('input[autocomplete="name"]').fill("Plan 006 E2E User");
+async function submitAuthForm(page: Page, email: string) {
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(PASSWORD);
   await page.locator('button[type="submit"]').click();
@@ -444,65 +445,37 @@ test("@plan016 @strictmode development StrictMode replay keeps one session and H
   await context.close();
 });
 
-for (const mode of ["login", "sign-up"] as const) {
-  for (const [index, scenario] of postLoginReturnPathCases.entries()) {
-    test(`@plan006 ${mode} post-auth return path: ${scenario.name}`, async ({ browser }) => {
+for (const [index, scenario] of postLoginReturnPathCases.entries()) {
+    test(`@plan006 login post-auth return path: ${scenario.name}`, async ({ browser }) => {
       const context = await browser.newContext({ storageState: undefined });
       const page = await context.newPage();
       const hostileRequests: string[] = [];
       page.on("request", (request) => {
         if (new URL(request.url()).hostname === "attacker.example") hostileRequests.push(request.url());
       });
-      const email = `plan006-${mode}-${Date.now()}-${index}@example.test`;
+      const email = `plan006-login-${Date.now()}-${index}@example.test`;
 
       try {
         await test.step(scenario.name, async () => {
-          if (mode === "login") await token(email);
-          await page.goto(authUrl(mode, scenario.next));
+          await token(email);
+          await page.goto(authUrl(scenario.next));
           const origin = new URL(page.url()).origin;
-          await submitAuthForm(page, mode, email);
+          await submitAuthForm(page, email);
           await assertSafePostLoginDestination(page, origin, scenario.destination, hostileRequests);
         });
       } finally {
         await context.close();
       }
     });
-  }
 }
 
-test("@plan006 confirmation-required sign-up keeps its confirmation state without navigating", async ({ browser }) => {
+test("@plan006 self-registration route is removed", async ({ browser }) => {
   const context = await browser.newContext({ storageState: undefined });
   const page = await context.newPage();
-  const hostileRequests: string[] = [];
-  let confirmationSignups = 0;
-  page.on("request", (request) => {
-    if (new URL(request.url()).hostname === "attacker.example") hostileRequests.push(request.url());
-  });
-  const authOrigin = new URL(AUTH_URL).origin;
-  await page.route((url) => url.origin === authOrigin && url.pathname === "/auth/v1/signup", async (route) => {
-    confirmationSignups += 1;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        id: "00000000-0000-4000-8000-000000000006",
-        aud: "authenticated",
-        role: "authenticated",
-        email: "plan006-confirmation@example.test",
-        confirmation_sent_at: new Date().toISOString()
-      })
-    });
-  });
-
   try {
-    await page.goto(authUrl("sign-up", "//attacker.example/owned"));
-    const origin = new URL(page.url()).origin;
-    await submitAuthForm(page, "sign-up", `plan006-confirmation-${Date.now()}@example.test`);
-    await expect(page.locator('[role="status"]')).toHaveText("تم إنشاء الحساب. تحقق من بريدك الإلكتروني لإكمال التسجيل.");
-    expect(confirmationSignups).toBe(1);
-    expect(new URL(page.url()).origin).toBe(origin);
-    expect(new URL(page.url()).pathname).toBe("/auth/sign-up");
-    expect(hostileRequests).toEqual([]);
+    await page.goto("/auth/sign-up");
+    await expect(page).toHaveURL(/\/auth\/login/);
+    await expect(page.getByRole("link", { name: "أنشئ حسابًا" })).toHaveCount(0);
   } finally {
     await context.close();
   }

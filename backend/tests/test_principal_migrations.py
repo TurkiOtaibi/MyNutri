@@ -452,7 +452,8 @@ def _assert_immutable_revision_hashes(versions: Path) -> None:
         "b7d42e9a1c36_simplify_target_plans.py",
         "c8e53f0b2d47_retire_nutrition_versioning_and_legacy_targets.py",
         "d9f64a1c3e58_unify_food_catalog_and_cascade_diary_deletion.py",
-        "e8b7a42f6c31_add_labs_v1.py",
+            "e8b7a42f6c31_add_labs_v1.py",
+            "b6e4c2a78190_admin_user_lifecycle.py",
     }
     actual = {name: _normalized_revision_hash(versions / name) for name in BASELINE_HASHES}
     assert actual == BASELINE_HASHES
@@ -737,7 +738,7 @@ def test_food_catalog_unification_current_head_schema_and_security() -> None:
     assert diary_food_fks[0]["options"].get("ondelete") == "CASCADE"
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "e8b7a42f6c31"
+            "b6e4c2a78190"
         )
         assert connection.execute(
             text("SELECT has_table_privilege(current_user, 'food', 'SELECT,INSERT,UPDATE,DELETE')")
@@ -2726,8 +2727,12 @@ def _seed_plan009_food(url: str) -> tuple[UUID, UUID]:
     food_id = uuid4()
     engine = create_engine(url)
     with Session(engine) as session:
-        session.add(Principal(id=principal_id))
-        session.flush()
+        # Historical revisions cannot be seeded with the current Principal ORM:
+        # the lifecycle columns do not exist there yet.
+        session.execute(text(
+            "INSERT INTO principal (id, status, created_at, updated_at) "
+            "VALUES (:id, 'active', :created_at, :updated_at)"
+        ), {"id": principal_id, "created_at": PLAN009_TIMESTAMP, "updated_at": PLAN009_TIMESTAMP})
         session.execute(
             HISTORICAL_FOOD_TABLE.insert().values(
                 id=food_id,

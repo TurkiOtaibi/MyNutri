@@ -1,7 +1,7 @@
 # V2 Authentication and Role Model
 
-The Admin-managed lifecycle in this document is approved authority pending
-implementation; the docs-only change does not claim the current code enforces it.
+The Admin-managed lifecycle in this document is approved authority implemented
+in the lifecycle revision; Production activation remains a separate release action.
 
 ## Authentication
 
@@ -46,17 +46,44 @@ An Admin creates normal users with email, display name, and an initial password
 they set; they may edit display name, reset password (including revocation of
 the user's existing Supabase sessions through FastAPI), enable/disable, and
 request permanent deletion. Email changes are not supported. Passwords are never
-persisted, logged, or returned by myNutri. Creation commits a `provisioning`
+persisted, logged, or returned by myNutri. Password reset and status changes
+set `sessions_valid_after` to the next whole second. FastAPI compares that
+cutoff to the latest valid Supabase
+`amr[].timestamp` authentication time, not access-token `iat`; missing or
+malformed AMR always fails closed, so refreshing an older
+session cannot restore admission. The supported Admin password-update call
+also revokes Supabase refresh sessions. Creation commits a `provisioning`
 Principal and idempotency key before calling Supabase Auth; the same-key retry
-resumes creation and activation. `provisioning` never authenticates.
+resumes creation and activation. Before the create call, the Principal also
+stores a backend-generated Supabase Auth UUID; the call uses that pre-assigned
+ID and records `identity_requested_at` for every attempt. The explicit bounded
+Admin HTTP timeout determines the creation lease:
+`max(5 minutes, 10 x timeout)`. Deleting `provisioning` within the lease is
+refused with 409 and the approved creation-incomplete copy. `provisioning`
+never authenticates.
 
 Deletion of a `provisioning` account is allowed and follows the same saga as
 deletion of another normal-user account: commit `deleting` under the Principal
-lock, purge private dependent data in one locked transaction, remove the Supabase
-Auth identity (absence is
-success), then mark a scrubbed, unlinked `deleted` tombstone. Failure leaves a
+lock, purge private dependent data in one locked transaction, delete the stored
+Supabase Auth UUID and verify absence through the supported Admin API (absence
+is success), then mark a scrubbed, unlinked `deleted` tombstone. Its email and
+display name are erased; its pre-assigned UUID moves to a unique, permanent
+`retired_auth_user_id` that is never eligible for admission. Failure leaves a
 locked-out `deleting` account for Admin-visible retry. Supabase JWTs issued
 before deletion are denied by the existing per-request Principal status check.
+Create retry is refused after `deleting` is committed. Unknown and retired
+Auth UUIDs also receive 401 `INVALID_CREDENTIAL`.
+
+The completed-deletion guarantee is permanent denial of myNutri admission,
+including if an in-flight provider create finishes late. Such a late identity
+is removed by idempotent reconciliation using its retired UUID, followed by an
+absence check. Reconciliation runs after completed/retried deletion, in a
+bounded non-blocking batch for tombstones deleted within the last 30 days when
+the Admin list loads, through a full-sweep ops command, and before a new
+account create if Supabase reports an email taken by a retired UUID. A
+non-retired duplicate keeps the approved duplicate-email error. Failures are
+sanitized, logged by count/type only, and retried at the next trigger; they
+never recreate private data or reactivate a tombstone.
 
 `PrincipalContext` contains `principal_id`, `auth_user_id`, and `role`.
 

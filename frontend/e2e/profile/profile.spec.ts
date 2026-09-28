@@ -5,6 +5,7 @@ import type { CalendarAuthority } from "../../lib/api";
 import type { ProfileInput, ProfileResponse, TargetResponse } from "../../lib/types";
 import { API_TOKEN, API_URL } from "../foods/helpers";
 import { applyProfileThroughTargetPlan } from "../profile-api";
+import { provisionUser } from "../provision-user";
 
 const apiHeaders = () => ({ Authorization: `Bearer ${API_TOKEN}` });
 const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
@@ -917,6 +918,7 @@ test.describe("@profile Profile and targets redesign", () => {
 
     try {
       const email = `profile-cut-${Date.now()}-${test.info().parallelIndex}@example.test`;
+      await provisionUser(email, LOCAL_TEST_PASSWORD);
       await page.goto("/auth/login");
       await page.locator('input[type="email"]').fill(email);
       await page.locator('input[type="password"]').fill(LOCAL_TEST_PASSWORD);

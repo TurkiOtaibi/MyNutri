@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { provisionUser } from "./provision-user";
 
 const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
 const ADMIN_EMAIL = "admin.e2e@example.test";
@@ -232,6 +233,8 @@ test("@plan020 refresh preserves recovery readiness while sign-out invalidates i
 });
 
 test("@plan020 a replacement subject invalidates the previous recovery action", async ({ browser }) => {
+  const replacementEmail = `plan020-subject-${Date.now()}@example.test`;
+  await provisionUser(replacementEmail, PASSWORD);
   const context = await browser.newContext({ storageState: undefined });
   const page = await context.newPage();
   await openReadyReset(page, `subject-${Date.now()}`);
@@ -241,7 +244,7 @@ test("@plan020 a replacement subject invalidates the previous recovery action", 
     const signIn = (window as RecoveryWindow).__mynutriE2ESignInWithPassword;
     if (!signIn) throw new Error("Local sign-in control is unavailable.");
     return !(await signIn(email, replacementPassword)).error;
-  }, { email: `plan020-subject-${Date.now()}@example.test`, replacementPassword: PASSWORD });
+  }, { email: replacementEmail, replacementPassword: PASSWORD });
   expect(signedIn).toBe(true);
   await expect(page.locator('.auth-message[role="alert"]')).toContainText("انتهت صلاحية الرابط");
   await expect(password).toHaveCount(0);

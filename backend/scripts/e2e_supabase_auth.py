@@ -49,6 +49,11 @@ class AuthState:
         self._used_recovery_codes: set[str] = set()
         self._active_recovery_sessions: set[str] = set()
         self.request_records: list[dict[str, object]] = []
+        self.admin_users: dict[str, tuple[UUID, str]] = {
+            ADMIN_EMAIL: (ADMIN_ID, ADMIN_PASSWORD)
+        }
+        self.create_failed_once: set[str] = set()
+        self.delete_failed_once: set[str] = set()
 
     @staticmethod
     def _digest(value: str) -> str:
@@ -82,7 +87,8 @@ class AuthState:
 
     def user_for_email(self, email: str) -> dict[str, object]:
         normalized = email.strip().lower()
-        user_id = ADMIN_ID if normalized == ADMIN_EMAIL else uuid5(NAMESPACE, normalized)
+        with self._lock:
+            user_id = self.admin_users.get(normalized, (uuid5(NAMESPACE, normalized), ""))[0]
         return {
             "id": str(user_id),
             "aud": "authenticated",
@@ -93,9 +99,12 @@ class AuthState:
             "app_metadata": {"provider": "email", "providers": ["email"]},
         }
 
-    def session(self, email: str, *, recovery: bool = False) -> dict[str, object]:
+    def session(
+        self, email: str, *, recovery: bool = False, authenticated_at: int | None = None
+    ) -> dict[str, object]:
         user = self.user_for_email(email)
         now = datetime.now(timezone.utc)
+        auth_time = authenticated_at if authenticated_at is not None else int(now.timestamp())
         expires = now + timedelta(hours=2)
         session_id = str(uuid4())
         claims = {
@@ -104,6 +113,7 @@ class AuthState:
                 "aud": "authenticated",
                 "iss": self.issuer,
                 "iat": int(now.timestamp()),
+                "amr": [{"method": "password", "timestamp": auth_time}],
                 "exp": int(expires.timestamp()),
                 "jti": session_id,
                 "user_metadata": user["user_metadata"],
@@ -122,7 +132,7 @@ class AuthState:
             "token_type": "bearer",
             "expires_in": 7200,
             "expires_at": int(expires.timestamp()),
-            "refresh_token": f"e2e-refresh:{user['email']}",
+            "refresh_token": f"e2e-refresh:{user['email']}:{auth_time}",
             "user": user,
         }
 
@@ -163,6 +173,15 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"ok": True})
         elif path == "/auth/v1/user":
             self._send(200, self.state.user_for_email(ADMIN_EMAIL))
+        elif path.startswith("/auth/v1/admin/users"):
+            suffix = path.removeprefix("/auth/v1/admin/users").strip("/")
+            with self.state._lock:
+                users = list(self.state.admin_users)
+            if suffix:
+                matched = next((email for email in users if str(self.state.admin_users[email][0]) == suffix), None)
+                self._send(200, self.state.user_for_email(matched)) if matched else self._send(404)
+            else:
+                self._send(200, {"users": [self.state.user_for_email(email) for email in users]})
         else:
             self._send(404, {"message": "not found"})
 
@@ -174,18 +193,44 @@ class Handler(BaseHTTPRequestHandler):
             if grant == "password":
                 email = str(payload.get("email", ""))
                 password = str(payload.get("password", ""))
-                if not email or (email == ADMIN_EMAIL and password != ADMIN_PASSWORD):
+                with self.state._lock:
+                    stored = self.state.admin_users.get(email.strip().lower())
+                if not stored or password != stored[1]:
                     self._send(400, {"message": "Invalid login credentials"})
                     return
                 self._send(200, self.state.session(email))
                 return
             if grant == "refresh_token":
                 refresh = str(payload.get("refresh_token", ""))
-                email = refresh.removeprefix("e2e-refresh:") or ADMIN_EMAIL
-                self._send(200, self.state.session(email))
+                try:
+                    email, auth_time = refresh.removeprefix("e2e-refresh:").rsplit(":", 1)
+                    authenticated_at = int(auth_time)
+                except ValueError:
+                    self._send(400, {"message": "Invalid refresh token"})
+                    return
+                self._send(200, self.state.session(email, authenticated_at=authenticated_at))
                 return
         if parsed.path == "/auth/v1/signup":
-            self._send(200, self.state.session(str(payload.get("email", "user.e2e@example.test"))))
+            self._send(403, {"message": "self-registration disabled"})
+            return
+        if parsed.path == "/auth/v1/admin/users":
+            try:
+                identity = UUID(str(payload["id"]))
+                email = str(payload["email"]).strip().lower()
+                password = str(payload["password"])
+            except (KeyError, ValueError):
+                self._send(422, {"code": "validation_failed"})
+                return
+            with self.state._lock:
+                if email.startswith("incomplete-create-") and email not in self.state.create_failed_once:
+                    self.state.create_failed_once.add(email)
+                    self._send(503, {"code": "provider_unavailable"})
+                    return
+                if email in self.state.admin_users:
+                    self._send(422, {"code": "email_exists"})
+                    return
+                self.state.admin_users[email] = (identity, password)
+            self._send(200, self.state.user_for_email(email))
             return
         if parsed.path == "/auth/v1/recover":
             email = str(payload.get("email", "")).strip().lower()
@@ -214,6 +259,16 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"message": "not found"})
 
     def do_PUT(self) -> None:  # noqa: N802
+        path = urlparse(self.path).path
+        if path.startswith("/auth/v1/admin/users/"):
+            suffix = path.removeprefix("/auth/v1/admin/users/")
+            payload = self._json()
+            with self.state._lock:
+                match = next((email for email, user in self.state.admin_users.items() if str(user[0]) == suffix), None)
+                if match and "password" in payload:
+                    self.state.admin_users[match] = (self.state.admin_users[match][0], str(payload["password"]))
+            self._send(200, self.state.user_for_email(match)) if match else self._send(404)
+            return
         if urlparse(self.path).path == "/auth/v1/user":
             authorization = self.headers.get("authorization", "")
             token = authorization.removeprefix("Bearer ")
@@ -239,6 +294,22 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, self.state.user_for_email(ADMIN_EMAIL))
         else:
             self._send(404, {"message": "not found"})
+
+    def do_DELETE(self) -> None:  # noqa: N802
+        path = urlparse(self.path).path
+        if not path.startswith("/auth/v1/admin/users/"):
+            self._send(404)
+            return
+        suffix = path.removeprefix("/auth/v1/admin/users/")
+        with self.state._lock:
+            match = next((email for email, user in self.state.admin_users.items() if str(user[0]) == suffix), None)
+            if match and match.startswith("incomplete-delete-") and match not in self.state.delete_failed_once:
+                self.state.delete_failed_once.add(match)
+                self._send(503, {"code": "provider_unavailable"})
+                return
+            if match and match != ADMIN_EMAIL:
+                del self.state.admin_users[match]
+        self._send(200)
 
     def log_message(self, format: str, *args: object) -> None:
         return

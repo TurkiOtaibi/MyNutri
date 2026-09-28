@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Page } from "@playwright/test";
 import type { LabCreateReceipt, LabCreateRequest, LabOverviewResponse } from "../../lib/types";
+import { provisionUser } from "../provision-user";
 import { API_URL, expect, navigateToOwnerLabs, offsetIsoDate, test } from "./helpers";
 
 const dialog = (page: Page) => page.getByRole("dialog", { name: "إضافة نتائج" });
@@ -294,6 +295,8 @@ test("unknown 500 preserves the operation and deleted receipt results are never 
 });
 
 test("delivered POST response after actor takeover cannot restore the old draft, toast, or query cache", async ({ labsPage: page, labsApi }) => {
+  const takeoverEmail = `labs-takeover-${randomUUID()}@example.test`;
+  await provisionUser(takeoverEmail, "Labs-owner-password-2026!");
   await page.addInitScript(() => {
     const original = window.fetch.bind(window);
     window.fetch = (input, init) => {
@@ -324,7 +327,7 @@ test("delivered POST response after actor takeover cannot restore the old draft,
       const signIn = (window as Window & { __mynutriE2ESignInWithPassword?: (email: string, password: string) => Promise<{ error: unknown }> }).__mynutriE2ESignInWithPassword;
       if (!signIn) throw Error("Missing local auth fixture control");
       return signIn(email, "Labs-owner-password-2026!");
-    }, `labs-takeover-${randomUUID()}@example.test`);
+    }, takeoverEmail);
     expect(switched.error).toBeNull();
     await expect(dialog(page)).toHaveCount(0);
     const delivered = page.waitForResponse((response) => response.url() === `${API_URL}/labs/results` && response.request().method() === "POST");

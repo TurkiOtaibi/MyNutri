@@ -5,7 +5,7 @@ import re
 from base64 import b64decode, urlsafe_b64encode
 from binascii import Error as Base64Error
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dataclass_field
 from math import ceil
 from typing import Any
 from uuid import UUID
@@ -13,6 +13,7 @@ from uuid import UUID
 from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import and_, func, or_, text
+from sqlalchemy.orm import aliased
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
@@ -20,6 +21,7 @@ from app.models import (
     DiaryEntry,
     Food,
     Principal,
+    PrincipalStatus,
     utcnow,
 )
 from app.schemas import (
@@ -84,6 +86,7 @@ class FoodPage:
     page_size: int
     total_pages: int
     categories: list[str]
+    deleted_principals: set[UUID] = dataclass_field(default_factory=set)
 
 
 PICKER_COLUMNS = (
@@ -233,7 +236,7 @@ def _food_data(food: Food) -> dict[str, Any]:
     return data
 
 
-def _build_food_response(food: Food) -> FoodResponse:
+def _build_food_response(food: Food, deleted_principals: set[UUID] | None = None) -> FoodResponse:
     try:
         return FoodResponse(
             id=food.id,
@@ -245,6 +248,12 @@ def _build_food_response(food: Food) -> FoodResponse:
             net_carbs_g=net_carbs(food),
             created_at=food.created_at,
             updated_at=food.updated_at,
+            created_by_label=(
+                "مستخدم محذوف" if food.created_by_principal_id in (deleted_principals or set()) else None
+            ),
+            updated_by_label=(
+                "مستخدم محذوف" if food.updated_by_principal_id in (deleted_principals or set()) else None
+            ),
         )
     except ValidationError as error:
         raise HTTPException(
@@ -256,12 +265,12 @@ def _build_food_response(food: Food) -> FoodResponse:
         ) from error
 
 
-def to_food_responses(foods: Sequence[Food]) -> list[FoodResponse]:
-    return [_build_food_response(food) for food in foods]
+def to_food_responses(foods: Sequence[Food], deleted_principals: set[UUID] | None = None) -> list[FoodResponse]:
+    return [_build_food_response(food, deleted_principals) for food in foods]
 
 
-def to_food_response(food: Food) -> FoodResponse:
-    return _build_food_response(food)
+def to_food_response(food: Food, deleted_principals: set[UUID] | None = None) -> FoodResponse:
+    return _build_food_response(food, deleted_principals)
 
 
 def normalize_text(value: str) -> str:
@@ -311,9 +320,17 @@ def _food_namespace_lock(session: Session, *, shared: bool) -> None:
 
 def _lock_food_namespace(session: Session, principal: PrincipalContext) -> None:
     """Lock the actor before serializing Food writers and locking Food rows."""
-    session.exec(
-        select(Principal).where(Principal.id == principal.principal_id).with_for_update()
-    ).one()
+    owner = session.exec(
+        select(Principal)
+        .where(Principal.id == principal.principal_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).one_or_none()
+    if owner is None or owner.status != PrincipalStatus.active:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "INVALID_CREDENTIAL", "message_ar": "بيانات الدخول غير صالحة."},
+        )
     _food_namespace_lock(session, shared=False)
 
 
@@ -377,7 +394,7 @@ def list_foods_page(
         count_statement = count_statement.where(*conditions)
     total = int(session.exec(count_statement).one())
 
-    statement = select(Food)
+    statement = _attributed_food_statement()
     if conditions:
         statement = statement.where(*conditions)
 
@@ -392,7 +409,17 @@ def list_foods_page(
         statement = statement.order_by(Food.name)
 
     statement = statement.offset((page - 1) * page_size).limit(page_size)
-    items = list(session.exec(statement).all())
+    rows = list(session.exec(statement).all())
+    items = [row[0] for row in rows]
+    deleted_principals = {
+        identifier
+        for food, creator_status, updater_status in rows
+        for identifier, principal_status in (
+            (food.created_by_principal_id, creator_status),
+            (food.updated_by_principal_id, updater_status),
+        )
+        if identifier is not None and principal_status == PrincipalStatus.deleted
+    }
 
     category_statement = select(Food.primary_category).distinct()
     category_rows = session.exec(category_statement).all()
@@ -406,7 +433,34 @@ def list_foods_page(
         page_size=page_size,
         total_pages=ceil(total / page_size) if total else 0,
         categories=categories,
+        deleted_principals=deleted_principals,
     )
+
+
+def _attributed_food_statement():
+    creator = aliased(Principal)
+    updater = aliased(Principal)
+    return (
+        select(Food, creator.status, updater.status)
+        .outerjoin(creator, Food.created_by_principal_id == creator.id)
+        .outerjoin(updater, Food.updated_by_principal_id == updater.id)
+    )
+
+
+def get_food_response_with_attribution(session: Session, food_id: UUID) -> FoodResponse:
+    row = session.exec(_attributed_food_statement().where(Food.id == food_id)).first()
+    if row is None:
+        raise resource_not_found()
+    food, creator_status, updater_status = row
+    deleted = {
+        identifier
+        for identifier, principal_status in (
+            (food.created_by_principal_id, creator_status),
+            (food.updated_by_principal_id, updater_status),
+        )
+        if identifier is not None and principal_status == PrincipalStatus.deleted
+    }
+    return to_food_response(food, deleted)
 
 
 def get_food(

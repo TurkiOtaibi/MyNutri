@@ -109,6 +109,7 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
             {[food.brand, categoryLabel || food.primary_category].filter(Boolean).join(" · ")}
           </p>
           <span className="serving-badge detail-serving-badge">{defaultServingText(food)}</span>
+          {(food.created_by_label || food.updated_by_label) && <span className="food-attribution">مستخدم محذوف</span>}
         </div>
         {account?.role === "admin" ? <div className="food-detail-actions">
           <Link className="btn primary" href={`/foods/${food.id}/edit`}>
