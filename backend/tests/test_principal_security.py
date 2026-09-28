@@ -867,6 +867,16 @@ def test_supabase_verifier_extracts_latest_valid_authentication_time(monkeypatch
         assert verifier.verify(token).authenticated_at == expected
 
 
+def test_refreshed_token_uses_old_authentication_time_despite_new_iat(monkeypatch) -> None:
+    verifier = SupabaseTokenVerifier(Settings(environment="test", supabase_url="https://project.supabase.co"))
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    monkeypatch.setattr(verifier.jwks, "get_signing_key_from_jwt", lambda _token: SimpleNamespace(key=private_key.public_key()))
+    old_auth_time = 1_780_000_000
+    token = _jwt(verifier, private_key, amr=[{"method": "password", "timestamp": old_auth_time}])
+    assert jwt.decode(token, options={"verify_signature": False})["iat"] > old_auth_time
+    assert verifier.verify(token).authenticated_at == old_auth_time
+
+
 def test_supabase_verifier_rejects_signed_non_uuid_subject(monkeypatch) -> None:
     settings = Settings(environment="test", supabase_url="https://project.supabase.co")
     verifier = SupabaseTokenVerifier(settings)

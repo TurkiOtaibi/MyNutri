@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import time
+from datetime import timezone
 from uuid import UUID, uuid4
 
 import httpx
@@ -97,6 +99,37 @@ def main() -> None:
                     return client.get("/account/me", headers={"Authorization": f"Bearer {token}"}).status_code
 
                 assert admission(user_session["access_token"]) == 200
+                for enabled in (False, True):
+                    changed = client.put(
+                        f"/admin/accounts/{target_id}/status",
+                        json={"enabled": enabled},
+                        headers={"Authorization": f"Bearer {admin_session['access_token']}"},
+                    )
+                    assert changed.status_code == 200, "Admin status change failed."
+                with Session(engine) as session:
+                    target = session.get(Principal, target_id)
+                    assert target is not None and target.sessions_valid_after is not None
+                    cutoff = target.sessions_valid_after
+                    if cutoff.tzinfo is None:
+                        cutoff = cutoff.replace(tzinfo=timezone.utc)
+                # Cross the deliberate whole-second cutoff; this is a boundary
+                # synchronization, not a retry or an arbitrary test delay.
+                remaining = cutoff.timestamp() - time.time()
+                if remaining > 0:
+                    time.sleep(remaining + 0.01)
+                status_refresh = httpx.post(
+                    f"{provider_url}/auth/v1/token?grant_type=refresh_token",
+                    headers={"apikey": public_key},
+                    json={"refresh_token": user_session["refresh_token"]}, timeout=10,
+                )
+                assert status_refresh.status_code == 200, "Status change unexpectedly revoked provider refresh."
+                refreshed_claims = jwt.decode(status_refresh.json()["access_token"], options={"verify_signature": False})
+                assert refreshed_claims["iat"] >= cutoff.timestamp()
+                assert latest_authentication_time(refreshed_claims.get("amr")) == latest_authentication_time(user_claims["amr"])
+                assert admission(status_refresh.json()["access_token"]) == 401
+
+                fresh_session = sign_in(user_email, user_password)
+                assert admission(fresh_session["access_token"]) == 200
                 reset = client.put(
                     f"/admin/accounts/{target_id}/password",
                     json={"new_password": new_password},
@@ -106,13 +139,13 @@ def main() -> None:
                 refreshed = httpx.post(
                     f"{provider_url}/auth/v1/token?grant_type=refresh_token",
                     headers={"apikey": public_key},
-                    json={"refresh_token": user_session["refresh_token"]}, timeout=10,
+                    json={"refresh_token": fresh_session["refresh_token"]}, timeout=10,
                 )
                 if refreshed.status_code == 200:
                     assert admission(refreshed.json()["access_token"]) == 401
                 else:
                     assert 400 <= refreshed.status_code < 500, "Unexpected provider refresh failure."
-                assert admission(user_session["access_token"]) == 401
+                assert admission(fresh_session["access_token"]) == 401
         finally:
             app.dependency_overrides.pop(get_token_verifier, None)
     finally:
