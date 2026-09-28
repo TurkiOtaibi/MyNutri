@@ -2,8 +2,8 @@
 
 Status: current architecture and data authority.
 
-The Admin-managed account lifecycle in this document is an approved target,
-pending code and migration. The docs-only record does not claim it runs today.
+The Admin-managed account lifecycle in this document is implemented in this
+revision; Production activation remains a separate release action.
 
 ## System shape
 
@@ -35,7 +35,7 @@ from `PrincipalContext`; clients do not submit another user's Principal ID.
 Catalog tests, categories, panels, statuses, reference zones, canonical values
 and medical-rule versions are not database entities.
 
-## Admin-managed account lifecycle (pending implementation)
+## Admin-managed account lifecycle
 
 `Principal` remains the durable identity and Food-attribution target. A database
 partial unique index on `role='admin'` enforces at most one Admin; bootstrap
@@ -222,7 +222,7 @@ same-subject overview/detail navigation preserves current queries and cache.
 
 ## Migration and recovery
 
-The sole Alembic head is `e8b7a42f6c31`. Historical migrations remain immutable and
+The sole Alembic head is `b6e4c2a78190`. Historical migrations remain immutable and
 reconstruct the schema. Destructive cutovers are forward-only: real rollback after
 removed schema or data requires a matching pre-cutover database restore and compatible
 application revision, not a synthesized downgrade.

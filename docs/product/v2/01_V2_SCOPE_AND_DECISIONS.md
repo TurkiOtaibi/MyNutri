@@ -3,8 +3,8 @@
 Status: Implementation authority
 Release: V2 multi-user, shared Food catalog, simplified Food model, standalone Labs
 
-The Admin-managed account lifecycle below is approved Product authority pending
-implementation. It does not describe behavior already shipped by this docs-only change.
+The Admin-managed account lifecycle below is approved Product authority implemented
+in the lifecycle revision; Production activation remains a separate release action.
 
 ## Objective
 

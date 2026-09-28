@@ -25,6 +25,10 @@ import type {
 } from "./types";
 import type {
   AccountResponse,
+  AdminAccountCreate,
+  AdminAccountEdit,
+  AdminAccountList,
+  AdminAccountSummary,
   AdminUserDetail,
   AdminUserListResponse,
   CalendarAuthorityResponse
@@ -35,6 +39,7 @@ import { parseNutritionRegistry } from "./nutrients";
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/+$/, "");
 
 export type CurrentAccount = AccountResponse;
+export type AdminAccount = AdminAccountSummary;
 export type CalendarAuthority = CalendarAuthorityResponse;
 
 export class ApiError extends Error {
@@ -230,6 +235,40 @@ export function listAdminUsers(search = "", page = 1): Promise<AdminUserList> {
 
 export function getAdminUser(principalId: string): Promise<AdminUserDetail> {
   return apiFetch<AdminUserDetail>(`/admin/users/${principalId}`);
+}
+
+export function listAdminAccounts(page = 1): Promise<AdminAccountList> {
+  return apiFetch<AdminAccountList>(`/admin/accounts?page=${page}`);
+}
+
+export function createAdminAccount(payload: AdminAccountCreate, key: string): Promise<AdminAccountSummary> {
+  return apiFetch<AdminAccountSummary>("/admin/accounts", {
+    method: "POST", headers: { "Idempotency-Key": key }, body: JSON.stringify(payload)
+  });
+}
+
+export function editAdminAccount(id: string, payload: AdminAccountEdit): Promise<AdminAccountSummary> {
+  return apiFetch<AdminAccountSummary>(`/admin/accounts/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export function resetAdminAccountPassword(id: string, newPassword: string): Promise<void> {
+  return apiFetch<void>(`/admin/accounts/${id}/password`, { method: "PUT", body: JSON.stringify({ new_password: newPassword }) });
+}
+
+export function setAdminAccountEnabled(id: string, enabled: boolean): Promise<AdminAccountSummary> {
+  return apiFetch<AdminAccountSummary>(`/admin/accounts/${id}/status`, { method: "PUT", body: JSON.stringify({ enabled }) });
+}
+
+export function deleteAdminAccount(id: string, email: string): Promise<AdminAccountSummary> {
+  return apiFetch<AdminAccountSummary>(`/admin/accounts/${id}`, { method: "DELETE", body: JSON.stringify({ confirm_email: email }) });
+}
+
+export function retryAdminAccountCreation(id: string, password: string): Promise<AdminAccountSummary> {
+  return apiFetch<AdminAccountSummary>(`/admin/accounts/${id}/retry-create`, { method: "POST", body: JSON.stringify({ initial_password: password }) });
+}
+
+export function retryAdminAccountDeletion(id: string): Promise<AdminAccountSummary> {
+  return apiFetch<AdminAccountSummary>(`/admin/accounts/${id}/retry-delete`, { method: "POST" });
 }
 
 export function getAdminUserDiary(

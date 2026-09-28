@@ -21,6 +21,7 @@ import type {
   ProfileInput,
 } from "../../lib/types";
 import { applyProfileThroughTargetPlan } from "../profile-api";
+import { provisionUser } from "../provision-user";
 import { createResultCleanupRegistry } from "./result-cleanup";
 
 export const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
@@ -89,6 +90,7 @@ export async function createActor(
   initialProfile: Partial<Pick<ProfileInput, "sex" | "birth_date">>,
 ): Promise<LabsActor> {
   const email = `labs-owner-${randomUUID()}@example.test`;
+  await provisionUser(email, PASSWORD);
   const tokenResponse = await fetch(`${AUTH_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: { apikey: "e2e-public-key", "Content-Type": "application/json" },

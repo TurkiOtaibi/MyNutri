@@ -630,6 +630,8 @@ class FoodResponse(FoodBase):
     net_carbs_g: float | None
     created_at: datetime
     updated_at: datetime
+    created_by_label: str | None = None
+    updated_by_label: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -703,6 +705,74 @@ class AdminUserListResponse(BaseModel):
     page: int
     page_size: int
     total_pages: int
+
+
+class AdminAccountCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: StrictStr = Field(min_length=3, max_length=320)
+    display_name: StrictStr = Field(min_length=1, max_length=120)
+    initial_password: StrictStr = Field(min_length=1, max_length=256)
+
+    @field_validator("display_name")
+    @classmethod
+    def nonblank_display_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("display_name is required")
+        return value
+
+
+class AdminAccountEdit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: StrictStr = Field(min_length=1, max_length=120)
+
+    @field_validator("display_name")
+    @classmethod
+    def nonblank_display_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("display_name is required")
+        return value
+
+
+class AdminAccountPasswordReset(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    new_password: StrictStr = Field(min_length=1, max_length=256)
+
+
+class AdminAccountEnable(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
+class AdminAccountDelete(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    confirm_email: StrictStr
+
+
+class AdminAccountRetryCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    initial_password: StrictStr = Field(min_length=1, max_length=256)
+
+
+class AdminAccountSummary(BaseModel):
+    principal_id: UUID
+    email: str | None
+    display_name: str | None
+    status: PrincipalStatus
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminAccountList(BaseModel):
+    items: list[AdminAccountSummary]
+    total: int
+    page: int
+    page_size: int
 
 
 class AdminUserDetail(BaseModel):

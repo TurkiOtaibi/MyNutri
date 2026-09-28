@@ -19,6 +19,7 @@ from app.models import (
     IdempotencyRecord,
     IdempotencyState,
     Principal,
+    PrincipalStatus,
     Profile,
     TargetPlan,
     utcnow,
@@ -261,9 +262,14 @@ def write_target_plan(
     _validate_idempotency_key(idempotency_key)
     request_hash = _canonical_hash(payload)
     try:
-        session.exec(
-            select(Principal).where(Principal.id == principal.principal_id).with_for_update()
-        ).one()
+        owner = session.exec(
+            select(Principal)
+            .where(Principal.id == principal.principal_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).one_or_none()
+        if owner is None or owner.status != PrincipalStatus.active:
+            raise TargetPlanError("INVALID_CREDENTIAL", 401, "بيانات الدخول غير صالحة.")
         profile = session.exec(
             select(Profile).where(Profile.principal_id == principal.principal_id).with_for_update()
         ).first()

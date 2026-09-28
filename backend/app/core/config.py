@@ -3,7 +3,7 @@ from typing import Self
 from urllib.parse import urlsplit, urlunsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LOOPBACK_AUTH_EMULATOR_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/mynutri"
     allowed_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     supabase_url: str = ""
+    supabase_service_role_key: SecretStr | None = None
+    supabase_admin_http_timeout_seconds: int = Field(default=10, ge=1, le=60)
     supabase_jwks_url: str = ""
     supabase_jwt_audience: str = "authenticated"
     supabase_jwks_timeout_seconds: int = Field(default=5, ge=1, le=30)

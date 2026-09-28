@@ -1,10 +1,10 @@
 # V2 Data Migration and Cutover
 
-The Admin-managed lifecycle below is approved migration authority pending a
-future implementation revision. This docs-only record creates no migration and
-does not change the current sole head `e8b7a42f6c31`.
+The Admin-managed lifecycle below is approved migration authority implemented
+by forward revision `b6e4c2a78190`, following private Labs revision
+`e8b7a42f6c31`.
 
-## Admin-managed account lifecycle transition (pending implementation)
+## Admin-managed account lifecycle transition
 
 - Preflight inventories Principals by role/status and their Supabase Auth links.
   More than one Admin, ambiguous Auth links, or private rows without a resolvable
@@ -88,10 +88,15 @@ database-privilege boundaries in:
 - revision: `d9f64a1c3e58`
 - parent: `c8e53f0b2d47`
 
-Private Labs persistence and durable create receipts are introduced in the current sole head:
+Private Labs persistence and durable create receipts are introduced in:
 
 - revision: `e8b7a42f6c31`
 - parent: `d9f64a1c3e58`
+
+Admin-managed account lifecycle fields and constraints are introduced in the sole head:
+
+- revision: `b6e4c2a78190`
+- parent: `e8b7a42f6c31`
 
 `lab_result` stores Principal-owned entered facts in unscaled `NUMERIC`, retaining
 fractional trailing zeros. PostgreSQL requires finite nonnegative values with
@@ -237,7 +242,7 @@ Before any release authorization:
 16. Confirm `d9f64a1c3e58` removed Food archive columns, installed the Diary Food
     `ON DELETE CASCADE`, preserved existing Food/Diary rows during migration, and
     revoked direct Food mutation from `PUBLIC`, `anon`, and `authenticated`.
-17. Confirm `e8b7a42f6c31` is the sole head and agrees with all seven models;
+17. Confirm `b6e4c2a78190` is the sole head and agrees with all seven models;
     clean and populated-base upgrades preserve existing facts, grants and replay.
 18. Prove packaged Labs catalog availability, private privileges, finite/unscaled
     numeric storage, unique owner/test/date, and operation-specific receipt expiry.

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Annotated
 from uuid import UUID
@@ -7,7 +8,6 @@ import jwt
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import PyJWTError
-from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 from sqlmodel import select
 
@@ -31,6 +31,7 @@ class AuthClaims:
     auth_user_id: UUID
     email: str | None
     display_name: str | None
+    issued_at: int | None = None
 
 
 class SupabaseTokenVerifier:
@@ -60,7 +61,7 @@ class SupabaseTokenVerifier:
             algorithms=["ES256", "RS256"],
             audience=self.audience,
             issuer=self.issuer,
-            options={"require": ["exp", "iss", "aud", "sub"]},
+            options={"require": ["exp", "iss", "aud", "sub", "iat"]},
         )
         auth_user_id = UUID(str(payload["sub"]))
         email_value = payload.get("email")
@@ -78,7 +79,10 @@ class SupabaseTokenVerifier:
             )
             if candidate:
                 display_name = " ".join(str(candidate).strip().split())[:120] or None
-        return AuthClaims(auth_user_id, email, display_name)
+        issued_at = payload["iat"]
+        if not isinstance(issued_at, int) or isinstance(issued_at, bool):
+            raise ValueError("Invalid issued-at claim")
+        return AuthClaims(auth_user_id, email, display_name, issued_at)
 
 
 @lru_cache(maxsize=8)
@@ -172,24 +176,16 @@ def get_principal_context(
     principal = session.exec(
         select(Principal).where(Principal.auth_user_id == claims.auth_user_id)
     ).one_or_none()
-    if principal is None:
-        principal = Principal(
-            auth_user_id=claims.auth_user_id,
-            email=claims.email,
-            display_name=claims.display_name,
-            role=PrincipalRole.user,
-        )
-        session.add(principal)
-        try:
-            session.commit()
-            session.refresh(principal)
-        except IntegrityError:
-            session.rollback()
-            principal = session.exec(
-                select(Principal).where(Principal.auth_user_id == claims.auth_user_id)
-            ).one_or_none()
     if principal is None or principal.status != PrincipalStatus.active:
         raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
+    if principal.sessions_valid_after is not None:
+        cutoff = principal.sessions_valid_after
+        if cutoff.tzinfo is None:
+            cutoff = cutoff.replace(tzinfo=timezone.utc)
+        if claims.issued_at is None or datetime.fromtimestamp(
+            claims.issued_at, timezone.utc
+        ) < cutoff:
+            raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
     return PrincipalContext(
         principal_id=principal.id,
         auth_user_id=claims.auth_user_id,

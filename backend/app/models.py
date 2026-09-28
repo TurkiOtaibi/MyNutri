@@ -254,8 +254,11 @@ class IdempotencyState(str, Enum):
 
 
 class PrincipalStatus(str, Enum):
+    provisioning = "provisioning"
     active = "active"
     disabled = "disabled"
+    deleting = "deleting"
+    deleted = "deleted"
 
 
 class PrincipalRole(str, Enum):
@@ -266,9 +269,31 @@ class PrincipalRole(str, Enum):
 class Principal(SQLModel, table=True):
     __tablename__ = "principal"
     __table_args__ = (
-        CheckConstraint("status IN ('active', 'disabled')", name="ck_principal_status"),
+        CheckConstraint("status IN ('provisioning', 'active', 'disabled', 'deleting', 'deleted')", name="ck_principal_status"),
         CheckConstraint("role IN ('user', 'admin')", name="ck_principal_role"),
         UniqueConstraint("auth_user_id", name="uq_principal_auth_user_id"),
+        CheckConstraint(
+            "auth_user_id IS NULL OR retired_auth_user_id IS NULL",
+            name="ck_principal_one_auth_identity_state",
+        ),
+        Index(
+            "uq_principal_any_auth_user_id",
+            sa_text("coalesce(auth_user_id, retired_auth_user_id)"),
+            unique=True,
+            postgresql_where=sa_text(
+                "auth_user_id IS NOT NULL OR retired_auth_user_id IS NOT NULL"
+            ),
+            sqlite_where=sa_text(
+                "auth_user_id IS NOT NULL OR retired_auth_user_id IS NOT NULL"
+            ),
+        ),
+        Index(
+            "uq_principal_retired_auth_user_id",
+            "retired_auth_user_id",
+            unique=True,
+            postgresql_where=sa_text("retired_auth_user_id IS NOT NULL"),
+            sqlite_where=sa_text("retired_auth_user_id IS NOT NULL"),
+        ),
         Index(
             "uq_principal_lower_email",
             sa_text("lower(email)"),
@@ -276,10 +301,25 @@ class Principal(SQLModel, table=True):
             postgresql_where=sa_text("email IS NOT NULL"),
             sqlite_where=sa_text("email IS NOT NULL"),
         ),
+        Index(
+            "uq_principal_single_admin",
+            "role",
+            unique=True,
+            postgresql_where=sa_text("role = 'admin'"),
+            sqlite_where=sa_text("role = 'admin'"),
+        ),
+        Index(
+            "uq_principal_creation_idempotency_key",
+            "creation_idempotency_key",
+            unique=True,
+            postgresql_where=sa_text("creation_idempotency_key IS NOT NULL"),
+            sqlite_where=sa_text("creation_idempotency_key IS NOT NULL"),
+        ),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     auth_user_id: uuid.UUID | None = Field(default=None)
+    retired_auth_user_id: uuid.UUID | None = Field(default=None)
     email: str | None = Field(default=None, sa_column=Column(String(320), nullable=True))
     display_name: str | None = Field(default=None, sa_column=Column(String(120), nullable=True))
     role: PrincipalRole = Field(
@@ -289,6 +329,21 @@ class Principal(SQLModel, table=True):
     status: PrincipalStatus = Field(
         default=PrincipalStatus.active,
         sa_column=Column(Text(), nullable=False, server_default=PrincipalStatus.active.value),
+    )
+    creation_idempotency_key: str | None = Field(
+        default=None, sa_column=Column(String(128), nullable=True)
+    )
+    identity_requested_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    deletion_started_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    deleted_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    sessions_valid_after: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
     created_at: datetime = Field(
         default_factory=utcnow,

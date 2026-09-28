@@ -2707,3 +2707,17 @@ a {
 @media (prefers-reduced-motion: reduce) {
   .daily-nutrient-progress span, .food-completeness-bar span { transition: none; }
 }
+
+.account-management { display: grid; gap: 16px; }
+.account-form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.account-form label { display: grid; gap: 6px; min-width: min(100%, 210px); flex: 1; }
+.account-form input, .account-delete-dialog input { min-height: 44px; padding: 9px 12px; border: 1px solid var(--border, #dfe6df); border-radius: 9px; font: inherit; }
+.account-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+.account-row > div:last-child { display: grid; gap: 8px; }
+.account-row .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.account-editor { scroll-margin-top: 80px; }
+.account-delete-dialog { width: min(92vw, 480px); border: 1px solid var(--border, #dfe6df); border-radius: 16px; padding: 24px; color: inherit; }
+.account-delete-dialog::backdrop { background: rgb(15 30 24 / 55%); }
+.account-delete-dialog form { display: grid; gap: 12px; }
+.account-delete-dialog .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 640px) { .account-form { display: grid; } .account-row .actions { display: grid; } }

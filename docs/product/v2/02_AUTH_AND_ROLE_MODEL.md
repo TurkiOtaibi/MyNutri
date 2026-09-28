@@ -1,7 +1,7 @@
 # V2 Authentication and Role Model
 
-The Admin-managed lifecycle in this document is approved authority pending
-implementation; the docs-only change does not claim the current code enforces it.
+The Admin-managed lifecycle in this document is approved authority implemented
+in the lifecycle revision; Production activation remains a separate release action.
 
 ## Authentication
 

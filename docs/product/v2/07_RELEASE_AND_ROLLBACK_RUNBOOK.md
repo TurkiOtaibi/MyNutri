@@ -3,7 +3,7 @@
 Status: Operational authority. This document does not authorize a deployment or
 production mutation.
 
-## Admin-managed account lifecycle release gates (pending implementation)
+## Admin-managed account lifecycle release gates
 
 The approved account lifecycle requires a separate release review and does not
 change the current deployed revision by this documentation update. Before
@@ -14,10 +14,12 @@ or an unsafe migration stops rollout. Establish the single Admin before making
 Admin-created accounts the only admission path.
 
 Release backend admission and all Principal-owned writer status/lock checks
-together with the lifecycle schema. Configure the Service Role credential only
-for FastAPI Admin create/reset/delete and bootstrap; verify it is absent from
-frontend/public variables, responses, and logs. Disable public Supabase signup
-and remove the sign-up UI in the coordinated cutover. Direct signup, unknown
+together with the lifecycle schema. Configure backend-only
+`SUPABASE_SERVICE_ROLE_KEY` for FastAPI Admin create/reset/delete and bootstrap,
+and bound `SUPABASE_ADMIN_HTTP_TIMEOUT_SECONDS`; neither variable is a browser
+setting. Verify credentials are absent from frontend/public variables,
+responses, and logs. Disable public Supabase signup and remove the sign-up UI
+in the coordinated cutover. Direct signup, unknown
 Auth identities, and all non-active statuses must fail application admission.
 Keep the current Admin's ability to read selected Profile/Diary/Labs without
 write access to those resources.
@@ -54,8 +56,8 @@ copy in the BA field dictionary when implementing the lifecycle.
 
 ## Release identity
 
-The current migration head is private Labs persistence revision `e8b7a42f6c31`,
-with parent Food catalog unification revision `d9f64a1c3e58`. Confirm the intended application
+The current migration head is Admin lifecycle revision `b6e4c2a78190`,
+with parent private Labs revision `e8b7a42f6c31`. Confirm the intended application
 commit, generated contract, single Alembic head, and approved environment before
 any rollout action.
 

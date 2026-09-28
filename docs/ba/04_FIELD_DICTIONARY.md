@@ -8,14 +8,17 @@ Status: supporting requirements. Backend schemas and database constraints are ex
 |---|---:|---|
 | `id` | Yes | Durable UUID ownership key |
 | `auth_user_id` | No | Unique Supabase subject when linked; cleared only after confirmed Auth deletion |
+| `retired_auth_user_id` | Deleted tombstone | Permanent unique former Auth subject; never used for admission or relinked to a Principal |
+| `identity_requested_at` | Provisioning after create request | Starts the bounded creation lease; refreshed before every provider create attempt |
+| `sessions_valid_after` | After password reset or status change | Access tokens issued before this rounded-up cutoff are rejected |
 | `email` | No | Unique case-insensitively when present; maximum 320; erased on deleted tombstone |
 | `display_name` | No | Maximum 120; erased on deleted tombstone |
 | `role` | Yes | `user` or `admin`; never accepted from browser metadata or account-management input; partial unique index permits at most one Admin |
 | `status` | Yes | Approved lifecycle target: `provisioning`, `active`, `disabled`, `deleting`, `deleted` |
 | creation idempotency key | For Admin creation | Stored with the `provisioning` Principal so the same-key retry resumes rather than creates another account |
 
-These account-lifecycle fields are approved target authority pending implementation;
-the docs-only change does not claim the current schema already supports them.
+These account-lifecycle fields are implemented in the forward lifecycle revision;
+Production activation remains a separate release action.
 Admin creates a normal user with email, display name, and an initial password.
 Admin may edit display name, reset password while revoking the user's existing
 Supabase sessions through FastAPI, and enable/disable; email and role

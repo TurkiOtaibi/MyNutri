@@ -66,6 +66,10 @@ def _create_supabase_user(request: BootstrapRequest) -> UUID:
 
 def bootstrap_admin(request: BootstrapRequest) -> UUID | None:
     with Session(engine) as session:
+        if session.exec(
+            select(Principal).where(Principal.role == PrincipalRole.admin).with_for_update()
+        ).first() is not None:
+            raise RuntimeError("Admin already exists; bootstrap refuses another Admin.")
         principal = session.get(Principal, request.principal_id)
         if principal is None:
             raise RuntimeError("The requested existing Principal does not exist.")

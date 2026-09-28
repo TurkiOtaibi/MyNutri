@@ -10,7 +10,7 @@ from sqlalchemy import tuple_
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
-from app.models import DiaryEntry, Food, Principal
+from app.models import DiaryEntry, Food, Principal, PrincipalStatus
 from app.schemas import (
     DiaryEntryCreate,
     DiaryFoodReference,
@@ -54,9 +54,17 @@ class AdminDiaryCursorError(ValueError):
 
 
 def _lock_owner_for_target_binding(session: Session, principal: PrincipalContext) -> None:
-    session.exec(
-        select(Principal).where(Principal.id == principal.principal_id).with_for_update()
-    ).one()
+    owner = session.exec(
+        select(Principal)
+        .where(Principal.id == principal.principal_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).one_or_none()
+    if owner is None or owner.status != PrincipalStatus.active:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "INVALID_CREDENTIAL", "message_ar": "بيانات الدخول غير صالحة."},
+        )
 
 
 def _diary_integrity_error(code: str, message_ar: str) -> HTTPException:

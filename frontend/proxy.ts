@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_AUTH_PATHS = ["/auth/login", "/auth/sign-up", "/auth/forgot-password"];
+const PUBLIC_AUTH_PATHS = ["/auth/login", "/auth/forgot-password"];
 const INVALID_TOKEN_COOKIE = "mynutri-auth-invalid-token";
 const TOKEN_FINGERPRINT = /^[0-9a-f]{64}$/;
 
