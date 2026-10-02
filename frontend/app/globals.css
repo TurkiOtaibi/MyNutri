@@ -897,6 +897,10 @@ a {
 .main-surface .admin-detail-head { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; align-items: flex-start; }
 .admin-detail-head > div:nth-child(2) { flex: 1; min-width: 0; }
 .admin-readonly-grid > .admin-field-email { grid-column: 1 / -1; }
+.admin-section-links { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 14px; padding-bottom: 2px; }
+.admin-section-links a { display: inline-flex; align-items: center; min-height: 44px; padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); white-space: nowrap; text-decoration: none; }
+.admin-section-links a:hover { background: var(--surface-strong); }
+.admin-detail-section { scroll-margin-top: 96px; }
 .selected-user-banner { display: flex; justify-content: space-between; gap: 12px; background: #fff4d8; border: 1px solid #e6c66e; border-radius: 7px; padding: 12px; margin-bottom: 14px; }
 .admin-data-view { white-space: pre-wrap; overflow-wrap: anywhere; direction: ltr; text-align: left; background: #f7f9f7; padding: 12px; border-radius: 7px; }
 .admin-readonly-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 0; }
@@ -2771,6 +2775,8 @@ a {
 .account-form input, .account-delete-dialog input { width: 100%; min-height: 44px; padding: 9px 12px; border: 1px solid var(--border, #dfe6df); border-radius: 9px; font: inherit; }
 .account-form .password-field input { padding-inline-end: 48px; }
 .account-form .password-field button { display: grid; place-items: center; color: var(--muted); }
+.account-field { display: grid; gap: 6px; }
+.account-field-hint { color: var(--muted); font-size: .82rem; }
 .account-dialog-error { margin: 0; color: var(--danger); font-weight: 700; }
 .account-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-top: 1px solid var(--line); }
 .account-row:first-of-type { border-top: 0; padding-top: 0; }

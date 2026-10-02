@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, EyeOff, MoreVertical, Plus, Search } from "lucide-react";
 import Link from "next/link";
-import { FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import {
   type AdminAccount, createAdminAccount, deleteAdminAccount, editAdminAccount,
   listAdminAccounts, resetAdminAccountPassword, retryAdminAccountCreation,
@@ -88,16 +88,20 @@ function FormDialog({ title, className, onClose, children }: {
   </dialog>;
 }
 
+const passwordHint = "استخدم 8 أحرف على الأقل.";
+
 function PasswordInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   const [visible, setVisible] = useState(false);
-  return <label>{label}
+  const hintId = useId();
+  return <div className="account-field"><label>{label}
     <span className="password-field">
-      <input type={visible ? "text" : "password"} dir="ltr" autoComplete="new-password" required value={value} onChange={event => onChange(event.target.value)} />
+      <input type={visible ? "text" : "password"} dir="ltr" autoComplete="new-password" required aria-describedby={hintId} value={value} onChange={event => onChange(event.target.value)} />
       <button type="button" onClick={() => setVisible(current => !current)} aria-label={visible ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}>
         {visible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
       </button>
     </span>
-  </label>;
+  </label>
+  <small id={hintId} className="account-field-hint">{passwordHint}</small></div>;
 }
 
 type MenuItem = { label: string; onSelect: () => void; danger?: boolean; disabled?: boolean };
@@ -277,7 +281,10 @@ export function AdminUsersPage() {
     {notice && <p role="status" className="state-note account-notice">{notice}</p>}
     {createOpen && <FormDialog title="إضافة مستخدم" className="account-create-dialog" onClose={() => setCreateOpen(false)}>
       <form className="account-form" onSubmit={submitCreate}>
-        <label>البريد الإلكتروني<input type="email" dir="ltr" autoComplete="off" required value={email} onChange={event => { setEmail(event.target.value); setKey(crypto.randomUUID()); }} /></label>
+        <div className="account-field">
+          <label>البريد الإلكتروني<input type="email" dir="ltr" autoComplete="off" required aria-describedby="account-email-note" value={email} onChange={event => { setEmail(event.target.value); setKey(crypto.randomUUID()); }} /></label>
+          <small id="account-email-note" className="account-field-hint">لا يمكن تغيير البريد الإلكتروني بعد إنشاء المستخدم.</small>
+        </div>
         <label>الاسم المعروض<input required value={createName} onChange={event => { setCreateName(event.target.value); setKey(crypto.randomUUID()); }} /></label>
         <PasswordInput label="كلمة المرور الأولية" value={createPassword} onChange={setCreatePassword} />
         {createError && <p role="alert" className="account-dialog-error">{createError}</p>}

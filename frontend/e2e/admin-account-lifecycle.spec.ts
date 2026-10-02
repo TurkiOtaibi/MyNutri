@@ -80,6 +80,8 @@ test("Admin account page is RTL, keyboard reachable, and accessible on mobile", 
   await expect(menuButton).toBeFocused();
 
   const dialog = await openCreateDialog(page);
+  await expect(dialog.getByLabel("البريد الإلكتروني")).toHaveAccessibleDescription("لا يمكن تغيير البريد الإلكتروني بعد إنشاء المستخدم.");
+  await expect(dialog.getByLabel("كلمة المرور الأولية")).toHaveAccessibleDescription("استخدم 8 أحرف على الأقل.");
   const box = await dialog.boundingBox();
   expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
@@ -190,6 +192,11 @@ test("merged Users list redirects, searches, filters by status and marks the Adm
   await activeRow.getByRole("link").click();
   await page.waitForURL(/\/admin\/users\/[^/]+$/);
   await expect(page.getByText("وضع قراءة فقط")).toBeVisible();
+  const sections = page.getByRole("navigation", { name: "أقسام الصفحة" });
+  await expect(sections.getByRole("link")).toHaveText(["ملخص الحساب", "الملف", "الأهداف المطبقة اليوم", "سجل الخطط", "اليوميات"]);
+  await sections.getByRole("link", { name: "اليوميات" }).click();
+  await expect(page).toHaveURL(/#admin-section-diary$/);
+  await expect(page.getByRole("heading", { name: "اليوميات", exact: true })).toBeInViewport();
 });
 
 test("Admin home has one Users entry with attention counts", async ({ page }) => {
