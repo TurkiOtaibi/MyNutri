@@ -1,11 +1,12 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { ChevronLeft, Search } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { formatAdminDate, accountStatusLabels } from "@/lib/admin-display";
+import { formatAdminDate } from "@/lib/admin-display";
 import { listAdminUsers } from "@/lib/api";
+import { AdminStatusBadge } from "./AdminStatusBadge";
 
 export function AdminUsersPage() {
   const [input, setInput] = useState("");
@@ -15,13 +16,14 @@ export function AdminUsersPage() {
   return <>
     <div className="page-head"><div><h1 className="page-title">المستخدمون</h1><p className="page-kicker">عرض بيانات المستخدمين للمتابعة دون تعديلها.</p></div></div>
     <section className="section-panel">
-      <form className="foods-search-field" onSubmit={(event) => { event.preventDefault(); setSearch(input.trim()); setPage(1); }}><Search size={18}/><input aria-label="البحث بالاسم أو البريد" value={input} onChange={(e) => setInput(e.target.value)} placeholder="ابحث بالاسم أو البريد..."/><button className="btn" type="submit">بحث</button></form>
+      <form className="foods-search-field admin-search" onSubmit={(event) => { event.preventDefault(); setSearch(input.trim()); setPage(1); }}><Search size={18}/><input aria-label="البحث بالاسم أو البريد" value={input} onChange={(e) => setInput(e.target.value)} placeholder="ابحث بالاسم أو البريد..."/><button className="btn" type="submit">بحث</button></form>
       {query.isPending ? <div className="state-note">جارٍ تحميل المستخدمين...</div> : null}
       {query.isError ? <div className="state-note" role="alert">تعذر تحميل المستخدمين. <button className="btn" onClick={() => query.refetch()}>إعادة المحاولة</button></div> : null}
       {query.data?.total === 0 ? <div className="state-note">لا توجد نتائج.</div> : null}
       {query.data?.items.map((user) => <Link className="admin-user-row" href={`/admin/users/${user.principal_id}`} key={user.principal_id}>
-        <div><strong>{user.display_name || "بدون اسم"}</strong><span dir="ltr">{user.email || "بريد غير متوفر"}</span></div>
-        <div><span>{accountStatusLabels[user.status]}</span><span>{user.profile_complete ? "الملف مكتمل" : "الملف غير مكتمل"}</span><time dateTime={user.created_at}>{formatAdminDate(user.created_at)}</time></div>
+        <div><span className="account-name-line"><strong>{user.display_name || "بدون اسم"}</strong><AdminStatusBadge status={user.status} /></span><span className="account-email">{user.email ? <bdi dir="ltr">{user.email}</bdi> : "بريد غير متوفر"}</span></div>
+        <div className="admin-user-meta"><span>{user.profile_complete ? "الملف مكتمل" : "الملف غير مكتمل"}</span><span>تاريخ التسجيل: <time dateTime={user.created_at}>{formatAdminDate(user.created_at)}</time></span></div>
+        <ChevronLeft className="admin-user-chevron" size={20} aria-hidden="true" />
       </Link>)}
       {query.data && query.data.total_pages > 1 ? <div className="actions"><button className="btn" disabled={page <= 1} onClick={() => setPage((v) => v - 1)}>السابق</button><span>{page} / {query.data.total_pages}</span><button className="btn" disabled={page >= query.data.total_pages} onClick={() => setPage((v) => v + 1)}>التالي</button></div> : null}
     </section>

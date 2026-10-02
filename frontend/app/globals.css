@@ -882,12 +882,19 @@ a {
 .admin-home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
 .admin-home-link { display: grid; gap: 8px; color: inherit; text-decoration: none; }
 .admin-home-link svg { color: var(--accent); }
-.admin-user-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; padding: 14px 0; border-top: 1px solid var(--line); color: inherit; text-decoration: none; }
-.admin-user-row > div { display: grid; gap: 4px; }
-.admin-user-row > div:last-child { text-align: end; color: var(--muted); font-size: .85rem; }
+.admin-user-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 20px; align-items: center; gap: 6px 16px; padding: 14px 0; border-top: 1px solid var(--line); color: inherit; text-decoration: none; }
+.admin-user-row > div { display: grid; gap: 4px; min-width: 0; }
+.admin-user-row > .admin-user-meta { color: var(--muted); font-size: .85rem; }
+.admin-user-chevron { color: var(--muted); }
+.admin-search { margin-bottom: 8px; }
+.admin-search .btn { min-height: 44px; border: 0; border-inline-start: 1px solid var(--line); border-radius: 0; background: transparent; }
+.main-surface .admin-detail-head { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; align-items: flex-start; }
+.admin-detail-head > div:nth-child(2) { flex: 1; min-width: 0; }
+.admin-readonly-grid > .admin-field-email { grid-column: 1 / -1; }
+.admin-search + .admin-user-row { border-top: 0; }
 .selected-user-banner { display: flex; justify-content: space-between; gap: 12px; background: #fff4d8; border: 1px solid #e6c66e; border-radius: 7px; padding: 12px; margin-bottom: 14px; }
 .admin-data-view { white-space: pre-wrap; overflow-wrap: anywhere; direction: ltr; text-align: left; background: #f7f9f7; padding: 12px; border-radius: 7px; }
-.admin-readonly-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 0; }
+.admin-readonly-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 0; }
 .admin-readonly-grid > div { border-bottom: 1px solid var(--line); padding-block: 8px; }
 .admin-readonly-grid dt { color: var(--muted); font-size: .82rem; }
 .admin-readonly-grid dd { margin: 4px 0 0; font-weight: 700; overflow-wrap: anywhere; }
@@ -896,8 +903,9 @@ a {
 .nav-signout { border: 0; background: transparent; }
 
 @media (max-width: 520px) {
-  .admin-user-row { grid-template-columns: 1fr; }
-  .admin-user-row > div:last-child { text-align: start; }
+  .admin-user-row { grid-template-columns: minmax(0, 1fr) 20px; }
+  .admin-detail-head > .actions { width: 100%; }
+  .admin-user-row > .admin-user-chevron { grid-column: 2; grid-row: 1 / span 2; }
       }
 
 .field-error {
@@ -2709,18 +2717,28 @@ a {
 }
 
 .account-management { display: grid; gap: 16px; }
-.account-form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
-.account-form label { display: grid; gap: 6px; min-width: min(100%, 210px); flex: 1; }
-.account-form input, .account-delete-dialog input { min-height: 44px; padding: 9px 12px; border: 1px solid var(--border, #dfe6df); border-radius: 9px; font: inherit; }
-.account-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
-.account-row > div:last-child { display: grid; gap: 8px; }
-.account-row .actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.account-editor { scroll-margin-top: 80px; }
-.account-row .account-delete-action { margin-inline-start: 8px; }
+.account-management > .page-head { margin-bottom: 0; }
+.account-form { display: grid; gap: 12px; }
+.account-form label { display: grid; gap: 6px; }
+.account-form input, .account-delete-dialog input { width: 100%; min-height: 44px; padding: 9px 12px; border: 1px solid var(--border, #dfe6df); border-radius: 9px; font: inherit; }
+.account-form .password-field input { padding-inline-end: 48px; }
+.account-form .password-field button { display: grid; place-items: center; color: var(--muted); }
+.account-dialog-error { margin: 0; color: var(--danger); font-weight: 700; }
+.account-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-top: 1px solid var(--line); }
+.account-row:first-of-type { border-top: 0; padding-top: 0; }
+.account-identity { display: grid; gap: 4px; min-width: 0; }
+.account-name-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.account-email { color: var(--muted); overflow-wrap: anywhere; }
+.account-actions { display: flex; align-items: center; gap: 4px; }
+.account-status-badge { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 10px; border-radius: 999px; font-size: .8rem; font-weight: 700; background: var(--surface-strong); color: var(--muted); }
+.account-status-active { background: var(--accent-soft); color: #17453e; }
+.account-status-provisioning { background: #fff4d8; color: #7a5a00; }
+.account-status-deleting { background: var(--danger-soft); color: var(--danger); }
 /* Last in the page so it sticks to the viewport bottom while the Admin is anywhere above it. */
 .account-notice { position: sticky; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 5; margin: 0; background: var(--surface, #fff); border: 1px solid var(--line); border-radius: 9px; padding: 12px; box-shadow: 0 6px 18px rgb(15 30 24 / 12%); }
-.account-delete-dialog { width: min(92vw, 480px); border: 1px solid var(--border, #dfe6df); border-radius: 16px; padding: 24px; color: inherit; }
+.account-delete-dialog { margin: auto; max-height: calc(100dvh - 32px); overflow-y: auto; width: min(92vw, 480px); border: 1px solid var(--border, #dfe6df); border-radius: 16px; padding: 24px; color: inherit; }
 .account-delete-dialog::backdrop { background: rgb(15 30 24 / 55%); }
 .account-delete-dialog form { display: grid; gap: 12px; }
+.account-delete-dialog h2 { margin: 0 0 12px; font-size: 1.2rem; }
 .account-delete-dialog .actions { display: flex; flex-wrap: wrap; gap: 8px; }
-@media (max-width: 640px) { .account-form { display: grid; } .account-row .actions { display: grid; } .account-row .account-delete-action { margin-inline-start: 0; margin-block-start: 8px; } }
+@media (max-width: 640px) { .account-row { align-items: stretch; } .account-actions { width: 100%; } .account-actions > .btn { flex: 1; } .account-delete-dialog .actions > .btn { flex: 1; } }

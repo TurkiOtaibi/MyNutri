@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { mealLabels } from "@/features/diary/diary-model";
@@ -9,7 +10,7 @@ import { type AdminAccount, getAdminUser, getAdminUserDiary } from "@/lib/api";
 
 const labels: Record<string, string> = {
   display_name: "الاسم", email: "البريد الإلكتروني", status: "حالة الحساب",
-  role: "الدور", created_at: "تاريخ التسجيل", goal: "الهدف", weight_kg: "الوزن",
+  created_at: "تاريخ التسجيل", goal: "الهدف", weight_kg: "الوزن",
   height_cm: "الطول", activity_level: "مستوى النشاط", effective_from: "تاريخ السريان",
   revision: "النسخة", entry_date: "التاريخ",
   meal_type: "الوجبة", quantity: "الكمية"
@@ -42,7 +43,7 @@ function readField(data: object, key: string): unknown {
 function ReadOnlyFields({ data, keys }: { data: object | null; keys: string[] }) {
   if (!data) return <p className="state-note">غير متوفر.</p>;
   return <dl className="admin-readonly-grid">{keys.map((key) => (
-    <div key={key}><dt>{labels[key] ?? key}</dt><dd dir={key === "email" ? "ltr" : "auto"}>{displayValue(key, readField(data, key))}</dd></div>
+    <div key={key} className={`admin-field-${key}`}><dt>{labels[key] ?? key}</dt><dd><bdi dir={key === "email" ? "ltr" : "auto"}>{displayValue(key, readField(data, key))}</bdi></dd></div>
   ))}</dl>;
 }
 
@@ -91,8 +92,8 @@ export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
 
   return <>
     <div className="selected-user-banner"><strong>عرض مستخدم آخر: {selectedName}</strong><span>وضع قراءة فقط</span></div>
-    <div className="page-head"><div><h1 className="page-title">تفاصيل المستخدم</h1><p className="page-kicker">بيانات الحساب والتغذية المعروضة للمراقبة دون صلاحية تعديل.</p></div><div className="actions"><Link className="btn" href={`/admin/users/${encodeURIComponent(principalId)}/labs`}>عرض التحاليل</Link><Link className="btn" href="/admin/users">رجوع</Link></div></div>
-    <section className="section-panel"><h2>ملخص الحساب</h2><ReadOnlyFields data={account} keys={["display_name", "email", "status", "role", "created_at"]} /></section>
+    <div className="page-head admin-detail-head"><Link className="icon-button detail-back" href="/admin/users" aria-label="رجوع"><ArrowRight size={21} aria-hidden="true" /></Link><div><h1 className="page-title">تفاصيل المستخدم</h1><p className="page-kicker">بيانات الحساب والتغذية المعروضة للمراقبة دون صلاحية تعديل.</p></div><div className="actions"><Link className="btn" href={`/admin/users/${encodeURIComponent(principalId)}/labs`}>عرض التحاليل</Link></div></div>
+    <section className="section-panel"><h2>ملخص الحساب</h2><ReadOnlyFields data={account} keys={["display_name", "email", "status", "created_at"]} /></section>
     <section className="section-panel"><h2>الملف</h2><ReadOnlyFields data={profile} keys={["goal", "weight_kg", "height_cm", "activity_level"]} /></section>
     <section className="section-panel"><h2>الأهداف المطبقة اليوم</h2><ReadOnlyFields data={target?.plan ?? null} keys={["effective_from", "revision", "created_at"]} /></section>
     <section className="section-panel"><h2>سجل الخطط</h2>{history.items?.length ? <ul className="admin-readonly-list">{history.items.map((plan, index) => <li key={String(plan.id ?? index)}><ReadOnlyFields data={plan} keys={["effective_from", "revision", "created_at"]} /></li>)}</ul> : <p className="state-note">لا توجد خطط محفوظة.</p>}</section>

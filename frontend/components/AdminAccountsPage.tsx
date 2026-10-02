@@ -1,14 +1,21 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { Eye, EyeOff, MoreVertical, Plus } from "lucide-react";
+import { FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import {
   type AdminAccount, createAdminAccount, deleteAdminAccount, editAdminAccount,
   listAdminAccounts, resetAdminAccountPassword, retryAdminAccountCreation,
   retryAdminAccountDeletion, setAdminAccountEnabled
 } from "@/lib/api";
 import { accountActionErrorMessage, accountActionSuccessMessage, type AccountAction } from "@/lib/admin-account-messages";
-import { accountStatusLabels as statusLabels } from "@/lib/admin-display";
+import { AdminStatusBadge } from "./AdminStatusBadge";
+
+type EditorMode = "edit" | "password" | "retry-create";
+
+const editorTitles: Record<EditorMode, string> = {
+  edit: "تعديل المستخدم", password: "إعادة تعيين كلمة المرور", "retry-create": "إعادة محاولة الإنشاء"
+};
 
 function DeleteDialog({ account, onClose, onDelete }: {
   account: AdminAccount;
@@ -49,10 +56,77 @@ function DeleteDialog({ account, onClose, onDelete }: {
   </dialog>;
 }
 
+function FormDialog({ title, className, onClose, children }: {
+  title: string;
+  className?: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const element = dialog.current;
+    element?.showModal();
+    element?.querySelector("input")?.focus();
+    return () => element?.close();
+  }, []);
+  return <dialog ref={dialog} className={`account-delete-dialog account-form-dialog ${className ?? ""}`} onClose={onClose} aria-label={title}>
+    <h2>{title}</h2>
+    {children}
+  </dialog>;
+}
+
+function PasswordInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const [visible, setVisible] = useState(false);
+  return <label>{label}
+    <span className="password-field">
+      <input type={visible ? "text" : "password"} dir="ltr" autoComplete="new-password" required value={value} onChange={event => onChange(event.target.value)} />
+      <button type="button" onClick={() => setVisible(current => !current)} aria-label={visible ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}>
+        {visible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+      </button>
+    </span>
+  </label>;
+}
+
+type MenuItem = { label: string; onSelect: () => void; danger?: boolean; disabled?: boolean };
+
+function AccountActionsMenu({ name, items }: { name: string; items: MenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    rootRef.current?.querySelector<HTMLButtonElement>("[role='menuitem']:not(:disabled)")?.focus();
+    const close = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setOpen(false); buttonRef.current?.focus(); }
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", keydown);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", keydown);
+    };
+  }, [open]);
+  return <div className="food-actions-menu" ref={rootRef}>
+    <button ref={buttonRef} className="icon-button account-menu-button" type="button" aria-label={`إجراءات ${name}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(current => !current)}>
+      <MoreVertical size={20} aria-hidden="true" />
+    </button>
+    {open && <div className="food-actions-popover">
+      <div className="food-actions-list" role="menu">
+        {items.map(item => <button key={item.label} type="button" role="menuitem" disabled={item.disabled} className={item.danger ? "danger-menu-item" : undefined} onClick={() => { setOpen(false); item.onSelect(); }}>{item.label}</button>)}
+      </div>
+    </div>}
+  </div>;
+}
+
 export function AdminAccountsPage() {
   const client = useQueryClient();
   const [page, setPage] = useState(1);
   const query = useQuery({ queryKey: ["admin-accounts", page], queryFn: () => listAdminAccounts(page) });
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createError, setCreateError] = useState("");
   const [email, setEmail] = useState("");
   const [createName, setCreateName] = useState("");
   const [createPassword, setCreatePassword] = useState("");
@@ -60,91 +134,115 @@ export function AdminAccountsPage() {
   const [password, setPassword] = useState("");
   const [key, setKey] = useState(() => crypto.randomUUID());
   const [selected, setSelected] = useState<AdminAccount | null>(null);
-  const [mode, setMode] = useState<"edit" | "password" | "retry-create" | null>(null);
+  const [mode, setMode] = useState<EditorMode | null>(null);
+  const [editorError, setEditorError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<AdminAccount | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
-  const editorRef = useRef<HTMLElement>(null);
-  const editorTarget = selected && mode ? `${selected.principal_id}:${mode}` : null;
-  useEffect(() => {
-    // The editor renders below the list; bring it into view so the row action visibly responds.
-    const editor = editorRef.current;
-    if (!editorTarget || !editor) return;
-    editor.scrollIntoView({ block: "start" });
-    editor.querySelector("input")?.focus({ preventScroll: true });
-  }, [editorTarget]);
-  async function execute(action: () => Promise<unknown>, kind: AccountAction) {
+  async function execute(action: () => Promise<unknown>, kind: AccountAction, onError: (message: string) => void = setNotice): Promise<boolean> {
     setBusy(true); setNotice("");
-    try { await action(); await client.invalidateQueries({ queryKey: ["admin-accounts"] }); setNotice(accountActionSuccessMessage(kind)); setMode(null); setSelected(null); setPassword(""); }
+    try { await action(); await client.invalidateQueries({ queryKey: ["admin-accounts"] }); setNotice(accountActionSuccessMessage(kind)); return true; }
     catch (error) {
-      setNotice(accountActionErrorMessage(error, kind));
+      onError(accountActionErrorMessage(error, kind));
+      await client.invalidateQueries({ queryKey: ["admin-accounts"] });
+      return false;
+    }
+    finally { setBusy(false); }
+  }
+  function select(account: AdminAccount, nextMode: EditorMode) {
+    setSelected(account); setMode(nextMode); setDisplayName(account.display_name ?? ""); setPassword(""); setEditorError(""); setNotice("");
+  }
+  function closeEditor() {
+    setMode(null); setSelected(null); setPassword(""); setEditorError("");
+  }
+  async function submitCreate(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setNotice(""); setCreateError("");
+    try {
+      await createAdminAccount({ email, display_name: createName, initial_password: createPassword }, key);
+      await client.invalidateQueries({ queryKey: ["admin-accounts"] });
+      setEmail(""); setCreateName(""); setCreatePassword(""); setKey(crypto.randomUUID()); setCreateOpen(false);
+      setNotice(accountActionSuccessMessage("create"));
+    } catch (error) {
+      setCreateError(accountActionErrorMessage(error, "create"));
       await client.invalidateQueries({ queryKey: ["admin-accounts"] });
     }
     finally { setBusy(false); }
   }
-  function select(account: AdminAccount, nextMode: "edit" | "password" | "retry-create") {
-    setSelected(account); setMode(nextMode); setDisplayName(account.display_name ?? ""); setPassword(""); setNotice("");
+  async function submitEditor(event: FormEvent) {
+    event.preventDefault();
+    if (!selected || !mode) return;
+    const id = selected.principal_id;
+    const succeeded = mode === "edit" ? await execute(() => editAdminAccount(id, { display_name: displayName }), "edit", setEditorError)
+      : mode === "password" ? await execute(() => resetAdminAccountPassword(id, password), "password", setEditorError)
+        : await execute(() => retryAdminAccountCreation(id, password), "retry-create", setEditorError);
+    if (succeeded) closeEditor();
+  }
+  function rowActions(account: AdminAccount): { primary: ReactNode; menu: MenuItem[] } {
+    const remove: MenuItem = { label: "حذف المستخدم نهائيًا", danger: true, onSelect: () => setDeleteTarget(account) };
+    if (account.status === "deleting") {
+      return { primary: <button className="btn" disabled={busy} onClick={() => execute(() => retryAdminAccountDeletion(account.principal_id), "retry-delete")}>إعادة محاولة الحذف</button>, menu: [] };
+    }
+    if (account.status === "provisioning") {
+      return { primary: <button className="btn" onClick={() => select(account, "retry-create")}>إعادة محاولة الإنشاء</button>, menu: [remove] };
+    }
+    if (account.status === "active" || account.status === "disabled") {
+      return {
+        primary: <button className="btn" onClick={() => select(account, "edit")}>تعديل المستخدم</button>,
+        menu: [
+          { label: "إعادة تعيين كلمة المرور", onSelect: () => select(account, "password") },
+          { label: account.status === "active" ? "تعطيل المستخدم" : "تفعيل المستخدم", disabled: busy, onSelect: () => void execute(() => setAdminAccountEnabled(account.principal_id, account.status !== "active"), "status") },
+          remove
+        ]
+      };
+    }
+    return { primary: null, menu: [remove] };
   }
   return <div className="account-management">
-    <div className="page-head"><div><h1 className="page-title">إدارة المستخدمين</h1></div></div>
-    <section className="section-panel">
-      <h2>إضافة مستخدم</h2>
-      <form className="account-form" onSubmit={async event => {
-        event.preventDefault(); setBusy(true); setNotice("");
-        try {
-          await createAdminAccount({ email, display_name: createName, initial_password: createPassword }, key);
-          await client.invalidateQueries({ queryKey: ["admin-accounts"] });
-          setEmail(""); setCreateName(""); setCreatePassword(""); setKey(crypto.randomUUID()); setNotice(accountActionSuccessMessage("create"));
-        } catch (error) {
-          setNotice(accountActionErrorMessage(error, "create"));
-          await client.invalidateQueries({ queryKey: ["admin-accounts"] });
-        }
-        finally { setBusy(false); }
-      }}>
-        <label>البريد الإلكتروني<input type="email" dir="ltr" autoComplete="off" required value={email} onChange={event => { setEmail(event.target.value); setKey(crypto.randomUUID()); }} /></label>
-        <label>الاسم المعروض<input required value={createName} onChange={event => { setCreateName(event.target.value); setKey(crypto.randomUUID()); }} /></label>
-        <label>كلمة المرور الأولية<input type="password" autoComplete="new-password" required value={createPassword} onChange={event => setCreatePassword(event.target.value)} /></label>
-        <button className="btn primary" type="submit" disabled={busy}>إنشاء المستخدم</button>
-      </form>
-    </section>
+    <div className="page-head">
+      <div><h1 className="page-title">إدارة المستخدمين</h1></div>
+      <button className="btn primary" type="button" onClick={() => { setCreateError(""); setNotice(""); setCreateOpen(true); }}><Plus size={18} aria-hidden="true" />إضافة مستخدم</button>
+    </div>
     <section className="section-panel" aria-label="إدارة المستخدمين">
       {query.isPending && <p className="state-note">جارٍ تحميل المستخدمين...</p>}
       {query.isError && <p role="alert" className="state-note">تعذر تحميل المستخدمين. <button className="btn" onClick={() => query.refetch()}>إعادة المحاولة</button></p>}
-      {query.data?.items.map(account => <article className="admin-user-row account-row" key={account.principal_id}>
-        <div><strong>{account.display_name}</strong><span dir="ltr">{account.email}</span></div>
-        <div><span>{statusLabels[account.status]}</span>
-          <div className="actions">
-            {account.status === "provisioning" && <button className="btn" onClick={() => select(account, "retry-create")}>إعادة محاولة الإنشاء</button>}
-            {account.status === "deleting" && <button className="btn" disabled={busy} onClick={() => execute(() => retryAdminAccountDeletion(account.principal_id), "retry-delete")}>إعادة محاولة الحذف</button>}
-            {(account.status === "active" || account.status === "disabled") && <>
-              <button className="btn" onClick={() => select(account, "edit")}>تعديل المستخدم</button>
-              <button className="btn" onClick={() => select(account, "password")}>إعادة تعيين كلمة المرور</button>
-              <button className="btn" disabled={busy} onClick={() => execute(() => setAdminAccountEnabled(account.principal_id, account.status !== "active"), "status")}>{account.status === "active" ? "تعطيل المستخدم" : "تفعيل المستخدم"}</button>
-            </>}
-            {account.status !== "deleting" && <button className="btn danger account-delete-action" onClick={() => setDeleteTarget(account)}>حذف المستخدم نهائيًا</button>}
+      {query.data?.items.map(account => {
+        const actions = rowActions(account);
+        const name = account.display_name || account.email || "";
+        return <article className="account-row" key={account.principal_id}>
+          <div className="account-identity">
+            <div className="account-name-line"><strong>{account.display_name}</strong><AdminStatusBadge status={account.status} /></div>
+            <span className="account-email"><bdi dir="ltr">{account.email}</bdi></span>
           </div>
-        </div>
-      </article>)}
+          <div className="account-actions">
+            {actions.primary}
+            {actions.menu.length > 0 && <AccountActionsMenu name={name} items={actions.menu} />}
+          </div>
+        </article>;
+      })}
       {query.data && query.data.total > query.data.page_size && <div className="actions">
         <button className="btn" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>السابق</button>
         <span>{page} / {Math.ceil(query.data.total / query.data.page_size)}</span>
         <button className="btn" disabled={page * query.data.page_size >= query.data.total} onClick={() => setPage(value => value + 1)}>التالي</button>
       </div>}
     </section>
-    {selected && mode && <section ref={editorRef} className="section-panel account-editor" aria-label={mode === "edit" ? "تعديل المستخدم" : mode === "password" ? "إعادة تعيين كلمة المرور" : "إعادة محاولة الإنشاء"}>
-      <h2>{mode === "edit" ? "تعديل المستخدم" : mode === "password" ? "إعادة تعيين كلمة المرور" : "إعادة محاولة الإنشاء"}</h2>
-      <form className="account-form" onSubmit={event => {
-        event.preventDefault();
-        if (mode === "edit") void execute(() => editAdminAccount(selected.principal_id, { display_name: displayName }), "edit");
-        else if (mode === "password") void execute(() => resetAdminAccountPassword(selected.principal_id, password), "password");
-        else void execute(() => retryAdminAccountCreation(selected.principal_id, password), "retry-create");
-      }}>
-        {mode === "edit" ? <label>الاسم المعروض<input required value={displayName} onChange={event => setDisplayName(event.target.value)} /></label>
-          : <label>{mode === "password" ? "كلمة المرور الجديدة" : "كلمة المرور الأولية"}<input type="password" autoComplete="new-password" required value={password} onChange={event => setPassword(event.target.value)} /></label>}
-        <div className="actions"><button type="button" className="btn" onClick={() => { setMode(null); setSelected(null); }}>إلغاء</button><button type="submit" className="btn primary" disabled={busy}>{mode === "edit" ? "حفظ التغييرات" : mode === "password" ? "إعادة تعيين كلمة المرور" : "إعادة محاولة الإنشاء"}</button></div>
-      </form>
-    </section>}
     {notice && <p role="status" className="state-note account-notice">{notice}</p>}
+    {createOpen && <FormDialog title="إضافة مستخدم" className="account-create-dialog" onClose={() => setCreateOpen(false)}>
+      <form className="account-form" onSubmit={submitCreate}>
+        <label>البريد الإلكتروني<input type="email" dir="ltr" autoComplete="off" required value={email} onChange={event => { setEmail(event.target.value); setKey(crypto.randomUUID()); }} /></label>
+        <label>الاسم المعروض<input required value={createName} onChange={event => { setCreateName(event.target.value); setKey(crypto.randomUUID()); }} /></label>
+        <PasswordInput label="كلمة المرور الأولية" value={createPassword} onChange={setCreatePassword} />
+        {createError && <p role="alert" className="account-dialog-error">{createError}</p>}
+        <div className="actions"><button type="button" className="btn" onClick={() => setCreateOpen(false)}>إلغاء</button><button className="btn primary" type="submit" disabled={busy}>إنشاء المستخدم</button></div>
+      </form>
+    </FormDialog>}
+    {selected && mode && <FormDialog title={editorTitles[mode]} className="account-editor" onClose={closeEditor}>
+      <form className="account-form" onSubmit={submitEditor}>
+        {mode === "edit" ? <label>الاسم المعروض<input required value={displayName} onChange={event => setDisplayName(event.target.value)} /></label>
+          : <PasswordInput label={mode === "password" ? "كلمة المرور الجديدة" : "كلمة المرور الأولية"} value={password} onChange={setPassword} />}
+        {editorError && <p role="alert" className="account-dialog-error">{editorError}</p>}
+        <div className="actions"><button type="button" className="btn" onClick={closeEditor}>إلغاء</button><button type="submit" className="btn primary" disabled={busy}>{mode === "edit" ? "حفظ التغييرات" : mode === "password" ? "إعادة تعيين كلمة المرور" : "إعادة محاولة الإنشاء"}</button></div>
+      </form>
+    </FormDialog>}
     {deleteTarget && <DeleteDialog account={deleteTarget} onClose={() => setDeleteTarget(null)} onDelete={async confirmedEmail => {
       try {
         await deleteAdminAccount(deleteTarget.principal_id, confirmedEmail);
