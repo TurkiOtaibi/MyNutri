@@ -70,7 +70,15 @@ test("Admin account page is RTL, keyboard reachable, and accessible on mobile", 
   const findings = await new AxeBuilder({ page }).analyze();
   expect(findings.violations).toEqual([]);
 
-  const row = page.locator(".account-row:not(.account-self-row)").first();
+  // CI shards start from an empty database, so create the row whose menu this test exercises.
+  const email = `mobile-menu-${Date.now()}@example.test`;
+  const createForm = await openCreateDialog(page);
+  await createForm.getByLabel("البريد الإلكتروني").fill(email);
+  await createForm.getByLabel("الاسم المعروض").fill("اختبار القائمة");
+  await createForm.getByLabel("كلمة المرور الأولية").fill("Initial-password-2026!");
+  await createForm.getByRole("button", { name: "إنشاء المستخدم" }).click();
+  await expect(createForm).toHaveCount(0);
+  const row = page.locator(".account-row").filter({ hasText: email });
   const menuButton = row.getByRole("button", { name: /^إجراءات / });
   await menuButton.click();
   await expect(page.getByRole("menuitem").first()).toBeFocused();
