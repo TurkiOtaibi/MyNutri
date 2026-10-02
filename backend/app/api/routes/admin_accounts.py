@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, Query, Re
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from sqlalchemy import func, text
+from sqlalchemy import func, or_, text
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext, require_admin
@@ -174,16 +174,22 @@ def list_accounts(
     background_tasks: BackgroundTasks,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    search: str | None = Query(default=None, max_length=320),
+    status: PrincipalStatus | None = None,
     _admin: PrincipalContext = Depends(require_admin),
     session: Session = Depends(get_session),
 ) -> AdminAccountList:
-    statement = select(Principal).where(
-        Principal.role == "user", Principal.status != PrincipalStatus.deleted
-    )
-    total = int(session.exec(
-        select(func.count()).select_from(Principal).where(
-            Principal.role == "user", Principal.status != PrincipalStatus.deleted
+    conditions = [Principal.role == "user", Principal.status != PrincipalStatus.deleted]
+    if status is not None:
+        conditions.append(Principal.status == status)
+    if search and search.strip():
+        pattern = f"%{search.strip()}%"
+        conditions.append(
+            or_(Principal.email.ilike(pattern), Principal.display_name.ilike(pattern))
         )
+    statement = select(Principal).where(*conditions)
+    total = int(session.exec(
+        select(func.count()).select_from(Principal).where(*conditions)
     ).one())
     rows = session.exec(
         statement.order_by(Principal.created_at.desc(), Principal.id.desc())

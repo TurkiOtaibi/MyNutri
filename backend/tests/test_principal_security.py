@@ -305,6 +305,38 @@ def test_admin_account_crud_and_typed_email_confirmation(security_context) -> No
     assert all(item["principal_id"] != principal_id for item in listing.json()["items"])
 
 
+def test_admin_account_list_filters_by_search_and_status(security_context) -> None:
+    client, session = security_context
+    for email, name, status in [
+        ("sara@example.com", "Sara", PrincipalStatus.active),
+        ("khalid@example.com", "خالد", PrincipalStatus.disabled),
+        ("pending@example.com", "Sara Pending", PrincipalStatus.provisioning),
+        ("stuck@example.com", "Stuck", PrincipalStatus.deleting),
+        (None, None, PrincipalStatus.deleted),
+    ]:
+        session.add(Principal(email=email, display_name=name, role=PrincipalRole.user, status=status))
+    session.commit()
+    admin = headers("admin-a")
+
+    def emails(query: str) -> tuple[int, set[str | None]]:
+        response = client.get(f"/admin/accounts{query}", headers=admin)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        return body["total"], {item["email"] for item in body["items"]}
+
+    assert emails("") == (5, {"user@example.com", "sara@example.com", "khalid@example.com",
+                              "pending@example.com", "stuck@example.com"})
+    assert emails("?search=sara") == (2, {"sara@example.com", "pending@example.com"})
+    assert emails("?search=%20SARA%20") == (2, {"sara@example.com", "pending@example.com"})
+    assert emails("?search=خالد") == (1, {"khalid@example.com"})
+    assert emails("?search=admin") == (0, set())
+    assert emails("?status=deleting") == (1, {"stuck@example.com"})
+    assert emails("?status=provisioning&search=sara") == (1, {"pending@example.com"})
+    assert emails("?status=deleted") == (0, set())
+    assert client.get("/admin/accounts?status=unknown", headers=admin).status_code == 422
+    assert client.get("/admin/accounts?search=sara", headers=headers("user-b")).status_code == 403
+
+
 def _seed_profile(session: Session, principal_id: UUID, payload: dict) -> Profile:
     validated = ProfileUpsert.model_validate(payload)
     data = validated.model_dump()

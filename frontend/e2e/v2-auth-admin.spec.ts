@@ -85,10 +85,10 @@ test("normal user can read Foods but cannot reach Admin UI or mutate the shared 
 
 test("admin navigation and monitoring remain explicit and read-only", async ({ page }) => {
   await page.goto("/admin/users");
-  await expect(page.getByRole("heading", { name: "المستخدمون" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "إدارة المستخدمين" })).toBeVisible();
   await expect(page.getByRole("link", { name: "الإدارة" })).toBeVisible();
   await expect(page.locator('nav a[href="/labs"]')).toHaveText("التحاليل");
-  const firstUser = page.locator(".admin-user-row").first();
+  const firstUser = page.locator(".account-row a.account-identity").first();
   await expect(firstUser).toBeVisible();
   await firstUser.click();
   await expect(page.getByText("وضع قراءة فقط")).toBeVisible();

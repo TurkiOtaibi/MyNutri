@@ -17,7 +17,7 @@ async function chooseRowAction(page: Page, row: Locator, action: string) {
 
 test("@p0 Admin manages a user and confirms permanent deletion by email", async ({ page }) => {
   const email = `lifecycle-${Date.now()}@example.test`;
-  await page.goto("/admin/accounts");
+  await page.goto("/admin/users");
   await expect(page.getByRole("heading", { name: "إدارة المستخدمين" })).toBeVisible();
   const form = await openCreateDialog(page);
   await form.getByLabel("البريد الإلكتروني").fill(email);
@@ -64,13 +64,13 @@ test("@p0 Admin manages a user and confirms permanent deletion by email", async 
 
 test("Admin account page is RTL, keyboard reachable, and accessible on mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/admin/accounts");
+  await page.goto("/admin/users");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.getByRole("button", { name: "إضافة مستخدم" })).toBeVisible();
   const findings = await new AxeBuilder({ page }).analyze();
   expect(findings.violations).toEqual([]);
 
-  const row = page.locator(".account-row").first();
+  const row = page.locator(".account-row:not(.account-self-row)").first();
   const menuButton = row.getByRole("button", { name: /^إجراءات / });
   await menuButton.click();
   await expect(page.getByRole("menuitem").first()).toBeFocused();
@@ -88,7 +88,7 @@ test("Admin account page is RTL, keyboard reachable, and accessible on mobile", 
 });
 
 test("incomplete creation and deletion have retry actions", async ({ page }) => {
-  await page.goto("/admin/accounts");
+  await page.goto("/admin/users");
   let form = await openCreateDialog(page);
   const createEmail = `incomplete-create-${Date.now()}@example.test`;
   await form.getByLabel("البريد الإلكتروني").fill(createEmail);
@@ -130,7 +130,7 @@ test("changing create identity rotates the idempotency key", async ({ page }) =>
     keys.push(route.request().headers()["idempotency-key"]);
     await route.fulfill({ status: 503, json: { error: { code: "CREATION_INCOMPLETE", message_ar: "تعذر إكمال إنشاء المستخدم. أعد المحاولة." } } });
   });
-  await page.goto("/admin/accounts");
+  await page.goto("/admin/users");
   const form = await openCreateDialog(page);
   await form.getByLabel("البريد الإلكتروني").fill("first@example.test");
   await form.getByLabel("الاسم المعروض").fill("First");
@@ -144,4 +144,66 @@ test("changing create identity rotates the idempotency key", async ({ page }) =>
   await form.getByRole("button", { name: "إنشاء المستخدم" }).click();
   await expect.poll(() => keys.length).toBe(3);
   expect(new Set(keys).size).toBe(3);
+});
+
+test("merged Users list redirects, searches, filters by status and marks the Admin's own row", async ({ page }) => {
+  const suffix = Date.now();
+  const activeEmail = `merged-active-${suffix}@example.test`;
+  const pendingEmail = `incomplete-create-merged-${suffix}@example.test`;
+  await page.goto("/admin/accounts");
+  await page.waitForURL(/\/admin\/users$/);
+  await expect(page.getByRole("heading", { name: "إدارة المستخدمين" })).toBeVisible();
+
+  const self = page.locator(".account-self-row");
+  await expect(self).toContainText("(أنت)");
+  await expect(self).toContainText("admin.e2e@example.test");
+  await expect(self.getByRole("button")).toHaveCount(0);
+  await expect(self.getByRole("link")).toHaveCount(0);
+
+  for (const [email, name] of [[activeEmail, "بحث مدمج"], [pendingEmail, "بحث مدمج معلق"]]) {
+    const form = await openCreateDialog(page);
+    await form.getByLabel("البريد الإلكتروني").fill(email);
+    await form.getByLabel("الاسم المعروض").fill(name);
+    await form.getByLabel("كلمة المرور الأولية").fill("Initial-password-2026!");
+    await form.getByRole("button", { name: "إنشاء المستخدم" }).click();
+    if (email === pendingEmail) await form.getByRole("button", { name: "إلغاء" }).click();
+    await expect(form).toHaveCount(0);
+  }
+
+  await page.getByLabel("البحث بالاسم أو البريد").fill(`merged-active-${suffix}`);
+  await page.getByRole("button", { name: "بحث", exact: true }).click();
+  await expect(page.locator(".account-row")).toHaveCount(1);
+  const activeRow = page.locator(".account-row").filter({ hasText: activeEmail });
+  await expect(activeRow).toContainText("تاريخ التسجيل");
+  await expect(self).toHaveCount(0);
+
+  await page.getByLabel("البحث بالاسم أو البريد").fill(String(suffix));
+  await page.getByRole("button", { name: "بحث", exact: true }).click();
+  await expect(page.locator(".account-row")).toHaveCount(2);
+  await page.getByLabel("حالة الحساب").selectOption("provisioning");
+  await expect(page.locator(".account-row")).toHaveCount(1);
+  const pendingRow = page.locator(".account-row").filter({ hasText: pendingEmail });
+  await expect(pendingRow).toContainText("قيد الإنشاء");
+  await expect(pendingRow.getByRole("link")).toHaveCount(0);
+
+  await page.getByLabel("حالة الحساب").selectOption("active");
+  await activeRow.getByRole("link").click();
+  await page.waitForURL(/\/admin\/users\/[^/]+$/);
+  await expect(page.getByText("وضع قراءة فقط")).toBeVisible();
+});
+
+test("Admin home has one Users entry with attention counts", async ({ page }) => {
+  await page.goto("/admin/users");
+  const form = await openCreateDialog(page);
+  await form.getByLabel("البريد الإلكتروني").fill(`incomplete-create-home-${Date.now()}@example.test`);
+  await form.getByLabel("الاسم المعروض").fill("حساب قيد الإنشاء");
+  await form.getByLabel("كلمة المرور الأولية").fill("Initial-password-2026!");
+  await form.getByRole("button", { name: "إنشاء المستخدم" }).click();
+  await expect(form.getByRole("alert")).toBeVisible();
+  await page.goto("/admin");
+  const links = page.locator(".admin-home-link");
+  await expect(links).toHaveCount(1);
+  await expect(links).toHaveAttribute("href", "/admin/users");
+  await expect(links).toContainText("إدارة المستخدمين");
+  await expect(links).toContainText("قيد الإنشاء:");
 });

@@ -361,7 +361,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
   test("[FOOD-TC-003B] @p0 Admin home has no duplicate Food Management tile", async ({ page }) => {
     await page.goto("/admin");
     await expect(page.getByRole("link", { name: /إدارة الأطعمة/ })).toHaveCount(0);
-    await expect(page.getByRole("link", { name: /المستخدمون/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: /إدارة المستخدمين/ })).toBeVisible();
   });
 
   test("[FOOD-TC-013] @p0 retired Admin Food URL is absent", async ({ request }) => {

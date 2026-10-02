@@ -30,7 +30,6 @@ import type {
   AdminAccountList,
   AdminAccountSummary,
   AdminUserDetail,
-  AdminUserListResponse,
   CalendarAuthorityResponse
 } from "./generated/openapi";
 import { createClient } from "./supabase/client";
@@ -225,20 +224,17 @@ export function deleteFood(foodId: string, accessToken: string | null | undefine
   return apiFetch<void>(`/foods/${foodId}`, authorizedInit(accessToken, signal, { method: "DELETE" }));
 }
 
-type AdminUserList = AdminUserListResponse;
-
-export function listAdminUsers(search = "", page = 1): Promise<AdminUserList> {
-  const params = new URLSearchParams({ page: String(page), page_size: "20" });
-  if (search.trim()) params.set("search", search.trim());
-  return apiFetch<AdminUserList>(`/admin/users?${params}`);
-}
-
 export function getAdminUser(principalId: string): Promise<AdminUserDetail> {
   return apiFetch<AdminUserDetail>(`/admin/users/${principalId}`);
 }
 
-export function listAdminAccounts(page = 1): Promise<AdminAccountList> {
-  return apiFetch<AdminAccountList>(`/admin/accounts?page=${page}`);
+export function listAdminAccounts(
+  { page = 1, search = "", status }: { page?: number; search?: string; status?: AdminAccountSummary["status"] } = {}
+): Promise<AdminAccountList> {
+  const params = new URLSearchParams({ page: String(page) });
+  if (search.trim()) params.set("search", search.trim());
+  if (status) params.set("status", status);
+  return apiFetch<AdminAccountList>(`/admin/accounts?${params}`);
 }
 
 export function createAdminAccount(payload: AdminAccountCreate, key: string): Promise<AdminAccountSummary> {

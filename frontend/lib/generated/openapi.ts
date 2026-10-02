@@ -1442,6 +1442,10 @@ export namespace Admin {
        * @default 20
        */
       page_size?: number;
+      /** Search */
+      search?: string | null;
+      /** Status */
+      status?: PrincipalStatus | null;
     };
     export type RequestBody = never;
     export type RequestHeaders = {};

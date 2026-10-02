@@ -1,3 +1,4 @@
-import { AdminAccountsPage } from "@/components/AdminAccountsPage";
+import { redirect } from "next/navigation";
 
-export default function AdminAccountsRoute() { return <AdminAccountsPage />; }
+// Account management is merged into the single Users list.
+export default function AdminAccountsRoute() { redirect("/admin/users"); }

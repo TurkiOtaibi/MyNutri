@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, EyeOff, MoreVertical, Plus } from "lucide-react";
+import { Eye, EyeOff, MoreVertical, Plus, Search } from "lucide-react";
+import Link from "next/link";
 import { FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import {
   type AdminAccount, createAdminAccount, deleteAdminAccount, editAdminAccount,
@@ -9,7 +10,19 @@ import {
   retryAdminAccountDeletion, setAdminAccountEnabled
 } from "@/lib/api";
 import { accountActionErrorMessage, accountActionSuccessMessage, type AccountAction } from "@/lib/admin-account-messages";
+import { accountStatusLabels, formatAdminDate } from "@/lib/admin-display";
 import { AdminStatusBadge } from "./AdminStatusBadge";
+import { useAuth } from "./AuthProvider";
+
+type AccountStatus = AdminAccount["status"];
+const filterStatuses: AccountStatus[] = ["active", "disabled", "provisioning", "deleting"];
+// Only these states have read-only monitoring details; lifecycle-incomplete accounts have no data to monitor.
+const monitoredStatuses: AccountStatus[] = ["active", "disabled"];
+
+function matchesSearch(search: string, ...values: (string | null | undefined)[]) {
+  const needle = search.trim().toLowerCase();
+  return !needle || values.some(value => value?.toLowerCase().includes(needle));
+}
 
 type EditorMode = "edit" | "password" | "retry-create";
 
@@ -121,10 +134,24 @@ function AccountActionsMenu({ name, items }: { name: string; items: MenuItem[] }
   </div>;
 }
 
-export function AdminAccountsPage() {
+export function AdminUsersPage() {
   const client = useQueryClient();
+  const { account: self } = useAuth();
   const [page, setPage] = useState(1);
-  const query = useQuery({ queryKey: ["admin-accounts", page], queryFn: () => listAdminAccounts(page) });
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<AccountStatus | "">("");
+  const query = useQuery({
+    queryKey: ["admin-users", "accounts", { page, search, status: statusFilter }],
+    queryFn: () => listAdminAccounts({ page, search, status: statusFilter || undefined })
+  });
+  const showSelf = Boolean(self) && page === 1 && (!statusFilter || statusFilter === self?.status) && matchesSearch(search, self?.email, self?.display_name);
+  async function refreshAccounts() {
+    await Promise.all([
+      client.invalidateQueries({ queryKey: ["admin-users"] }),
+      client.invalidateQueries({ queryKey: ["admin-user"] })
+    ]);
+  }
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState("");
   const [email, setEmail] = useState("");
@@ -141,10 +168,10 @@ export function AdminAccountsPage() {
   const [notice, setNotice] = useState("");
   async function execute(action: () => Promise<unknown>, kind: AccountAction, onError: (message: string) => void = setNotice): Promise<boolean> {
     setBusy(true); setNotice("");
-    try { await action(); await client.invalidateQueries({ queryKey: ["admin-accounts"] }); setNotice(accountActionSuccessMessage(kind)); return true; }
+    try { await action(); await refreshAccounts(); setNotice(accountActionSuccessMessage(kind)); return true; }
     catch (error) {
       onError(accountActionErrorMessage(error, kind));
-      await client.invalidateQueries({ queryKey: ["admin-accounts"] });
+      await refreshAccounts();
       return false;
     }
     finally { setBusy(false); }
@@ -159,12 +186,12 @@ export function AdminAccountsPage() {
     event.preventDefault(); setBusy(true); setNotice(""); setCreateError("");
     try {
       await createAdminAccount({ email, display_name: createName, initial_password: createPassword }, key);
-      await client.invalidateQueries({ queryKey: ["admin-accounts"] });
+      await refreshAccounts();
       setEmail(""); setCreateName(""); setCreatePassword(""); setKey(crypto.randomUUID()); setCreateOpen(false);
       setNotice(accountActionSuccessMessage("create"));
     } catch (error) {
       setCreateError(accountActionErrorMessage(error, "create"));
-      await client.invalidateQueries({ queryKey: ["admin-accounts"] });
+      await refreshAccounts();
     }
     finally { setBusy(false); }
   }
@@ -203,16 +230,38 @@ export function AdminAccountsPage() {
       <button className="btn primary" type="button" onClick={() => { setCreateError(""); setNotice(""); setCreateOpen(true); }}><Plus size={18} aria-hidden="true" />إضافة مستخدم</button>
     </div>
     <section className="section-panel" aria-label="إدارة المستخدمين">
+      <div className="admin-list-controls">
+        <form className="foods-search-field admin-search" onSubmit={event => { event.preventDefault(); setSearch(searchInput.trim()); setPage(1); }}>
+          <Search size={18} aria-hidden="true" />
+          <input aria-label="البحث بالاسم أو البريد" value={searchInput} onChange={event => setSearchInput(event.target.value)} placeholder="ابحث بالاسم أو البريد..." />
+          <button className="btn" type="submit">بحث</button>
+        </form>
+        <select className="admin-status-filter" aria-label="حالة الحساب" value={statusFilter} onChange={event => { setStatusFilter(event.target.value as AccountStatus | ""); setPage(1); }}>
+          <option value="">الكل</option>
+          {filterStatuses.map(status => <option key={status} value={status}>{accountStatusLabels[status]}</option>)}
+        </select>
+      </div>
       {query.isPending && <p className="state-note">جارٍ تحميل المستخدمين...</p>}
       {query.isError && <p role="alert" className="state-note">تعذر تحميل المستخدمين. <button className="btn" onClick={() => query.refetch()}>إعادة المحاولة</button></p>}
+      {query.data?.total === 0 && !showSelf && <p className="state-note">لا توجد نتائج.</p>}
+      {showSelf && self && <article className="account-row account-self-row" key={self.principal_id}>
+        <div className="account-identity">
+          <span className="account-name-line"><strong>{self.display_name}</strong><span className="account-self-marker">(أنت)</span><AdminStatusBadge status={self.status} /></span>
+          <span className="account-email"><bdi dir="ltr">{self.email}</bdi></span>
+        </div>
+      </article>}
       {query.data?.items.map(account => {
         const actions = rowActions(account);
         const name = account.display_name || account.email || "";
+        const identity = <>
+          <span className="account-name-line"><strong>{account.display_name}</strong><AdminStatusBadge status={account.status} /></span>
+          <span className="account-email"><bdi dir="ltr">{account.email}</bdi></span>
+          <span className="account-meta">تاريخ التسجيل: <time dateTime={account.created_at}>{formatAdminDate(account.created_at)}</time></span>
+        </>;
         return <article className="account-row" key={account.principal_id}>
-          <div className="account-identity">
-            <div className="account-name-line"><strong>{account.display_name}</strong><AdminStatusBadge status={account.status} /></div>
-            <span className="account-email"><bdi dir="ltr">{account.email}</bdi></span>
-          </div>
+          {monitoredStatuses.includes(account.status)
+            ? <Link className="account-identity" href={`/admin/users/${account.principal_id}`}>{identity}</Link>
+            : <div className="account-identity">{identity}</div>}
           <div className="account-actions">
             {actions.primary}
             {actions.menu.length > 0 && <AccountActionsMenu name={name} items={actions.menu} />}
@@ -248,7 +297,7 @@ export function AdminAccountsPage() {
         await deleteAdminAccount(deleteTarget.principal_id, confirmedEmail);
         setDeleteTarget(null); setNotice(accountActionSuccessMessage("delete"));
       } finally {
-        await client.invalidateQueries({ queryKey: ["admin-accounts"] });
+        await refreshAccounts();
       }
     }} />}
   </div>;
