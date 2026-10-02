@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { formatAdminDate, accountStatusLabels } from "@/lib/admin-display";
 import { listAdminUsers } from "@/lib/api";
 
 export function AdminUsersPage() {
@@ -20,7 +21,7 @@ export function AdminUsersPage() {
       {query.data?.total === 0 ? <div className="state-note">لا توجد نتائج.</div> : null}
       {query.data?.items.map((user) => <Link className="admin-user-row" href={`/admin/users/${user.principal_id}`} key={user.principal_id}>
         <div><strong>{user.display_name || "بدون اسم"}</strong><span dir="ltr">{user.email || "بريد غير متوفر"}</span></div>
-        <div><span>{user.status === "active" ? "نشط" : "معطل"}</span><span>{user.profile_complete ? "الملف مكتمل" : "الملف غير مكتمل"}</span><time>{new Date(user.created_at).toLocaleDateString("ar-SA")}</time></div>
+        <div><span>{accountStatusLabels[user.status]}</span><span>{user.profile_complete ? "الملف مكتمل" : "الملف غير مكتمل"}</span><time dateTime={user.created_at}>{formatAdminDate(user.created_at)}</time></div>
       </Link>)}
       {query.data && query.data.total_pages > 1 ? <div className="actions"><button className="btn" disabled={page <= 1} onClick={() => setPage((v) => v - 1)}>السابق</button><span>{page} / {query.data.total_pages}</span><button className="btn" disabled={page >= query.data.total_pages} onClick={() => setPage((v) => v + 1)}>التالي</button></div> : null}
     </section>

@@ -2716,8 +2716,11 @@ a {
 .account-row > div:last-child { display: grid; gap: 8px; }
 .account-row .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .account-editor { scroll-margin-top: 80px; }
+.account-row .account-delete-action { margin-inline-start: 8px; }
+/* Last in the page so it sticks to the viewport bottom while the Admin is anywhere above it. */
+.account-notice { position: sticky; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 5; margin: 0; background: var(--surface, #fff); border: 1px solid var(--line); border-radius: 9px; padding: 12px; box-shadow: 0 6px 18px rgb(15 30 24 / 12%); }
 .account-delete-dialog { width: min(92vw, 480px); border: 1px solid var(--border, #dfe6df); border-radius: 16px; padding: 24px; color: inherit; }
 .account-delete-dialog::backdrop { background: rgb(15 30 24 / 55%); }
 .account-delete-dialog form { display: grid; gap: 12px; }
 .account-delete-dialog .actions { display: flex; flex-wrap: wrap; gap: 8px; }
-@media (max-width: 640px) { .account-form { display: grid; } .account-row .actions { display: grid; } }
+@media (max-width: 640px) { .account-form { display: grid; } .account-row .actions { display: grid; } .account-row .account-delete-action { margin-inline-start: 0; margin-block-start: 8px; } }

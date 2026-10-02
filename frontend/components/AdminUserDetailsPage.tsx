@@ -3,7 +3,9 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { getAdminUser, getAdminUserDiary } from "@/lib/api";
+import { mealLabels } from "@/features/diary/diary-model";
+import { accountStatusLabels, formatAdminDate } from "@/lib/admin-display";
+import { type AdminAccount, getAdminUser, getAdminUserDiary } from "@/lib/api";
 
 const labels: Record<string, string> = {
   display_name: "الاسم", email: "البريد الإلكتروني", status: "حالة الحساب",
@@ -24,9 +26,10 @@ function displayValue(key: string, value: unknown): string {
   if (typeof value === "boolean") return value ? "نعم" : "لا";
   if (typeof value === "object") return "متوفر ضمن السجل";
   if (["created_at", "effective_from", "entry_date"].includes(key)) {
-    const parsed = new Date(String(value));
-    if (!Number.isNaN(parsed.getTime())) return parsed.toLocaleDateString("ar-SA");
+    const formatted = formatAdminDate(String(value));
+    if (formatted) return formatted;
   }
+  if (key === "status" && String(value) in accountStatusLabels) return accountStatusLabels[value as AdminAccount["status"]];
   if (key === "activity_level" && value === "active") return semanticLabels.active_activity;
   if (semanticLabels[String(value)]) return semanticLabels[String(value)];
   return String(value);
@@ -93,6 +96,6 @@ export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
     <section className="section-panel"><h2>الملف</h2><ReadOnlyFields data={profile} keys={["goal", "weight_kg", "height_cm", "activity_level"]} /></section>
     <section className="section-panel"><h2>الأهداف المطبقة اليوم</h2><ReadOnlyFields data={target?.plan ?? null} keys={["effective_from", "revision", "created_at"]} /></section>
     <section className="section-panel"><h2>سجل الخطط</h2>{history.items?.length ? <ul className="admin-readonly-list">{history.items.map((plan, index) => <li key={String(plan.id ?? index)}><ReadOnlyFields data={plan} keys={["effective_from", "revision", "created_at"]} /></li>)}</ul> : <p className="state-note">لا توجد خطط محفوظة.</p>}</section>
-    <section className="section-panel"><h2>اليوميات</h2>{diaryQuery.isPending ? <p aria-live="polite">جارٍ التحميل...</p> : initialDiaryFailure ? <><p role="alert">تعذر تحميل اليوميات.</p><button ref={initialDiaryRetryRef} className="btn" type="button" onClick={() => diaryQuery.refetch()}>إعادة المحاولة</button></> : <>{diaryEntries.length ? <><ul className="admin-readonly-list">{diaryEntries.map((entry) => <li key={entry.id}><strong>{entry.food_name}</strong><span>{entry.entry_date} · {entry.meal_type} · {entry.quantity}</span></li>)}</ul>{nextPageFailure ? <div role="alert"><p>تعذر تحميل المزيد من اليوميات.</p><button ref={nextDiaryRetryRef} className="btn" type="button" onClick={() => diaryQuery.fetchNextPage()}>إعادة محاولة تحميل المزيد</button></div> : null}{diaryQuery.hasNextPage && !nextPageFailure ? <button className="btn" type="button" onClick={() => diaryQuery.fetchNextPage()} disabled={diaryQuery.isFetchingNextPage}>{diaryQuery.isFetchingNextPage ? "جارٍ التحميل..." : "عرض المزيد"}</button> : null}{!diaryQuery.hasNextPage ? <p className="state-note">لا توجد إدخالات أخرى.</p> : null}</> : <p className="state-note">لا توجد إدخالات يومية.</p>}{refetchFailure ? <div role="alert"><p>تعذر تحديث اليوميات.</p><button ref={refetchDiaryRetryRef} className="btn" type="button" disabled={diaryQuery.isFetching} onClick={() => diaryQuery.refetch()}>{diaryQuery.isFetching ? "جارٍ إعادة تحديث اليوميات..." : "إعادة محاولة تحديث اليوميات"}</button></div> : null}</>}</section>
+    <section className="section-panel"><h2>اليوميات</h2>{diaryQuery.isPending ? <p aria-live="polite">جارٍ التحميل...</p> : initialDiaryFailure ? <><p role="alert">تعذر تحميل اليوميات.</p><button ref={initialDiaryRetryRef} className="btn" type="button" onClick={() => diaryQuery.refetch()}>إعادة المحاولة</button></> : <>{diaryEntries.length ? <><ul className="admin-readonly-list">{diaryEntries.map((entry) => <li key={entry.id}><strong>{entry.food_name}</strong><span><time dateTime={entry.entry_date}>{formatAdminDate(entry.entry_date) ?? entry.entry_date}</time> · {mealLabels[entry.meal_type]} · <bdi dir="ltr">{entry.quantity}</bdi></span></li>)}</ul>{nextPageFailure ? <div role="alert"><p>تعذر تحميل المزيد من اليوميات.</p><button ref={nextDiaryRetryRef} className="btn" type="button" onClick={() => diaryQuery.fetchNextPage()}>إعادة محاولة تحميل المزيد</button></div> : null}{diaryQuery.hasNextPage && !nextPageFailure ? <button className="btn" type="button" onClick={() => diaryQuery.fetchNextPage()} disabled={diaryQuery.isFetchingNextPage}>{diaryQuery.isFetchingNextPage ? "جارٍ التحميل..." : "عرض المزيد"}</button> : null}{!diaryQuery.hasNextPage ? <p className="state-note">لا توجد إدخالات أخرى.</p> : null}</> : <p className="state-note">لا توجد إدخالات يومية.</p>}{refetchFailure ? <div role="alert"><p>تعذر تحديث اليوميات.</p><button ref={refetchDiaryRetryRef} className="btn" type="button" disabled={diaryQuery.isFetching} onClick={() => diaryQuery.refetch()}>{diaryQuery.isFetching ? "جارٍ إعادة تحديث اليوميات..." : "إعادة محاولة تحديث اليوميات"}</button></div> : null}</>}</section>
   </>;
 }

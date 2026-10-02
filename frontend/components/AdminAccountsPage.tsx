@@ -8,11 +8,7 @@ import {
   retryAdminAccountDeletion, setAdminAccountEnabled
 } from "@/lib/api";
 import { accountActionErrorMessage, accountActionSuccessMessage, type AccountAction } from "@/lib/admin-account-messages";
-
-const statusLabels: Record<AdminAccount["status"], string> = {
-  active: "نشط", disabled: "معطّل", provisioning: "قيد الإنشاء",
-  deleting: "حذف غير مكتمل", deleted: "مستخدم محذوف"
-};
+import { accountStatusLabels as statusLabels } from "@/lib/admin-display";
 
 function DeleteDialog({ account, onClose, onDelete }: {
   account: AdminAccount;
@@ -48,7 +44,7 @@ function DeleteDialog({ account, onClose, onDelete }: {
       <label htmlFor="delete-account-email">اكتب البريد الإلكتروني للمستخدم لتأكيد الحذف النهائي.</label>
       <input ref={emailInput} id="delete-account-email" type="email" dir="ltr" autoComplete="off" value={email} onChange={event => { setEmail(event.target.value); setError(""); }} aria-invalid={Boolean(error)} aria-describedby={error ? "delete-account-error" : undefined} />
       {error && <p id="delete-account-error" role="alert">{error}</p>}
-      <div className="actions"><button type="button" className="btn" disabled={busy} onClick={onClose}>إلغاء</button><button className="btn primary" disabled={busy} type="submit">حذف المستخدم نهائيًا</button></div>
+      <div className="actions"><button type="button" className="btn" disabled={busy} onClick={onClose}>إلغاء</button><button className="btn danger" disabled={busy} type="submit">حذف المستخدم نهائيًا</button></div>
     </form>
   </dialog>;
 }
@@ -68,6 +64,15 @@ export function AdminAccountsPage() {
   const [deleteTarget, setDeleteTarget] = useState<AdminAccount | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const editorRef = useRef<HTMLElement>(null);
+  const editorTarget = selected && mode ? `${selected.principal_id}:${mode}` : null;
+  useEffect(() => {
+    // The editor renders below the list; bring it into view so the row action visibly responds.
+    const editor = editorRef.current;
+    if (!editorTarget || !editor) return;
+    editor.scrollIntoView({ block: "start" });
+    editor.querySelector("input")?.focus({ preventScroll: true });
+  }, [editorTarget]);
   async function execute(action: () => Promise<unknown>, kind: AccountAction) {
     setBusy(true); setNotice("");
     try { await action(); await client.invalidateQueries({ queryKey: ["admin-accounts"] }); setNotice(accountActionSuccessMessage(kind)); setMode(null); setSelected(null); setPassword(""); }
@@ -102,7 +107,6 @@ export function AdminAccountsPage() {
         <button className="btn primary" type="submit" disabled={busy}>إنشاء المستخدم</button>
       </form>
     </section>
-    {notice && <p role="status" className="state-note">{notice}</p>}
     <section className="section-panel" aria-label="إدارة المستخدمين">
       {query.isPending && <p className="state-note">جارٍ تحميل المستخدمين...</p>}
       {query.isError && <p role="alert" className="state-note">تعذر تحميل المستخدمين. <button className="btn" onClick={() => query.refetch()}>إعادة المحاولة</button></p>}
@@ -117,7 +121,7 @@ export function AdminAccountsPage() {
               <button className="btn" onClick={() => select(account, "password")}>إعادة تعيين كلمة المرور</button>
               <button className="btn" disabled={busy} onClick={() => execute(() => setAdminAccountEnabled(account.principal_id, account.status !== "active"), "status")}>{account.status === "active" ? "تعطيل المستخدم" : "تفعيل المستخدم"}</button>
             </>}
-            {account.status !== "deleting" && <button className="btn" onClick={() => setDeleteTarget(account)}>حذف المستخدم نهائيًا</button>}
+            {account.status !== "deleting" && <button className="btn danger account-delete-action" onClick={() => setDeleteTarget(account)}>حذف المستخدم نهائيًا</button>}
           </div>
         </div>
       </article>)}
@@ -127,7 +131,7 @@ export function AdminAccountsPage() {
         <button className="btn" disabled={page * query.data.page_size >= query.data.total} onClick={() => setPage(value => value + 1)}>التالي</button>
       </div>}
     </section>
-    {selected && mode && <section className="section-panel account-editor" aria-label={mode === "edit" ? "تعديل المستخدم" : mode === "password" ? "إعادة تعيين كلمة المرور" : "إعادة محاولة الإنشاء"}>
+    {selected && mode && <section ref={editorRef} className="section-panel account-editor" aria-label={mode === "edit" ? "تعديل المستخدم" : mode === "password" ? "إعادة تعيين كلمة المرور" : "إعادة محاولة الإنشاء"}>
       <h2>{mode === "edit" ? "تعديل المستخدم" : mode === "password" ? "إعادة تعيين كلمة المرور" : "إعادة محاولة الإنشاء"}</h2>
       <form className="account-form" onSubmit={event => {
         event.preventDefault();
@@ -140,6 +144,7 @@ export function AdminAccountsPage() {
         <div className="actions"><button type="button" className="btn" onClick={() => { setMode(null); setSelected(null); }}>إلغاء</button><button type="submit" className="btn primary" disabled={busy}>{mode === "edit" ? "حفظ التغييرات" : mode === "password" ? "إعادة تعيين كلمة المرور" : "إعادة محاولة الإنشاء"}</button></div>
       </form>
     </section>}
+    {notice && <p role="status" className="state-note account-notice">{notice}</p>}
     {deleteTarget && <DeleteDialog account={deleteTarget} onClose={() => setDeleteTarget(null)} onDelete={async confirmedEmail => {
       try {
         await deleteAdminAccount(deleteTarget.principal_id, confirmedEmail);
