@@ -1057,7 +1057,7 @@ test("Admin private list and detail caches disappear when the same browser conte
   await page.waitForURL(/\/profile$/);
   await expect.poll(() => profileBWasBlocked).toBe(true);
   await expect(page.locator(".selected-user-banner")).toHaveCount(0);
-  await expect(page.locator(".admin-user-row")).toHaveCount(0);
+  await expect(page.locator(".account-row")).toHaveCount(0);
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
   expect(await page.evaluate(() => {
     const inspect = (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys;

@@ -42,23 +42,23 @@ export function AppNav() {
                 href={link.href}
                 aria-current={active ? "page" : undefined}
               >
-                <Icon size={18} />
+                <Icon size={18} aria-hidden="true" />
                 <span>{link.label}</span>
               </Link>
             );
           })}
-          {!loading ? (
-            <button
-              className="nav-link nav-signout"
-              type="button"
-              onClick={() => requestGuardedAction(() => void signOut(), { discardOnConfirm: false })}
-              title="تسجيل الخروج"
-            >
-              <LogOut size={18} />
-              <span className="sr-only">تسجيل الخروج</span>
-            </button>
-          ) : null}
         </nav>
+        {!loading ? (
+          <button
+            className="nav-signout"
+            type="button"
+            onClick={() => requestGuardedAction(() => void signOut(), { discardOnConfirm: false })}
+            title="تسجيل الخروج"
+          >
+            <LogOut size={18} aria-hidden="true" />
+            <span>تسجيل الخروج</span>
+          </button>
+        ) : null}
       </div>
     </header>
   );

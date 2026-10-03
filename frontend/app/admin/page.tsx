@@ -1,12 +1,3 @@
-import Link from "next/link";
-import { Users } from "lucide-react";
+import { AdminHomePage } from "@/components/AdminHomePage";
 
-export default function AdminPage() {
-  return <>
-    <div className="page-head"><div><h1 className="page-title">الإدارة</h1><p className="page-kicker">إدارة الحسابات ومتابعة بيانات التغذية.</p></div></div>
-    <div className="admin-home-grid">
-      <Link className="section-panel admin-home-link" href="/admin/accounts"><Users /><strong>إدارة المستخدمين</strong><span>إضافة مستخدم</span></Link>
-      <Link className="section-panel admin-home-link" href="/admin/users"><Users /><strong>المستخدمون</strong><span>عرض الحسابات وبيانات التغذية للمتابعة فقط.</span></Link>
-    </div>
-  </>;
-}
+export default function AdminPage() { return <AdminHomePage />; }

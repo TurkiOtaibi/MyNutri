@@ -673,7 +673,7 @@ button:global(.profile-setting-row):focus-visible,
   position: fixed;
   z-index: 40;
   inset-inline: max(16px, calc((100vw - 760px) / 2));
-  bottom: max(10px, env(safe-area-inset-bottom));
+  bottom: calc(max(10px, env(safe-area-inset-bottom)) + var(--bottom-nav-offset, 0px));
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -703,7 +703,7 @@ button:global(.profile-setting-row):focus-visible,
   position: fixed;
   z-index: 45;
   inset-inline-start: 50%;
-  bottom: max(18px, env(safe-area-inset-bottom));
+  bottom: calc(max(18px, env(safe-area-inset-bottom)) + var(--bottom-nav-offset, 0px));
   display: flex;
   align-items: center;
   gap: 7px;
@@ -722,7 +722,7 @@ button:global(.profile-setting-row):focus-visible,
   position: fixed;
   z-index: 45;
   inset-inline: max(16px, calc((100vw - 760px) / 2));
-  bottom: max(10px, env(safe-area-inset-bottom));
+  bottom: calc(max(10px, env(safe-area-inset-bottom)) + var(--bottom-nav-offset, 0px));
   display: flex;
   align-items: center;
   justify-content: space-between;

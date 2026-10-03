@@ -79,6 +79,15 @@ Existing approved authentication, Labs, and Food strings remain unchanged.
 | Enable/disable success | تم تحديث حالة المستخدم. |
 | Permanent-delete success | تم حذف المستخدم نهائيًا. |
 
+The following 3 strings were added with Product Owner approval on 2026-10-02
+for the merged Admin Users list (issues #91 and #93).
+
+| Context | Approved exact Arabic string |
+|---|---|
+| Password hint (create, reset and creation retry) | استخدم 8 أحرف على الأقل. |
+| Email cannot be changed note (create) | لا يمكن تغيير البريد الإلكتروني بعد إنشاء المستخدم. |
+| User details section-links label (accessible name) | أقسام الصفحة |
+
 ## Profile input
 
 | Field | Required | Current rule |
