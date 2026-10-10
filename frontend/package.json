@@ -7,6 +7,7 @@
     "build": "next build",
     "generate:api": "python ../backend/scripts/export_openapi.py --output openapi.json && swagger-typescript-api generate --path ./openapi.json --output ./lib/generated --name openapi.ts --no-client --route-types --sort-types --sort-routes --enum-style union --silent",
     "start": "next start",
+    "audit:full": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-audit.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run",
@@ -44,6 +45,6 @@
   "overrides": {
     "nanoid": "3.3.18",
     "postcss": "8.5.23",
-    "sharp": "0.35.4"
+    "sharp": "0.35.5"
   }
 }
