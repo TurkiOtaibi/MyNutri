@@ -31,6 +31,15 @@ APPROVED_MARKDOWN = frozenset(
         "docs/ba/04_FIELD_DICTIONARY.md",
         "docs/ba/07_USER_STORIES.md",
         "docs/ba/10_TRACEABILITY_MATRIX.md",
+        "docs/ba/وثيقة متطلبات النظام (BRD).md",
+        "docs/ba/قصص مستخدم النظام (User Stories).md",
+    }
+)
+# PDF copies of the approved BA requirements and user stories.
+APPROVED_DOC_ARTIFACTS = frozenset(
+    {
+        "docs/ba/وثيقة متطلبات النظام (BRD).pdf",
+        "docs/ba/قصص مستخدم النظام (User Stories).pdf",
     }
 )
 EXPECTED_MODELS = frozenset(
@@ -142,7 +151,7 @@ def _markdown_checks(root: Path, files: set[str], issues: list[str]) -> None:
 
     approved_docs_estate = {
         name for name in APPROVED_MARKDOWN if name.startswith("docs/")
-    } | {VALIDATOR_PATH}
+    } | {VALIDATOR_PATH} | APPROVED_DOC_ARTIFACTS
     docs_estate = {name for name in files if name.startswith("docs/")}
     if VALIDATOR_PATH not in docs_estate:
         issues.append(f"documentation validator missing: {VALIDATOR_PATH}")
