@@ -550,7 +550,8 @@ jobs:
         run: npm ci --no-audit --prefer-offline
       - name: Audit all dependencies
         working-directory: frontend
-        run: npm audit
+        # Fails on any advisory except reviewed, unexpired entries in scripts/audit-exceptions.json.
+        run: npm run audit:full
       - name: Verify generated API contract drift
         working-directory: frontend
         run: |
