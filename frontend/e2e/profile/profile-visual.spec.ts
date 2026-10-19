@@ -152,7 +152,7 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
       failedProfileRequests += 1;
       return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "unavailable" }) });
     });
-    await errorPage.getByRole("link", { name: "الملف" }).click();
+    await errorPage.getByRole("link", { name: "بياناتي" }).click();
     const errorAlert = errorPage.getByRole("alert").filter({ hasText: "تعذر تحميل بياناتك" });
     await expect(errorAlert).toBeVisible();
     await expect(errorAlert).toHaveCount(1);

@@ -143,7 +143,10 @@ test("whitespace is omitted, zero is saved, and no live medical status appears",
   await expect(dialog(page).getByRole("button", { name: "حفظ النتائج" })).toBeDisabled();
   await page.locator("#lab-hba1c-value").fill(" \t");
   await page.locator("#lab-eosinophils_pct-value").fill("٠");
-  await expect(dialog(page)).toContainText("سيتم حفظ 1 نتائج");
+  await expect(dialog(page)).toContainText("سيتم حفظ نتيجة واحدة");
+  await page.locator("#lab-hba1c-value").fill("5.2");
+  await expect(dialog(page)).toContainText("سيتم حفظ نتيجتين");
+  await page.locator("#lab-hba1c-value").fill(" \t");
   await expect(dialog(page).locator("[data-tone]")).toHaveCount(0);
   const request = page.waitForRequest((request) => request.url() === `${API_URL}/labs/results` && request.method() === "POST");
   await save(page);
@@ -166,6 +169,9 @@ for (const invalid of ["٬", "-2", "duplicate"]) {
     await save(page);
     await expect(page.locator("#lab-ferritin-value")).toBeFocused();
     await expect(page.locator("#lab-ferritin-value")).toBeInViewport();
+    if (invalid !== "duplicate") {
+      await expect(page.locator("#lab-ferritin-value-error")).toHaveText("أدخل رقمًا صحيحًا يساوي صفرًا أو أكبر.");
+    }
     await expect(page.locator("#lab-hba1c-value")).toHaveValue("5.270");
     await expect(page.locator("#lab-ferritin-value")).toHaveValue(invalid === "duplicate" ? "8" : invalid);
     await expect(page.locator("#lab-ferritin-unit")).toHaveValue("µg/L");

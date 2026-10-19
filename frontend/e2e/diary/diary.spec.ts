@@ -12,6 +12,9 @@ test.describe("@diary daily-use redesign", () => {
     await expect(page.getByRole("heading", { name: "اليوميات" })).toBeVisible();
     await expect(page.getByLabel("التنقل بين أيام اليوميات")).toBeVisible();
     await expect(page.getByLabel(/الأسبوع من/)).toBeVisible();
+    for (const label of ["أحد", "إثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"]) {
+      await expect(page.getByLabel(/الأسبوع من/).getByText(label, { exact: true })).toBeVisible();
+    }
     await expect(page.getByRole("heading", { name: "ملخص اليوم" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "وجبات اليوم" })).toBeVisible();
     await expect(page.getByText("أهداف اليوم")).toHaveCount(0);
@@ -141,7 +144,7 @@ test.describe("@diary daily-use redesign", () => {
     await foodsApi.create({ name: uniqueName("Empty-day recent food"), default_unit_type: "serving" });
     await page.goto("/diary");
     await page.getByLabel("اختيار تاريخ اليوميات").fill(localDate(-280));
-    await expect(page.getByText("لا توجد أطعمة مسجلة اليوم")).toHaveCount(1);
+    await expect(page.getByText("لا توجد أطعمة مسجلة في هذا اليوم")).toHaveCount(1);
     await page.getByRole("button", { name: "إضافة طعام إلى فطور" }).click();
     const dialog = page.getByRole("dialog", { name: "إضافة طعام" });
     await expect(dialog).toBeVisible();
@@ -220,7 +223,7 @@ test.describe("@diary daily-use redesign", () => {
     });
     await page.goto("/diary");
     await expect(page.getByText("تعذر تحميل بيانات هذا اليوم")).toBeVisible();
-    await expect(page.getByText("لا توجد أطعمة مسجلة اليوم")).toHaveCount(0);
+    await expect(page.getByText("لا توجد أطعمة مسجلة في هذا اليوم")).toHaveCount(0);
     failed = false;
     await page.getByRole("button", { name: "إعادة المحاولة" }).first().click();
     await expect.poll(() => requestCount).toBeGreaterThan(1);

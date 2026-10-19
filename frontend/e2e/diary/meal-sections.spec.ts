@@ -90,7 +90,7 @@ test.describe("@diary @meals Gregorian meal sections", () => {
       await expect(sectionToggle).toBeVisible();
     }
     await expect(page.getByRole("button", { name: /قسم غير مصنف$/ })).toHaveCount(0);
-    await expect(page.getByText("لا توجد أطعمة مسجلة اليوم", { exact: true })).toBeVisible();
+    await expect(page.getByText("لا توجد أطعمة مسجلة في هذا اليوم", { exact: true })).toBeVisible();
     await expect(page.locator(".diary-error-state")).toHaveCount(0);
     const summary = page.locator(".diary-summary");
     await expect(summary).toHaveCount(1);

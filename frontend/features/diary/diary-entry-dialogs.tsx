@@ -63,7 +63,7 @@ export function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: {
     }
   });
   const amount = parseQuantity(quantity);
-  const quantityError = selectedFood ? validateQuantity(quantity) : "";
+  const quantityError = selectedFood ? validateQuantity(quantity, defaultUnitLabels[selectedFood.default_unit_type]) : "";
   const preview = selectedFood && amount != null ? multiplyServing(selectedFood, amount) : null;
   const equivalentAmount = selectedFood && amount != null ? selectedFood.unit_amount * amount : null;
   const allFoods = useMemo(() => {
@@ -308,7 +308,7 @@ export function EditEntryDialog({ entry, onClose, onSaved }: { entry: DiaryEntry
     }
   });
   const amount = parseQuantity(quantity);
-  const quantityError = validateQuantity(quantity);
+  const quantityError = validateQuantity(quantity, entry.recorded_unit_label ?? defaultUnitLabels[entry.recorded_unit_type]);
   const preview = amount == null ? null : scaleEntryPreview(entry, amount);
   const equivalentAmount = amount == null ? null : Number(entry.recorded_unit_amount) * amount;
   const unitLabel = entry.recorded_unit_label ?? defaultUnitLabels[entry.recorded_unit_type];
@@ -406,7 +406,7 @@ function QuantityStepper({
   onChange: (value: string) => void;
 }) {
   const amount = parseQuantity(value);
-  const invalid = Boolean(validateQuantity(value));
+  const invalid = Boolean(validateQuantity(value, unitLabel));
 
   function adjust(delta: number) {
     const current = amount ?? 1;

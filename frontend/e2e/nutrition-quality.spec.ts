@@ -60,7 +60,7 @@ test.describe("@nutrition-quality", () => {
     const sheet = page.getByRole("dialog", { name: "التفاصيل الغذائية لليوم" });
     const fiber = sheet.locator(".daily-nutrient-row").filter({ hasText: "الألياف" });
     await expect(fiber).toContainText("6 جم");
-    await expect(sheet).toContainText("تغطية البيانات 100%");
+    await expect(sheet).toContainText("اكتمال البيانات 100%");
     const sodium = sheet.locator(".daily-nutrient-row").filter({ hasText: "الصوديوم" });
     await expect(sodium).toContainText("0 ملجم");
     await expect(sodium).not.toContainText("غير متوفر");
@@ -83,9 +83,16 @@ test.describe("@nutrition-quality", () => {
     const fiber = sheet.locator(".daily-nutrient-row").filter({ hasText: "الألياف" });
     await expect(fiber).toContainText("5 جم");
     await expect(fiber).toContainText("على الأقل");
-    await expect(fiber).toContainText("تغطية البيانات 50%");
-    await expect(fiber).toContainText("لا يمكن تحديد الحالة مع التغطية الجزئية");
+    await expect(sheet).toContainText("اكتمال بيانات العناصر الإضافية");
+    await expect(fiber).toContainText("اكتمال البيانات 50%");
+    await expect(fiber).toContainText("لا يمكن الحكم لأن بعض البيانات ناقصة");
     await expect(fiber).not.toContainText("المتبقي");
+    expect((await foodsApi.update(known.id, { carb_g: 50, fiber_g: 40, sodium_mg: 3000 })).status()).toBe(200);
+    await page.reload();
+    await page.getByRole("button", { name: "عرض التفاصيل الغذائية" }).click();
+    await expect(fiber).toContainText("تم تحقيق الهدف على الأقل");
+    await expect(sheet.locator(".daily-nutrient-row").filter({ hasText: "الصوديوم" })).toContainText("تم تجاوز الحد على الأقل");
+    await expect(sheet).not.toContainText("بالقيمة المؤكدة");
   });
 
   test("Food Details distinguishes explicit zero from missing values and limits completeness to Details", async ({ page, foodsApi }) => {
@@ -123,7 +130,7 @@ test.describe("@nutrition-quality", () => {
     await page.goto("/diary?integrity-error=1");
     await expect(page.getByRole("alert").filter({ hasText: "تعذر حساب الملخص بسبب مشكلة في بيانات يوميات محفوظة" })).toBeVisible();
     await expect(page.locator(".calorie-summary-primary")).toHaveCount(0);
-    await expect(page.getByText("المجاميع غير متاحة ولن تُعرض كقيم ناقصة")).toBeVisible();
+    await expect(page.getByText("المجاميع غير متاحة ولن تُعرض كقيم ناقصة. أعد المحاولة أو تواصل مع المشرف.", { exact: true })).toBeVisible();
   });
 
   test("Food create and details reject a structurally invalid Registry", async ({ page, foodsApi }) => {

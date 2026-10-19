@@ -33,9 +33,9 @@ test("new Food UI consumes the approved taxonomy and source registry", async ({ 
   await page.getByLabel("التصنيف الرئيسي").selectOption("fruits");
   await page.getByLabel("التصنيف الفرعي").selectOption("berries");
   await page.getByLabel(/السعرات/).fill("80");
-  await page.getByLabel(/البروتين g/).fill("1");
-  await page.getByLabel(/الكارب g/).fill("18");
-  await page.getByLabel(/الدهون g/).fill("0");
+  await page.getByLabel(/البروتين \(جم\)/).fill("1");
+  await page.getByLabel(/الكربوهيدرات \(جم\)/).fill("18");
+  await page.getByLabel(/الدهون \(جم\)/).fill("0");
   await page.getByLabel("مصدر البيانات الغذائية").selectOption("official");
   const createResponse = page.waitForResponse(
     (response) => response.url().endsWith("/foods") && response.request().method() === "POST"

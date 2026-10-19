@@ -143,4 +143,6 @@ test("profile-required overview presents the Profile completion action", async (
   await page.route(`${API_URL}/labs`, (route) => route.fulfill({ json: profileRequired }));
   await navigateToOwnerLabs(page);
   await expect(page.getByRole("link", { name: "إكمال الملف" })).toHaveAttribute("href", "/profile");
+  await page.getByRole("link", { name: "إكمال الملف" }).click();
+  await expect(page.getByRole("link", { name: "بياناتي", exact: true })).toHaveAttribute("aria-current", "page");
 });

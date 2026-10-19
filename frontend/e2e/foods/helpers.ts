@@ -317,9 +317,9 @@ export async function fillRequiredFoodForm(page: Page, payload: Partial<FoodPayl
   await page.getByLabel("التصنيف الفرعي").selectOption(food.subcategory);
   await page.getByLabel(/أساس القيم/).selectOption(food.nutrition_basis);
   await page.getByLabel(/السعرات/).fill(String(food.calories));
-  await page.getByLabel(/البروتين g/).fill(String(food.protein_g));
-  await page.getByLabel(/الكارب g/).fill(String(food.carb_g));
-  await page.getByLabel(/الدهون g/).fill(String(food.fat_g));
+  await page.getByLabel(/البروتين \(جم\)/).fill(String(food.protein_g));
+  await page.getByLabel(/الكربوهيدرات \(جم\)/).fill(String(food.carb_g));
+  await page.getByLabel(/الدهون \(جم\)/).fill(String(food.fat_g));
   await page.getByLabel(/الوحدة الافتراضية/).selectOption(food.default_unit_type);
   await page.getByLabel(/مقدار الوحدة/).fill(String(food.unit_amount));
   await page.getByLabel(/أساس الوحدة/).selectOption(food.unit_basis);

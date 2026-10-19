@@ -4,7 +4,7 @@ import { useEffect, useRef, type RefObject } from "react";
 import { Dialog } from "@base-ui-components/react/dialog";
 
 import type { LabCatalogResponse } from "@/lib/types";
-import { batchErrorTarget, mapLabErrors, populatedCount, type BatchPhase } from "./lab-batch-model";
+import { batchErrorTarget, labErrorMessage, mapLabErrors, populatedCount, resultCountLabel, type BatchPhase } from "./lab-batch-model";
 import styles from "./labs.module.css";
 
 type LabBatchDialogProps = {
@@ -60,7 +60,7 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
             {([ ["date", "التاريخ"], ["selection", "الاختيار"], ["values", "القيم"] ] as const).map(([key, label]) => <li key={key} aria-current={draft.step === key ? "step" : undefined}>{label}</li>)}
           </ol>
           {phase?.kind === "validation_error" ? <div id="lab-batch-errors" role="alert" tabIndex={-1} className={styles.batchError}>
-            {phase.errors.map((error, index) => <p key={index}>{error.msg}</p>)}
+            {phase.errors.map((error, index) => <p key={index}>{labErrorMessage(error)}</p>)}
           </div> : null}
           {phase?.kind === "ambiguous" ? <p role="alert">لم يتم تأكيد نتيجة الحفظ. أعد المحاولة لتأكيد العملية نفسها.</p> : null}
           <fieldset className={styles.batchFields} disabled={locked}>
@@ -102,7 +102,7 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
               </fieldset>;
             }) : null}
           </fieldset>
-          {draft.step === "values" ? <p aria-live="polite">سيتم حفظ <bdi dir="ltr">{populatedCount(draft)}</bdi> نتائج</p> : null}
+          {draft.step === "values" ? <p aria-live="polite">سيتم حفظ <bdi dir="auto">{resultCountLabel(populatedCount(draft))}</bdi></p> : null}
           <footer className={styles.batchActions}>
             <button className="btn" type="button" disabled={locked} onClick={props.onCancel}>إلغاء</button>
             {draft.step !== "date" ? <button className="btn" type="button" disabled={locked} onClick={props.onBack}>السابق</button> : null}

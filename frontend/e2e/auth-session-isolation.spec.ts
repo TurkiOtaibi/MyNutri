@@ -526,7 +526,8 @@ test("same browser context isolates cached profile and diary data across A to B 
 
   const context = await browser.newContext({ storageState: undefined });
   const page = await context.newPage();
-  const historyMarkerA = `A target history marker ${suffix}`;
+  const historyDateA = "2099-07-18";
+  const historyMarkerA = "18 يوليو 2099";
   let blockHistoryB = false;
   let historyBWasBlocked = false;
   let releaseHistoryB!: () => void;
@@ -541,7 +542,7 @@ test("same browser context isolates cached profile and diary data across A to B 
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
-        items: [{ id: `plan-${suffix}`, effective_from: historyMarkerA, revision: 1, created_at: "2026-08-01T12:00:00Z", targets: { target_calories: 2100 } }],
+        items: [{ id: `plan-${suffix}`, effective_from: historyDateA, revision: 1, created_at: "2026-08-01T12:00:00Z", targets: { target_calories: 2100 } }],
         next_cursor: null
       })
     });

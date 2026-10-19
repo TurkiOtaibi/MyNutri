@@ -10,7 +10,7 @@ const links = [
   { href: "/diary", label: "اليوميات", icon: CalendarDays },
   { href: "/foods", label: "الأطعمة", icon: Utensils },
   { href: "/labs", label: "التحاليل", icon: FlaskConical },
-  { href: "/profile", label: "الملف", icon: UserRound }
+  { href: "/profile", label: "بياناتي", icon: UserRound }
 ];
 
 export function AppNav() {

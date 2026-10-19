@@ -146,7 +146,7 @@ for (const value of ["-1", "1".repeat(129)]) {
     await expect(page.locator("#lab-edit-value")).toHaveValue(value);
     await expect(page.locator("#lab-edit-date")).toHaveValue(date);
     await expect(page.locator("#lab-edit-unit")).toHaveValue("mmol/mol");
-    await expect(page.locator("#lab-edit-errors")).toContainText(value.length > 128 ? "تتجاوز القيمة حد التخزين المسموح." : "أدخل قيمة رقمية صريحة غير سالبة.");
+    await expect(page.locator("#lab-edit-errors")).toContainText(value.length > 128 ? "تتجاوز القيمة حد التخزين المسموح." : "أدخل رقمًا صحيحًا يساوي صفرًا أو أكبر.");
   });
 }
 

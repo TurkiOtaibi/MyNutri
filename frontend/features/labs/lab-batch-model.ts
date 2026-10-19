@@ -38,6 +38,18 @@ export function populatedCount(draft: BatchDraft): number {
   return Object.values(draft.rows).filter((row) => row.value.trim() !== "").length;
 }
 
+export function resultCountLabel(count: number): string {
+  if (count === 1) return "نتيجة واحدة";
+  if (count === 2) return "نتيجتين";
+  return `${count} ${count <= 10 ? "نتائج" : "نتيجة"}`;
+}
+
+export function labErrorMessage(error: LabFieldError): string {
+  return error.code === "LAB_DECIMAL_INVALID" || error.type === "LAB_DECIMAL_INVALID"
+    ? "أدخل رقمًا صحيحًا يساوي صفرًا أو أكبر."
+    : error.msg;
+}
+
 export function freezeBatch(draft: BatchDraft, key: string): PendingBatch {
   const results = buildLabRows(Object.entries(draft.rows).map(([testKey, row]) => ({ testKey, ...row })));
   if (!results.length) throw new Error("أدخل نتيجة واحدة على الأقل.");
@@ -154,19 +166,20 @@ export function buildLabRows(draftRows: LabDraftRow[]): LabCreateRequest["result
 export function mapLabErrors(detail: LabFieldError[]): LabMappedErrors {
   const mapped: LabMappedErrors = { rows: {} };
   for (const error of detail) {
+    const message = labErrorMessage(error);
     const locField = [...error.loc].reverse().find((part): part is string => typeof part === "string");
     const field = error.field ?? locField;
     if (field === "test_date" && !error.test_key) {
-      mapped.test_date ??= error.msg;
+      mapped.test_date ??= message;
       continue;
     }
     if (error.test_key) {
       const row = (mapped.rows[error.test_key] ??= {});
-      if (field === "entered_value" || field === "entered_unit") row[field] ??= error.msg;
-      else row.form ??= error.msg;
+      if (field === "entered_value" || field === "entered_unit") row[field] ??= message;
+      else row.form ??= message;
       continue;
     }
-    mapped.form ??= error.msg;
+    mapped.form ??= message;
   }
   return mapped;
 }

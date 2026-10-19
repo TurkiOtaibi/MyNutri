@@ -339,9 +339,9 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
 
         <FormSection title="القيم الغذائية الأساسية">
           <NumberField field="calories" label="السعرات" value={form.calories} required error={errors.calories} onChange={(value) => update("calories", value)} />
-          <NumberField field="protein_g" label="البروتين g" value={form.protein_g} required error={errors.protein_g} onChange={(value) => update("protein_g", value)} />
-          <NumberField field="carb_g" label="الكارب g" value={form.carb_g} required error={errors.carb_g} onChange={(value) => update("carb_g", value)} />
-          <NumberField field="fat_g" label="الدهون g" value={form.fat_g} required error={errors.fat_g} onChange={(value) => update("fat_g", value)} />
+          <NumberField field="protein_g" label="البروتين (جم)" value={form.protein_g} required error={errors.protein_g} onChange={(value) => update("protein_g", value)} />
+          <NumberField field="carb_g" label="الكربوهيدرات (جم)" value={form.carb_g} required error={errors.carb_g} onChange={(value) => update("carb_g", value)} />
+          <NumberField field="fat_g" label="الدهون (جم)" value={form.fat_g} required error={errors.fat_g} onChange={(value) => update("fat_g", value)} />
         </FormSection>
 
         <FormSection title="الوحدة الافتراضية">
