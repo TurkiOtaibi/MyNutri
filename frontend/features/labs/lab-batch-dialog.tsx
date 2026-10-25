@@ -5,6 +5,7 @@ import { Dialog } from "@base-ui-components/react/dialog";
 
 import type { LabCatalogResponse } from "@/lib/types";
 import { batchErrorTarget, labErrorMessage, mapLabErrors, populatedCount, resultCountLabel, type BatchPhase } from "./lab-batch-model";
+import { formatGregorianArabicDate } from "@/lib/dates";
 import styles from "./labs.module.css";
 
 type LabBatchDialogProps = {
@@ -67,6 +68,7 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
             <legend className="sr-only">{draft.step === "date" ? "تاريخ النتائج" : draft.step === "selection" ? "اختيار التحاليل" : "قيم النتائج"}</legend>
             {draft.step === "date" ? <label>تاريخ التحليل
               <input id="lab-batch-date" type="date" value={draft.date} aria-invalid={Boolean(errors.test_date)} aria-describedby={errors.test_date ? "lab-date-error" : undefined} onChange={(event) => props.onDate(event.target.value)} />
+              {draft.date ? <time dateTime={draft.date}>{formatGregorianArabicDate(draft.date)}</time> : null}
               {errors.test_date ? <span id="lab-date-error" className={styles.batchError}>{errors.test_date}</span> : null}
             </label> : null}
             {draft.step === "selection" ? <>

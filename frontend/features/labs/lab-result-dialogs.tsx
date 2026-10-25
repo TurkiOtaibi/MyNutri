@@ -6,6 +6,7 @@ import { AlertDialog } from "@base-ui-components/react/alert-dialog";
 import type { LabCatalogTest, LabFieldError, LabResultPatch, LabResultResponse } from "@/lib/types";
 import { enteredTriplet, freezeResultPatch, resultErrorTarget } from "./lab-result-model";
 import { labErrorMessage } from "./lab-batch-model";
+import { formatGregorianArabicDate } from "@/lib/dates";
 import styles from "./labs.module.css";
 
 type DialogFocus = { returnFocus?: () => HTMLElement | false | null; isCurrent?: () => boolean };
@@ -61,8 +62,9 @@ export function LabEditDialog(props: LabEditDialogProps) {
               {test.supported_units.map(unit => <option key={unit} value={unit}>{unit}</option>)}
             </select>{unitError ? <span id="lab-edit-unit-error" className={styles.batchError}>{unitError}</span> : null}</label>
             <label>تاريخ التحليل<input id="lab-edit-date" type="date" dir="ltr" value={draft.test_date} aria-invalid={Boolean(dateError)} aria-describedby={dateError ? "lab-edit-date-error" : "lab-edit-today"} onChange={event => setDraft({ ...draft, test_date: event.target.value })} />
+              {draft.test_date ? <time dateTime={draft.test_date}>{formatGregorianArabicDate(draft.test_date)}</time> : null}
               {dateError ? <span id="lab-edit-date-error" className={styles.batchError}>{dateError}</span> : null}</label>
-            <p id="lab-edit-today">تاريخ اليوم: <bdi dir="ltr">{props.serverToday}</bdi></p>
+            <p id="lab-edit-today">تاريخ اليوم: <time dateTime={props.serverToday}>{formatGregorianArabicDate(props.serverToday)}</time></p>
           </fieldset>
           <footer className={styles.batchActions}>
             <button type="button" className="btn" disabled={pending} onClick={() => { if (!submitted.current) props.onCancel(); }}>{props.writeBlocked ? "إغلاق" : "إلغاء"}</button>
@@ -87,7 +89,7 @@ export function LabDeleteDialog(props: LabDeleteDialogProps) {
     <AlertDialog.Portal><AlertDialog.Backdrop className={styles.batchBackdrop} />
       <AlertDialog.Popup className={styles.batchDialog} dir="rtl" initialFocus={() => props.isCurrent?.() === false ? false : document.getElementById("lab-delete-cancel")} finalFocus={props.returnFocus}>
         <AlertDialog.Title>حذف النتيجة</AlertDialog.Title>
-        <AlertDialog.Description>هل تريد حذف نتيجة {props.test.name_ar} <bdi dir="ltr">{props.test.abbreviation ?? props.test.name_en}</bdi> بتاريخ <time dateTime={props.result.test_date} dir="ltr">{props.result.test_date}</time>؟</AlertDialog.Description>
+        <AlertDialog.Description>هل تريد حذف نتيجة {props.test.name_ar} <bdi dir="ltr">{props.test.abbreviation ?? props.test.name_en}</bdi> بتاريخ <time dateTime={props.result.test_date}>{formatGregorianArabicDate(props.result.test_date)}</time>؟</AlertDialog.Description>
         {props.error ? <p role="alert">{props.error}</p> : null}
         <footer className={styles.batchActions}>
           <button id="lab-delete-cancel" type="button" className="btn" disabled={props.pending} onClick={() => { if (!submitted.current) props.onCancel(); }}>إلغاء</button>

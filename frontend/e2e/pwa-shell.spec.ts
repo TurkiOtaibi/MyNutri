@@ -2,7 +2,7 @@ import { expect, test, type BrowserContext, type Page, type Request, type Respon
 import { API_URL, createActor, createLabsApi, loginOwner, offsetIsoDate } from "./labs/helpers";
 
 const APP_CACHE_PREFIX = "mynutri-shell-";
-const CURRENT_CACHE = "mynutri-shell-v3";
+const CURRENT_CACHE = "mynutri-shell-v4";
 const GENERIC_PATHS = new Set(["/offline", "/manifest.json", "/icon.svg"]);
 const APP_ORIGIN = "http://127.0.0.1:3000";
 
@@ -249,7 +249,7 @@ test("@plan017 worker activation awaits shell population and removes only obsole
 
   const state = await page.evaluate(async () => {
     const keys = await caches.keys();
-    const cache = await caches.open("mynutri-shell-v3");
+    const cache = await caches.open("mynutri-shell-v4");
     const urls = (await cache.keys()).map((request) => new URL(request.url).pathname).sort();
     const registration = await navigator.serviceWorker.ready;
     return {
@@ -267,7 +267,7 @@ test("@plan017 worker activation awaits shell population and removes only obsole
   expect(state.keys).not.toContain("mynutri-shell-v1");
   expect(state.urls).toEqual(["/icon.svg", "/manifest.json", "/offline"]);
   const manifest = await page.evaluate(async () => {
-    const response = await (await caches.open("mynutri-shell-v3")).match("/manifest.json");
+    const response = await (await caches.open("mynutri-shell-v4")).match("/manifest.json");
     return response?.json();
   });
   expect(manifest).toMatchObject({
@@ -682,7 +682,7 @@ test("@plan017 reuses only immutable Next static assets while offline", async ({
   await page.reload();
 
   const staticUrl = await page.evaluate(async () => {
-    const cache = await caches.open("mynutri-shell-v3");
+    const cache = await caches.open("mynutri-shell-v4");
     const request = (await cache.keys()).find((candidate) => new URL(candidate.url).pathname.startsWith("/_next/static/"));
     return request?.url ?? "";
   });
@@ -700,7 +700,7 @@ test("@plan017 reuses only immutable Next static assets while offline", async ({
 test("@plan017 deep navigations return the exact generic offline document", async ({ page, context }) => {
   await waitForWorkerControl(page);
   const offline = await page.evaluate(async () => {
-    const response = await (await caches.open("mynutri-shell-v3")).match("/offline");
+    const response = await (await caches.open("mynutri-shell-v4")).match("/offline");
     if (!response) throw new Error("Offline document was not precached.");
     return {
       body: await response.clone().text(),
@@ -724,9 +724,47 @@ test("@plan017 deep navigations return the exact generic offline document", asyn
     expect(await response!.text()).toBe(offline.body);
     expect(response!.headers()["content-type"]).toBe(offline.contentType);
     await expect(page).toHaveURL(new RegExp(`${path.replaceAll("/", "\\/")}$`));
-    await expect(page.getByText("myNutri v1", { exact: false })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "الاتصال غير متاح" })).toBeVisible();
+    await expect(page.locator("body")).not.toContainText("myNutri v1");
+    await expect(page.getByRole("button", { name: "إعادة المحاولة" })).toBeVisible();
     await expect(page.locator("body")).not.toContainText(/admin\.e2e|V2 E2E baseline|access_token/i);
   }
+});
+
+test("BR-NAV-016 installation is offered only after browser support and consumes the prompt", async ({ page }) => {
+  await page.goto("/offline");
+  const install = page.getByRole("button", { name: "تثبيت التطبيق", exact: true });
+  await expect(install).toHaveCount(0);
+  await page.evaluate(() => {
+    const event = Object.assign(new Event("beforeinstallprompt", { cancelable: true }), {
+      prompt: async () => { document.documentElement.dataset.installPrompted = "true"; },
+      userChoice: Promise.resolve({ outcome: "accepted", platform: "web" }),
+    });
+    window.dispatchEvent(event);
+  });
+  await expect(install).toBeVisible();
+  await install.click();
+  await expect(page.locator("html")).toHaveAttribute("data-install-prompted", "true");
+  await expect(install).toHaveCount(0);
+  const manifest = await (await page.request.get("/manifest.json")).json();
+  expect(manifest.description).toBe("متابعة التغذية واليوميات والتحاليل.");
+});
+
+test("BR-NAV-017 iPhone instructions disappear in standalone mode and after installation", async ({ browser }) => {
+  const context = await browser.newContext({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1", viewport: { width: 320, height: 700 } });
+  const page = await context.newPage();
+  try {
+    await page.goto(`${APP_ORIGIN}/offline`);
+    const message = page.getByText('لتثبيت النظام: اضغط زر المشاركة، ثم "إضافة إلى الشاشة الرئيسية".', { exact: true });
+    await expect(message).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.evaluate(() => window.dispatchEvent(new Event("appinstalled")));
+    await expect(message).toHaveCount(0);
+    await page.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true }));
+    await page.reload();
+    await expect(message).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "تثبيت التطبيق" })).toHaveCount(0);
+  } finally { await context.close(); }
 });
 
 test("@plan017 CacheStorage contains only generic and immutable static resources", async ({ page }) => {
@@ -1025,7 +1063,7 @@ test("Labs private reads and successful writes never enter browser persistence o
     expect(await page.evaluate(() => indexedDB.databases().then((databases) => databases.length))).toBe(0);
 
     const offlineDocument = await page.evaluate(async () => {
-      const response = await (await caches.open("mynutri-shell-v3")).match("/offline");
+      const response = await (await caches.open("mynutri-shell-v4")).match("/offline");
       if (!response) throw new Error("Offline document was not precached.");
       return response.text();
     });
@@ -1033,7 +1071,7 @@ test("Labs private reads and successful writes never enter browser persistence o
     const offlineResponse = await page.goto("/labs/hba1c");
     expect(offlineResponse).not.toBeNull();
     expect(await offlineResponse!.text()).toBe(offlineDocument);
-    await expect(page.getByText("myNutri v1", { exact: false })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "الاتصال غير متاح" })).toBeVisible();
     await expect(page.locator("body")).not.toContainText(privateMarker);
     await expect(page.locator("body")).not.toContainText(initialId);
     await expect(page.locator("body")).not.toContainText(createdId);

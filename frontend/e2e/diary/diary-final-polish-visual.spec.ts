@@ -101,7 +101,8 @@ async function expectHistoricalEmptyDiary(
   if (selectedDay.targets === null) {
     await expect(summary).toHaveAttribute("aria-label", "ملخص اليوم دون مصدر هدف");
     await expect(summary.locator(".target-provenance-label")).toHaveCount(0);
-    await expect(summary.getByText("لا يوجد مصدر هدف محفوظ لهذا اليوم.", { exact: true })).toBeVisible();
+    await expect(summary.getByText("لم تحدد أهدافك بعد.", { exact: true })).toBeVisible();
+    await expect(summary.getByRole("link", { name: "تحديد أهدافي" })).toHaveAttribute("href", "/profile");
     await expect(summary.getByRole("progressbar")).toHaveCount(0);
     return;
   }
@@ -134,7 +135,7 @@ async function expectTargetBackedZeroDiary(
   const summary = page.locator(".diary-summary");
   await expect(summary).toHaveCount(1);
   await expect(summary).toBeVisible();
-  await expect(summary.getByText("لا يوجد مصدر هدف محفوظ لهذا اليوم.", { exact: true })).toHaveCount(0);
+  await expect(summary.getByText("لم تحدد أهدافك بعد.", { exact: true })).toHaveCount(0);
   await expect(summary.locator(".target-provenance-label")).toHaveCount(0);
   const progressbars = summary.getByRole("progressbar");
   await expect(progressbars).toHaveCount(4);

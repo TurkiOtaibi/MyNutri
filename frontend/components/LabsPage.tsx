@@ -80,7 +80,7 @@ export function LabsPage() {
     </div> : null}
     <LabsViewTabs view={view} onViewChange={setView} />
     <div id="labs-panel-owned" role="tabpanel" aria-labelledby="labs-tab-owned" tabIndex={view === "owned" ? 0 : -1} hidden={view !== "owned"}>
-      {view === "owned" ? <OwnedLabsView {...props} /> : null}
+      {view === "owned" ? <OwnedLabsView {...props} adminOwn={overview.data.read_only} /> : null}
     </div>
     <div id="labs-panel-all" role="tabpanel" aria-labelledby="labs-tab-all" tabIndex={view === "all" ? 0 : -1} hidden={view !== "all"}>
       {view === "all" ? <LabCatalogView {...props} /> : null}

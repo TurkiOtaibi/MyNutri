@@ -22,6 +22,23 @@ const render = (data = detail, selectedResultId: string | null = null) => render
 }));
 
 describe("shared Lab detail presentation", () => {
+  it("BR-LAB-026 follows the selected server status without inferring a medical range", () => {
+    const warning = "هذه القيم للمتابعة فقط، ولا تغني عن استشارة الطبيب.";
+    const outside = { ...results[1], status: { code: "low", label_ar: "منخفض", tone: "outside" } };
+    const data = { ...detail, results: [results[0], outside] };
+    expect(render(data, outside.id)).toContain(warning);
+    expect(render({ ...detail, results: [{ ...outside, status: { code: "borderline_high", label_ar: "مرتفع حدّيًا", tone: "caution" } }] })).toContain(warning);
+    expect(render(data, results[0].id)).not.toContain(warning);
+    expect(render({ ...data, results: [] })).not.toContain(warning);
+  });
+  it("BR-LAB-036 renders Gregorian Arabic dates while preserving ISO attributes", () => {
+    const html = render(detail, results[1].id);
+    expect(html).toContain('dateTime="2026-09-18"');
+    expect(html).toContain("18 سبتمبر 2026");
+    expect(html).not.toContain('>2026-09-18<');
+    expect(html).toContain('aria-label="18 سبتمبر 2026،');
+    expect(html).toMatch(/<text[^>]+direction="rtl"[^>]*>18 سبتمبر 2026<\/text>/);
+  });
   it("uses selected result exact reference/date and canonical unit outside SVG", () => {
     const html = render(detail, results[1].id);
     expect(html).toContain('data-reference-date="2026-09-18"');

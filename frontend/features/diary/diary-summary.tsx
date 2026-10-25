@@ -8,6 +8,8 @@ import type { DaySummary, DiaryEntryResponse, DiaryNutrientAggregate, MealType, 
 import { emptyNutritionTotals, entryQuantityLabel, formatDiarySelectedDate, mealItemCountLabel, mealLabels, shortWeekdays, standardMeals } from "./diary-model";
 import { ModalFrame } from "./diary-modal";
 
+import Link from "next/link";
+
 const WEEK_READ_ERROR = "تعذر تحميل ملخص الأسبوع. تحقق من الاتصال وحاول مرة أخرى.";
 
 export function CompactWeekNavigator({
@@ -86,7 +88,8 @@ export function DailyProgressSummary({ totals, targets, pending, failed, onOpenN
   if (!targets) return (
     <section className="diary-summary state-note" aria-label="ملخص اليوم دون مصدر هدف">
       <h2>ملخص اليوم</h2>
-      <p>لا يوجد مصدر هدف محفوظ لهذا اليوم.</p>
+      <p>لم تحدد أهدافك بعد.</p>
+      <Link className="btn primary" href="/profile">تحديد أهدافي</Link>
       <button className="diary-nutrition-details-action" type="button" onClick={onOpenNutrition}>عرض التفاصيل الغذائية</button>
     </section>
   );

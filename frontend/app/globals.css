@@ -1484,6 +1484,14 @@ a {
   box-shadow: var(--shadow);
 }
 
+.install-help {
+  max-width: min(24rem, calc(100vw - 32px));
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--surface, #fff);
+  color: var(--text, #172420);
+}
+
 @media (max-width: 920px) {
   .workspace-grid {
     grid-template-columns: 1fr;
