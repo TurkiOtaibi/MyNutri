@@ -153,7 +153,7 @@ test.describe("Foods list, search, and states @foods", () => {
     await foodsApi.create({ name: `E2E-Desktop-Table-${Date.now()}` });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/foods");
-    for (const column of ["الطعام", "التصنيف", "الحصة الافتراضية", "السعرات", "البروتين", "الكارب", "الدهون"]) {
+    for (const column of ["الطعام", "التصنيف", "الحصة الافتراضية", "السعرات", "البروتين", "الكربوهيدرات", "الدهون"]) {
       await expect(page.getByRole("columnheader", { name: column })).toBeVisible();
     }
   });

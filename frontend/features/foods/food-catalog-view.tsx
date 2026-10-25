@@ -87,7 +87,7 @@ export function FoodCard({
         <div className="serving-macro-grid" aria-label="القيم الغذائية للحصة الافتراضية">
           <ServingMetric value={formatServingCalories(nutrition.calories)} label="سعرة" />
           <ServingMetric value={formatServingMacro(nutrition.protein_g)} label="بروتين" />
-          <ServingMetric value={formatServingMacro(nutrition.carb_g)} label="كارب" />
+          <ServingMetric value={formatServingMacro(nutrition.carb_g)} label="كربوهيدرات" />
           <ServingMetric value={formatServingMacro(nutrition.fat_g)} label="دهون" />
         </div>
       ) : (

@@ -53,7 +53,7 @@ test.describe("@nutrition-quality", () => {
     const breakfast = page.locator("#meal-section-breakfast");
     await expect(breakfast).toContainText("280");
     await expect(breakfast).toContainText("بروتين 24 جم");
-    await expect(breakfast).toContainText("كارب 36 جم");
+    await expect(breakfast).toContainText("كربوهيدرات 36 جم");
     await expect(breakfast).toContainText("دهون 12 جم");
     await expect(breakfast).toContainText("2 حصة");
     await page.getByRole("button", { name: "عرض التفاصيل الغذائية" }).click();

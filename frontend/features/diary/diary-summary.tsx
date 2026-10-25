@@ -119,7 +119,7 @@ export function DailyProgressSummary({ totals, targets, pending, failed, onOpenN
       </div>
       <div className="macro-progress-list">
         <MacroProgress label="البروتين" value={totals.protein_g} max={targets.protein_g} />
-        <MacroProgress label="الكارب" value={totals.carb_g} max={targets.carb_g} />
+        <MacroProgress label="الكربوهيدرات" value={totals.carb_g} max={targets.carb_g} />
         <MacroProgress label="الدهون" value={totals.fat_g} max={targets.fat_g} />
       </div>
       <button className="diary-nutrition-details-action" type="button" onClick={onOpenNutrition}>عرض التفاصيل الغذائية</button>
@@ -198,7 +198,7 @@ export function MealSections({
             <div className="meal-section-header">
               <button className="meal-toggle" type="button" aria-expanded={isOpen} aria-controls={`meal-${meal}`} aria-label={`${isOpen ? "إغلاق" : "فتح"} قسم ${mealLabels[meal]}`} onClick={() => onToggleMeal(meal)}>
                 <Icon size={21} aria-hidden="true" />
-                <span className="meal-title-copy"><strong>{mealLabels[meal]}</strong><small>{items.length === 0 ? mealItemCountLabel(0) : <>{mealItemCountLabel(items.length)} · <bdi dir="ltr">{calories}</bdi> سعرة</>}</small>{items.length > 0 ? <small className="meal-macro-totals"><bdi dir="ltr">بروتين {formatServingMacro(protein)} جم</bdi><span> · </span><bdi dir="ltr">كارب {formatServingMacro(carbs)} جم</bdi><span> · </span><bdi dir="ltr">دهون {formatServingMacro(fat)} جم</bdi></small> : null}</span>
+                <span className="meal-title-copy"><strong>{mealLabels[meal]}</strong><small>{items.length === 0 ? mealItemCountLabel(0) : <>{mealItemCountLabel(items.length)} · <bdi dir="ltr">{calories}</bdi> سعرة</>}</small>{items.length > 0 ? <small className="meal-macro-totals"><bdi dir="ltr">بروتين {formatServingMacro(protein)} جم</bdi><span> · </span><bdi dir="ltr">كربوهيدرات {formatServingMacro(carbs)} جم</bdi><span> · </span><bdi dir="ltr">دهون {formatServingMacro(fat)} جم</bdi></small> : null}</span>
                 <ChevronDown className="meal-chevron" size={18} aria-hidden="true" />
               </button>
               {meal !== "unspecified" ? (

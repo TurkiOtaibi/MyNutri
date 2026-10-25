@@ -1398,7 +1398,20 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.getByRole("button", { name: "كيف حُسبت أهدافي؟" }).click();
     const sheet = page.getByRole("dialog", { name: "طريقة حساب أهدافك" });
     await expect(sheet).toContainText("Mifflin–St Jeor");
+    await expect(targets).toContainText("الكربوهيدرات");
+    for (const term of ["معدل الأيض الأساسي", "أساس الحساب", "وزن الحساب", "الوزن الفعلي", "الوزن المعدل",
+      "مؤشر كتلة الجسم المستخدم", "العجز المطلوب", "العجز المطبق", "شدة الخفض المختارة", "تفاصيل حساب البروتين"]) {
+      const row = sheet.locator(".profile-calculation-terms > div").filter({ has: page.locator("dt", { hasText: new RegExp(`^${term}$`) }) });
+      await expect(row.locator("dd")).toContainText(`${term}: `);
+    }
+    await expect(sheet).toContainText("معدل الأيض الأساسي: السعرات التي يحرقها جسمك وأنت مرتاح");
     await expect(sheet).not.toContainText(/localhost|127\.0\.0\.1|API|backend/i);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await sheet.locator(".profile-calculation-terms > div").last().scrollIntoViewIfNeeded();
+    expect(await sheet.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "كيف حُسبت أهدافي؟" })).toBeFocused();
   });
 
   test("@p1 initial loading and load failure never expose a fabricated editable form", async ({ page }) => {

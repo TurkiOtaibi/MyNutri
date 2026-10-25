@@ -86,7 +86,7 @@ const fixedCoreNutrients: FoodNutrientSpec[] = [
 ];
 
 const calculatedNutrients: FoodNutrientSpec[] = [
-  { key: "net_carbs_g", label: "صافي الكارب", unit: "جم", precision: 2, order: 0, registryKey: null },
+  { key: "net_carbs_g", label: "صافي الكربوهيدرات", unit: "جم", precision: 2, order: 0, registryKey: null },
 ];
 
 const groupDefinitions: Array<{ key: FoodNutrientGroupKey; title: string }> = [

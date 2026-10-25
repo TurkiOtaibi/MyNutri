@@ -202,7 +202,7 @@ export function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: {
                 <div className="add-calorie-total"><strong>{Math.round(preview.calories)}</strong><span>سعرة حرارية</span></div>
                 <div className="add-macro-row">
                   <span>بروتين <strong><bdi dir="ltr">{formatServingMacro(preview.protein_g)}</bdi> جم</strong></span>
-                  <span>كارب <strong><bdi dir="ltr">{formatServingMacro(preview.carb_g)}</bdi> جم</strong></span>
+                  <span>كربوهيدرات <strong><bdi dir="ltr">{formatServingMacro(preview.carb_g)}</bdi> جم</strong></span>
                   <span>دهون <strong><bdi dir="ltr">{formatServingMacro(preview.fat_g)}</bdi> جم</strong></span>
                 </div>
               </div>
@@ -348,7 +348,7 @@ export function EditEntryDialog({ entry, onClose, onSaved }: { entry: DiaryEntry
             <div>
               <span><strong>{Math.round(preview.calories)}</strong> سعرة</span>
               <span><strong>{formatServingMacro(preview.protein_g)}</strong> بروتين</span>
-              <span><strong>{formatServingMacro(preview.carb_g)}</strong> كارب</span>
+              <span><strong>{formatServingMacro(preview.carb_g)}</strong> كربوهيدرات</span>
               <span><strong>{formatServingMacro(preview.fat_g)}</strong> دهون</span>
             </div>
           </div>

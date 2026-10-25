@@ -122,7 +122,7 @@ test.describe("@diary quantity and UX refinement", () => {
     await expect(summary.getByLabel(new RegExp(`من ${targetsBody.targets!.target_calories} سعرة`))).toBeVisible();
     await expect(summary.getByText(/المتبقي \d+/)).toBeVisible();
     await expect(summary.getByLabel(/البروتين:/)).toBeVisible();
-    await expect(summary.getByLabel(/الكارب:/)).toBeVisible();
+    await expect(summary.getByLabel(/الكربوهيدرات:/)).toBeVisible();
     await expect(summary.getByLabel(/الدهون:/)).toBeVisible();
   });
 

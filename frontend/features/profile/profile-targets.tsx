@@ -10,7 +10,7 @@ export function TargetsCard({ title, badge, targets }: { title: string; badge: s
     <section className="profile-targets-card" aria-label={title}>
       <header><div><h2>{title}</h2><p>تتحدث بعد حفظ بياناتك.</p></div><span>{badge}</span></header>
       {targets ? (
-        <><div className="profile-calorie-target"><strong><bdi>{targets.target_calories}</bdi></strong><span>سعرة حرارية يوميًا</span></div><div className="profile-macro-targets"><TargetValue label="البروتين" value={targets.protein_g} /><TargetValue label="الكارب" value={targets.carb_g} /><TargetValue label="الدهون" value={targets.fat_g} /></div></>
+        <><div className="profile-calorie-target"><strong><bdi>{targets.target_calories}</bdi></strong><span>سعرة حرارية يوميًا</span></div><div className="profile-macro-targets"><TargetValue label="البروتين" value={targets.protein_g} /><TargetValue label="الكربوهيدرات" value={targets.carb_g} /><TargetValue label="الدهون" value={targets.fat_g} /></div></>
       ) : <div className="profile-incomplete"><strong>لم تحدد أهدافك بعد.</strong></div>}
     </section>
   );
@@ -18,6 +18,23 @@ export function TargetsCard({ title, badge, targets }: { title: string; badge: s
 
 function TargetValue({ label, value }: { label: string; value: number }) {
   return <div><span>{label}</span><strong><bdi dir="ltr">{formatTargetNumber(value)}</bdi> جم</strong></div>;
+}
+
+export function CalculationExplanation() {
+  return (
+    <dl className="profile-calculation-terms">
+      <div><dt>معدل الأيض الأساسي</dt><dd>معدل الأيض الأساسي: السعرات التي يحرقها جسمك وأنت مرتاح</dd></div>
+      <div><dt>أساس الحساب</dt><dd>أساس الحساب: نوع الوزن الذي يستخدمه النظام لحساب احتياجك من البروتين.</dd></div>
+      <div><dt>وزن الحساب</dt><dd>وزن الحساب: الوزن الذي تُضرب فيه كمية البروتين لكل كجم لتحديد هدف البروتين.</dd></div>
+      <div><dt>الوزن الفعلي</dt><dd>الوزن الفعلي: وزنك الذي أدخلته في بياناتك.</dd></div>
+      <div><dt>الوزن المعدل</dt><dd>الوزن المعدل: وزن يحسبه النظام من وزنك الفعلي ووزن مرجعي لتقدير البروتين عندما يكون مؤشر كتلة الجسم 30 أو أكثر.</dd></div>
+      <div><dt>مؤشر كتلة الجسم المستخدم</dt><dd>مؤشر كتلة الجسم المستخدم: قيمة محسوبة من وزنك وطولك لاختيار الوزن المستخدم في حساب البروتين.</dd></div>
+      <div><dt>العجز المطلوب</dt><dd>العجز المطلوب: مقدار السعرات المراد خفضه من احتياجك اليومي وفق شدة الخفض المختارة.</dd></div>
+      <div><dt>العجز المطبق</dt><dd>العجز المطبق: مقدار السعرات الذي يخصمه النظام فعليًا بعد تطبيق الحد الأعلى للخفض.</dd></div>
+      <div><dt>شدة الخفض المختارة</dt><dd>شدة الخفض المختارة: النسبة التي اخترتها لخفض السعرات من احتياجك اليومي.</dd></div>
+      <div><dt>تفاصيل حساب البروتين</dt><dd>تفاصيل حساب البروتين: توضح الوزن وكمية البروتين لكل كجم المستخدمين لتحديد هدفك اليومي من البروتين.</dd></div>
+    </dl>
+  );
 }
 
 export function AdditionalTargetsCard({ targets, registry }: { targets: TargetResponse | null; registry: NutritionRegistryResponse }) {
@@ -109,7 +126,7 @@ export function ExpectedTargetsCard({
           <div className="profile-preview-values">
             <strong><bdi>{targets.final_target_calories}</bdi> سعرة</strong>
             <span>بروتين <bdi dir="ltr">{formatTargetNumber(targets.protein_g)}</bdi> جم</span>
-            <span>كارب <bdi dir="ltr">{formatTargetNumber(targets.carb_g)}</bdi> جم</span>
+            <span>كربوهيدرات <bdi dir="ltr">{formatTargetNumber(targets.carb_g)}</bdi> جم</span>
             <span>دهون <bdi dir="ltr">{formatTargetNumber(targets.fat_g)}</bdi> جم</span>
           </div>
           <dl className="profile-preview-summary">

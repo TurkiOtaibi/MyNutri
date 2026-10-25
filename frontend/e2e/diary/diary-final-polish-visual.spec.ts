@@ -143,7 +143,7 @@ async function expectTargetBackedZeroDiary(
   for (const progressbar of [
     summary.getByRole("progressbar", { name: "0% من هدف السعرات", exact: true }),
     summary.getByRole("progressbar", { name: "البروتين", exact: true }),
-    summary.getByRole("progressbar", { name: "الكارب", exact: true }),
+    summary.getByRole("progressbar", { name: "الكربوهيدرات", exact: true }),
     summary.getByRole("progressbar", { name: "الدهون", exact: true })
   ]) {
     await expect(progressbar).toHaveCount(1);
@@ -219,7 +219,7 @@ test("@diary @visual capture final Diary polish states", async ({ page, request,
   await expect(comparisonBreakfast.getByRole("heading", { name: second.name, exact: true })).toHaveCount(0);
   const comparisonSummary = page.locator(".diary-summary");
   const proteinProgress = comparisonSummary.getByLabel(/البروتين:.*9%/);
-  const carbProgress = comparisonSummary.getByLabel(/الكارب:.*1%/);
+  const carbProgress = comparisonSummary.getByLabel(/الكربوهيدرات:.*1%/);
   const fatProgress = comparisonSummary.getByLabel(/الدهون:.*22%/);
   await expect(proteinProgress).toHaveCount(1);
   await expect(carbProgress).toHaveCount(1);
@@ -259,7 +259,7 @@ test("@diary @visual capture final Diary polish states", async ({ page, request,
   const overSummary = page.locator(".diary-summary");
   await expect(overSummary.locator(".calorie-summary-primary p.over")).toContainText("فوق الهدف");
   await expect(overSummary.locator('.diary-progress-track.over[role="progressbar"][aria-valuenow="100"]')).toBeVisible();
-  for (const label of ["البروتين", "الكارب", "الدهون"]) {
+  for (const label of ["البروتين", "الكربوهيدرات", "الدهون"]) {
     const progress = overSummary.getByLabel(new RegExp(`^${label}:.*فوق الهدف`));
     await expect(progress).toHaveCount(1);
     const progressbar = progress.getByRole("progressbar");
