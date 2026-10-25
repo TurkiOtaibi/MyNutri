@@ -208,11 +208,29 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
     };
   }, [requestDiscard]);
 
+  useLayoutEffect(() => {
+    if (!pending) return;
+    const covered = Array.from(document.querySelectorAll<HTMLElement>('[aria-modal="true"]'))
+      .filter((element) => element !== dialogRef.current && !element.contains(dialogRef.current))
+      .map((element) => ({ element, inert: element.getAttribute("inert"), hidden: element.getAttribute("aria-hidden") }));
+    for (const { element } of covered) {
+      element.setAttribute("inert", "");
+      element.setAttribute("aria-hidden", "true");
+    }
+    return () => {
+      for (const { element, inert, hidden } of covered) {
+        if (inert === null) element.removeAttribute("inert"); else element.setAttribute("inert", inert);
+        if (hidden === null) element.removeAttribute("aria-hidden"); else element.setAttribute("aria-hidden", hidden);
+      }
+    };
+  }, [pending]);
+
   useEffect(() => {
     if (!pending) return;
     cancelRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.stopImmediatePropagation();
         event.preventDefault();
         const opener = pending.opener;
         if (historyTraversalRef.current.kind === "awaiting") {
@@ -223,6 +241,7 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
         return;
       }
       if (event.key !== "Tab" || !dialogRef.current) return;
+      event.stopImmediatePropagation();
       const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>("button:not(:disabled), [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"));
       if (!focusable.length) return;
       const first = focusable[0];
@@ -235,8 +254,8 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
         first.focus();
       }
     };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
   }, [pending]);
 
   const value = useMemo(

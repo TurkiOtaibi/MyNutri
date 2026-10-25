@@ -596,7 +596,7 @@ def test_admin_food_delete_cascades_cross_principal_diary_entries(security_conte
 def test_future_diary_crud_without_if_match_preserves_replay_and_isolation(
     security_context,
 ) -> None:
-    client, _ = security_context
+    client, session = security_context
     food = client.post(
         "/foods", json=food_payload("Future diary food"), headers=headers("admin-a")
     ).json()
@@ -609,6 +609,17 @@ def test_future_diary_crud_without_if_match_preserves_replay_and_isolation(
         "meal_type": "breakfast",
     }
 
+    rejected = client.post("/diary/entries", json=payload, headers=headers("user-b"))
+    assert rejected.status_code == 422
+    assert rejected.json()["detail"]["code"] == "DIARY_ENTRY_DATE_TOO_FAR"
+    for offset in (0, 7, -3650):
+        boundary = {**payload, "id": str(uuid4()),
+                    "entry_date": (current_diary_date() + timedelta(days=offset)).isoformat()}
+        result = client.post("/diary/entries", json=boundary, headers=headers("user-b"))
+        assert result.status_code == 201, result.text
+    beyond = {**payload, "entry_date": (current_diary_date() + timedelta(days=8)).isoformat()}
+    assert client.post("/diary/entries", json=beyond, headers=headers("user-b")).status_code == 422
+    payload["entry_date"] = (current_diary_date() + timedelta(days=7)).isoformat()
     created = client.post("/diary/entries", json=payload, headers=headers("user-b"))
     replayed = client.post("/diary/entries", json=payload, headers=headers("user-b"))
     assert created.status_code == replayed.status_code == 201
@@ -616,6 +627,13 @@ def test_future_diary_crud_without_if_match_preserves_replay_and_isolation(
     assert created.json()["target_plan_id"] is None
     assert "target_provenance" not in created.json()
 
+    # Existing far-future rows keep replay/update/delete behavior after the new limit.
+    existing = session.get(DiaryEntry, UUID(entry_id))
+    existing.entry_date = current_diary_date() + timedelta(days=30)
+    session.add(existing)
+    session.commit()
+    payload["entry_date"] = existing.entry_date.isoformat()
+    assert client.post("/diary/entries", json=payload, headers=headers("user-b")).status_code == 201
     assert (
         client.patch(
             f"/diary/entries/{entry_id}",

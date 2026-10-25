@@ -30,7 +30,7 @@ Acceptance: `GET /foods` is always paginated; there is no `/admin/foods`, archiv
 
 ## Diary
 
-- As a user, I can create, update, delete, and read my Diary entries for past, current, or future dates.
+- As a user, I can create Diary entries for past dates without limit and through Asia/Riyadh today + 7 days (BR-DRY-028). Reading, updating, and deleting existing entries keep their current rules.
 - As a user, I see recorded measurement context even after serving-default edits.
 - As a user, I see day/week totals calculated from current Food nutrition and consumed measurement.
 - As a user, I see date-specific targets where a canonical TargetPlan exists and an explicit no-target state otherwise.

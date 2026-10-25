@@ -226,7 +226,9 @@ Before any release authorization:
 7. Confirm retired endpoints, fields, tables, configuration, and navigation are absent.
 8. Confirm Day Logging Status routes, schemas, generated types, UI, tables, and
    status-specific idempotency rows are absent.
-9. Confirm future Diary create, update, and delete work without `If-Match`.
+9. Confirm Diary creation allows past dates without limit and future dates through
+   Asia/Riyadh today + 7 days, rejecting later new entries per BR-DRY-028. Existing
+   entries retain update/delete rules; these operations require no `If-Match`.
 10. Confirm historical migrations are byte-for-byte unchanged.
 11. Confirm Target Plan revisions, same-date canonical selection, future Diary
     rebinding, past binding immutability, and legacy replay adaptation.

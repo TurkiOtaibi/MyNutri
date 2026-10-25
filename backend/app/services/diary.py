@@ -10,6 +10,7 @@ from sqlalchemy import tuple_
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
+from app.core.calendar import database_calendar_date
 from app.models import DiaryEntry, Food, Principal, PrincipalStatus
 from app.schemas import (
     DiaryEntryCreate,
@@ -263,6 +264,17 @@ def get_entry(session: Session, principal: PrincipalContext, entry_id: UUID) -> 
     return entry
 
 
+def validate_new_entry_date(session: Session, entry_date: date) -> None:
+    if (entry_date - database_calendar_date(session)).days > 7:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "DIARY_ENTRY_DATE_TOO_FAR",
+                "message_ar": "يمكن إضافة الأطعمة حتى 7 أيام قادمة فقط.",
+            },
+        )
+
+
 def _create_entry_uncommitted(
     session: Session,
     principal: PrincipalContext,
@@ -295,6 +307,7 @@ def _create_entry_uncommitted(
                     "message_ar": "معرف اليومية مستخدم لمدخل مختلف.",
                 },
             )
+    validate_new_entry_date(session, payload.entry_date)
     entry_data = {
         "principal_id": principal.principal_id,
         "entry_date": payload.entry_date,
