@@ -275,6 +275,7 @@ def test_food_catalog_contract_has_one_surface_without_archive_state() -> None:
         ("post", "/foods"),
         ("get", "/foods/picker"),
         ("get", "/foods/{food_id}"),
+        ("get", "/foods/{food_id}/usage"),
         ("put", "/foods/{food_id}"),
         ("delete", "/foods/{food_id}"),
     } == {
@@ -287,6 +288,9 @@ def test_food_catalog_contract_has_one_surface_without_archive_state() -> None:
     assert not any(path.startswith("/admin/foods") for path in paths)
     assert paths["/foods/{food_id}"]["delete"]["responses"]["204"]["description"]
     assert "FoodDeleteResponse" not in schemas
+    assert set(schemas["FoodUsageResponse"]["properties"]) == {"diary_entries", "users"}
+    assert set(schemas["FoodUsageResponse"]["required"]) == {"diary_entries", "users"}
+    assert all(field["type"] == "integer" for field in schemas["FoodUsageResponse"]["properties"].values())
     assert "archived_at" not in schemas["FoodResponse"]["properties"]
     assert not {"FoodCreateV3", "FoodUpdateV3", "FoodResponseV3"} & schemas.keys()
     assert "uncategorized_count" not in schemas["FoodListResponse"]["properties"]
