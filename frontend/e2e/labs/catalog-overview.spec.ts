@@ -1,3 +1,4 @@
+import { formatGregorianArabicDate } from "../../lib/dates";
 import type { LabOverviewResponse } from "../../lib/types";
 import { API_URL, expect, navigateToOwnerLabs, offsetIsoDate, test } from "./helpers";
 
@@ -129,7 +130,7 @@ test("latest owned result shows canonical value, status, and date", async ({ lab
   await expect(row).toContainText("5.2");
   await expect(row).toContainText("%");
   await expect(row).toContainText("طبيعي");
-  await expect(row).toContainText(date);
+  await expect(row).toContainText(formatGregorianArabicDate(date));
 });
 
 test("profile-required overview presents the Profile completion action", async ({ labsPage: page, labsApi }) => {

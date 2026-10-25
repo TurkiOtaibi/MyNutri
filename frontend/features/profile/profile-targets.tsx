@@ -11,7 +11,7 @@ export function TargetsCard({ title, badge, targets }: { title: string; badge: s
       <header><div><h2>{title}</h2><p>تتحدث بعد حفظ بياناتك.</p></div><span>{badge}</span></header>
       {targets ? (
         <><div className="profile-calorie-target"><strong><bdi>{targets.target_calories}</bdi></strong><span>سعرة حرارية يوميًا</span></div><div className="profile-macro-targets"><TargetValue label="البروتين" value={targets.protein_g} /><TargetValue label="الكارب" value={targets.carb_g} /><TargetValue label="الدهون" value={targets.fat_g} /></div></>
-      ) : <div className="profile-incomplete"><strong>لا يوجد مصدر هدف محفوظ لهذا اليوم.</strong></div>}
+      ) : <div className="profile-incomplete"><strong>لم تحدد أهدافك بعد.</strong></div>}
     </section>
   );
 }

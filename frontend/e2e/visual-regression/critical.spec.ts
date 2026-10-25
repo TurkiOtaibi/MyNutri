@@ -213,7 +213,7 @@ test.describe("critical visual regression", () => {
     await expect(page.getByText(food.name, { exact: true })).toBeVisible();
     const diary = page.locator(".diary-page");
     await expect(
-      diary.getByText("لا يوجد مصدر هدف محفوظ لهذا اليوم.", { exact: true })
+      diary.getByText("لم تحدد أهدافك بعد.", { exact: true })
     ).toBeVisible();
     await stableRendering(page);
 

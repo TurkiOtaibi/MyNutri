@@ -1370,6 +1370,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await dialog.getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
     await expect(page).toHaveURL(/\/auth\/login(?:\?.*)?$/);
     expect(logoutCalls).toBe(1);
+    await expect(page.getByRole("alert")).toContainText("تعذر تسجيل الخروج. حاول مرة أخرى.");
     await expect(page.locator(".profile-form")).toHaveCount(0);
     await expect(page.getByLabel("الوزن")).toHaveCount(0);
     await expect(page.locator(".nav-signout")).toHaveCount(0);

@@ -17,6 +17,16 @@ export function formatLongArabicDate(input: string): string {
   return `${weekdays[weekday]}، ${day} ${gregorianMonths[month - 1]} ${year}`;
 }
 
+export function formatGregorianArabicDate(input: string): string {
+  // A native date input can contain an incomplete or extended-year draft.
+  // Only format calendar dates; keep submission/validation with the backend.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) return "";
+  const instant = Date.parse(`${input}T00:00:00Z`);
+  if (!Number.isFinite(instant) || new Date(instant).toISOString().slice(0, 10) !== input) return "";
+  const { year, month, day } = parseGregorianDate(input);
+  return `${day} ${gregorianMonths[month - 1]} ${year}`;
+}
+
 export function formatDayNumber(input: string): string {
   return String(parseGregorianDate(input).day);
 }

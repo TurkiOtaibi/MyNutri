@@ -8,9 +8,12 @@ export default function OfflinePage() {
         الاتصال غير متاح
       </h1>
       <p className="page-kicker">
-        myNutri v1 يحتاج اتصالًا بالإنترنت لتحميل بيانات التغذية وحفظ التغييرات. لا يتم حفظ التغييرات محليًا ولا توجد
+        النظام يحتاج اتصالًا بالإنترنت لتحميل بيانات التغذية وحفظ التغييرات. لا يتم حفظ التغييرات محليًا ولا توجد
         مزامنة لاحقة. تحقق من الاتصال ثم أعد المحاولة.
       </p>
+      <form action="/diary" method="get">
+        <button className="btn primary" type="submit">إعادة المحاولة</button>
+      </form>
     </section>
   );
 }

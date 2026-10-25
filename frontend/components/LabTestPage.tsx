@@ -1,5 +1,7 @@
 "use client";
 
+import { formatGregorianArabicDate } from "@/lib/dates";
+
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -161,7 +163,7 @@ export function LabTestPage({ testKey }: { testKey: string }) {
   const recoveryView = recovery ? <div role="alert" className={styles.batchError}>
     {recovery.kind === "reading" ? <p>لم يتم تأكيد الحفظ. جارٍ قراءة النتيجة الحالية...</p>
       : recovery.kind === "matches" ? <p>تعذر تأكيد الحفظ، لكن النتيجة الحالية تطابق القيم التي أدخلتها. يمكنك إغلاق النافذة لمراجعتها.</p>
-      : recovery.kind === "different" ? <><p>النتيجة الحالية تختلف عن القيم التي أدخلتها. أغلق النافذة لمراجعتها قبل تعديلها مجددًا.</p><p data-testid="lab-current-facts">القيم الحالية: <bdi dir="ltr">{recovery.current.entered_value} {recovery.current.entered_unit} — {recovery.current.test_date}</bdi></p></>
+      : recovery.kind === "different" ? <><p>النتيجة الحالية تختلف عن القيم التي أدخلتها. أغلق النافذة لمراجعتها قبل تعديلها مجددًا.</p><p data-testid="lab-current-facts">القيم الحالية: <bdi dir="ltr">{recovery.current.entered_value} {recovery.current.entered_unit} — {formatGregorianArabicDate(recovery.current.test_date)}</bdi></p></>
       : recovery.kind === "absent" ? <p>هذه النتيجة لم تعد موجودة. لم يتم تأكيد الحفظ.</p>
       : <p>تعذر تأكيد الحفظ أو قراءة النتيجة الحالية. أعد قراءة النتيجة للتحقق.</p>}
   </div> : null;
@@ -192,8 +194,8 @@ export function LabTestPage({ testKey }: { testKey: string }) {
     </div> : null}
     {detail.data ? <LabTestView detail={detail.data} selectedResultId={selectedResultId} onSelectResult={setSelectedResultId}
       ownerResultActions={result => <div className={styles.batchActions}>
-        <button type="button" className="btn" disabled={resultPending || batchActive} aria-label={`تعديل نتيجة ${result.test_date}`} onClick={event => { void openResult("edit", result, event.currentTarget); }}>تعديل</button>
-        <button type="button" className="btn" disabled={resultPending || batchActive} aria-label={`حذف نتيجة ${result.test_date}`} onClick={event => { void openResult("delete", result, event.currentTarget); }}>حذف</button>
+        <button type="button" className="btn" disabled={resultPending || batchActive} aria-label={`تعديل نتيجة ${formatGregorianArabicDate(result.test_date)}`} onClick={event => { void openResult("edit", result, event.currentTarget); }}>تعديل</button>
+        <button type="button" className="btn" disabled={resultPending || batchActive} aria-label={`حذف نتيجة ${formatGregorianArabicDate(result.test_date)}`} onClick={event => { void openResult("delete", result, event.currentTarget); }}>حذف</button>
       </div>}
       ownerActions={<button id="lab-detail-add" className="btn primary" type="button" disabled={batch.opening || !catalog.data || resultPending} onClick={() => {
         if (busy.current || dialogRef.current || sessionSignal.aborted) return;

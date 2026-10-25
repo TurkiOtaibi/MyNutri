@@ -1,7 +1,7 @@
 {
   "name": "myNutri",
   "short_name": "myNutri",
-  "description": "Personal Arabic nutrition tracker",
+  "description": "متابعة التغذية واليوميات والتحاليل.",
   "start_url": "/diary",
   "scope": "/",
   "display": "standalone",

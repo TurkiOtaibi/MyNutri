@@ -18,6 +18,7 @@ type AuthState = {
   reloadNonce: number;
   recoveryStatus: RecoveryStatus;
   recoverySubjectId: string | null;
+  signOutFailed: boolean;
 };
 
 type RecoveryStatus = "checking" | "ready" | "invalid";
@@ -30,6 +31,7 @@ type AuthAction =
   | { type: "ACCOUNT_RECEIVED"; subjectId: string; account: CurrentAccount }
   | { type: "ACCOUNT_COMPLETE"; subjectId: string }
   | { type: "SIGNING_OUT"; subjectId: string }
+  | { type: "SIGNOUT_FAILED" }
   | { type: "RESTORE_AFTER_SIGNOUT_FAILURE"; subjectId: string };
 
 const initialState: AuthState = {
@@ -42,7 +44,8 @@ const initialState: AuthState = {
   signingOutSubjectId: null,
   reloadNonce: 0,
   recoveryStatus: "checking",
-  recoverySubjectId: null
+  recoverySubjectId: null,
+  signOutFailed: false
 };
 
 function reducer(state: AuthState, action: AuthAction): AuthState {
@@ -55,6 +58,7 @@ function reducer(state: AuthState, action: AuthAction): AuthState {
         return {
           ...state,
           session: action.session,
+          signOutFailed: nextSubject ? false : state.signOutFailed,
           account: null,
           accountSubjectId: null,
           accountLoadingSubjectId: nextSubject,
@@ -124,8 +128,10 @@ function reducer(state: AuthState, action: AuthAction): AuthState {
         : state;
     case "SIGNING_OUT":
       return state.session?.user.id === action.subjectId
-        ? { ...state, account: null, accountSubjectId: null, accountLoadingSubjectId: null, accountSettledSubjectId: null, signingOutSubjectId: action.subjectId }
+        ? { ...state, signOutFailed: false, account: null, accountSubjectId: null, accountLoadingSubjectId: null, accountSettledSubjectId: null, signingOutSubjectId: action.subjectId }
         : state;
+    case "SIGNOUT_FAILED":
+      return { ...state, signOutFailed: true };
     case "RESTORE_AFTER_SIGNOUT_FAILURE":
       return state.session?.user.id === action.subjectId
         ? { ...state, accountLoadingSubjectId: action.subjectId, accountSettledSubjectId: null, signingOutSubjectId: null, reloadNonce: state.reloadNonce + 1 }
@@ -326,6 +332,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         router.replace("/auth/login");
         return;
       }
+      dispatch({ type: "SIGNOUT_FAILED" });
       const { data } = await createClient().auth.getSession();
       if (data.session?.user.id === currentSubject && subjectRef.current === currentSubject) {
         dispatch({ type: "RESTORE_AFTER_SIGNOUT_FAILURE", subjectId: currentSubject });
@@ -335,7 +342,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }), [exposedAccount, loading, router, state.recoveryStatus, state.session]);
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={value}>
+    {state.signOutFailed ? <p role="alert" className="state-note" dir="rtl">تعذر تسجيل الخروج. حاول مرة أخرى.</p> : null}
+    {children}
+  </AuthContext.Provider>;
 }
 
 export function useAuth() {

@@ -1,3 +1,4 @@
+import { formatGregorianArabicDate } from "../../lib/dates";
 import { randomUUID } from "node:crypto";
 import type { Page } from "@playwright/test";
 import type { LabTestDetailResponse } from "../../lib/types";
@@ -26,6 +27,7 @@ test("edit uses full entered precision and supported units, immutable identity a
   await expect(page.locator("#lab-edit-value")).toBeFocused();
   await expect(page.locator("#lab-edit-unit")).toHaveValue("mmol/mol");
   await expect(page.locator("#lab-edit-date")).toHaveValue(date);
+  await expect(edit(page).locator(`time[datetime="${date}"]`)).toContainText(formatGregorianArabicDate(date));
   expect(await page.locator("#lab-edit-unit option").evaluateAll(options => options.map(option => (option as HTMLOptionElement).value)))
     .toEqual((await labsApi.detail("hba1c")).test.supported_units);
   await expect(edit(page).locator("[data-tone]")).toHaveCount(0);
@@ -235,7 +237,7 @@ test("delete cancellation identifies test/date, starts at cancel, restores opene
   let deletes = 0;
   page.on("request", request => { if (request.method() === "DELETE") deletes += 1; });
   await page.goto("/labs/hba1c"); await open(page, id, "delete");
-  await expect(deletion(page)).toContainText(date);
+  await expect(deletion(page)).toContainText(formatGregorianArabicDate(date));
   await expect(deletion(page)).toContainText((await labsApi.detail("hba1c")).test.name_ar);
   await expect(deletion(page).getByRole("button", { name: "إلغاء", exact: true })).toBeFocused();
   await deletion(page).getByRole("button", { name: "إلغاء", exact: true }).click();

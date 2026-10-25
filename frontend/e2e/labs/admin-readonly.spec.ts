@@ -161,6 +161,8 @@ test("admin own Labs route is read-only and exposes no mutation controls", async
   expect(catalog.status()).toBe(200);
   expect(labs.status()).toBe(200);
   await expect(page.getByRole("heading", { name: "تحاليلك" })).toBeVisible();
+  await expect(page.getByText("تسجيل التحاليل غير متاح لحساب المشرف.", { exact: true })).toBeVisible();
+  await expect(page.getByText("لم تسجل أي نتائج بعد.", { exact: true })).toHaveCount(0);
   await expect(page.getByText("للقراءة فقط", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /إضافة|تعديل|حذف/ })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /إضافة|تعديل|حذف/ })).toHaveCount(0);

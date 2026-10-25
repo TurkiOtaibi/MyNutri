@@ -1,3 +1,4 @@
+import { formatGregorianArabicDate } from "../../lib/dates";
 import { randomUUID } from "node:crypto";
 import type { Page } from "@playwright/test";
 import type { LabCreateReceipt, LabCreateRequest, LabOverviewResponse } from "../../lib/types";
@@ -39,6 +40,7 @@ test("a new session refreshes yesterday's cached server date and catalog action 
   const opener = page.locator('[data-testid="lab-row"][data-test-key="hba1c"]').getByRole("button", { name: "إضافة نتيجة" });
   await opener.click();
   await expect(page.locator("#lab-batch-date")).toHaveValue(today);
+  await expect(dialog(page).locator(`time[datetime="${today}"]`)).toContainText(formatGregorianArabicDate(today));
   expect(reads).toBeGreaterThanOrEqual(2);
   await next(page);
   await expect(page.locator('[data-individual-key="hba1c"]')).toBeChecked();

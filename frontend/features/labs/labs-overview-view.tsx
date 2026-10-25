@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import type { LabCatalogResponse, LabOverviewResponse } from "@/lib/types";
 import { nextLabsView, type LabListItem, type LabSort, type LabsView } from "./lab-model";
+import { formatGregorianArabicDate } from "@/lib/dates";
 import styles from "./labs.module.css";
 
 export function LabsViewTabs({ view, onViewChange }: { view: LabsView; onViewChange: (view: LabsView) => void }) {
@@ -37,22 +38,13 @@ type LabsViewProps = {
   category: string | null;
   sort: LabSort;
   readOnly: boolean;
+  adminOwn?: boolean;
   onAddTest?: (testKey: string) => void;
   detailHref?: (testKey: string) => string;
   onSearchChange: (value: string) => void;
   onCategoryChange: (value: string | null) => void;
   onSortChange: (value: LabSort) => void;
 };
-
-function formatDate(value: string): string {
-  const date = new Date(`${value}T00:00:00Z`);
-  return new Intl.DateTimeFormat("ar-SA-u-ca-gregory", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  }).format(date);
-}
 
 function EligibilityNotice({ eligibility }: { eligibility: LabsViewProps["eligibility"] }) {
   if (eligibility.allowed) return null;
@@ -108,7 +100,7 @@ function LabRows({ rows, emptyMessage, onAddTest, detailHref }: { rows: LabListI
       {item.latest ? <div className={styles.latest}>
         <strong><bdi dir="ltr">{item.latest.display_value} {item.latest.display_unit}</bdi></strong>
         <span className={styles.status} data-tone={item.latest.status.tone}>{item.latest.status.label_ar}</span>
-        <time dateTime={item.latest.test_date}>{formatDate(item.latest.test_date)} · {item.latest.test_date}</time>
+        <time dateTime={item.latest.test_date}>{formatGregorianArabicDate(item.latest.test_date)}</time>
       </div> : <div className={styles.latest}><span className={styles.noResult}>لا توجد نتيجة مسجلة</span>
         {onAddTest ? <button type="button" className="btn" onClick={() => onAddTest(item.test_key)}>إضافة نتيجة</button> : null}
       </div>}
@@ -117,7 +109,9 @@ function LabRows({ rows, emptyMessage, onAddTest, detailHref }: { rows: LabListI
 }
 
 function LabsView(props: LabsViewProps & { mode: "owned" | "catalog" }) {
-  const emptyMessage = props.category
+  const emptyMessage = props.adminOwn && props.mode === "owned"
+    ? "تسجيل التحاليل غير متاح لحساب المشرف."
+    : props.category
     ? props.mode === "owned" ? "لا توجد نتائج ضمن هذا التصنيف." : "لا توجد تحاليل ضمن هذا التصنيف."
     : props.search ? "لا توجد تحاليل مطابقة." : "لم تسجل أي نتائج بعد.";
   return <section className={styles.panel} aria-label={props.mode === "owned" ? "نتائج التحاليل" : "كتالوج التحاليل"}>

@@ -2,6 +2,7 @@ import React, { type ReactNode } from "react";
 import type { LabResultResponse, LabTestDetailResponse } from "@/lib/types";
 import { LabHistoryChart } from "./lab-history-chart";
 import { LabHistoryList } from "./lab-history-list";
+import { formatGregorianArabicDate } from "@/lib/dates";
 import styles from "./labs.module.css";
 
 export function LabTestView(props: { detail: LabTestDetailResponse; selectedResultId: string | null; onSelectResult: (id: string) => void; ownerActions?: ReactNode; ownerResultActions?: (result: LabResultResponse) => ReactNode }) {
@@ -17,9 +18,10 @@ export function LabTestView(props: { detail: LabTestDetailResponse; selectedResu
     <LabHistoryChart detail={detail} selectedResultId={selectedId} onSelectResult={onSelectResult} />
     <section className={styles.referencePanel} aria-label="القيم المرجعية للنظام" data-reference-date={date}>
       <h2>القيم المرجعية للنظام</h2>
-      <p role="status" aria-live="polite" className={styles.exactValue}><time dateTime={date} dir="ltr">{date}</time>
+      <p role="status" aria-live="polite" className={styles.exactValue}><time dateTime={date}>{formatGregorianArabicDate(date)}</time>
         {selected ? <> — <bdi dir="ltr">{selected.display_is_approximate ? "≈ " : ""}{selected.display_value} {selected.display_unit}</bdi> — {selected.status.label_ar}</> : null}
       </p>
+      {selected && (selected.status.tone === "outside" || selected.status.tone === "caution") ? <p>هذه القيم للمتابعة فقط، ولا تغني عن استشارة الطبيب.</p> : null}
       <ul className={styles.referenceZones}>{zones.map((zone, index) => <li key={index} data-reference-zone={zone.status.code}>
         <span className={styles.status} data-tone={zone.status.tone}>{zone.status.label_ar}</span>
         <span className={styles.exactValue}>{zone.low === null ? "بلا حد أدنى" : <bdi dir="ltr">{zone.low_inclusive ? "≥" : ">"} {zone.low} {detail.test.canonical_unit}</bdi>}

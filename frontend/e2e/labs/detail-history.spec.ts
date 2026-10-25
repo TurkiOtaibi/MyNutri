@@ -1,3 +1,4 @@
+import { formatGregorianArabicDate } from "../../lib/dates";
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { LabTestDetailResponse } from "../../lib/types";
@@ -54,7 +55,7 @@ async function expectFullDetail(page: Page, detail: LabTestDetailResponse) {
     await expect(row).toContainText(result.display_value);
     await expect(row).toContainText(result.display_unit);
     await expect(row).toContainText(result.status.label_ar);
-    await expect(row).toContainText(result.test_date);
+    await expect(row).toContainText(formatGregorianArabicDate(result.test_date));
   }
   await expect(page.getByRole("figure", { name: "سجل النتائج عبر الزمن" })).toBeVisible();
   await expect(page.getByRole("group", { name: "نقاط النتائج ونطاقات القيم المرجعية" })).toHaveCount(detail.results.length ? 1 : 0);
