@@ -1370,7 +1370,8 @@ test.describe("@profile Profile and targets redesign", () => {
     await dialog.getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
     await expect(page).toHaveURL(/\/auth\/login(?:\?.*)?$/);
     expect(logoutCalls).toBe(1);
-    await expect(page.getByRole("alert")).toContainText("تعذر تسجيل الخروج. حاول مرة أخرى.");
+    const signOutFailure = page.getByRole("alert").filter({ hasText: "تعذر تسجيل الخروج. حاول مرة أخرى." });
+    await expect(signOutFailure).toBeVisible();
     await expect(page.locator(".profile-form")).toHaveCount(0);
     await expect(page.getByLabel("الوزن")).toHaveCount(0);
     await expect(page.locator(".nav-signout")).toHaveCount(0);
@@ -1383,6 +1384,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.goto("/profile");
     await expect(page.getByLabel("الوزن")).toHaveValue(String(originalProfile.weight_kg));
     await expect(page.getByLabel("الوزن")).not.toHaveValue(draft);
+    await expect(signOutFailure).toHaveCount(0);
     await expect(dialog).toHaveCount(0);
   });
 
