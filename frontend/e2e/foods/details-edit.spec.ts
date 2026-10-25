@@ -161,12 +161,20 @@ test.describe("Food details and editing @foods", () => {
       sugar_g: 8,
       added_sugar_g: 2,
       notes: "Detail notes",
-      nutrition_data_source: "official"
+      nutrition_data_source: "official",
+      folate_mcg: 120,
+      vitamin_a_mcg: 300
     });
     await page.goto(`/foods/${food.id}`);
     for (const value of [food.name, "Detail Brand", "أخرى", "Detail notes", "رسمي", "4 جم", "8 جم", "2 جم"]) {
       await expect(page.getByText(value, { exact: true }).first()).toBeVisible();
     }
+    await expect(page.locator(".food-attribution")).toHaveCount(0);
+    for (const hidden of ["مستخدم محذوف", "فولات قديم", "فيتامين A قديم"]) {
+      await expect(page.getByText(hidden, { exact: true })).toHaveCount(0);
+    }
+    await expect(page.getByText("تاريخ الإنشاء", { exact: true })).toBeVisible();
+    await expect(page.getByText("آخر تحديث", { exact: true })).toBeVisible();
   });
 
   test("[FOOD-TC-129] @p1 details handle blank optional nutrients without errors", async ({ page, foodsApi }) => {

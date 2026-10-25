@@ -2,7 +2,7 @@ import { Activity, CalendarDays, Check, ChevronDown, ChevronLeft, Info, LoaderCi
 import type { FormEvent, RefObject } from "react";
 import type { ActivityLevel, Goal, NutritionRegistryResponse, Sex, TargetPlanHistoryResponse, TargetResponse } from "@/lib/types";
 import { NumericSettingsRow, OptionList, SelectionCard, SettingsButton, CutIntensitySelector } from "./profile-controls";
-import { AdditionalTargetsCard, ExpectedTargetsCard, RegistryState, TargetPlanHistory, TargetsCard } from "./profile-targets";
+import { AdditionalTargetsCard, CalculationExplanation, ExpectedTargetsCard, RegistryState, TargetPlanHistory, TargetsCard } from "./profile-targets";
 import { ProfileConfirm, ProfileSheet } from "./profile-dialogs";
 import { PROFILE_LIMITS, activityDescriptions, activityDisplayLabels, activityLabels, goalDescriptions, goalDisplayLabels, goalLabels, sexLabels, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type SheetKind, type TargetPlanWritePhase } from "./profile-model";
 import "./profile.module.css";
@@ -368,6 +368,7 @@ export function ProfileView({
             <ul>
               <li>العمر والجنس</li><li>الطول والوزن</li><li>مستوى النشاط</li><li>الهدف</li><li>البروتين لكل كجم</li><li>نسبة الدهون</li>
             </ul>
+            <CalculationExplanation />
           </div>
         </ProfileSheet>
       ) : null}

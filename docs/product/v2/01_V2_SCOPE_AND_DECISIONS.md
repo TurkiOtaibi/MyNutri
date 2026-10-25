@@ -63,7 +63,9 @@ Diary, Target Plans, nutrition calculations, recommendations or Progress.
   duplicate-email error. Failures are sanitized, logged only by count/type,
   and retried on the next trigger; they never block the Admin list.
 - Global Foods survive deletion. Their creator/updater attribution retains the
-  scrubbed Principal tombstone and displays a neutral deleted-user label.
+  scrubbed Principal tombstone. The UI does not display Food creator or updater
+  attribution (including any deleted-user label) to any role, per BR-FOD-021
+  and the Product Owner decision of 17 October 2026, reconfirmed on 25 October 2026.
   No Food history is rewritten. Every Principal-owned-data writer rechecks
   `active` under the Principal lock so nothing private can be written after purge.
 - Privileged Supabase Auth calls for Admin creation, password reset, and identity

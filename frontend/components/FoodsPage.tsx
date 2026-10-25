@@ -267,7 +267,7 @@ export function FoodsPage() {
                     <th scope="col">الحصة الافتراضية</th>
                     <th scope="col">السعرات</th>
                     <th scope="col">البروتين</th>
-                    <th scope="col">الكارب</th>
+                    <th scope="col">الكربوهيدرات</th>
                     <th scope="col">الدهون</th>
                     <th scope="col"><span className="sr-only">الإجراءات</span></th>
                   </tr>

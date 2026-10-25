@@ -170,7 +170,7 @@ describe("food nutrient presentation adapter", () => {
       ["protein_g", "البروتين", "جم", 2],
       ["carb_g", "الكربوهيدرات", "جم", 2],
       ["fat_g", "الدهون", "جم", 2],
-      ["net_carbs_g", "صافي الكارب", "جم", 2],
+      ["net_carbs_g", "صافي الكربوهيدرات", "جم", 2],
     ]);
     expect(core.find((item) => item.key === "fiber_g")).toMatchObject({
       label: "registry:fiber_g",

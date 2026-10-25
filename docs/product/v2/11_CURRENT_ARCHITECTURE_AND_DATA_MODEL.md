@@ -90,8 +90,10 @@ private data or active state is restored.
 
 `Food.created_by_principal_id` and `Food.updated_by_principal_id` keep pointing
 to the deleted Principal tombstone. Global Food rows and their attribution IDs
-are never rewritten by account deletion; UI presents the scrubbed owner with
-a neutral deleted-user label. Every writer of Principal-owned data must lock
+are never rewritten by account deletion; the UI does not display Food creator or updater
+attribution (including any deleted-user label) to any role, per BR-FOD-021
+and the Product Owner decision of 17 October 2026, reconfirmed on 25 October 2026.
+Every writer of Principal-owned data must lock
 the Principal first and recheck `active`; this serializes writes with purge so
 no private row can be inserted after it.
 

@@ -885,6 +885,21 @@ button:global(.profile-setting-row):focus-visible,
   padding-inline-start: 20px;
 }
 
+:global(.profile-calculation-terms) {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+:global(.profile-calculation-terms) dt {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+:global(.profile-calculation-terms) dd {
+  margin: 0;
+}
+
 :global(.profile-confirm) {
   display: grid;
   gap: 9px;

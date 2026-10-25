@@ -94,8 +94,11 @@ test("keyboard containment, previous steps, cancellation and reopening preserve 
   await page.keyboard.press("Shift+Tab");
   await expect(lastDateStepControl).toBeFocused();
   await next(page);
+  // Step entry schedules initial focus; finish that transition before sending keys.
+  await expect(dialog(page).locator("input[data-panel-key]").first()).toBeFocused();
   await page.locator('[data-individual-key="hba1c"]').focus();
   await page.keyboard.press("Space");
+  await expect(page.locator('[data-individual-key="hba1c"]')).toBeChecked();
   await next(page);
   await expect(page.locator("#lab-hba1c-value")).toBeFocused();
   const hba1cGroup = dialog(page).getByRole("group", { name: /السكر التراكمي.*HbA1c/ });

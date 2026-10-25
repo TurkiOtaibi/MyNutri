@@ -109,7 +109,6 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
             {[food.brand, categoryLabel || food.primary_category].filter(Boolean).join(" · ")}
           </p>
           <span className="serving-badge detail-serving-badge">{defaultServingText(food)}</span>
-          {(food.created_by_label || food.updated_by_label) && <span className="food-attribution">مستخدم محذوف</span>}
         </div>
         {account?.role === "admin" ? <div className="food-detail-actions">
           <Link className="btn primary" href={`/foods/${food.id}/edit`}>
@@ -137,7 +136,7 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
           <div className="detail-serving-grid">
             <DetailServingMetric value={formatServingCalories(servingNutrition.calories)} label="سعرة" prominent />
             <DetailServingMetric value={formatServingMacro(servingNutrition.protein_g)} label="بروتين" />
-            <DetailServingMetric value={formatServingMacro(servingNutrition.carb_g)} label="كارب" />
+            <DetailServingMetric value={formatServingMacro(servingNutrition.carb_g)} label="كربوهيدرات" />
             <DetailServingMetric value={formatServingMacro(servingNutrition.fat_g)} label="دهون" />
           </div>
         ) : (
@@ -204,8 +203,6 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
           {food.notes ? <MetadataRow label="ملاحظات" value={food.notes} multiline autoDirection /> : null}
           <MetadataRow label="مصدر البيانات الغذائية" value={nutritionSourceLabel ?? food.nutrition_data_source} />
           {food.ingredients ? <MetadataRow label="المكونات" value={food.ingredients} multiline autoDirection /> : null}
-          {food.legacy_nutrition.folate_mcg != null ? <MetadataRow label="فولات قديم" value={`${food.legacy_nutrition.folate_mcg} مكجم · ${food.legacy_nutrition.meaning_ar}`} /> : null}
-          {food.legacy_nutrition.vitamin_a_mcg != null ? <MetadataRow label="فيتامين A قديم" value={`${food.legacy_nutrition.vitamin_a_mcg} مكجم · ${food.legacy_nutrition.meaning_ar}`} /> : null}
           <MetadataRow label="تاريخ الإنشاء" value={formatFoodDate(food.created_at)} />
           <MetadataRow label="آخر تحديث" value={formatFoodDate(food.updated_at)} />
         </dl>
