@@ -207,7 +207,7 @@ export function DiaryPage() {
     <div className="diary-page">
       <h1 className="sr-only">اليوميات</h1>
       <div ref={undoNoticeRef} tabIndex={-1} role={undoFailed ? "alert" : "status"} className="diary-undo-notice">
-        {undoMessage}
+        {undoMessage ? <span>{undoMessage}</span> : null}
         {undoEntry ? <button className="btn" type="button" onClick={() => {
           if (undoLock.current || sessionSignal.aborted) return;
           undoLock.current = true;

@@ -94,10 +94,10 @@ test.describe("@diary daily-use redesign", () => {
 
     const food = await foodsApi.create({ name: uniqueName("Target binding") });
     const pastDate = localDate(-1);
-    const firstEffectiveDate = localDate(370);
-    const firstIntervalDate = localDate(375);
-    const secondEffectiveDate = localDate(380);
-    const secondIntervalDate = localDate(385);
+    const firstEffectiveDate = localDate(1);
+    const firstIntervalDate = localDate(2);
+    const secondEffectiveDate = localDate(4);
+    const secondIntervalDate = localDate(7);
     const pastEntry = await foodsApi.createDiary(food.id, pastDate);
     await foodsApi.createDiary(food.id, firstIntervalDate);
     await foodsApi.createDiary(food.id, secondIntervalDate);
