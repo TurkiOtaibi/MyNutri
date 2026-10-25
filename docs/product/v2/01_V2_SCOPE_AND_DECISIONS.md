@@ -84,7 +84,10 @@ Diary, Target Plans, nutrition calculations, recommendations or Progress.
   persisted completion state, day version, status history, or status-command
   idempotency.
 - Diary entry create, update, and delete do not require `If-Match`, do not depend
-  on a day state machine, and permit past, current, and future Diary dates.
+  on a day state machine. New Diary entries allow past dates without limit and
+  future dates through Asia/Riyadh today + 7 days, per BR-DRY-028 and the Product
+  Owner decision of 17 October 2026, reconfirmed on 25 October 2026. Existing
+  entries retain their update, delete, and replay rules.
 - Diary day and week views derive from Diary entries and target/nutrition data;
   they expose no day-status or entry-presence badge contract.
 - Food nutrition is current authoritative truth. Every Diary calculation joins

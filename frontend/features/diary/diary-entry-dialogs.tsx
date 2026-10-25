@@ -2,19 +2,21 @@ import { AlertCircle, Check, LoaderCircle, RotateCcw, Search, X } from "lucide-r
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
-import { createDiaryEntry, listFoodPicker, updateDiaryEntry } from "@/lib/api";
+import { ApiError, createDiaryEntry, listFoodPicker, updateDiaryEntry } from "@/lib/api";
 import { formatLongArabicDate } from "@/lib/dates";
 import { defaultServingText, defaultUnitLabels, formatServingMacro, unitBasisLabels } from "@/lib/food";
 import type { DiaryEntryInput, DiaryEntryResponse, FoodPickerItem, MealType } from "@/lib/types";
+import { useUnsavedChanges } from "@/components/UnsavedChangesProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { useSessionAbortSignal } from "@/components/SessionQueryProvider";
-import { mealAddLabels, mealLabels, multiplyServing, parseQuantity, pickerServingNutrition, scaleEntryPreview, standardMeals, validateQuantity } from "./diary-model";
+import { convertDiaryQuantity, validateMeasuredQuantity, mealAddLabels, mealLabels, multiplyServing, parseQuantity, pickerServingNutrition, scaleEntryPreview, standardMeals, validateQuantity } from "./diary-model";
 import { useDebouncedValue } from "./diary-hooks";
 import { ModalFrame } from "./diary-modal";
 
 const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
 
 export function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { selectedDate: string; initialMeal: MealType | null; onClose: () => void; onSaved: (meal: MealType) => Promise<void> }) {
+  const [measured, setMeasured] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedFood, setSelectedFood] = useState<FoodPickerItem | null>(null);
   const [quantity, setQuantity] = useState("1");
@@ -56,14 +58,14 @@ export function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: {
       await onSaved(submitted.meal_type);
       if (sessionSignal.aborted) return;
     },
-    onError: () => {
+    onError: (error) => {
       if (sessionSignal.aborted) return;
       submitLockRef.current = false;
-      setError("تعذر إضافة الطعام");
+      setError(error instanceof ApiError && error.code === "DIARY_ENTRY_DATE_TOO_FAR" ? "يمكن إضافة الأطعمة حتى 7 أيام قادمة فقط." : "تعذر إضافة الطعام");
     }
   });
-  const amount = parseQuantity(quantity);
-  const quantityError = selectedFood ? validateQuantity(quantity, defaultUnitLabels[selectedFood.default_unit_type]) : "";
+  const amount = measured && selectedFood ? convertDiaryQuantity(quantity, selectedFood.unit_amount) : parseQuantity(quantity);
+  const quantityError = selectedFood ? validateMeasuredQuantity(quantity, measured ? selectedFood.unit_amount : 1, defaultUnitLabels[selectedFood.default_unit_type]) : "";
   const preview = selectedFood && amount != null ? multiplyServing(selectedFood, amount) : null;
   const equivalentAmount = selectedFood && amount != null ? selectedFood.unit_amount * amount : null;
   const allFoods = useMemo(() => {
@@ -79,7 +81,20 @@ export function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: {
   const recentFoods = normalizedSearch ? [] : foodsQuery.data?.pages[0]?.recent_items ?? [];
   const recentIds = new Set(recentFoods.map((food) => food.id));
   const visibleFoods = debouncedSearch.trim() ? allFoods : allFoods.filter((food) => !recentIds.has(food.id));
-  const hasMeaningfulChanges = Boolean(selectedFood) || quantity !== "1" || mealType !== initialMeal;
+  const hasMeaningfulChanges = Boolean(selectedFood) || quantity !== "1" || mealType !== initialMeal || search !== "" || measured;
+  useUnsavedChanges({
+    identity: `diary-add:${session?.user.id}:${selectedDate}`,
+    dirty: hasMeaningfulChanges && !saveSucceeded,
+    enabled: !saveSucceeded,
+    discard: onClose,
+  });
+
+  function changeMeasurement(next: boolean) {
+    if (next === measured || !selectedFood) return;
+    if (amount != null) setQuantity(String(next ? Number((amount * selectedFood.unit_amount).toFixed(6)) : amount));
+    setMeasured(next);
+    setError("");
+  }
 
   function requestClose() {
     if (mutation.isPending || saveSucceeded) return;
@@ -92,12 +107,14 @@ export function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: {
 
   function chooseFood(food: FoodPickerItem) {
     setSelectedFood(food);
+    setMeasured(false);
     setQuantity("1");
     setError("");
   }
 
   function changeFood() {
     setSelectedFood(null);
+    setMeasured(false);
     setQuantity("1");
     setError("");
     requestAnimationFrame(() => searchRef.current?.focus());
@@ -187,9 +204,14 @@ export function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: {
               </section>
               <section className="add-config-section">
                 <h3>الكمية</h3>
+                <div className="actions" role="group" aria-label="طريقة إدخال الكمية">
+                  <button className="btn" type="button" aria-pressed={!measured} disabled={mutation.isPending || saveSucceeded} onClick={() => changeMeasurement(false)}>{defaultServingText(selectedFood)}</button>
+                  <button className="btn" type="button" aria-pressed={measured} disabled={mutation.isPending || saveSucceeded} onClick={() => changeMeasurement(true)}>{unitBasisLabels[selectedFood.unit_basis]}</button>
+                </div>
             <QuantityStepper
               value={quantity}
-              unitLabel={defaultUnitLabels[selectedFood.default_unit_type]}
+              unitLabel={measured ? unitBasisLabels[selectedFood.unit_basis] : defaultUnitLabels[selectedFood.default_unit_type]}
+              unitAmount={measured ? selectedFood.unit_amount : 1}
               errorId={quantityError ? "entry-form-error" : undefined}
               disabled={mutation.isPending || saveSucceeded}
               onChange={(value) => { setQuantity(value); setError(""); }}
@@ -395,6 +417,7 @@ function QuantityStepper({
   unitLabel,
   errorId,
   initialFocus = false,
+  unitAmount = 1,
   disabled = false,
   onChange
 }: {
@@ -402,15 +425,19 @@ function QuantityStepper({
   unitLabel: string;
   errorId?: string;
   initialFocus?: boolean;
+  unitAmount?: number;
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
-  const amount = parseQuantity(value);
-  const invalid = Boolean(validateQuantity(value, unitLabel));
+  const invalid = Boolean(validateMeasuredQuantity(value, unitAmount, unitLabel));
+  const amount = invalid ? null : Number(value);
+  const min = 0.01 * unitAmount;
+  const max = 50 * unitAmount;
 
   function adjust(delta: number) {
-    const current = amount ?? 1;
-    const next = Math.min(50, Math.max(0.01, Math.round((current + delta) * 100) / 100));
+    const current = amount ?? unitAmount;
+    const precision = unitAmount === 1 ? 100 : 1000;
+    const next = Math.min(max, Math.max(min, Math.round((current + delta * unitAmount) * precision) / precision));
     onChange(String(next));
   }
 
@@ -421,7 +448,7 @@ function QuantityStepper({
         <button
           type="button"
           onClick={() => adjust(-0.5)}
-          disabled={disabled || (amount != null && amount <= 0.01)}
+          disabled={disabled || (amount != null && amount <= min)}
           aria-label="تقليل الكمية"
         >
           <span aria-hidden="true">−</span>
@@ -442,7 +469,7 @@ function QuantityStepper({
           />
           <span className="quantity-unit">{unitLabel}</span>
         </label>
-        <button type="button" onClick={() => adjust(0.5)} disabled={disabled || (amount != null && amount >= 50)} aria-label="زيادة الكمية">
+        <button type="button" onClick={() => adjust(0.5)} disabled={disabled || (amount != null && amount >= max)} aria-label="زيادة الكمية">
           <span aria-hidden="true">+</span>
         </button>
       </div>

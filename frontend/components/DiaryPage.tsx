@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ApiError,
   deleteDiaryEntry,
+  createDiaryEntry,
   getCalendarAuthority,
   getNutritionRegistry,
   getWeekSummary,
@@ -38,6 +39,12 @@ export function DiaryPage() {
   const [editingEntry, setEditingEntry] = useState<DiaryEntryResponse | null>(null);
   const [deletingEntry, setDeletingEntry] = useState<DiaryEntryResponse | null>(null);
   const [deleteError, setDeleteError] = useState("");
+  const [undoEntry, setUndoEntry] = useState<DiaryEntryResponse | null>(null);
+  const [undoMessage, setUndoMessage] = useState("");
+  const [undoFailed, setUndoFailed] = useState(false);
+  const undoLock = useRef(false);
+  const undoGeneration = useRef(0);
+  const undoNoticeRef = useRef<HTMLDivElement>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [nutritionDetailsOpen, setNutritionDetailsOpen] = useState(false);
   const [expandedMeals, setExpandedMeals] = useState<Set<MealType>>(new Set());
@@ -79,6 +86,11 @@ export function DiaryPage() {
     if (previousSubjectRef.current === subject) return;
     previousSubjectRef.current = subject;
     setAddOpen(false);
+    setUndoEntry(null);
+    setUndoMessage("");
+    setUndoFailed(false);
+    undoLock.current = false;
+    undoGeneration.current += 1;
     setEditingEntry(null);
     setDeletingEntry(null);
     setOpenMenuId(null);
@@ -122,12 +134,47 @@ export function DiaryPage() {
     };
   }, [openMenuId]);
 
+  useEffect(() => {
+    if (!undoEntry) return;
+    const timer = window.setTimeout(() => {
+      if (undoNoticeRef.current?.contains(document.activeElement)) undoNoticeRef.current.focus();
+      setUndoEntry(null);
+      setUndoMessage("");
+    }, 8000);
+    return () => window.clearTimeout(timer);
+  }, [undoEntry]);
+
+  const restoreMutation = useMutation({
+    mutationFn: ({ entry }: { entry: DiaryEntryResponse; generation: number }) => createDiaryEntry({
+      id: crypto.randomUUID(), food_id: entry.food.id, entry_date: entry.entry_date,
+      meal_type: entry.meal_type ?? "unspecified", quantity: entry.quantity,
+    }, accessToken, sessionSignal),
+    onSuccess: async (_entry, submitted) => {
+      if (sessionSignal.aborted) return;
+      if (submitted.generation === undoGeneration.current) setUndoMessage("تمت استعادة الطعام");
+      await invalidateDiary(queryClient);
+    },
+    onError: async (_error, submitted) => {
+      if (sessionSignal.aborted) return;
+      if (submitted.generation === undoGeneration.current) {
+        setUndoFailed(true);
+        setUndoMessage("تعذر تأكيد استعادة الطعام. حدّث اليوم للتحقق.");
+      }
+      await invalidateDiary(queryClient);
+    },
+  });
+
   const deleteMutation = useMutation({
-    mutationFn: (entryId: string) => deleteDiaryEntry(entryId, accessToken, sessionSignal),
-    onSuccess: async () => {
+    mutationFn: (entry: DiaryEntryResponse) => deleteDiaryEntry(entry.id, accessToken, sessionSignal),
+    onSuccess: async (_response, entry) => {
       if (sessionSignal.aborted) return;
       setDeleteError("");
       setDeletingEntry(null);
+      undoLock.current = false;
+      undoGeneration.current += 1;
+      setUndoFailed(false);
+      setUndoMessage("تم حذف الطعام");
+      setUndoEntry(entry);
       await invalidateDiary(queryClient);
       if (sessionSignal.aborted) return;
     },
@@ -159,6 +206,18 @@ export function DiaryPage() {
   return (
     <div className="diary-page">
       <h1 className="sr-only">اليوميات</h1>
+      <div ref={undoNoticeRef} tabIndex={-1} role={undoFailed ? "alert" : "status"} className="diary-undo-notice">
+        {undoMessage ? <span>{undoMessage}</span> : null}
+        {undoEntry ? <button className="btn" type="button" onClick={() => {
+          if (undoLock.current || sessionSignal.aborted) return;
+          undoLock.current = true;
+          const entry = undoEntry;
+          undoNoticeRef.current?.focus();
+          setUndoEntry(null);
+          setUndoMessage("جارٍ استعادة الطعام…");
+          restoreMutation.mutate({ entry, generation: undoGeneration.current });
+        }}>تراجع</button> : null}
+      </div>
 
       <CompactWeekNavigator
         week={weekQuery.data}
@@ -276,7 +335,7 @@ export function DiaryPage() {
           pending={deleteMutation.isPending}
           onClose={() => { setDeleteError(""); setDeletingEntry(null); }}
           onConfirm={() => {
-            if (!deleteMutation.isPending) deleteMutation.mutate(deletingEntry.id);
+            if (!deleteMutation.isPending) deleteMutation.mutate(deletingEntry);
           }}
         />
       ) : null}

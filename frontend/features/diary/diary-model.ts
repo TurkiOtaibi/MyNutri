@@ -93,6 +93,21 @@ export function validateQuantity(value: string, unitLabel: string): string {
   return "";
 }
 
+export function validateMeasuredQuantity(value: string, unitAmount: number, unitLabel: string): string {
+  if (!/^(?:\d+\.?\d*|\.\d+)$/.test(value.trim()) || !Number.isFinite(unitAmount) || unitAmount <= 0) return "أدخل كمية صحيحة";
+  const measured = Number(value);
+  if (!Number.isFinite(measured)) return "أدخل كمية صحيحة";
+  // Food unit_amount has two decimal places; scaled bounds need at most four.
+  if (measured < Number((0.01 * unitAmount).toFixed(4))) return "أدخل كمية أكبر من 0";
+  if (measured > Number((50 * unitAmount).toFixed(4))) return `الكمية يجب ألا تتجاوز 50 ${unitLabel}`;
+  return "";
+}
+
+export function convertDiaryQuantity(value: string, unitAmount: number): number | null {
+  if (validateMeasuredQuantity(value, unitAmount, "")) return null;
+  return Math.round((Number(value) / unitAmount + Number.EPSILON) * 1000) / 1000;
+}
+
 export function entryQuantityLabel(entry: DiaryEntryResponse): string {
   const unit = entry.recorded_unit_label ?? defaultUnitLabels[entry.recorded_unit_type];
   const amount = Number(entry.recorded_unit_amount) * entry.quantity;

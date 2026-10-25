@@ -2164,3 +2164,21 @@
 @media (max-width: 360px) {
   :global(.meal-macro-totals) { max-width: 190px; }
 }
+
+:global(.diary-undo-notice) {
+  position: fixed;
+  inset-inline: 16px;
+  bottom: calc(80px + env(safe-area-inset-bottom));
+  z-index: 50;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface, white);
+}
+
+:global(.diary-undo-notice):empty { padding: 0; border: 0; }

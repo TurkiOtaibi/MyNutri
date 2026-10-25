@@ -90,8 +90,11 @@ any rollout action.
   versions, while historical calculation JSON remains readable and unchanged.
 - No-plan dates return null plan/targets, Diary null bindings remain valid, and
   transition snapshots/Profile target fallback/target provenance are absent.
-- Diary create, update, and delete accept future dates without `If-Match` and
-  do not read or write Day Logging Status state or history.
+- New Diary entries allow past dates without limit and future dates through
+  Asia/Riyadh today + 7 days, per BR-DRY-028 and the Product Owner decision of
+  17 October 2026, reconfirmed on 25 October 2026. Existing entries retain their
+  update/delete rules. Diary writes require no `If-Match` and do not read or
+  write Day Logging Status state or history.
 - Target Plan and unrelated idempotency rows survive the selective cleanup.
 - Retired endpoints, navigation, schema fields, tables, flags, and generated
   contracts are absent.
@@ -187,7 +190,9 @@ and unchanged Profile/TargetPlan/Diary/Food facts across Labs CRUD.
   integrity without numeric schema/version fields.
 - Confirm a date before the first applicable plan returns null plan/targets and a
   Diary entry for that date stores a null target-plan binding.
-- Create, update, and delete a future-dated Diary entry without `If-Match`.
+- Create a Diary entry through Asia/Riyadh today + 7 days and reject a new entry
+  at today + 8 days. Verify unrestricted past creation and unchanged update/delete
+  of existing entries, including later future dates, without `If-Match`.
 - Confirm all four retired status routes return `404` and week summaries contain
   no status, version, completion timestamp, or entry-count presence field.
 
