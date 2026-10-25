@@ -24,7 +24,7 @@ export function LabHistoryChart({ detail, selectedResultId, onSelectResult }: {
               x={band.fromX} y={band.highY} width={band.toX - band.fromX} height={band.lowY - band.highY} />)}
             {geometry.ticks.map((tick, index) => <g key={index}>
               {tick.axis === "y" ? <><line x1="60" x2="336" y1={tick.position} y2={tick.position} className={styles.chartGrid} /><text x="54" y={tick.position + 4} textAnchor="end">{tick.label}</text></>
-                : <text x={tick.position} y="226" textAnchor={index === geometry.ticks.length - 1 && geometry.points.length > 1 ? "end" : "middle"}>{formatGregorianArabicDate(tick.label)}</text>}
+                : <text x={tick.position} y="226" direction="rtl" textAnchor={index === geometry.ticks.length - 1 && geometry.points.length > 1 ? "start" : "middle"}>{formatGregorianArabicDate(tick.label)}</text>}
             </g>)}
             {geometry.points.length > 1 ? <polyline className={styles.chartLine} points={geometry.points.map(point => `${point.x},${point.y}`).join(" ")} /> : null}
           </g>

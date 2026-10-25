@@ -37,6 +37,7 @@ describe("shared Lab detail presentation", () => {
     expect(html).toContain("18 سبتمبر 2026");
     expect(html).not.toContain('>2026-09-18<');
     expect(html).toContain('aria-label="18 سبتمبر 2026،');
+    expect(html).toMatch(/<text[^>]+direction="rtl"[^>]*>18 سبتمبر 2026<\/text>/);
   });
   it("uses selected result exact reference/date and canonical unit outside SVG", () => {
     const html = render(detail, results[1].id);
