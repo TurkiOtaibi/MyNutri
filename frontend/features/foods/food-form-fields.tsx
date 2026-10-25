@@ -4,10 +4,10 @@ import Link from "next/link";
 import type { FoodResponse } from "@/lib/types";
 import { fieldId, type FoodFormValues } from "./food-form-model";
 
-export function FoodFormActions({ isEdit, foodId, pending, food, onDelete }: { isEdit: boolean; foodId?: string; pending: boolean; food: FoodResponse | null; onDelete: (food: FoodResponse) => void }) {
+export function FoodFormActions({ isEdit, foodId, pending, checking = false, food, onDelete }: { isEdit: boolean; foodId?: string; pending: boolean; checking?: boolean; food: FoodResponse | null; onDelete: (food: FoodResponse) => void }) {
   return (
     <div className="form-actions-sticky">
-      <button className="btn primary" type="submit" disabled={pending}>
+      <button className="btn primary" type="submit" disabled={pending || checking}>
         <Save size={18} />
         {pending ? "جاري الحفظ..." : isEdit ? "حفظ التعديل" : "حفظ الطعام"}
       </button>

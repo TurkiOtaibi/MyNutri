@@ -5,7 +5,9 @@ import Link from "next/link";
 import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { createFood, getFood, getNutritionRegistry, updateFood } from "@/lib/api";
+import { createFood, getFood, getNutritionRegistry, listFoodsPage, updateFood } from "@/lib/api";
+import { FoodUsageNotice, useFoodUsage } from "@/features/foods/food-usage";
+import { useDebouncedValue } from "@/features/diary/diary-hooks";
 import {
   defaultUnitLabels,
   nutritionBasisLabels,
@@ -54,6 +56,17 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   const formSubjectRef = useRef(subjectId);
   const sessionSignal = useSessionAbortSignal();
   const dirty = JSON.stringify(form) !== initialForm;
+  const usage = useFoodUsage(isEdit ? foodId : undefined);
+  const checkedName = useDebouncedValue(form.name.trim(), 275);
+  const sameName = useQuery({
+    queryKey: ["foods", "name-warning", checkedName],
+    queryFn: () => listFoodsPage({ exactName: checkedName, pageSize: 2 }),
+    enabled: Boolean(checkedName) && account?.role === "admin",
+    staleTime: 0,
+    retry: false,
+  });
+  const hasSameName = sameName.data?.items.some((food) => food.id !== foodId) ?? false;
+  const checkingWarnings = checkedName !== form.name.trim() || sameName.isFetching || (isEdit && usage.isFetching);
 
   const foodQuery = useQuery({
     queryKey: ["food", foodId],
@@ -203,6 +216,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
       return;
     }
     setNote("");
+    if (checkingWarnings) return;
     saveMutation.mutate();
   }
 
@@ -304,6 +318,10 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
 
         <FormSection title="معلومات الطعام الأساسية">
           <TextField field="name" label="اسم الطعام" value={form.name} required maxLength={foodTextMax.name} error={errors.name} onChange={(value) => update("name", value)} />
+          {hasSameName ? <p role="status">يوجد طعام بالاسم نفسه.</p> : null}
+          {checkingWarnings ? <p role="status">جارٍ التحقق من تنبيهات الطعام…</p> : null}
+          {sameName.isError ? <p role="alert">تعذر التحقق من تكرار الاسم. يمكنك المتابعة بالحفظ.</p> : null}
+          {isEdit ? <FoodUsageNotice usage={usage} /> : null}
           <TextField field="brand" label="العلامة التجارية" value={form.brand ?? ""} maxLength={foodTextMax.brand} error={errors.brand} onChange={(value) => update("brand", value)} />
           <SelectField
             field="primary_category"
@@ -402,7 +420,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
           <TextAreaField field="notes" label="ملاحظات" value={form.notes ?? ""} maxLength={foodTextMax.notes} error={errors.notes} onChange={(value) => update("notes", value)} />
         </FormSection>
 
-        <FoodFormActions isEdit={isEdit} foodId={foodId} pending={saveMutation.isPending} food={foodQuery.data ?? null} onDelete={setDeleteTarget} />
+        <FoodFormActions isEdit={isEdit} foodId={foodId} pending={saveMutation.isPending} checking={checkingWarnings} food={foodQuery.data ?? null} onDelete={setDeleteTarget} />
       </form>
 
       <FoodDeleteDialog

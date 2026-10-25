@@ -123,7 +123,7 @@ limited to 120 characters. `brand` is optional up to 80, `notes` up to 500, and
 - Optional nutrients are null or finite/nonnegative and obey their Backend per-field maxima.
 - Fiber cannot exceed carbohydrate; added sugar cannot exceed sugar; saturated/trans fat individually and together cannot exceed fat.
 - `primary_category` and `subcategory` are required Registry-valid pairs.
-- Duplicate identity is normalized name plus nutrition/default-unit basis and amount.
+- Duplicate identity is normalized name and normalized brand plus nutrition/default-unit basis and amount. Both name and brand are case-folded, trimmed, and have repeated whitespace collapsed; absent or blank brand normalizes to an empty string. Different brands may share a name and serving definition, with the BR-FOD-029 name warning; true duplicates remain rejected, per the Product Owner decision of 25 October 2026 implementing BR-FOD-029.
 - No active/archive/status or uncategorized field exists.
 
 ## DiaryEntry

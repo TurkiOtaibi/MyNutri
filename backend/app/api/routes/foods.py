@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import SkipValidation
-from sqlmodel import Session
+from sqlmodel import Session, select, func
 
 from app.core.auth import PrincipalContext, get_principal_context, require_admin
 from app.db.session import get_session
@@ -15,11 +15,13 @@ from app.schemas import (
     FoodResponse,
     FoodSort,
     FoodUpdate,
+    FoodUsageResponse,
 )
 from app.services.food import (
     create_food_response,
     delete_food,
     get_food_response_with_attribution,
+    get_food,
     list_food_picker,
     list_foods_page,
     to_food_responses,
@@ -34,6 +36,7 @@ router = APIRouter(prefix="/foods", tags=["foods"])
 def read_foods(
     q: str | None = None,
     search: str | None = None,
+    exact_name: str | None = None,
     category: str | None = None,
     sort: FoodSort = "name",
     page: int = Query(default=1, ge=1),
@@ -44,6 +47,7 @@ def read_foods(
     result = list_foods_page(
         session,
         search=search if search is not None else q,
+        exact_name=exact_name,
         category=category,
         sort=sort,
         page=page,
@@ -108,6 +112,22 @@ def read_food(
     session: Session = Depends(get_session),
 ) -> FoodResponse:
     return get_food_response_with_attribution(session, food_id)
+
+
+@router.get("/{food_id}/usage", response_model=FoodUsageResponse)
+def read_food_usage(
+    food_id: UUID,
+    principal: PrincipalContext = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> FoodUsageResponse:
+    from app.models import DiaryEntry
+
+    get_food(session, food_id)
+    entries, users = session.exec(
+        select(func.count(DiaryEntry.id), func.count(func.distinct(DiaryEntry.principal_id)))
+        .where(DiaryEntry.food_id == food_id)
+    ).one()
+    return FoodUsageResponse(diary_entries=entries, users=users)
 
 
 @router.put("/{food_id}", response_model=FoodResponse)

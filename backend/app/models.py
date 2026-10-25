@@ -596,6 +596,7 @@ class Food(SQLModel, table=True):
         Index("ix_food_catalog_primary_category", "primary_category"),
         UniqueConstraint(
             "normalized_name",
+            "normalized_brand",
             "nutrition_basis",
             "default_unit_type",
             "unit_amount",
@@ -617,6 +618,7 @@ class Food(SQLModel, table=True):
     )
     name: str = Field(index=True)
     normalized_name: str = Field(default="", sa_column=Column(String(512), nullable=False))
+    normalized_brand: str = Field(default="", sa_column=Column(Text(), nullable=False))
     brand: str | None = None
     primary_category: str = Field(default="other", sa_column=Column(Text(), nullable=False))
     subcategory: str = Field(default="other", sa_column=Column(Text(), nullable=False))

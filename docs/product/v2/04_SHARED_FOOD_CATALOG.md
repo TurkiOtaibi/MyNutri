@@ -13,12 +13,14 @@ Food visibility is global. `/foods` is the only Food catalog experience:
 
 The backend remains authoritative. `POST /foods`, `PUT /foods/{food_id}`, and
 `DELETE /foods/{food_id}` require the admin role even when a client constructs a
-request directly. Read operations remain available to authenticated users.
+request directly. Catalog read operations remain available to authenticated users; `GET /foods/{food_id}/usage` is Admin-only and returns only aggregate Diary-entry and distinct-user counts, per issue #105 (BR-FOD-030/035).
 `GET /foods` always returns the paginated `FoodListResponse`; there is no
 legacy bare-array response, uncategorized sentinel, or versioned `Food*V3`
 schema alias.
 
 ## Food truth and Diary measurement
+
+Food duplicate identity includes normalized name, normalized brand, nutrition basis, default unit type, unit amount, and unit basis. Name and brand use case folding, trimming, and collapsed whitespace; absent/blank brand normalizes to an empty string. Different brands may share a name and serving definition with the BR-FOD-029 warning; identical normalized identity remains rejected, per the Product Owner decision of 25 October 2026.
 
 Food nutrition and other mutable catalog data are current authoritative truth.
 Diary totals calculate from the current Food record and the entry's recorded

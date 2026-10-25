@@ -277,9 +277,10 @@ def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip()).casefold()
 
 
-def duplicate_key(data: dict[str, Any]) -> tuple[str, str, str, float, str]:
+def duplicate_key(data: dict[str, Any]) -> tuple[str, str, str, str, float, str]:
     return (
         normalize_text(str(data["name"])),
+        normalize_text(str(data.get("brand") or "")),
         str(_enum_value(data["nutrition_basis"])),
         str(_enum_value(data["default_unit_type"])),
         round(float(data["unit_amount"]), 4),
@@ -360,6 +361,7 @@ def _validated_update_data(food: Food, payload: FoodUpdate) -> FoodCreate:
 def _persistence_data(payload: FoodCreate) -> dict[str, Any]:
     data = payload.model_dump(exclude={"id"})
     data["normalized_name"] = normalize_text(payload.name)
+    data["normalized_brand"] = normalize_text(payload.brand or "")
     return data
 
 
@@ -375,12 +377,15 @@ def list_foods_page(
     session: Session,
     *,
     search: str | None = None,
+    exact_name: str | None = None,
     category: str | None = None,
     sort: FoodSort = "name",
     page: int = 1,
     page_size: int = 20,
 ) -> FoodPage:
     conditions = []
+    if exact_name is not None:
+        conditions.append(Food.normalized_name == normalize_text(exact_name))
     normalized_search = search.strip() if search else ""
     if normalized_search:
         pattern = f"%{normalized_search}%"

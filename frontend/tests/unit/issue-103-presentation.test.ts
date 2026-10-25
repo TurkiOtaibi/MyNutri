@@ -11,7 +11,8 @@ const state = vi.hoisted(() => ({ role: "user", food: {} }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/components/AuthProvider", () => ({ useAuth: () => ({ account: { role: state.role } }) }));
 vi.mock("@/components/useFoodDelete", () => ({ useFoodDelete: () => ({ isPending: false, mutate: vi.fn() }) }));
-vi.mock("@tanstack/react-query", () => ({ useQuery: ({ queryKey }: { queryKey: string[] }) =>
+vi.mock("@/components/SessionQueryProvider", () => ({ useSessionAbortSignal: () => new AbortController().signal }));
+vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({ invalidateQueries: vi.fn() }), useQuery: ({ queryKey }: { queryKey: string[] }) =>
   queryKey[0] === "food" ? { data: state.food, isPending: false } : { data: undefined, isPending: true } }));
 
 describe("issue 103 presentation", () => {
@@ -28,6 +29,7 @@ describe("issue 103 presentation", () => {
     }
     expect(html).toContain("تاريخ الإنشاء");
     expect(html).toContain("آخر تحديث");
+    expect(html).toContain("إضافة إلى اليوميات");
     expect(html.includes('href="/foods/synthetic-food/edit"')).toBe(role === "admin");
   });
 

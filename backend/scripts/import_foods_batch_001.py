@@ -184,7 +184,7 @@ def validate_unit_values(
 
 def existing_by_key(
     session: Session, principal: PrincipalContext
-) -> dict[tuple[str, str, str, float, str], Food]:
+) -> dict[tuple[str, str, str, str, float, str], Food]:
     return {
         duplicate_key(to_food_response(food).model_dump()): food
         for food in list_foods(session)
@@ -208,7 +208,7 @@ def dry_run(
         raise ValueError("Dataset record_count does not match the foods array.")
 
     current = existing_by_key(session, principal)
-    batch_keys: set[tuple[str, str, str, float, str]] = set()
+    batch_keys: set[tuple[str, str, str, str, float, str]] = set()
     results: list[ImportResult] = []
     for record in foods:
         name = str(record.get("name", ""))

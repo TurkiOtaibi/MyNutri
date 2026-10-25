@@ -566,6 +566,14 @@ export interface FoodResponse {
   zinc_mg?: number | null;
 }
 
+/** FoodUsageResponse */
+export interface FoodUsageResponse {
+  /** Diary Entries */
+  diary_entries: number;
+  /** Users */
+  users: number;
+}
+
 /** Goal */
 export type Goal = "cut" | "maintain" | "bulk";
 
@@ -2094,6 +2102,8 @@ export namespace Foods {
     export type RequestQuery = {
       /** Category */
       category?: string | null;
+      /** Exact Name */
+      exact_name?: string | null;
       /**
        * Page
        * @min 1
@@ -2120,6 +2130,28 @@ export namespace Foods {
     export type RequestBody = never;
     export type RequestHeaders = {};
     export type ResponseBody = FoodListResponse;
+  }
+
+  /**
+   * No description
+   * @tags foods
+   * @name ReadFoodUsageFoodsFoodIdUsageGet
+   * @summary Read Food Usage
+   * @request GET:/foods/{food_id}/usage
+   * @secure
+   */
+  export namespace ReadFoodUsageFoodsFoodIdUsageGet {
+    export type RequestParams = {
+      /**
+       * Food Id
+       * @format uuid
+       */
+      foodId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = FoodUsageResponse;
   }
 }
 

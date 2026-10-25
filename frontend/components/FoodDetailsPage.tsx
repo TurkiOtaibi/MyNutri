@@ -4,9 +4,13 @@ import { ArrowRight, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { ApiError, getFood, getNutritionRegistry } from "@/lib/api";
+import { ApiError, getFood, getNutritionRegistry, getCalendarAuthority } from "@/lib/api";
+import { AddEntrySheet } from "@/features/diary/diary-entry-dialogs";
+import { invalidateDiary, useCalendarAuthorityRefresh } from "@/features/diary/diary-hooks";
+import { useSessionAbortSignal } from "./SessionQueryProvider";
+import "@/features/diary/diary.module.css";
 import {
   DetailServingMetric,
   FoodDetailsLoading,
@@ -37,11 +41,36 @@ const FOOD_READ_ERROR = "تعذر تحميل تفاصيل الطعام. تحقق
 
 export function FoodDetailsPage({ foodId }: { foodId: string }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const [addDate, setAddDate] = useState<string | null>(null);
+  const [openingAdd, setOpeningAdd] = useState(false);
   const [mode, setMode] = useState<NutritionMode>("serving");
   const [deleteTarget, setDeleteTarget] = useState<FoodResponse | null>(null);
   const [note, setNote] = useState("");
   const [completenessOpen, setCompletenessOpen] = useState(false);
-  const { account } = useAuth();
+  const { account, session } = useAuth();
+  const sessionSignal = useSessionAbortSignal();
+  const authority = useQuery({
+    queryKey: ["calendar-authority"],
+    queryFn: () => getCalendarAuthority({ accessToken: session!.access_token, signal: sessionSignal }),
+    enabled: Boolean(session),
+    retry: false,
+  });
+  useCalendarAuthorityRefresh(authority.data, authority.refetch);
+
+  async function openDiary() {
+    if (openingAdd) return;
+    setOpeningAdd(true);
+    const result = await authority.refetch();
+    setOpeningAdd(false);
+    if (sessionSignal.aborted) return;
+    if (result.isError || !result.data) {
+      setNote("تعذر تحميل تاريخ اليوم. حاول مرة أخرى.");
+      return;
+    }
+    setNote("");
+    setAddDate(result.data.current_diary_date);
+  }
   const foodQuery = useQuery({
     queryKey: ["food", foodId],
     queryFn: () => getFood(foodId),
@@ -123,6 +152,14 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
       </header>
 
       {note ? <div className="catalog-notice" role="alert">{note}</div> : null}
+      <div className="actions">
+        <button className="btn primary" type="button" onClick={openDiary} aria-disabled={openingAdd} aria-busy={openingAdd}>إضافة إلى اليوميات</button>
+      </div>
+      {addDate ? <AddEntrySheet key={`${session?.user.id}:${food.id}:${addDate}`} selectedDate={addDate} initialMeal={null} initialFood={food}
+        onClose={() => setAddDate(null)} onSaved={async () => {
+          await invalidateDiary(queryClient);
+          if (!sessionSignal.aborted) setAddDate(null);
+        }} /> : null}
 
       <section className="serving-summary" aria-labelledby="serving-summary-title">
         <div className="detail-section-heading">
