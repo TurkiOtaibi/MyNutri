@@ -182,7 +182,7 @@ export function DiaryPage() {
           ) : null}
           {!entriesQuery.isPending && !entriesQuery.isError ? (
             <>
-            {entries.length === 0 ? <div className="diary-empty-note"><strong>لا توجد أطعمة مسجلة اليوم</strong><span>أضف طعامًا من زر + بجانب الوجبة المناسبة</span></div> : null}
+            {entries.length === 0 ? <div className="diary-empty-note"><strong>لا توجد أطعمة مسجلة في هذا اليوم</strong><span>أضف طعامًا من زر + بجانب الوجبة المناسبة</span></div> : null}
             <MealSections
               entries={entries}
               expanded={expandedMeals}
@@ -214,7 +214,7 @@ export function DiaryPage() {
           {weekQuery.isError ? (
             <RetryState
               message={summaryIntegrityError ? "تعذر حساب الملخص بسبب مشكلة في بيانات يوميات محفوظة" : WEEK_READ_ERROR}
-              description={summaryIntegrityError ? "المجاميع غير متاحة ولن تُعرض كقيم ناقصة. أعد المحاولة أو تواصل مع الدعم." : ""}
+              description={summaryIntegrityError ? "المجاميع غير متاحة ولن تُعرض كقيم ناقصة. أعد المحاولة أو تواصل مع المشرف." : ""}
               onRetry={() => weekQuery.refetch()}
               compact
             />

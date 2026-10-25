@@ -1,5 +1,6 @@
 import { AlertTriangle, Check, Info } from "lucide-react";
 import type { RefObject } from "react";
+import { formatShortDate } from "@/lib/dates";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels } from "@/lib/nutrients";
 import type { Goal, NutritionRegistryResponse, TargetPlanSummary, TargetResponse } from "@/lib/types";
 import { UNKNOWN_SAFETY_MESSAGE, blockingSafetyMessage, formatTargetNumber, isPreviewActivatable, type BlockingSafetyOutcome } from "./profile-model";
@@ -60,7 +61,7 @@ export function TargetPlanHistory({ plans, pending, failed, hasMore, loadingMore
       {pending ? <div className="profile-history-loading" role="status">جارٍ تحميل سجل الخطط</div> : null}
       {failed ? <div className="profile-history-error" role="alert">تعذر تحميل سجل الخطط<button className="btn" type="button" onClick={onRetry}>إعادة المحاولة</button></div> : null}
       {!pending && !failed && plans.length === 0 ? <p>لا توجد خطط محفوظة بعد.</p> : null}
-      {!failed && plans.length > 0 ? <ol>{plans.map((plan) => <li key={plan.id}><div><strong>النسخة <bdi dir="ltr">{plan.revision}</bdi></strong><span>تاريخ السريان <bdi dir="ltr">{plan.effective_from}</bdi></span></div><bdi dir="ltr">{plan.targets.target_calories} kcal</bdi></li>)}</ol> : null}
+      {!failed && plans.length > 0 ? <ol>{plans.map((plan) => <li key={plan.id}><div><strong>النسخة <bdi dir="ltr">{plan.revision}</bdi></strong><span>تاريخ السريان <time dateTime={plan.effective_from}>{formatShortDate(plan.effective_from)} {plan.effective_from.slice(0, 4)}</time></span></div><span><bdi dir="ltr">{plan.targets.target_calories}</bdi> سعرة</span></li>)}</ol> : null}
       {hasMore ? <button className="profile-text-action" type="button" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? "جارٍ التحميل…" : "عرض خطط أقدم"}</button> : null}
     </section>
   );

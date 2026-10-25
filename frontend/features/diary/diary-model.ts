@@ -10,7 +10,7 @@ export const mealLabels: Record<MealType, string> = {
   unspecified: "غير مصنف"
 };
 export const standardMeals: MealType[] = ["breakfast", "lunch", "dinner", "snack"];
-export const shortWeekdays = ["أحد", "اثن", "ثلا", "أرب", "خمي", "جمع", "سبت"];
+export const shortWeekdays = ["أحد", "إثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"];
 export const mealAddLabels: Record<Exclude<MealType, "unspecified">, string> = {
   breakfast: "إضافة إلى الفطور",
   lunch: "إضافة إلى الغداء",
@@ -82,14 +82,14 @@ export function parseQuantity(value: string): number | null {
   return Number.isFinite(amount) && amount >= 0.01 && amount <= 50 ? amount : null;
 }
 
-export function validateQuantity(value: string): string {
+export function validateQuantity(value: string, unitLabel: string): string {
   const trimmed = value.trim();
   if (!trimmed) return "أدخل كمية صحيحة";
   if (!/^(?:\d+\.?\d*|\.\d+)$/.test(trimmed)) return "أدخل كمية صحيحة";
   const amount = Number(trimmed);
   if (!Number.isFinite(amount)) return "أدخل كمية صحيحة";
   if (amount < 0.01) return "أدخل كمية أكبر من 0";
-  if (amount > 50) return "الكمية يجب ألا تتجاوز 50 حصة";
+  if (amount > 50) return `الكمية يجب ألا تتجاوز 50 ${unitLabel}`;
   return "";
 }
 

@@ -5,6 +5,7 @@ import { Dialog } from "@base-ui-components/react/dialog";
 import { AlertDialog } from "@base-ui-components/react/alert-dialog";
 import type { LabCatalogTest, LabFieldError, LabResultPatch, LabResultResponse } from "@/lib/types";
 import { enteredTriplet, freezeResultPatch, resultErrorTarget } from "./lab-result-model";
+import { labErrorMessage } from "./lab-batch-model";
 import styles from "./labs.module.css";
 
 type DialogFocus = { returnFocus?: () => HTMLElement | false | null; isCurrent?: () => boolean };
@@ -32,7 +33,10 @@ export function LabEditDialog(props: LabEditDialogProps) {
     return () => cancelAnimationFrame(frame);
   }, [firstError, isCurrent]);
   const locked = pending || props.writeBlocked;
-  const fieldError = (id: string) => errors.find(error => resultErrorTarget(error) === id)?.msg;
+  const fieldError = (id: string) => {
+    const error = errors.find(error => resultErrorTarget(error) === id);
+    return error ? labErrorMessage(error) : undefined;
+  };
   const valueError = fieldError("lab-edit-value"), unitError = fieldError("lab-edit-unit"), dateError = fieldError("lab-edit-date");
   return <Dialog.Root open disablePointerDismissal={pending} onOpenChange={(open, event) => {
     if (!open) { if (pending || submitted.current) event.cancel(); else props.onCancel(); }
@@ -47,7 +51,7 @@ export function LabEditDialog(props: LabEditDialogProps) {
           submitted.current = true;
           void props.onSubmit(freezeResultPatch(draft)).finally(() => { if (isCurrent?.() !== false) submitted.current = false; });
         }}>
-          {errors.length ? <div id="lab-edit-errors" role="alert" tabIndex={-1} className={styles.batchError}>{errors.map((error, index) => <p key={index}>{error.msg}</p>)}</div> : null}
+          {errors.length ? <div id="lab-edit-errors" role="alert" tabIndex={-1} className={styles.batchError}>{errors.map((error, index) => <p key={index}>{labErrorMessage(error)}</p>)}</div> : null}
           {props.recovery}
           <fieldset className={styles.batchFields} disabled={locked}>
             <legend className="sr-only">بيانات النتيجة</legend>

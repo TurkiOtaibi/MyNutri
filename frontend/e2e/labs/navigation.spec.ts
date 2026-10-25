@@ -4,7 +4,7 @@ test("Labs is a preserved top-nav destination", async ({ labsPage: page }) => {
   await navigateToOwnerLabs(page);
   const nav = page.getByRole("navigation", { name: "التنقل الرئيسي" });
   await expect(nav.getByRole("link", { name: "التحاليل" })).toHaveAttribute("aria-current", "page");
-  for (const label of ["اليوميات", "الأطعمة", "الملف"]) {
+  for (const label of ["اليوميات", "الأطعمة", "بياناتي"]) {
     await expect(nav.getByRole("link", { name: label })).toBeVisible();
   }
   await expect(page.getByRole("heading", { name: "تحاليلك" })).toBeVisible();

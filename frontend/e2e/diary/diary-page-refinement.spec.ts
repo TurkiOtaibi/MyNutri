@@ -187,7 +187,7 @@ test.describe("@diary @page-refinement compact Diary page", () => {
   test("@p0 empty day is compact, all meals are closed, and plus does not toggle its meal", async ({ page }) => {
     await page.goto("/diary");
     await selectDate(page, localDate(-240));
-    await expect(page.getByText("لا توجد أطعمة مسجلة اليوم")).toBeVisible();
+    await expect(page.getByText("لا توجد أطعمة مسجلة في هذا اليوم")).toBeVisible();
     await expect(page.getByText("أضف طعامًا من زر + بجانب الوجبة المناسبة")).toBeVisible();
     const toggles = page.locator(".meal-toggle");
     await expect(toggles).toHaveCount(4);
@@ -276,7 +276,7 @@ test.describe("@diary @page-refinement compact Diary page", () => {
     await selectDate(page, localDate(-251));
     await expect(page.getByText("تعذر تحميل بيانات هذا اليوم")).toBeVisible();
     await expect(page.getByText("تحقق من الاتصال ثم أعد المحاولة")).toBeVisible();
-    await expect(page.getByText("لا توجد أطعمة مسجلة اليوم")).toHaveCount(0);
+    await expect(page.getByText("لا توجد أطعمة مسجلة في هذا اليوم")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "اليوم السابق" })).toBeEnabled();
     fail = false;
     await page.getByRole("button", { name: "إعادة المحاولة" }).last().click();

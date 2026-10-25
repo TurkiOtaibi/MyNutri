@@ -3,9 +3,9 @@ import { test, expect, field, fillRequiredFoodForm, submitFoodForm, validFood } 
 const requiredUiCases = [
   { id: "FOOD-TC-048", label: /اسم الطعام/, setup: async (page: import("@playwright/test").Page) => page.getByLabel(/اسم الطعام/).fill("") },
   { id: "FOOD-TC-050", label: /السعرات/, setup: async (page: import("@playwright/test").Page) => page.getByLabel(/السعرات/).fill("") },
-  { id: "FOOD-TC-051", label: /البروتين g/, setup: async (page: import("@playwright/test").Page) => page.getByLabel(/البروتين g/).fill("") },
-  { id: "FOOD-TC-052", label: /الكارب g/, setup: async (page: import("@playwright/test").Page) => page.getByLabel(/الكارب g/).fill("") },
-  { id: "FOOD-TC-053", label: /الدهون g/, setup: async (page: import("@playwright/test").Page) => page.getByLabel(/الدهون g/).fill("") },
+  { id: "FOOD-TC-051", label: /البروتين \(جم\)/, setup: async (page: import("@playwright/test").Page) => page.getByLabel(/البروتين \(جم\)/).fill("") },
+  { id: "FOOD-TC-052", label: /الكربوهيدرات \(جم\)/, setup: async (page: import("@playwright/test").Page) => page.getByLabel(/الكربوهيدرات \(جم\)/).fill("") },
+  { id: "FOOD-TC-053", label: /الدهون \(جم\)/, setup: async (page: import("@playwright/test").Page) => page.getByLabel(/الدهون \(جم\)/).fill("") },
   { id: "FOOD-TC-055", label: /مقدار الوحدة/, setup: async (page: import("@playwright/test").Page) => page.getByLabel(/مقدار الوحدة/).fill("") }
 ];
 

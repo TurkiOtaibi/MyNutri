@@ -40,7 +40,7 @@ test.describe("@diary @visual Diary redesign screenshots", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/diary");
     await page.getByLabel("اختيار تاريخ اليوميات").fill(emptyDate);
-    await expect(page.getByText("لا توجد أطعمة مسجلة اليوم")).toBeVisible();
+    await expect(page.getByText("لا توجد أطعمة مسجلة في هذا اليوم")).toBeVisible();
     await page.screenshot({ path: resolve(output, "diary-mobile-empty-390.png") });
 
     const standard = await foodsApi.create({
@@ -93,7 +93,7 @@ test.describe("@diary @visual Diary redesign screenshots", () => {
 
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.getByLabel("اختيار تاريخ اليوميات").fill(emptyDate);
-    await expect(page.getByText("لا توجد أطعمة مسجلة اليوم")).toBeVisible();
+    await expect(page.getByText("لا توجد أطعمة مسجلة في هذا اليوم")).toBeVisible();
     await page.screenshot({ path: resolve(output, "diary-desktop-empty-1440.png") });
 
     await page.getByLabel("اختيار تاريخ اليوميات").fill(localDate());

@@ -273,7 +273,7 @@ test.describe("accepted Profile DOB freshness", () => {
     expect(warmedOwnerQueries.some((key) => key[3] === "test" && key[4] === "ferritin")).toBe(true);
     const invalidationsBeforeChange = await ownerInvalidations(page);
     const readsBeforePreview = detailReads;
-    await page.getByRole("link", { name: "الملف", exact: true }).click();
+    await page.getByRole("link", { name: "بياناتي", exact: true }).click();
     await expect(page).toHaveURL(/\/profile$/);
     expect(await cachedOwnerQueries(page)).toEqual(warmedOwnerQueries);
     await expect(page.getByText("لا يمكن تعديل الجنس بعد حفظ الملف الشخصي.", { exact: true })).toBeVisible();

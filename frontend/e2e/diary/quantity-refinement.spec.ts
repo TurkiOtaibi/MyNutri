@@ -74,10 +74,10 @@ test.describe("@diary quantity and UX refinement", () => {
     ["0", "أدخل كمية أكبر من 0"],
     ["-1", "أدخل كمية صحيحة"],
     ["abc", "أدخل كمية صحيحة"],
-    ["50.01", "الكمية يجب ألا تتجاوز 50 حصة"]
+    ["50.01", "الكمية يجب ألا تتجاوز 50 كوب"]
   ] as const) {
     test(`@p0 invalid quantity ${value} blocks save with Arabic error`, async ({ page, foodsApi }) => {
-      const food = await foodsApi.create({ name: uniqueName(`Invalid ${value}`) });
+      const food = await foodsApi.create({ name: uniqueName(`Invalid ${value}`), default_unit_type: "cup" });
       await page.goto("/diary");
       const { dialog } = await openAddAndSelect(page, food.name);
       await dialog.getByRole("textbox", { name: "الكمية", exact: true }).fill(value);
@@ -138,6 +138,9 @@ test.describe("@diary quantity and UX refinement", () => {
     await expect(dialog.getByRole("textbox", { name: "الكمية", exact: true })).toHaveValue("1.5");
     await expect(dialog.getByLabel("معاينة القيم الغذائية بعد التعديل")).toContainText("45 جم");
     await expect(dialog.getByLabel("معاينة القيم الغذائية بعد التعديل")).toContainText("90");
+    await dialog.getByRole("textbox", { name: "الكمية", exact: true }).fill("51");
+    await expect(dialog.getByRole("alert")).toHaveText("الكمية يجب ألا تتجاوز 50 شريحة");
+    await expect(dialog.getByRole("button", { name: "حفظ التغييرات" })).toBeDisabled();
   });
 
   test("@p1 selected week day is fully visible and page has no horizontal overflow", async ({ page }) => {

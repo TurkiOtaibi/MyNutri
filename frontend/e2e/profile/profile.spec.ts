@@ -45,7 +45,7 @@ async function warmLabsThenOpenProfile(page: Page): Promise<void> {
   });
   await page.goto("/labs");
   expect((await overview).status()).toBe(200);
-  await page.getByRole("link", { name: "الملف", exact: true }).click();
+  await page.getByRole("link", { name: "بياناتي", exact: true }).click();
   await expect(page).toHaveURL(/\/profile$/);
 }
 
@@ -1281,7 +1281,7 @@ test.describe("@profile Profile and targets redesign", () => {
     const initialRead = page.waitForResponse((response) =>
       profilePath(new URL(response.url())) && response.request().method() === "GET"
     );
-    await page.getByRole("link", { name: "الملف" }).click();
+    await page.getByRole("link", { name: "بياناتي" }).click();
     await initialRead;
     await expect(page).toHaveURL(/\/profile$/);
     const input = page.getByLabel("الوزن");
@@ -1313,7 +1313,7 @@ test.describe("@profile Profile and targets redesign", () => {
 
   test("@plan016 browser Back cancel preserves the Profile draft and discard traverses once", async ({ page, originalProfile }) => {
     await page.goto("/diary");
-    await page.getByRole("link", { name: "الملف" }).click();
+    await page.getByRole("link", { name: "بياناتي" }).click();
     const input = page.getByLabel("الوزن");
     const draft = String(originalProfile.weight_kg + 2);
     await input.fill(draft);
@@ -1445,7 +1445,7 @@ test.describe("@profile Profile and targets redesign", () => {
         ? route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "unavailable" }) })
         : route.continue();
     });
-    await errorPage.getByRole("link", { name: "الملف" }).click();
+    await errorPage.getByRole("link", { name: "بياناتي" }).click();
     const errorAlert = errorPage.getByRole("alert").filter({ hasText: "تعذر تحميل بياناتك" });
     await expect(errorAlert).toBeVisible();
     await expect(errorAlert).toHaveCount(1);
@@ -1498,7 +1498,11 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.goto("/profile?plan-history=1");
     const history = page.getByRole("region", { name: "سجل الخطط" });
     await expect(history).toContainText("النسخة 2");
-    await expect(history).toContainText("2026-07-18");
+    await expect(history).toContainText("تاريخ السريان 18 يوليو 2026");
+    await expect(history.locator("time")).toHaveAttribute("datetime", "2026-07-18");
+    expect(originalProfile.targets).not.toBeNull();
+    await expect(history).toContainText(`${originalProfile.targets?.target_calories} سعرة`);
+    await expect(history).not.toContainText("kcal");
     await expect(history).not.toContainText("preview_hash");
     for (const retiredCopy of ["الخطة المجدولة", "الأهداف المجدولة", "مجدولة", "تفعيل الخطة", "استبدال الخطة المجدولة؟"]) {
       await expect(page.getByText(retiredCopy, { exact: true })).toHaveCount(0);

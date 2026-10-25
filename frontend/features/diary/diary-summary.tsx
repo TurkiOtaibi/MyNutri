@@ -313,8 +313,8 @@ export function DailyNutritionDetails({ day, registry, registryPending, registry
         <div className="add-sheet-handle" aria-hidden="true" />
         <header><h2 id="daily-nutrition-details-title">التفاصيل الغذائية لليوم</h2><button type="button" onClick={onClose} aria-label="إغلاق التفاصيل الغذائية"><X size={20} /></button></header>
         <div className="daily-nutrition-sheet-content">
-          {registryPending ? <div className="daily-nutrition-empty" role="status">جارٍ تحميل سجل المغذيات</div> : registryFailed || !registry ? <div className="daily-nutrition-empty" role="alert">تعذر تحميل البيانات الغذائية<button className="btn" type="button" onClick={onRetryRegistry}>إعادة المحاولة</button></div> : !day ? <div className="daily-nutrition-empty">تعذر تحميل ملخص المغذيات لهذا اليوم.</div> : empty ? <div className="daily-nutrition-empty">لا توجد أطعمة مسجلة لهذا اليوم</div> : <>
-            <section className="nutrition-coverage-notice" aria-label={`تغطية بيانات المغذيات الإضافية: ${overallCoverage}%`}><strong>تغطية بيانات المغذيات الإضافية: <bdi>{overallCoverage}%</bdi></strong>{overallCoverage !== 100 ? <p>بعض الأطعمة لا تحتوي بيانات كاملة لجميع المغذيات. هذه نسبة توفر البيانات وليست تقييمًا صحيًا، وقد تكون المجاميع المعروضة حدًا أدنى مؤكدًا.</p> : <p>تتوفر بيانات جميع المغذيات المتتبعة للأطعمة المسجلة.</p>}</section>
+          {registryPending ? <div className="daily-nutrition-empty" role="status">جارٍ تحميل سجل المغذيات</div> : registryFailed || !registry ? <div className="daily-nutrition-empty" role="alert">تعذر تحميل البيانات الغذائية<button className="btn" type="button" onClick={onRetryRegistry}>إعادة المحاولة</button></div> : !day ? <div className="daily-nutrition-empty">تعذر تحميل ملخص المغذيات لهذا اليوم.</div> : empty ? <div className="daily-nutrition-empty">لا توجد أطعمة مسجلة في هذا اليوم</div> : <>
+            <section className="nutrition-coverage-notice" aria-label={`اكتمال بيانات العناصر الإضافية: ${overallCoverage}%`}><strong>اكتمال بيانات العناصر الإضافية: <bdi>{overallCoverage}%</bdi></strong>{overallCoverage !== 100 ? <p>بعض الأطعمة لا تحتوي بيانات كاملة لجميع المغذيات. هذه نسبة توفر البيانات وليست تقييمًا صحيًا، وقد تكون المجاميع المعروضة حدًا أدنى مؤكدًا.</p> : <p>تتوفر بيانات جميع المغذيات المتتبعة للأطعمة المسجلة.</p>}</section>
             <div className="daily-nutrient-list">{day.nutrient_aggregates.map((item) => <DailyNutrientRow key={item.key} aggregate={item} definition={definitions.get(item.key)} />)}</div>
           </>}
         </div>
@@ -332,10 +332,10 @@ const evaluationLabels: Record<string, string> = {
   below_range: "أقل من النطاق",
   within_range: "ضمن النطاق",
   above_range: "أعلى من النطاق",
-  met_at_least: "تم تحقيق الهدف بالقيمة المؤكدة",
-  exceeded_at_least: "تم تجاوز الحد بالقيمة المؤكدة",
-  above_range_at_least: "أعلى من النطاق بالقيمة المؤكدة",
-  indeterminate_partial_coverage: "لا يمكن تحديد الحالة مع التغطية الجزئية"
+  met_at_least: "تم تحقيق الهدف على الأقل",
+  exceeded_at_least: "تم تجاوز الحد على الأقل",
+  above_range_at_least: "أعلى من النطاق على الأقل",
+  indeterminate_partial_coverage: "لا يمكن الحكم لأن بعض البيانات ناقصة"
 };
 
 function DailyNutrientRow({ aggregate, definition }: { aggregate: DiaryNutrientAggregate; definition: NutrientDefinition | undefined }) {
@@ -351,11 +351,11 @@ function DailyNutrientRow({ aggregate, definition }: { aggregate: DiaryNutrientA
   const overMaximum = aggregate.evaluation === "exceeded" || aggregate.evaluation === "exceeded_at_least";
   const showProgress = aggregate.progress_percent !== null;
   return (
-    <section className={`daily-nutrient-row ${overMaximum ? "over" : ""}`} aria-label={`${label}: ${qualifier} ${amountText}، ${status}${aggregate.coverage_percent == null ? "" : `، تغطية البيانات ${aggregate.coverage_percent}%`}`}>
+    <section className={`daily-nutrient-row ${overMaximum ? "over" : ""}`} aria-label={`${label}: ${qualifier} ${amountText}، ${status}${aggregate.coverage_percent == null ? "" : `، اكتمال البيانات ${aggregate.coverage_percent}%`}`}>
       <header><strong>{label}</strong><span>{targetValue == null ? targetTypeLabels[targetType] : `${targetTypeLabels[targetType]} ${formatNutrientValue(targetValue, precision)} ${unit}`}</span></header>
       <div className="daily-nutrient-value"><bdi dir={aggregate.amount === null ? "rtl" : "ltr"}>{amountText}</bdi>{qualifier ? <small>{qualifier}</small> : null}</div>
       {showProgress ? <div className="daily-nutrient-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(aggregate.progress_percent ?? 0, 100)} aria-valuetext={`${aggregate.progress_percent}%`}><span style={{ width: `${Math.min(aggregate.progress_percent ?? 0, 100)}%` }} /></div> : null}
-      <footer><span>{status}</span>{aggregate.coverage_percent != null ? <small>تغطية البيانات <bdi>{aggregate.coverage_percent}%</bdi></small> : null}</footer>
+      <footer><span>{status}</span>{aggregate.coverage_percent != null ? <small>اكتمال البيانات <bdi>{aggregate.coverage_percent}%</bdi></small> : null}</footer>
       {aggregate.coverage_state === "partial" ? <p>بعض الأطعمة المسجلة لا تحتوي قيمة لهذا المغذي.</p> : null}
     </section>
   );
