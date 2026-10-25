@@ -15,10 +15,10 @@ import { ModalFrame } from "./diary-modal";
 
 const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
 
-export function AddEntrySheet({ selectedDate, initialMeal, onClose, onSaved }: { selectedDate: string; initialMeal: MealType | null; onClose: () => void; onSaved: (meal: MealType) => Promise<void> }) {
+export function AddEntrySheet({ selectedDate, initialMeal, initialFood = null, onClose, onSaved }: { selectedDate: string; initialMeal: MealType | null; initialFood?: FoodPickerItem | null; onClose: () => void; onSaved: (meal: MealType) => Promise<void> }) {
   const [measured, setMeasured] = useState(false);
   const [search, setSearch] = useState("");
-  const [selectedFood, setSelectedFood] = useState<FoodPickerItem | null>(null);
+  const [selectedFood, setSelectedFood] = useState<FoodPickerItem | null>(initialFood);
   const [quantity, setQuantity] = useState("1");
   const [mealType, setMealType] = useState<MealType | null>(initialMeal);
   const [error, setError] = useState("");

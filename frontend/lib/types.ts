@@ -59,6 +59,7 @@ export type FoodInput = Omit<
   "id"
 >;
 export type FoodResponse = DeepRequired<OpenApi.FoodResponse>;
+export type FoodUsageResponse = DeepRequired<OpenApi.FoodUsageResponse>;
 export type FoodPickerItem = OpenApi.FoodPickerItem;
 export type FoodPickerResponse = OpenApi.FoodPickerResponse;
 export type FoodSort = NonNullable<OpenApi.Foods.ReadFoodsFoodsGet.RequestQuery["sort"]>;

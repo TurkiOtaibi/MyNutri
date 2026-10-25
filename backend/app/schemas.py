@@ -663,6 +663,11 @@ class FoodPickerResponse(BaseModel):
 FoodSort = Literal["name", "recent", "calories", "protein"]
 
 
+class FoodUsageResponse(BaseModel):
+    diary_entries: int
+    users: int
+
+
 class FoodListResponse(BaseModel):
     items: list[FoodResponse]
     total: int

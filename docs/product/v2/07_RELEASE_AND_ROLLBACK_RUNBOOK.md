@@ -61,8 +61,8 @@ copy in the BA field dictionary when implementing the lifecycle.
 
 ## Release identity
 
-The current migration head is Admin lifecycle revision `b6e4c2a78190`,
-with parent private Labs revision `e8b7a42f6c31`. Confirm the intended application
+The current migration head is Food normalized-brand duplicate revision `c7f5d3b89201`,
+with parent Admin lifecycle revision `b6e4c2a78190`. Confirm the intended application
 commit, generated contract, single Alembic head, and approved environment before
 any rollout action.
 

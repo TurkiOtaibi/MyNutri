@@ -229,7 +229,7 @@ same-subject overview/detail navigation preserves current queries and cache.
 
 ## Migration and recovery
 
-The sole Alembic head is `b6e4c2a78190`. Historical migrations remain immutable and
+The sole Alembic head is `c7f5d3b89201` (Food normalized-brand duplicate identity). Historical migrations remain immutable and
 reconstruct the schema. Destructive cutovers are forward-only: real rollback after
 removed schema or data requires a matching pre-cutover database restore and compatible
 application revision, not a synthesized downgrade.

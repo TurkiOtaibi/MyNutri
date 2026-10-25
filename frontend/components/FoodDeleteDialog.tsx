@@ -4,6 +4,7 @@ import { AlertTriangle, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import type { FoodResponse } from "@/lib/types";
+import { FoodUsageNotice, useFoodUsage } from "@/features/foods/food-usage";
 
 export function FoodDeleteDialog({
   food,
@@ -17,6 +18,7 @@ export function FoodDeleteDialog({
   onConfirm: () => void;
 }) {
   const panelRef = useRef<HTMLElement | null>(null);
+  const usage = useFoodUsage(food?.id);
   const cancelRef = useRef<HTMLButtonElement | null>(null);
   const onCancelRef = useRef(onCancel);
   const deletingRef = useRef(false);
@@ -105,6 +107,7 @@ export function FoodDeleteDialog({
         <p id="delete-food-description" className="page-kicker">
           سيتم حذف هذا الطعام نهائيًا، كما سيتم حذف جميع سجلات اليوميات المرتبطة به لجميع المستخدمين. لا يمكن التراجع عن هذا الإجراء.
         </p>
+        <FoodUsageNotice usage={usage} deletion />
         <div className="actions">
           <button ref={cancelRef} className="btn" type="button" onClick={onCancel} disabled={deleting}>
             <X size={18} />

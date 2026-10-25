@@ -7,6 +7,7 @@ import type {
   FoodListResponse,
   FoodPickerResponse,
   FoodResponse,
+  FoodUsageResponse,
   FoodSort,
   LabCatalogResponse,
   LabCreateReceipt,
@@ -185,6 +186,7 @@ export function listFoodPicker(
 
 interface FoodListOptions {
   search?: string;
+  exactName?: string;
   category?: string;
   sort?: FoodSort;
   page?: number;
@@ -198,12 +200,17 @@ export async function listFoodsPage(options: FoodListOptions = {}): Promise<Food
     sort: options.sort ?? "name"
   });
   if (options.search?.trim()) params.set("search", options.search.trim());
+  if (options.exactName !== undefined) params.set("exact_name", options.exactName);
   if (options.category) params.set("category", options.category);
   return apiFetch<FoodListResponse>(`/foods?${params.toString()}`);
 }
 
 export function getFood(foodId: string): Promise<FoodResponse> {
   return apiFetch<FoodResponse>(`/foods/${foodId}`);
+}
+
+export function getFoodUsage(foodId: string, accessToken: string | null | undefined, signal?: AbortSignal): Promise<FoodUsageResponse> {
+  return apiFetch<FoodUsageResponse>(`/foods/${foodId}/usage`, authorizedInit(accessToken, signal));
 }
 
 export function createFood(payload: FoodInput & { id?: string }, accessToken: string | null | undefined, signal?: AbortSignal): Promise<FoodResponse> {

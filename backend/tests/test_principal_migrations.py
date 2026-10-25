@@ -454,6 +454,7 @@ def _assert_immutable_revision_hashes(versions: Path) -> None:
         "d9f64a1c3e58_unify_food_catalog_and_cascade_diary_deletion.py",
             "e8b7a42f6c31_add_labs_v1.py",
             "b6e4c2a78190_admin_user_lifecycle.py",
+        "c7f5d3b89201_food_brand_duplicate_identity.py",
     }
     actual = {name: _normalized_revision_hash(versions / name) for name in BASELINE_HASHES}
     assert actual == BASELINE_HASHES
@@ -738,7 +739,7 @@ def test_food_catalog_unification_current_head_schema_and_security() -> None:
     assert diary_food_fks[0]["options"].get("ondelete") == "CASCADE"
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "b6e4c2a78190"
+            "c7f5d3b89201"
         )
         assert connection.execute(
             text("SELECT has_table_privilege(current_user, 'food', 'SELECT,INSERT,UPDATE,DELETE')")

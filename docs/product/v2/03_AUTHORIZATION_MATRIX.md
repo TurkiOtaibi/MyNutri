@@ -12,6 +12,7 @@ boundaries continue unchanged.
 | Read shared Foods | Yes | Yes |
 | Add shared Food to own Diary | Yes | Yes |
 | Create/update/permanently delete Food | No | Yes |
+| Read aggregate Food usage counts (Diary entries and distinct users only) | No | Yes |
 | List users | No | Yes |
 | Read another user's monitored data | No | Yes, read-only |
 | Mutate another user's Profile/Diary/Plans | No | No |
