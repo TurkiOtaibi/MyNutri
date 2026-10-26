@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { adminResultsLabel } from "@/lib/admin-display";
 import { accountActionErrorMessage } from "@/lib/admin-account-messages";
+import { reconcileAdminSearch } from "@/lib/admin-search";
 import { ApiError } from "@/lib/api";
 
 describe("BR-USM list copy", () => {
@@ -14,4 +15,11 @@ describe("BR-USM list copy", () => {
     expect(accountActionErrorMessage(new ApiError("server", 503, undefined, "DELETION_INCOMPLETE"), "delete")).toBe("تعذر إكمال حذف المستخدم. لا يستطيع الدخول الآن، ويمكنك إعادة المحاولة.");
     expect(accountActionErrorMessage(new ApiError("server", 409, undefined, "CREATION_IN_PROGRESS"), "delete")).toBe("لا يمكن حذف المستخدم الآن لأن إنشاءه ما زال جاريًا. حاول بعد 5 دقائق.");
   });
+});
+
+
+it("preserves newer typing across delayed own URL commits and restores external navigation", () => {
+  expect(reconcileAdminSearch("a", "ab", ["a"])).toEqual({ draft: "ab", pending: [] });
+  expect(reconcileAdminSearch("a", "abc", ["a", "ab"])).toEqual({ draft: "abc", pending: ["ab"] });
+  expect(reconcileAdminSearch("back", "abc", [])).toEqual({ draft: "back", pending: [] });
 });

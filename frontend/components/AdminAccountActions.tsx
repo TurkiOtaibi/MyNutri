@@ -24,9 +24,13 @@ function DeleteDialog({ account, onClose, onDelete }: {
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const element = dialog.current;
+    const opener = document.activeElement;
     element?.showModal();
     emailInput.current?.focus();
-    return () => element?.close();
+    return () => {
+      element?.close();
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
+    };
   }, []);
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -61,9 +65,13 @@ export function FormDialog({ title, className, onClose, children, busy = false }
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const element = dialog.current;
+    const opener = document.activeElement;
     element?.showModal();
     element?.querySelector("input")?.focus();
-    return () => element?.close();
+    return () => {
+      element?.close();
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
+    };
   }, []);
   return <dialog ref={dialog} className={`account-delete-dialog account-form-dialog ${className ?? ""}`} onCancel={event => { if (busy) event.preventDefault(); }} onClose={onClose} aria-label={title}>
     <h2>{title}</h2>

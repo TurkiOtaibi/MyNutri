@@ -9,6 +9,7 @@ import {
 } from "@/lib/api";
 import { accountActionErrorMessage, accountActionSuccessMessage } from "@/lib/admin-account-messages";
 import { accountStatusLabels, formatAdminDate, adminResultsLabel } from "@/lib/admin-display";
+import { reconcileAdminSearch } from "@/lib/admin-search";
 import { AdminStatusBadge } from "./AdminStatusBadge";
 import { useAuth } from "./AuthProvider";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -35,9 +36,9 @@ export function AdminUsersPage() {
   const [pendingSearches, setPendingSearches] = useState<string[]>([]);
   if (lastUrlSearch !== search) {
     setLastUrlSearch(search);
-    const pendingIndex = pendingSearches.indexOf(search);
-    if (pendingIndex >= 0) setPendingSearches(pendingSearches.slice(pendingIndex + 1));
-    else setSearchInput(search);
+    const next = reconcileAdminSearch(search, searchInput, pendingSearches);
+    setPendingSearches(next.pending);
+    setSearchInput(next.draft);
   }
   const updateUrl = useCallback((next: { search?: string; status?: string; page?: number }) => {
     const values = { search, status: statusFilter, page, ...next };

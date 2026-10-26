@@ -118,14 +118,14 @@ test("details display demographics targets dated totals and units without nutrit
 });
 
 
-test("newer search text survives an earlier delayed URL transition", async ({ page }) => {
+test("newer search text survives an earlier in-flight search response", async ({ page }) => {
   await list(page);
   await page.goto("/admin/users");
   let release!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });
   let started!: () => void;
   const pending = new Promise<void>(resolve => { started = resolve; });
-  await page.route(url => url.pathname === "/admin/users" && url.searchParams.get("search") === "a", async route => { started(); await held; await route.continue(); });
+  await page.route(url => url.origin === new URL(API).origin && url.pathname === "/admin/accounts" && url.searchParams.get("search") === "a", async route => { started(); await held; await route.fulfill({ json: { items: [account], total: 1, page_size: 20, page: 1, counts } }); });
   try {
     const input = page.getByLabel("البحث بالاسم أو البريد");
     await input.fill("a");
