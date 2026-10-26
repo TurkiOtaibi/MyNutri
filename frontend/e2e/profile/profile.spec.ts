@@ -1,4 +1,4 @@
-import safetyCopy from "../../features/profile/profile-safety-copy.json";
+import { approvedSafetyCopy as safetyCopy } from "../../tests/unit/fixtures/profile-safety";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test as base, type APIRequestContext, type Page, type Route } from "@playwright/test";
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { approvedSafetyCopy } from "./fixtures/profile-safety";
 import { ApiError } from "@/lib/api";
 import { blockingSafetyExplanation, safetyOutcomeFromError } from "@/features/profile/profile-model";
 
@@ -10,8 +11,7 @@ describe("BR-PRF-015 authoritative safety explanations", () => {
   ])("maps %s to a reason and safe alternative without inventing low weight", (code, outcome) => {
     expect(safetyOutcomeFromError(new ApiError("server message", 422, undefined, code))).toBe(outcome);
     const explanation = blockingSafetyExplanation(outcome);
-    expect(explanation?.reason).toBeTruthy();
-    expect(explanation?.alternative).toContain("أخصائي تغذية");
+    expect(explanation).toEqual(approvedSafetyCopy[outcome as keyof typeof approvedSafetyCopy]);
     expect(JSON.stringify(explanation)).not.toMatch(/خفض الوزن|وزنك أقل/);
   });
 

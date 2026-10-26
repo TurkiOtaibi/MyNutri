@@ -31,6 +31,24 @@ def test_every_blocking_backend_reason_has_frontend_reason_and_alternative():
     assert {item["code"] for item in copy.values()} == calculation_codes | {
         "SPECIALIST_REVIEW_REQUIRED", "VERY_LOW_ENERGY_TARGET_BLOCKED",
     }
+    # Exact Product Owner wording approved on PR #123, 26 October 2026.
+    assert copy == {
+        "specialist_review_required": {
+            "code": "SPECIALIST_REVIEW_REQUIRED",
+            "reason": "لأن السعرات المستهدفة منخفضة وتحتاج إلى تقييم وإشراف مختص.",
+            "alternative": "جرّب شدة خفض أقل، أو هدف «المحافظة على الوزن». وإذا رغبت في هذا الهدف، فاستشر أخصائي تغذية."
+        },
+        "very_low_energy_blocked": {
+            "code": "VERY_LOW_ENERGY_TARGET_BLOCKED",
+            "reason": "لأن السعرات المستهدفة أقل من الحد الأدنى الآمن المعتمد في النظام.",
+            "alternative": "جرّب شدة خفض أقل، أو هدف «المحافظة على الوزن». وإذا رغبت في هذا الهدف، فاستشر أخصائي تغذية."
+        },
+        "non_positive_carbohydrate_allocation": {
+            "code": "NON_POSITIVE_CARBOHYDRATE_ALLOCATION",
+            "reason": "لأن إعدادات البروتين والدهون المختارة لا تترك سعرات كافية للكربوهيدرات.",
+            "alternative": "جرّب خفض «البروتين لكل كجم» أو «نسبة الدهون»، أو اضغط «استعادة القيم الافتراضية»."
+        }
+    }
     for item in copy.values():
         assert item["reason"] and item["alternative"]
         assert "خفض الوزن" not in item["alternative"]
