@@ -1,0 +1,17 @@
+{
+  "specialist_review_required": {
+    "code": "SPECIALIST_REVIEW_REQUIRED",
+    "reason": "لأن السعرات المستهدفة منخفضة وتحتاج إلى تقييم وإشراف مختص.",
+    "alternative": "اطلب من أخصائي تغذية وضع خطة متوازنة تلبي احتياجاتك بدلًا من اتباع هذه المعاينة دون إشراف."
+  },
+  "very_low_energy_blocked": {
+    "code": "VERY_LOW_ENERGY_TARGET_BLOCKED",
+    "reason": "لأن السعرات المستهدفة أقل من الحد الأدنى الآمن المعتمد في النظام.",
+    "alternative": "اطلب من أخصائي تغذية تحديد هدف طاقة مناسب لك بدلًا من اتباع هذه المعاينة منخفضة السعرات."
+  },
+  "non_positive_carbohydrate_allocation": {
+    "code": "NON_POSITIVE_CARBOHYDRATE_ALLOCATION",
+    "reason": "إعدادات السعرات والمغذيات الكبرى المختارة لا تترك كمية صالحة للكربوهيدرات.",
+    "alternative": "راجع إعدادات البروتين والدهون مع أخصائي تغذية لاختيار توزيع متوازن يناسب احتياجاتك."
+  }
+}

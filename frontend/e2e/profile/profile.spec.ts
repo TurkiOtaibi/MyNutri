@@ -1,3 +1,4 @@
+import safetyCopy from "../../features/profile/profile-safety-copy.json";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test as base, type APIRequestContext, type Page, type Route } from "@playwright/test";
 
@@ -995,6 +996,8 @@ test.describe("@profile Profile and targets redesign", () => {
       await changedWeight(page, originalProfile, index + 1);
       const preview = page.getByRole("region", { name: "الأهداف المتوقعة بعد الحفظ" });
       await expect(preview.getByText(SPECIALIST_REVIEW_REQUIRED, { exact: true })).toBeVisible();
+      await expect(preview.getByText(safetyCopy.specialist_review_required.reason, { exact: true })).toBeVisible();
+      await expect(preview.getByText(safetyCopy.specialist_review_required.alternative, { exact: true })).toBeVisible();
       await expect(preview).toContainText(String(calories));
       await expect(preview.getByText(BLOCKED_PREVIEW_DESCRIPTION, { exact: true })).toBeVisible();
       const passiveExplanation = preview.locator(".profile-safety-decision").filter({ hasText: SPECIALIST_REVIEW_REQUIRED });
@@ -1041,6 +1044,8 @@ test.describe("@profile Profile and targets redesign", () => {
     await changedWeight(page, originalProfile);
     const preview = page.getByRole("region", { name: "الأهداف المتوقعة بعد الحفظ" });
     await expect(preview.getByText(VERY_LOW_ENERGY_TARGET_BLOCKED, { exact: true })).toBeVisible();
+    await expect(preview.getByText(safetyCopy.very_low_energy_blocked.reason, { exact: true })).toBeVisible();
+    await expect(preview.getByText(safetyCopy.very_low_energy_blocked.alternative, { exact: true })).toBeVisible();
     await expect(preview).toContainText("799");
     await expect(preview.getByText(BLOCKED_PREVIEW_DESCRIPTION, { exact: true })).toBeVisible();
     const passiveExplanation = preview.locator(".profile-safety-decision").filter({ hasText: VERY_LOW_ENERGY_TARGET_BLOCKED });
@@ -1055,6 +1060,32 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" })).toHaveCount(0);
     expect(activationPosts).toBe(0);
     await assertBlockedResponsiveAndAxe(page, VERY_LOW_ENERGY_TARGET_BLOCKED);
+  });
+
+  test("@p0 macro allocation preview rejection explains a safe alternative and recovers", async ({ page, originalProfile }) => {
+    let reject = true;
+    let writes = 0;
+    await page.route(previewPath, (route) => reject
+      ? route.fulfill({ status: 422, json: { error: { code: "NON_POSITIVE_CARBOHYDRATE_ALLOCATION", message_ar: "server allocation error" } } })
+      : fulfillPreview(route, (targets) => ({ ...targets, safety_outcome: "normal", can_activate: true })));
+    await page.route(targetPlanWritePath, async (route) => {
+      if (route.request().method() === "POST") writes += 1;
+      await route.continue();
+    });
+    await page.goto("/profile?allocation-recovery=1");
+    const retainedWeight = await changedWeight(page, originalProfile);
+    const explanation = page.getByRole("alert").filter({ hasText: safetyCopy.non_positive_carbohydrate_allocation.reason });
+    await expect(explanation).toBeFocused();
+    await expect(explanation.getByText(safetyCopy.non_positive_carbohydrate_allocation.alternative, { exact: true })).toBeVisible();
+    await expect(page.getByText(BLOCKED_PREVIEW_DESCRIPTION, { exact: true })).toBeVisible();
+    await expect(page.getByLabel("الوزن")).toHaveValue(retainedWeight);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(writes).toBe(0);
+    reject = false;
+    await page.getByRole("button", { name: "تحديث المعاينة" }).click();
+    await expect(explanation).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "مراجعة وتأكيد" })).toBeEnabled();
+    expect(writes).toBe(0);
   });
 
   test("@p0 preview discloses cap and server calculation warnings", async ({ page, originalProfile }) => {
@@ -1174,6 +1205,9 @@ test.describe("@profile Profile and targets redesign", () => {
         .getByRole("button", { name: "حفظ الخطة" }).click();
       const recovery = page.getByRole("alert").filter({ hasText: scenario[1] });
       await expect(recovery.getByText(scenario[1], { exact: true })).toBeVisible();
+      const copy = Object.values(safetyCopy).find((item) => item.code === scenario[0])!;
+      await expect(recovery.getByText(copy.reason, { exact: true })).toBeVisible();
+      await expect(recovery.getByText(copy.alternative, { exact: true })).toBeVisible();
       await expect(recovery).toBeFocused();
       await expect(page.getByLabel("الوزن")).toHaveValue(retainedWeight);
       await expect(page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" })).toHaveCount(0);
@@ -1505,7 +1539,7 @@ test.describe("@profile Profile and targets redesign", () => {
           id: "00000000-0000-0000-0000-000000000901",
           effective_from: "2026-07-18",
           revision: 2,
-          targets: originalProfile.targets,
+          targets: { ...originalProfile.targets, protein_g: 95.5, carb_g: 250.3, fat_g: 61.2 },
           created_at: "2026-07-17T09:00:00Z"
         }],
         next_cursor: null
@@ -1518,6 +1552,13 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(history.locator("time")).toHaveAttribute("datetime", "2026-07-18");
     expect(originalProfile.targets).not.toBeNull();
     await expect(history).toContainText(`${originalProfile.targets?.target_calories} سعرة`);
+    await expect(history.locator(".profile-history-macros")).toContainText("البروتين95.5 جم");
+    await expect(history.locator(".profile-history-macros")).toContainText("الكربوهيدرات250.3 جم");
+    await expect(history.locator(".profile-history-macros")).toContainText("الدهون61.2 جم");
+    for (const width of [320, 390, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await history.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+    }
     await expect(history).not.toContainText("kcal");
     await expect(history).not.toContainText("preview_hash");
     for (const retiredCopy of ["الخطة المجدولة", "الأهداف المجدولة", "مجدولة", "تفعيل الخطة", "استبدال الخطة المجدولة؟"]) {

@@ -35,11 +35,14 @@ describe("issue 101 governed Arabic copy", () => {
 
   it("BR-PRF-022/027 renders history calories and Gregorian dates with bidi isolation", () => {
     const html = renderToStaticMarkup(createElement(TargetPlanHistory, {
-      plans: [{ id: "synthetic-plan", revision: 1, effective_from: "2026-10-17", created_at: "2026-10-17T00:00:00Z", targets: { target_calories: 2000 } as TargetResponse }],
+      plans: [{ id: "synthetic-plan", revision: 1, effective_from: "2026-10-17", created_at: "2026-10-17T00:00:00Z", targets: { target_calories: 2000, protein_g: 96, carb_g: 300.5, fat_g: 60 } as TargetResponse }],
       pending: false, failed: false, hasMore: false, loadingMore: false, onRetry: () => {}, onLoadMore: () => {},
     }));
     expect(html).toContain('<time dateTime="2026-10-17">17 أكتوبر 2026</time>');
     expect(html).toContain('<bdi dir="ltr">2000</bdi> سعرة');
     expect(html).not.toContain("kcal");
+    expect(html).toContain('<dt>البروتين</dt><dd><bdi dir="ltr">96</bdi> جم</dd>');
+    expect(html).toContain('<dt>الكربوهيدرات</dt><dd><bdi dir="ltr">300.5</bdi> جم</dd>');
+    expect(html).toContain('<dt>الدهون</dt><dd><bdi dir="ltr">60</bdi> جم</dd>');
   });
 });

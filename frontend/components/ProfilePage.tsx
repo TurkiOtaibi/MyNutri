@@ -19,7 +19,7 @@ import { useUnsavedChanges } from "./UnsavedChangesProvider";
 import { ProfileLoadError, ProfileSkeleton } from "@/features/profile/profile-dialogs";
 import { ProfileView } from "@/features/profile/profile-view";
 import { labsQueryKeys } from "@/features/labs/lab-query-keys";
-import { FAT_DEFAULTS, PROTEIN_DEFAULT, blankDraft, didConfirmedBirthDateChange, formatArabicGregorianDate, isPreviewActivatable, mapProfileApiErrors, mappedProfileErrorFocusField, normalizeDraft, normalizeNumber, profileMatchesAcceptedPlan, targetPlanSubmissionMatches, toDraft, validateDraft, withUpdatedSex, withoutProfileFieldError, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type ProfileField, type SheetKind, type TargetPlanSubmission, type TargetPlanWritePhase } from "@/features/profile/profile-model";
+import { FAT_DEFAULTS, PROTEIN_DEFAULT, blankDraft, didConfirmedBirthDateChange, formatArabicGregorianDate, isPreviewActivatable, mapProfileApiErrors, mappedProfileErrorFocusField, normalizeDraft, normalizeNumber, profileMatchesAcceptedPlan, safetyOutcomeFromError, targetPlanSubmissionMatches, toDraft, validateDraft, withUpdatedSex, withoutProfileFieldError, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type ProfileField, type SheetKind, type TargetPlanSubmission, type TargetPlanWritePhase } from "@/features/profile/profile-model";
 
 export function ProfilePage() {
   const { session } = useAuth();
@@ -201,7 +201,10 @@ export function ProfilePage() {
         }
         setPreview(null);
         setPreviewDraftHash(null);
-        setPreviewFailed(true);
+        const safetyOutcome = safetyOutcomeFromError(error);
+        setWriteSafetyOutcome(safetyOutcome);
+        setPreviewFailed(safetyOutcome === null);
+        if (safetyOutcome) setSafetyAttemptSequence((sequence) => sequence + 1);
       })
       .finally(() => {
         if (!sessionSignal.aborted && sequence === previewSequence.current) setPreviewPending(false);
@@ -317,13 +320,9 @@ export function ProfilePage() {
         setErrors(mapped);
         restoreWriteFocusRef.current = !focusMappedProfileError(mapped);
       }
-      else if (error instanceof ApiError && ["SPECIALIST_REVIEW_REQUIRED", "VERY_LOW_ENERGY_TARGET_BLOCKED"].includes(error.code ?? "")) {
+      else if (error instanceof ApiError && safetyOutcomeFromError(error)) {
         restoreWriteFocusRef.current = false;
-        setWriteSafetyOutcome(
-          error.code === "SPECIALIST_REVIEW_REQUIRED"
-            ? "specialist_review_required"
-            : "very_low_energy_blocked"
-        );
+        setWriteSafetyOutcome(safetyOutcomeFromError(error));
         setWriteErrorCode(error.code ?? null);
         setPreview(null);
         setPreviewDraftHash(null);
