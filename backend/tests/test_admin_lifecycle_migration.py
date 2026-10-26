@@ -14,7 +14,7 @@ from app.models import Principal, PrincipalStatus
 from labs_fixtures import run_labs_alembic
 
 
-HEAD = "d8a6e4c90312"
+HEAD = "e9b7f5d01423"
 
 
 def test_principal_model_has_retired_identity_and_lease_fields() -> None:

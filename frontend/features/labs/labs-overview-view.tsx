@@ -39,6 +39,7 @@ type LabsViewProps = {
   sort: LabSort;
   readOnly: boolean;
   adminOwn?: boolean;
+  adminSelected?: boolean;
   onAddTest?: (testKey: string) => void;
   detailHref?: (testKey: string) => string;
   onSearchChange: (value: string) => void;
@@ -113,7 +114,7 @@ function LabsView(props: LabsViewProps & { mode: "owned" | "catalog" }) {
     ? "تسجيل التحاليل غير متاح لحساب المشرف."
     : props.category
     ? props.mode === "owned" ? "لا توجد نتائج ضمن هذا التصنيف." : "لا توجد تحاليل ضمن هذا التصنيف."
-    : props.search ? "لا توجد تحاليل مطابقة." : "لم تسجل أي نتائج بعد.";
+    : props.search ? "لا توجد تحاليل مطابقة." : props.adminSelected ? "لم يسجل المستخدم أي نتائج بعد." : "لم تسجل أي نتائج بعد.";
   return <section className={styles.panel} aria-label={props.mode === "owned" ? "نتائج التحاليل" : "كتالوج التحاليل"}>
     <EligibilityNotice eligibility={props.eligibility} />
     <Controls {...props} />

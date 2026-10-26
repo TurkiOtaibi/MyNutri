@@ -93,28 +93,33 @@ test("admin navigation and monitoring remain explicit and read-only", async ({ p
   await firstUser.click();
   await expect(page.getByText("وضع قراءة فقط")).toBeVisible();
   await expect(page.getByRole("link", { name: "عرض التحاليل", exact: true })).toHaveAttribute("href", /\/admin\/users\/[^/]+\/labs$/);
-  await expect(page.getByRole("button", { name: /حفظ|تعديل|حذف/ })).toHaveCount(0);
+  await expect(page.locator(".admin-detail-section").getByRole("button", { name: /حفظ|تعديل|حذف/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "تعديل المستخدم", exact: true })).toBeVisible();
   await expect(page.locator("pre")).toHaveCount(0);
 });
 
 const PLAN025_PRINCIPAL_ID = "00000000-0000-0000-0000-000000000025";
 const plan025Detail = {
-  account: { display_name: "مستخدم الاختبار", email: "plan025@example.test", status: "active", role: "user", created_at: "2026-08-01T12:00:00Z" },
+  account: { principal_id: PLAN025_PRINCIPAL_ID, display_name: "مستخدم الاختبار", email: "plan025@example.test", status: "active", role: "user", created_at: "2026-08-01T12:00:00Z" },
   profile: null,
   current_target: null,
   plan_history: { items: [], next_cursor: null }
 };
 const plan025FirstPage = {
   items: [
-    { id: "00000000-0000-0000-0000-000000000101", entry_date: "2026-08-01", meal_type: "breakfast", quantity: 1, food_name: "وجبة أولى" },
-    { id: "00000000-0000-0000-0000-000000000102", entry_date: "2026-07-31", meal_type: "lunch", quantity: 2, food_name: "وجبة ثانية" }
+    { id: "00000000-0000-0000-0000-000000000101", entry_date: "2026-08-01", meal_type: "breakfast", quantity: 1, recorded_unit_type: "serving", recorded_unit_amount: 100, recorded_unit_basis: "g", recorded_unit_label: null, food_name: "وجبة أولى" },
+    { id: "00000000-0000-0000-0000-000000000102", entry_date: "2026-07-31", meal_type: "lunch", quantity: 2, recorded_unit_type: "serving", recorded_unit_amount: 100, recorded_unit_basis: "g", recorded_unit_label: null, food_name: "وجبة ثانية" }
   ],
   next_cursor: "cursor-plan025"
 };
 const plan025FinalPage = {
-  items: [{ id: "00000000-0000-0000-0000-000000000103", entry_date: "2026-07-30", meal_type: "dinner", quantity: 3, food_name: "وجبة أخيرة" }],
+  items: [{ id: "00000000-0000-0000-0000-000000000103", entry_date: "2026-07-30", meal_type: "dinner", quantity: 3, recorded_unit_type: "serving", recorded_unit_amount: 100, recorded_unit_basis: "g", recorded_unit_label: null, food_name: "وجبة أخيرة" }],
   next_cursor: null
 };
+
+test.beforeEach(async ({ page }) => {
+  await page.route(`${API_URL}/admin/users/${PLAN025_PRINCIPAL_ID}/diary/summaries?*`, route => route.fulfill({ json: [] }));
+});
 
 async function mockPlan025Detail(page: import("@playwright/test").Page, failNextPage = false) {
   let nextPageAttempts = 0;
@@ -173,7 +178,8 @@ test("@plan025 admin diary renders bounded pages and keyboard load more", async 
   await loadMore.click();
   await expect(page.getByText("وجبة أخيرة", { exact: true })).toBeVisible();
   await expect(page.getByText("لا توجد إدخالات أخرى.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /حفظ|تعديل|حذف/ })).toHaveCount(0);
+  await expect(page.locator(".admin-detail-section").getByRole("button", { name: /حفظ|تعديل|حذف/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "تعديل المستخدم", exact: true })).toBeVisible();
 });
 
 test("@plan025 next-page failure retains entries and offers keyboard retry", async ({ page }) => {

@@ -2809,3 +2809,10 @@ a.account-identity:hover strong { text-decoration: underline; }
 .account-delete-dialog h2 { margin: 0 0 12px; font-size: 1.2rem; }
 .account-delete-dialog .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 @media (max-width: 640px) { .account-row { align-items: stretch; } .account-actions { width: 100%; } .account-actions > .btn { flex: 1; } .account-delete-dialog .actions > .btn { flex: 1; } }
+
+.admin-account-counts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.admin-results-count { color: var(--muted); }
+.admin-diary-date { display: grid; gap: 6px; max-width: 240px; margin-bottom: 16px; }
+.admin-diary-day { margin-block: 18px; padding-block: 12px; border-top: 1px solid var(--line); }
+.account-actions { flex-wrap: wrap; }
+.account-actions > .account-notice { flex-basis: 100%; }

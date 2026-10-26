@@ -21,3 +21,12 @@ export function formatAdminDate(value: string): string | null {
   if (Number.isNaN(parsed.getTime())) return null;
   return gregorianDate(isDateOnly ? "UTC" : "Asia/Riyadh").format(parsed);
 }
+
+export function adminResultsLabel(page: number, pageSize: number, total: number): string {
+  const first = total ? Math.min((page - 1) * pageSize + 1, total) : 0;
+  const last = Math.min(page * pageSize, total);
+  const suffix = total % 100;
+  const users = total === 1 ? "مستخدم واحد" : total === 2 ? "مستخدمين اثنين"
+    : `${total} ${total === 0 || (suffix >= 3 && suffix <= 10) ? "مستخدمين" : suffix >= 11 && suffix <= 99 ? "مستخدمًا" : "مستخدم"}`;
+  return `عرض ${first}-${last} من ${users}`;
+}

@@ -764,6 +764,13 @@ class AdminAccountRetryCreate(BaseModel):
     initial_password: StrictStr = Field(min_length=1, max_length=256)
 
 
+class AdminAccountCounts(BaseModel):
+    active: int = 0
+    disabled: int = 0
+    provisioning: int = 0
+    deleting: int = 0
+
+
 class AdminAccountSummary(BaseModel):
     principal_id: UUID
     email: str | None
@@ -771,9 +778,11 @@ class AdminAccountSummary(BaseModel):
     status: PrincipalStatus
     created_at: datetime
     updated_at: datetime
+    disabled_at: datetime | None = None
 
 
 class AdminAccountList(BaseModel):
+    counts: AdminAccountCounts
     items: list[AdminAccountSummary]
     total: int
     page: int
@@ -781,6 +790,7 @@ class AdminAccountList(BaseModel):
 
 
 class AdminUserDetail(BaseModel):
+    age: int | None = None
     account: AdminUserSummary
     profile: ProfileResponse | None
     current_target: TargetSourceResponse | None
@@ -871,6 +881,10 @@ class AdminDiaryItem(BaseModel):
     meal_type: MealType
     quantity: float
     food_name: str
+    recorded_unit_type: DefaultUnitType
+    recorded_unit_amount: float
+    recorded_unit_basis: UnitBasis
+    recorded_unit_label: str | None
 
 
 class AdminDiaryPage(BaseModel):

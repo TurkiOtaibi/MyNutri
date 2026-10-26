@@ -65,12 +65,15 @@ test("admin opens selected user's complete detail through scoped overview link w
   const overview = waitForLabsGet(page, base);
   await page.goto(base);
   expect((await overview).status()).toBe(200);
+  await expect(page.locator(".selected-user-banner")).toContainText("عرض مستخدم آخر:");
+  const banner = await page.locator(".selected-user-banner").textContent();
   const read = waitForLabsGet(page, `${base}/tests/hba1c`);
   await page.locator('[data-test-key="hba1c"]').getByRole("link").click();
   const response = await read;
   expect(response.status()).toBe(200);
   expect((await response.json() as LabTestDetailResponse).read_only).toBe(true);
   await expect(page).toHaveURL(new RegExp(`${base}/hba1c$`));
+  await expect(page.locator(".selected-user-banner")).toHaveText(banner!);
   await expect(page.getByText("للقراءة فقط", { exact: true })).toBeVisible();
   await expect(page.locator("[data-chart-point]")).toHaveCount(detail.results.length);
   await expect(page.locator("[data-history-result]")).toHaveCount(detail.results.length);
@@ -181,4 +184,12 @@ test("admin direct Labs POST is forbidden", async ({ request }) => {
   });
   expect(response.status()).toBe(403);
   expect(await response.text()).toContain("LAB_READ_ONLY");
+});
+
+
+test("Admin selected-user empty Labs use the governed message and identity banner", async ({ page, labsApi }) => {
+  await page.goto(`/admin/users/${labsApi.actor.principalId}/labs`);
+  await expect(page.locator(".selected-user-banner")).toContainText("عرض مستخدم آخر:");
+  await expect(page.getByText("لم يسجل المستخدم أي نتائج بعد.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /إضافة|تعديل|حذف/ })).toHaveCount(0);
 });

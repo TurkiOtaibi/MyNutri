@@ -18,10 +18,13 @@ from app.schemas import (
     LabOverviewResponse,
     LabTestDetailResponse,
     AdminUserDetail,
+    DaySummary,
     AdminDiaryPage,
     AdminUserListResponse,
     AdminUserSummary,
 )
+from app.nutrition_rules.calculation import age_on
+from app.services.aggregation import admin_day_summaries
 from app.services.diary import AdminDiaryCursorError, admin_diary_page
 from app.services.errors import resource_not_found
 from app.services.profile import to_profile_response
@@ -142,8 +145,10 @@ def user_detail(
     principal = _get_principal(session, principal_id)
     selected = _selected_context(principal)
     profile = session.exec(select(Profile).where(Profile.principal_id == principal.id)).first()
-    target = resolve_targets(session, selected, current_diary_date())
+    today = current_diary_date()
+    target = resolve_targets(session, selected, today)
     return AdminUserDetail(
+        age=age_on(profile.birth_date, today=today) if profile else None,
         account=_summary(session, principal),
         profile=(
             to_profile_response(profile, resolved_targets=target.targets)
@@ -169,6 +174,17 @@ def user_diary(
         return admin_diary_page(session, selected, limit, cursor, entry_date)
     except AdminDiaryCursorError as error:
         raise HTTPException(status_code=422, detail={"code": "INVALID_CURSOR"}) from error
+
+
+@router.get("/users/{principal_id}/diary/summaries", response_model=list[DaySummary])
+def user_diary_summaries(
+    principal_id: UUID,
+    dates: list[date] = Query(min_length=1, max_length=100),
+    _admin: PrincipalContext = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> list[DaySummary]:
+    selected = _selected_context(_get_principal(session, principal_id))
+    return admin_day_summaries(session, selected, dates)
 
 
 # A separate route class keeps the privacy boundary scoped to Labs monitoring.

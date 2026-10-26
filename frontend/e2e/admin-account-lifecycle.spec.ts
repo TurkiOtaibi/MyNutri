@@ -40,10 +40,11 @@ test("@p0 Admin manages a user and confirms permanent deletion by email", async 
   await editor.getByLabel("كلمة المرور الجديدة").fill("New-password-2026!");
   await editor.getByRole("button", { name: "إعادة تعيين كلمة المرور" }).click();
   await expect(editor).toHaveCount(0);
-  await expect(page.getByRole("status")).toHaveText("تمت إعادة تعيين كلمة المرور.");
+  await expect(page.getByRole("status").filter({ hasText: "تمت إعادة تعيين كلمة المرور." })).toHaveText("تمت إعادة تعيين كلمة المرور.");
 
   await chooseRowAction(page, row, "تعطيل المستخدم");
-  await expect(row).toContainText("معطّل");
+  await page.getByRole("dialog", { name: "تعطيل المستخدم؟" }).getByRole("button", { name: "تعطيل المستخدم", exact: true }).click();
+  await expect(row).toContainText("معطّل منذ");
   await chooseRowAction(page, row, "تفعيل المستخدم");
   await expect(row).toContainText("نشط");
 
@@ -126,7 +127,7 @@ test("incomplete creation and deletion have retry actions", async ({ page }) => 
   const dialog = page.getByRole("dialog", { name: "حذف المستخدم نهائيًا؟" });
   await dialog.getByLabel("اكتب البريد الإلكتروني للمستخدم لتأكيد الحذف النهائي.").fill(deleteEmail);
   await dialog.getByRole("button", { name: "حذف المستخدم نهائيًا" }).click();
-  await expect(dialog.getByRole("alert")).toContainText("تعذر إكمال حذف المستخدم. حسابه معطّل ويمكنك إعادة المحاولة.");
+  await expect(dialog.getByRole("alert")).toContainText("تعذر إكمال حذف المستخدم. لا يستطيع الدخول الآن، ويمكنك إعادة المحاولة.");
   await dialog.getByRole("button", { name: "إلغاء" }).click();
   await expect(deleteRow).toContainText("حذف غير مكتمل");
   await deleteRow.getByRole("button", { name: "إعادة محاولة الحذف" }).click();
@@ -181,14 +182,14 @@ test("merged Users list redirects, searches, filters by status and marks the Adm
   }
 
   await page.getByLabel("البحث بالاسم أو البريد").fill(`merged-active-${suffix}`);
-  await page.getByRole("button", { name: "بحث", exact: true }).click();
+
   await expect(page.locator(".account-row")).toHaveCount(1);
   const activeRow = page.locator(".account-row").filter({ hasText: activeEmail });
   await expect(activeRow).toContainText("تاريخ التسجيل");
   await expect(self).toHaveCount(0);
 
   await page.getByLabel("البحث بالاسم أو البريد").fill(String(suffix));
-  await page.getByRole("button", { name: "بحث", exact: true }).click();
+
   await expect(page.locator(".account-row")).toHaveCount(2);
   await page.getByLabel("حالة الحساب").selectOption("provisioning");
   await expect(page.locator(".account-row")).toHaveCount(1);
@@ -207,7 +208,7 @@ test("merged Users list redirects, searches, filters by status and marks the Adm
   await expect(page.getByRole("heading", { name: "اليوميات", exact: true })).toBeInViewport();
 });
 
-test("Admin home has one Users entry with attention counts", async ({ page }) => {
+test("Admin home redirects directly to Users with attention counts", async ({ page }) => {
   await page.goto("/admin/users");
   const form = await openCreateDialog(page);
   await form.getByLabel("البريد الإلكتروني").fill(`incomplete-create-home-${Date.now()}@example.test`);
@@ -216,9 +217,8 @@ test("Admin home has one Users entry with attention counts", async ({ page }) =>
   await form.getByRole("button", { name: "إنشاء المستخدم" }).click();
   await expect(form.getByRole("alert")).toBeVisible();
   await page.goto("/admin");
-  const links = page.locator(".admin-home-link");
-  await expect(links).toHaveCount(1);
-  await expect(links).toHaveAttribute("href", "/admin/users");
-  await expect(links).toContainText("إدارة المستخدمين");
-  await expect(links).toContainText("قيد الإنشاء:");
+  await expect(page).toHaveURL(/\/admin\/users$/);
+  await expect(page.getByRole("heading", { name: "إدارة المستخدمين" })).toBeVisible();
+  await expect(page.locator(".admin-account-counts")).toContainText("قيد الإنشاء:");
+  await expect(page.locator(".admin-account-counts")).toContainText("تنتظر إعادة المحاولة");
 });

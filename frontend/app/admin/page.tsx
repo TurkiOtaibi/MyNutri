@@ -1,3 +1,3 @@
-import { AdminHomePage } from "@/components/AdminHomePage";
+import { redirect } from "next/navigation";
 
-export default function AdminPage() { return <AdminHomePage />; }
+export default function AdminPage() { redirect("/admin/users"); }

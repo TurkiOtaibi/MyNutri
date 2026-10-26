@@ -128,6 +128,8 @@ def test_late_create_is_refused_during_lease_then_reconciled(lifecycle_session) 
     with pytest.raises(LifecycleError) as leased:
         delete_account(session, admin_id, pending.id, fake, now + timedelta(minutes=1), 10)
     assert leased.value.status_code == 409
+    assert leased.value.code == "CREATION_IN_PROGRESS"
+    assert leased.value.message_ar == "لا يمكن حذف المستخدم الآن لأن إنشاءه ما زال جاريًا. حاول بعد 5 دقائق."
     deleted = delete_account(session, admin_id, pending.id, fake, now + timedelta(minutes=5, seconds=1), 10)
     assert deleted.status == PrincipalStatus.deleted
     assert deleted.auth_user_id is None

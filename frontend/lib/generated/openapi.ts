@@ -67,6 +67,30 @@ export interface AdditionalNutrientTarget {
   unit: string;
 }
 
+/** AdminAccountCounts */
+export interface AdminAccountCounts {
+  /**
+   * Active
+   * @default 0
+   */
+  active?: number;
+  /**
+   * Deleting
+   * @default 0
+   */
+  deleting?: number;
+  /**
+   * Disabled
+   * @default 0
+   */
+  disabled?: number;
+  /**
+   * Provisioning
+   * @default 0
+   */
+  provisioning?: number;
+}
+
 /** AdminAccountCreate */
 export interface AdminAccountCreate {
   /**
@@ -113,6 +137,7 @@ export interface AdminAccountEnable {
 
 /** AdminAccountList */
 export interface AdminAccountList {
+  counts: AdminAccountCounts;
   /** Items */
   items: AdminAccountSummary[];
   /** Page */
@@ -150,6 +175,8 @@ export interface AdminAccountSummary {
    * @format date-time
    */
   created_at: string;
+  /** Disabled At */
+  disabled_at?: string | null;
   /** Display Name */
   display_name: string | null;
   /** Email */
@@ -184,6 +211,12 @@ export interface AdminDiaryItem {
   meal_type: MealType;
   /** Quantity */
   quantity: number;
+  /** Recorded Unit Amount */
+  recorded_unit_amount: number;
+  recorded_unit_basis: UnitBasis;
+  /** Recorded Unit Label */
+  recorded_unit_label: string | null;
+  recorded_unit_type: DefaultUnitType;
 }
 
 /** AdminDiaryPage */
@@ -197,6 +230,8 @@ export interface AdminDiaryPage {
 /** AdminUserDetail */
 export interface AdminUserDetail {
   account: AdminUserSummary;
+  /** Age */
+  age?: number | null;
   current_target: TargetSourceResponse | null;
   plan_history: TargetPlanHistoryResponse;
   profile: ProfileResponse | null;
@@ -1636,6 +1671,35 @@ export namespace Admin {
     export type RequestBody = never;
     export type RequestHeaders = {};
     export type ResponseBody = AdminDiaryPage;
+  }
+
+  /**
+   * No description
+   * @tags admin
+   * @name UserDiarySummariesAdminUsersPrincipalIdDiarySummariesGet
+   * @summary User Diary Summaries
+   * @request GET:/admin/users/{principal_id}/diary/summaries
+   * @secure
+   */
+  export namespace UserDiarySummariesAdminUsersPrincipalIdDiarySummariesGet {
+    export type RequestParams = {
+      /**
+       * Principal Id
+       * @format uuid
+       */
+      principalId: string;
+    };
+    export type RequestQuery = {
+      /**
+       * Dates
+       * @maxItems 100
+       * @minItems 1
+       */
+      dates: string[];
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = DaySummary[];
   }
 
   /**

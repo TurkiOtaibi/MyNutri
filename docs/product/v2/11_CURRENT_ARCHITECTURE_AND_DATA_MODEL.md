@@ -229,7 +229,7 @@ same-subject overview/detail navigation preserves current queries and cache.
 
 ## Migration and recovery
 
-The sole Alembic head is `d8a6e4c90312` (private Labs notes), following `c7f5d3b89201` (Food normalized-brand duplicate identity). Historical migrations remain immutable and
+The sole Alembic head is `e9b7f5d01423` (Principal disable timestamp), following `d8a6e4c90312` (private Labs notes). Historical migrations remain immutable and
 reconstruct the schema. Destructive cutovers are forward-only: real rollback after
 removed schema or data requires a matching pre-cutover database restore and compatible
 application revision, not a synthesized downgrade.
@@ -244,3 +244,5 @@ or `/admin/foods` compatibility route.
 Labs adds no persisted Status/reference/canonical snapshot, custom or editable
 medical catalog, pregnancy field, automatic biomarker, nutrition coupling,
 browser personal-data persistence, API caching, offline queue, polling or export/sharing.
+
+Issue #108 / BR-USM-031 records `principal.disabled_at` as a nullable timezone-aware timestamp on transition to disabled and clears it on re-enabling. Existing disabled accounts retain null and display only their status, without an inferred date.
