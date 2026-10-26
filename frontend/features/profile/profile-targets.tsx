@@ -3,7 +3,7 @@ import type { RefObject } from "react";
 import { formatShortDate } from "@/lib/dates";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels } from "@/lib/nutrients";
 import type { Goal, NutritionRegistryResponse, TargetPlanSummary, TargetResponse } from "@/lib/types";
-import { UNKNOWN_SAFETY_MESSAGE, blockingSafetyMessage, formatTargetNumber, isPreviewActivatable, type BlockingSafetyOutcome } from "./profile-model";
+import { UNKNOWN_SAFETY_MESSAGE, blockingSafetyExplanation, blockingSafetyMessage, formatTargetNumber, isPreviewActivatable, type BlockingSafetyOutcome } from "./profile-model";
 
 export function TargetsCard({ title, badge, targets }: { title: string; badge: string; targets: TargetResponse | null }) {
   return (
@@ -78,7 +78,11 @@ export function TargetPlanHistory({ plans, pending, failed, hasMore, loadingMore
       {pending ? <div className="profile-history-loading" role="status">جارٍ تحميل سجل الخطط</div> : null}
       {failed ? <div className="profile-history-error" role="alert">تعذر تحميل سجل الخطط<button className="btn" type="button" onClick={onRetry}>إعادة المحاولة</button></div> : null}
       {!pending && !failed && plans.length === 0 ? <p>لا توجد خطط محفوظة بعد.</p> : null}
-      {!failed && plans.length > 0 ? <ol>{plans.map((plan) => <li key={plan.id}><div><strong>النسخة <bdi dir="ltr">{plan.revision}</bdi></strong><span>تاريخ السريان <time dateTime={plan.effective_from}>{formatShortDate(plan.effective_from)} {plan.effective_from.slice(0, 4)}</time></span></div><span><bdi dir="ltr">{plan.targets.target_calories}</bdi> سعرة</span></li>)}</ol> : null}
+      {!failed && plans.length > 0 ? <ol>{plans.map((plan) => <li key={plan.id}><div><strong>النسخة <bdi dir="ltr">{plan.revision}</bdi></strong><span>تاريخ السريان <time dateTime={plan.effective_from}>{formatShortDate(plan.effective_from)} {plan.effective_from.slice(0, 4)}</time></span></div><span><bdi dir="ltr">{plan.targets.target_calories}</bdi> سعرة</span><dl className="profile-history-macros">{([
+        ["البروتين", plan.targets.protein_g],
+        ["الكربوهيدرات", plan.targets.carb_g],
+        ["الدهون", plan.targets.fat_g]
+      ] as const).map(([label, value]) => <div key={label}><dt>{label}</dt><dd><bdi dir="ltr">{formatTargetNumber(value)}</bdi> جم</dd></div>)}</dl></li>)}</ol> : null}
       {hasMore ? <button className="profile-text-action" type="button" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? "جارٍ التحميل…" : "عرض خطط أقدم"}</button> : null}
     </section>
   );
@@ -115,6 +119,7 @@ export function ExpectedTargetsCard({
     : safetyMessage
       ? "هذه معاينة توضيحية فقط، ولا يمكن حفظ هذا الهدف."
       : "راجع نتيجة المعاينة قبل المتابعة.";
+  const explanation = outcome ? blockingSafetyExplanation(outcome) : null;
   const announceSafety = safetyAttemptSequence > 0;
   return (
     <section className="profile-preview-card" aria-label="الأهداف المتوقعة بعد الحفظ">
@@ -179,7 +184,7 @@ export function ExpectedTargetsCard({
           data-focus-requested={announceSafety ? "true" : "false"}
         >
           <AlertTriangle size={20} aria-hidden="true" />
-          <div><strong>لا يمكن حفظ الهدف</strong><p>{safetyMessage}</p></div>
+          <div><strong>لا يمكن حفظ الهدف</strong><p>{safetyMessage}</p>{explanation ? <><p>{explanation.reason}</p><p>{explanation.alternative}</p></> : null}</div>
         </div>
       ) : !pending && !failed && isPreviewActivatable(targets) ? (
         <div className="profile-safety-decision is-available" role="status">

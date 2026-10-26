@@ -1,4 +1,5 @@
 import { ApiError } from "@/lib/api";
+import safetyCopy from "./profile-safety-copy.json";
 import type { ActivityLevel, CutIntensity, Goal, ProfileInput, ProfileResponse, Sex, TargetPlanWriteResponse, TargetResponse } from "@/lib/types";
 
 const SPECIALIST_REVIEW_MESSAGE = "لا يمكن حفظ هذا الهدف لأنه غير مناسب لحالتك الحالية. إذا رغبت في اتباع هذا الهدف، فاستشر أخصائي تغذية قبل اعتماده.";
@@ -215,11 +216,22 @@ export function validateDraft(draft: DraftProfile, authoritativeDate: string | n
   };
 }
 
-export type BlockingSafetyOutcome = "specialist_review_required" | "very_low_energy_blocked";
+export type BlockingSafetyOutcome = keyof typeof safetyCopy;
+
+export function blockingSafetyExplanation(outcome: string) {
+  return Object.hasOwn(safetyCopy, outcome) ? safetyCopy[outcome as BlockingSafetyOutcome] : null;
+}
+
+export function safetyOutcomeFromError(error: unknown): BlockingSafetyOutcome | null {
+  if (!(error instanceof ApiError)) return null;
+  return (Object.keys(safetyCopy) as BlockingSafetyOutcome[])
+    .find((outcome) => safetyCopy[outcome].code === error.code) ?? null;
+}
 
 export function blockingSafetyMessage(outcome: string): string | null {
   if (outcome === "specialist_review_required") return SPECIALIST_REVIEW_MESSAGE;
   if (outcome === "very_low_energy_blocked") return VERY_LOW_ENERGY_MESSAGE;
+  if (outcome === "non_positive_carbohydrate_allocation") return SPECIALIST_REVIEW_MESSAGE;
   if (outcome !== "normal") return UNKNOWN_SAFETY_MESSAGE;
   return null;
 }

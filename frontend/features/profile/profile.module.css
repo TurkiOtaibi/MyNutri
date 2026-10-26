@@ -487,7 +487,7 @@ button:global(.profile-setting-row):focus-visible,
   color: #33403a;
   font-size: 11px;
   text-align: center;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 :global(.profile-preview-values) > strong {
@@ -1073,7 +1073,7 @@ button:global(.profile-setting-row):focus-visible,
 
 :global(.profile-plan-history) ol { list-style: none; padding: 0; margin: 10px 0 0; }
 
-:global(.profile-plan-history) li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-top: 1px solid rgba(31, 55, 48, .09); }
+:global(.profile-plan-history) li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-top: 1px solid rgba(31, 55, 48, .09); }
 
 :global(.profile-plan-history) li > div { display: grid; gap: 3px; }
 
@@ -1089,3 +1089,7 @@ button:global(.profile-setting-row):focus-visible,
 @media (max-width: 360px) {
   :global(.profile-additional-target-row) span { text-align: start; }
 }
+
+:global(.profile-history-macros) { display: flex; flex-wrap: wrap; gap: 12px 24px; flex-basis: 100%; margin: 0; }
+:global(.profile-history-macros) dt { color: var(--muted, #64726c); font-size: .82rem; }
+:global(.profile-history-macros) dd { margin: 3px 0 0; font-weight: 700; }
