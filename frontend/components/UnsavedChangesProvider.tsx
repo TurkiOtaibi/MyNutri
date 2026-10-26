@@ -42,12 +42,6 @@ type UnsavedChangesContextValue = {
 };
 
 const UnsavedChangesContext = createContext<UnsavedChangesContextValue | null>(null);
-// Separate from the stable registration context: showing a prompt must not
-// unregister the dirty form and thereby clear the pending navigation decision.
-const UnsavedPromptContext = createContext(false);
-export function useUnsavedPromptActive() {
-  return useContext(UnsavedPromptContext);
-}
 const HISTORY_POSITION = "__mynutriHistoryPosition";
 
 export function UnsavedChangesProvider({ children }: { children: React.ReactNode }) {
@@ -289,7 +283,6 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
 
   return (
     <UnsavedChangesContext.Provider value={value}>
-      <UnsavedPromptContext.Provider value={Boolean(pending)}>
       {children}
       {pending ? (
         <div className="unsaved-dialog-backdrop" role="presentation" onMouseDown={(event) => {
@@ -312,7 +305,6 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
           </div>
         </div>
       ) : null}
-      </UnsavedPromptContext.Provider>
     </UnsavedChangesContext.Provider>
   );
 }

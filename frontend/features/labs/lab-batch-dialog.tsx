@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, type RefObject } from "react";
 import { Dialog } from "@base-ui-components/react/dialog";
-import { useUnsavedPromptActive } from "@/components/UnsavedChangesProvider";
 
 import type { LabCatalogResponse } from "@/lib/types";
 import { batchErrorTarget, labErrorMessage, mapLabErrors, populatedCount, resultCountLabel, type BatchPhase } from "./lab-batch-model";
@@ -25,7 +24,6 @@ type LabBatchDialogProps = {
 
 export function LabBatchDialog(props: LabBatchDialogProps) {
   const { phase, catalog } = props;
-  const navigationPromptActive = useUnsavedPromptActive();
   const popup = useRef<HTMLDivElement>(null);
   const step = phase && "draft" in phase ? phase.draft.step : null;
   const firstError = phase?.kind === "validation_error" ? phase.errors[0] : undefined;
@@ -50,13 +48,9 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
   const draft = phase && "draft" in phase ? phase.draft : null;
   const locked = phase?.kind === "submitting" || phase?.kind === "ambiguous";
   const errors = phase?.kind === "validation_error" ? mapLabErrors(phase.errors) : { rows: {} };
-  return <Dialog.Root open={Boolean(draft)} disablePointerDismissal={locked || navigationPromptActive} onOpenChange={(open, event) => {
+  return <Dialog.Root open={Boolean(draft)} disablePointerDismissal={locked} onOpenChange={(open, event) => {
     if (open) return;
-    // The guard can unmount during its Continue click, before a modal dismissal
-    // listener handles that same event. Preserve the event's detached ancestry.
-    const fromNavigationPrompt = event.event.target instanceof Element
-      && Boolean(event.event.target.closest(".unsaved-dialog-backdrop"));
-    if (locked || navigationPromptActive || fromNavigationPrompt) event.cancel(); else props.onCancel();
+    if (locked) event.cancel(); else props.onCancel();
   }}>
     <Dialog.Portal>
       <Dialog.Backdrop className={styles.batchBackdrop} />
@@ -78,10 +72,11 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
               {draft.date ? <time dateTime={draft.date}>{formatGregorianArabicDate(draft.date)}</time> : null}
               {errors.test_date ? <span id="lab-date-error" className={styles.batchError}>{errors.test_date}</span> : null}
             </label> : null}
-            {draft.step === "date" ? <label htmlFor="lab-batch-note">ملاحظة
+            {draft.step === "date" ? <div className={styles.batchNote}>
+              <label htmlFor="lab-batch-note">ملاحظة</label>
               <textarea id="lab-batch-note" value={draft.note} aria-invalid={Boolean(errors.note)} aria-describedby={errors.note ? "lab-note-error" : undefined} onChange={(event) => props.onNote(event.target.value)} />
               {errors.note ? <span id="lab-note-error" className={styles.batchError}>{errors.note}</span> : null}
-            </label> : null}
+            </div> : null}
             {draft.step === "selection" ? <>
               <h3>مجموعات التحاليل</h3>
               {catalog.panels.map((panel) => <label className={styles.batchChoice} key={panel.key}>

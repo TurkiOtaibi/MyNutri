@@ -89,3 +89,4 @@
 }
 
 .historyNote { grid-column: 1 / -1; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.batchNote { display: grid; gap: 6px; min-width: 0; }
