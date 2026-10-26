@@ -10,6 +10,7 @@ ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
 MESSAGES = {
+    "LAB_NOTE_TOO_LONG": "يجب ألا تتجاوز الملاحظة 500 حرف.",
     "LAB_PROFILE_REQUIRED": "أكمل بيانات الملف الشخصي قبل إضافة نتائج التحاليل.",
     "LAB_ADULT_REQUIRED": "يمكن إضافة نتائج أُجريت عند عمر 18 سنة فأكثر فقط.",
     "LAB_DATE_FUTURE": "لا يمكن اختيار تاريخ في المستقبل.",

@@ -13,6 +13,7 @@ type LabBatchDialogProps = {
   catalog: LabCatalogResponse | undefined;
   returnFocusRef?: RefObject<HTMLElement | null>;
   onDate: (value: string) => void;
+  onNote: (value: string) => void;
   onPanel: (key: string, selected: boolean) => void;
   onIndividual: (key: string, selected: boolean) => void;
   onValue: (key: string, value: string) => void;
@@ -63,13 +64,17 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
           {phase?.kind === "validation_error" ? <div id="lab-batch-errors" role="alert" tabIndex={-1} className={styles.batchError}>
             {phase.errors.map((error, index) => <p key={index}>{labErrorMessage(error)}</p>)}
           </div> : null}
-          {phase?.kind === "ambiguous" ? <p role="alert">لم يتم تأكيد نتيجة الحفظ. أعد المحاولة لتأكيد العملية نفسها.</p> : null}
+          {phase?.kind === "ambiguous" ? <p role="alert">لم نتأكد من حفظ النتائج. اضغط «إعادة المحاولة»، ولن تتكرر النتائج.</p> : null}
           <fieldset className={styles.batchFields} disabled={locked}>
             <legend className="sr-only">{draft.step === "date" ? "تاريخ النتائج" : draft.step === "selection" ? "اختيار التحاليل" : "قيم النتائج"}</legend>
             {draft.step === "date" ? <label>تاريخ التحليل
               <input id="lab-batch-date" type="date" value={draft.date} aria-invalid={Boolean(errors.test_date)} aria-describedby={errors.test_date ? "lab-date-error" : undefined} onChange={(event) => props.onDate(event.target.value)} />
               {draft.date ? <time dateTime={draft.date}>{formatGregorianArabicDate(draft.date)}</time> : null}
               {errors.test_date ? <span id="lab-date-error" className={styles.batchError}>{errors.test_date}</span> : null}
+            </label> : null}
+            {draft.step === "date" ? <label htmlFor="lab-batch-note">ملاحظة
+              <textarea id="lab-batch-note" value={draft.note} aria-invalid={Boolean(errors.note)} aria-describedby={errors.note ? "lab-note-error" : undefined} onChange={(event) => props.onNote(event.target.value)} />
+              {errors.note ? <span id="lab-note-error" className={styles.batchError}>{errors.note}</span> : null}
             </label> : null}
             {draft.step === "selection" ? <>
               <h3>مجموعات التحاليل</h3>

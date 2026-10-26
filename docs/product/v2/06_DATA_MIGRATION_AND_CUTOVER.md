@@ -4,6 +4,10 @@ The Admin-managed lifecycle below is approved migration authority implemented
 by forward revision `b6e4c2a78190`, following private Labs revision
 `e8b7a42f6c31`.
 
+## Private Labs note transition
+
+Issue #106 authorizes revision `d8a6e4c90312`, parent `c7f5d3b89201`, for BR-LAB-017. Upgrade adds nullable `lab_result.note VARCHAR(500)` without changing existing facts or receipts. Downgrade drops only this column and refuses if any note is non-null. Test both directions only on disposable loopback PostgreSQL. Apply the migration before the new backend runs; production execution needs separate release authorization.
+
 ## Food duplicate identity transition
 
 Revision `c7f5d3b89201` follows `b6e4c2a78190` and implements the Product Owner decision of 25 October 2026 for BR-FOD-029. It backfills non-null `food.normalized_brand` using the same case folding and whitespace normalization as names, mapping absent/blank brands to an empty string. The unique Food identity includes normalized name, normalized brand, and the existing serving definition. Upgrade locks Food and checks collisions before replacing the constraint. Downgrade restores the former identity only if no cross-brand rows collide; otherwise it stops without rewriting or deleting data. Release migration still requires explicit authorization.
@@ -248,7 +252,7 @@ Before any release authorization:
 16. Confirm `d9f64a1c3e58` removed Food archive columns, installed the Diary Food
     `ON DELETE CASCADE`, preserved existing Food/Diary rows during migration, and
     revoked direct Food mutation from `PUBLIC`, `anon`, and `authenticated`.
-17. Confirm `c7f5d3b89201` is the sole head and agrees with all seven models;
+17. Confirm `d8a6e4c90312` is the sole head and agrees with all seven models;
     clean and populated-base upgrades preserve existing facts, grants and replay.
 18. Prove packaged Labs catalog availability, private privileges, finite/unscaled
     numeric storage, unique owner/test/date, and operation-specific receipt expiry.

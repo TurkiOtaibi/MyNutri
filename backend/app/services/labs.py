@@ -67,6 +67,9 @@ def canonical_request_hash(payload: LabCreateRequest) -> str:
             key=lambda row: (row["test_key"], row["entered_unit"], row["entered_value"]),
         ),
     }
+    # Preserve durable pre-note receipts for omitted/empty notes.
+    if payload.note is not None:
+        document["note"] = payload.note
     return sha256(
         json.dumps(document, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode(
             "utf-8"
@@ -180,6 +183,7 @@ def create_results(
                 test_date=payload.test_date,
                 entered_value=parse_entered_decimal(row.entered_value),
                 entered_unit=row.entered_unit,
+                note=payload.note,
                 created_at=created_at,
                 updated_at=created_at,
             )
@@ -311,7 +315,7 @@ def update_result(
         captured = session.exec(
             select(
                 LabResult.id, LabResult.test_key, LabResult.test_date,
-                LabResult.entered_value, LabResult.entered_unit,
+                LabResult.entered_value, LabResult.entered_unit, LabResult.note,
                 LabResult.created_at, LabResult.updated_at, Profile.birth_date, Profile.sex,
             )
             .join(Profile, Profile.principal_id == LabResult.principal_id)
@@ -385,6 +389,7 @@ def project_result(row, profile, catalog: Catalog) -> LabResultResponse:
         test_date=row.test_date,
         entered_value=format(row.entered_value, "f"),
         entered_unit=row.entered_unit,
+        note=row.note,
         created_at=row.created_at,
         updated_at=row.updated_at,
         display_value=result.display_value,
@@ -413,6 +418,7 @@ def _read_snapshot(session: Session, principal_id: UUID, test_key: str | None = 
             LabResult.test_date,
             LabResult.entered_value,
             LabResult.entered_unit,
+            LabResult.note,
             LabResult.created_at,
             LabResult.updated_at,
         )

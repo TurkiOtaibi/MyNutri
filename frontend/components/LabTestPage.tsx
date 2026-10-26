@@ -2,7 +2,7 @@
 
 import { formatGregorianArabicDate } from "@/lib/dates";
 
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/components/AuthProvider";
@@ -14,7 +14,7 @@ import { LabDeleteDialog, LabEditDialog } from "@/features/labs/lab-result-dialo
 import { freezeResultPatch, isChangedResultConflict, readbackResult, resultFieldErrors, type ResultReadback } from "@/features/labs/lab-result-model";
 import { labsQueryKeys } from "@/features/labs/lab-query-keys";
 import styles from "@/features/labs/labs.module.css";
-import { ApiError, deleteLabResult, getLabCatalog, getLabTest, updateLabResult } from "@/lib/api";
+import { ApiError, createLabResults, deleteLabResult, getLabCatalog, getLabTest, updateLabResult } from "@/lib/api";
 import type { LabCatalogTest, LabFieldError, LabResultPatch, LabResultResponse } from "@/lib/types";
 
 type ResultDialog = {
@@ -34,6 +34,11 @@ export function LabTestPage({ testKey }: { testKey: string }) {
   const [resultDialog, setResultDialog] = useState<ResultDialog | null>(null);
   const [resultPending, setResultPending] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
+  const [undoResult, setUndoResult] = useState<LabResultResponse | null>(null);
+  const [undoFailed, setUndoFailed] = useState(false);
+  const undoNotice = useRef<HTMLDivElement>(null);
+  const undoLock = useRef(false);
+  const undoGeneration = useRef(0);
   const [resultOpenError, setResultOpenError] = useState<string | null>(null);
   const [resultRefreshError, setResultRefreshError] = useState(false);
   const dialogRef = useRef<ResultDialog | null>(null);
@@ -43,12 +48,22 @@ export function LabTestPage({ testKey }: { testKey: string }) {
   if (owner.actorId !== actorId || owner.signal !== sessionSignal || owner.testKey !== testKey) {
     setOwner({ actorId, signal: sessionSignal, testKey });
     setResultDialog(null); setResultPending(false); setResultMessage(null);
+    setUndoResult(null); setUndoFailed(false);
     setResultOpenError(null); setResultRefreshError(false); setSelectedResultId(null);
   }
   useLayoutEffect(() => {
     generation.current += 1; dialogRef.current = null; busy.current = false;
+    undoLock.current = false; undoGeneration.current += 1;
     return () => { generation.current += 1; dialogRef.current = null; busy.current = false; };
   }, [actorId, sessionSignal, testKey]);
+  useEffect(() => {
+    if (!undoResult) return;
+    const timer = window.setTimeout(() => {
+      if (undoNotice.current?.contains(document.activeElement)) undoNotice.current.focus();
+      setUndoResult(null); setResultMessage(null);
+    }, 8000);
+    return () => window.clearTimeout(timer);
+  }, [undoResult]);
   const queryPolicy = { staleTime: 0, refetchOnMount: "always" as const, refetchOnWindowFocus: "always" as const, retry: false };
   const catalog = useQuery({
     queryKey: labsQueryKeys.catalog(actorId ?? "anonymous"),
@@ -101,8 +116,34 @@ export function LabTestPage({ testKey }: { testKey: string }) {
     // reclassify an already confirmed write as a retryable mutation failure.
     const refresh = refreshResults(target.generation);
     showDialog(null);
-    setResultMessage(target.kind === "edit" ? "تم حفظ التعديل." : "تم حذف النتيجة.");
+    undoGeneration.current += 1;
+    setUndoResult(target.kind === "delete" ? target.result : null);
+    setUndoFailed(false);
+    setResultMessage(target.kind === "edit" ? "تم حفظ التعديل." : "تم حذف النتيجة");
     await refresh;
+  }
+  async function undoDelete() {
+    if (!undoResult || undoLock.current || sessionSignal.aborted || detail.data?.read_only) return;
+    undoLock.current = true;
+    const result = undoResult, operation = generation.current, notice = undoGeneration.current;
+    undoNotice.current?.focus();
+    setUndoResult(null); setResultMessage(null); setUndoFailed(false);
+    try {
+      await createLabResults({ test_date: result.test_date, note: result.note ?? null, results: [{
+        test_key: result.test_key, entered_value: result.entered_value, entered_unit: result.entered_unit,
+      }] }, crypto.randomUUID(), auth);
+      if (isCurrent(operation) && notice === undoGeneration.current) setResultMessage("تمت استعادة النتيجة");
+    } catch {
+      if (isCurrent(operation) && notice === undoGeneration.current) {
+        setUndoFailed(true);
+        setResultMessage("تعذر تأكيد استعادة النتيجة. أعد تحميل التحاليل للتحقق.");
+      }
+    } finally {
+      if (isCurrent(operation)) {
+        undoLock.current = false;
+        await refreshResults(operation);
+      }
+    }
   }
   async function reconcileResult(target: ResultDialog, changed = false) {
     if (!isCurrent(target.generation) || target.actorId !== actorId) return;
@@ -163,7 +204,7 @@ export function LabTestPage({ testKey }: { testKey: string }) {
   const recoveryView = recovery ? <div role="alert" className={styles.batchError}>
     {recovery.kind === "reading" ? <p>لم يتم تأكيد الحفظ. جارٍ قراءة النتيجة الحالية...</p>
       : recovery.kind === "matches" ? <p>تعذر تأكيد الحفظ، لكن النتيجة الحالية تطابق القيم التي أدخلتها. يمكنك إغلاق النافذة لمراجعتها.</p>
-      : recovery.kind === "different" ? <><p>النتيجة الحالية تختلف عن القيم التي أدخلتها. أغلق النافذة لمراجعتها قبل تعديلها مجددًا.</p><p data-testid="lab-current-facts">القيم الحالية: <bdi dir="ltr">{recovery.current.entered_value} {recovery.current.entered_unit} — {formatGregorianArabicDate(recovery.current.test_date)}</bdi></p></>
+      : recovery.kind === "different" ? <><p>تغيّرت هذه النتيجة منذ فتحها. راجع قيمها الحالية قبل تعديلها مجددًا.</p><p data-testid="lab-current-facts">القيم الحالية: <bdi dir="ltr">{recovery.current.entered_value} {recovery.current.entered_unit} — {formatGregorianArabicDate(recovery.current.test_date)}</bdi></p></>
       : recovery.kind === "absent" ? <p>هذه النتيجة لم تعد موجودة. لم يتم تأكيد الحفظ.</p>
       : <p>تعذر تأكيد الحفظ أو قراءة النتيجة الحالية. أعد قراءة النتيجة للتحقق.</p>}
   </div> : null;
@@ -182,7 +223,10 @@ export function LabTestPage({ testKey }: { testKey: string }) {
     {batch.openError ? <p role="alert">{batch.openError}</p> : null}
     {resultPending && !resultDialog ? <p role="status">جارٍ تحميل النتيجة الحالية...</p> : null}
     {resultOpenError ? <p role="alert">{resultOpenError}</p> : null}
-    {resultMessage ? <p role="status">{resultMessage}</p> : null}
+    <div ref={undoNotice} tabIndex={-1} role={undoFailed ? "alert" : "status"}>
+      {resultMessage ? <span>{resultMessage}</span> : null}
+      {undoResult && !detail.data?.read_only ? <button type="button" className="btn" onClick={() => { void undoDelete(); }}>تراجع</button> : null}
+    </div>
     {batch.phase?.kind === "saved" ? <p role="status">{batch.phase.replayed ? "تم تأكيد نجاح عملية الحفظ السابقة." : "تم حفظ النتائج."}</p> : null}
     {batch.refreshError || resultRefreshError || detail.isError || catalog.isError ? <div role="alert">تعذر تحميل التحاليل الحالية. حاول مرة أخرى.
       <button type="button" className="btn" onClick={() => {
@@ -204,6 +248,7 @@ export function LabTestPage({ testKey }: { testKey: string }) {
       }}>إضافة نتيجة</button>} /> : null}
     <LabBatchDialog phase={batch.phase} catalog={batch.catalog} returnFocusRef={batchOpener}
       onDate={(date) => batch.dispatch({ type: "EDIT_DATE", date })}
+      onNote={(note) => batch.dispatch({ type: "EDIT_NOTE", note })}
       onPanel={(key, selected) => { if (batch.catalog) batch.dispatch({ type: "PANEL", key, selected, catalog: batch.catalog }); }}
       onIndividual={(key, selected) => { if (batch.catalog) batch.dispatch({ type: "INDIVIDUAL", key, selected, catalog: batch.catalog }); }}
       onValue={(testKey, value) => batch.dispatch({ type: "EDIT_VALUE", testKey, value })}

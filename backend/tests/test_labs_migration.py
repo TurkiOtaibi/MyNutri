@@ -11,7 +11,7 @@ from labs_fixtures import run_labs_alembic, safe_labs_database_url
 
 pytestmark = pytest.mark.migration
 BASE = "d9f64a1c3e58"
-CURRENT_HEAD = "c7f5d3b89201"
+CURRENT_HEAD = "d8a6e4c90312"
 LABS_HEAD = "e8b7a42f6c31"
 
 
@@ -26,10 +26,12 @@ def test_labs_migration_installs_exact_schema_and_clean_model(labs_postgresql_da
         "test_date",
         "entered_value",
         "entered_unit",
+        "note",
         "created_at",
         "updated_at",
     }
-    assert all(not item["nullable"] for item in columns.values())
+    assert all(not item["nullable"] for name, item in columns.items() if name != "note")
+    assert columns["note"]["nullable"] and columns["note"]["type"].length == 500
     assert str(columns["entered_value"]["type"]) == "NUMERIC"
     assert str(columns["test_date"]["type"]) == "DATE"
     assert columns["test_key"]["type"].length == columns["entered_unit"]["type"].length == 64

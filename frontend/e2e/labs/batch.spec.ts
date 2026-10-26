@@ -221,6 +221,7 @@ test("committed response loss freezes dismissal and retries the identical key/bo
     await expect(dialog(page).getByRole("button", { name: "إلغاء" })).toBeDisabled();
     release();
     await expect(dialog(page).getByRole("button", { name: "إعادة المحاولة" })).toBeVisible();
+    await expect(dialog(page)).toContainText("لم نتأكد من حفظ النتائج. اضغط «إعادة المحاولة»، ولن تتكرر النتائج.");
     await page.keyboard.press("Escape");
     await page.mouse.click(2, 2);
     await expect(dialog(page)).toBeVisible();

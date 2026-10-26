@@ -508,6 +508,7 @@ class LabResult(SQLModel, table=True):
     test_date: date = Field(nullable=False)
     entered_value: Decimal = Field(sa_column=Column(Numeric(), nullable=False))
     entered_unit: str = Field(sa_column=Column(String(64), nullable=False))
+    note: str | None = Field(default=None, sa_column=Column(String(500), nullable=True))
     created_at: datetime = Field(
         default_factory=utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
     )

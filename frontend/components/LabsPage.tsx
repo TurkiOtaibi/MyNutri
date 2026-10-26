@@ -87,6 +87,7 @@ export function LabsPage() {
     </div>
     <LabBatchDialog phase={batch.phase} catalog={batch.catalog} returnFocusRef={batchOpener}
       onDate={(date) => batch.dispatch({ type: "EDIT_DATE", date })}
+      onNote={(note) => batch.dispatch({ type: "EDIT_NOTE", note })}
       onPanel={(key, selected) => { if (batch.catalog) batch.dispatch({ type: "PANEL", key, selected, catalog: batch.catalog }); }}
       onIndividual={(key, selected) => { if (batch.catalog) batch.dispatch({ type: "INDIVIDUAL", key, selected, catalog: batch.catalog }); }}
       onValue={(testKey, value) => batch.dispatch({ type: "EDIT_VALUE", testKey, value })}

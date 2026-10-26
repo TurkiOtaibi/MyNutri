@@ -2,7 +2,7 @@ import type { LabCatalogResponse, LabCreateRequest, LabCreateReceipt, LabFieldEr
 
 export type LabDraftRow = { testKey: string; value: string; unit: string };
 export type BatchDraft = {
-  actorId: string; date: string; panelKeys: string[]; individualKeys: string[];
+  actorId: string; date: string; note: string; panelKeys: string[]; individualKeys: string[];
   rows: Record<string, { value: string; unit: string }>;
   step: "date" | "selection" | "values";
 };
@@ -16,6 +16,7 @@ export type BatchAction =
   | { type: "OPEN"; draft: BatchDraft }
   | { type: "RESET" | "CANCEL" | "NEXT" | "BACK" | "NETWORK_AMBIGUOUS" | "RETRY" }
   | { type: "EDIT_DATE"; date: string }
+  | { type: "EDIT_NOTE"; note: string }
   | { type: "EDIT_VALUE"; testKey: string; value: string }
   | { type: "EDIT_UNIT"; testKey: string; unit: string }
   | { type: "PANEL" | "INDIVIDUAL"; key: string; selected: boolean; catalog: LabCatalogResponse }
@@ -30,7 +31,7 @@ function selectedRows(draft: BatchDraft, catalog: LabCatalogResponse): BatchDraf
 }
 
 export function createBatchDraft(actorId: string, serverToday: string, catalog: LabCatalogResponse, individualKeys: string[] = []): BatchDraft {
-  const draft: BatchDraft = { actorId, date: serverToday, panelKeys: [], individualKeys, rows: {}, step: "date" };
+  const draft: BatchDraft = { actorId, date: serverToday, note: "", panelKeys: [], individualKeys, rows: {}, step: "date" };
   return { ...draft, rows: selectedRows(draft, catalog) };
 }
 
@@ -55,7 +56,7 @@ export function freezeBatch(draft: BatchDraft, key: string): PendingBatch {
   if (!results.length) throw new Error("أدخل نتيجة واحدة على الأقل.");
   results.forEach(Object.freeze);
   Object.freeze(results);
-  return Object.freeze({ actorId: draft.actorId, key, payload: Object.freeze({ test_date: draft.date, results }) });
+  return Object.freeze({ actorId: draft.actorId, key, payload: Object.freeze({ test_date: draft.date, results, note: draft.note.trim() || null }) });
 }
 
 export function batchErrorTarget(error: LabFieldError): { step: BatchDraft["step"]; id: string } {
@@ -63,6 +64,7 @@ export function batchErrorTarget(error: LabFieldError): { step: BatchDraft["step
   const field = error.field ?? [...error.loc].reverse().find((part) => typeof part === "string");
   if (error.test_key) return { step: "values", id: `lab-${error.test_key}-${field === "entered_unit" ? "unit" : "value"}` };
   if (field === "test_date") return { step: "date", id: "lab-batch-date" };
+  if (field === "note") return { step: "date", id: "lab-batch-note" };
   return { step: "values", id: "lab-batch-errors" };
 }
 
@@ -84,6 +86,7 @@ export function batchReducer(state: BatchPhase | null, action: BatchAction): Bat
   let draft = state.draft;
   switch (action.type) {
     case "EDIT_DATE": draft = { ...draft, date: action.date }; break;
+    case "EDIT_NOTE": draft = { ...draft, note: action.note }; break;
     case "EDIT_VALUE":
     case "EDIT_UNIT": {
       if (!draft.rows[action.testKey]) return state;
@@ -109,6 +112,7 @@ export function batchReducer(state: BatchPhase | null, action: BatchAction): Bat
 export type LabRowErrors = { entered_value?: string; entered_unit?: string; form?: string };
 export type LabMappedErrors = {
   test_date?: string;
+  note?: string;
   rows: Record<string, LabRowErrors>;
   form?: string;
 };
@@ -169,8 +173,8 @@ export function mapLabErrors(detail: LabFieldError[]): LabMappedErrors {
     const message = labErrorMessage(error);
     const locField = [...error.loc].reverse().find((part): part is string => typeof part === "string");
     const field = error.field ?? locField;
-    if (field === "test_date" && !error.test_key) {
-      mapped.test_date ??= message;
+    if ((field === "test_date" || field === "note") && !error.test_key) {
+      mapped[field] ??= message;
       continue;
     }
     if (error.test_key) {

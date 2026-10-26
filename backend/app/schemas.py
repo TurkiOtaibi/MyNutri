@@ -945,6 +945,16 @@ class LabCreateRequest(BaseModel):
 
     test_date: date
     results: list[LabCreateRow] = Field(min_length=1, max_length=51)
+    note: StrictStr | None = Field(default=None, max_length=500)
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def normalized_note(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            value = value.strip() or None
+            if value is not None and len(value) > 500:
+                raise PydanticCustomError("LAB_NOTE_TOO_LONG", "يجب ألا تتجاوز الملاحظة 500 حرف.")
+        return value
 
     @field_validator("test_date", mode="before")
     @classmethod
@@ -1025,6 +1035,7 @@ class LabResultResponse(BaseModel):
     test_date: date
     entered_value: str
     entered_unit: str
+    note: str | None = None
     created_at: datetime
     updated_at: datetime
     display_value: str
