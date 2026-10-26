@@ -57,7 +57,17 @@ test("note-only draft guards browser navigation and preserves focus on continuin
   await page.goBack();
   const guard = page.getByRole("dialog", { name: "تغييرات غير محفوظة", exact: true });
   await expect(guard).toBeVisible();
+  console.log("Labs guard before continue", await page.evaluate(() => ({
+    notePresent: Boolean(document.getElementById("lab-batch-note")),
+    dialogs: [...document.querySelectorAll('[role="dialog"]')].map(node => ({ hidden: node.getAttribute("aria-hidden"), inert: node.hasAttribute("inert"), text: node.querySelector("h2")?.textContent })),
+    focused: document.activeElement?.tagName,
+  })));
   await guard.getByRole("button", { name: "متابعة التعديل", exact: true }).click();
+  console.log("Labs guard after continue", await page.evaluate(() => ({
+    notePresent: Boolean(document.getElementById("lab-batch-note")),
+    dialogs: [...document.querySelectorAll('[role="dialog"]')].map(node => ({ hidden: node.getAttribute("aria-hidden"), inert: node.hasAttribute("inert"), text: node.querySelector("h2")?.textContent })),
+    focused: document.activeElement?.tagName,
+  })));
   await expect(page).toHaveURL(/\/labs$/);
   await expect(page.getByLabel("ملاحظة", { exact: true })).toHaveValue("ملاحظة غير محفوظة");
   await expect(page.getByLabel("ملاحظة", { exact: true })).toBeFocused();

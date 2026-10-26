@@ -22,6 +22,17 @@ const render = (data = detail, selectedResultId: string | null = null) => render
 }));
 
 describe("shared Lab detail presentation", () => {
+  it("shows the same escaped note to owner and read-only Admin without Admin mutation controls", () => {
+    const data = { ...detail, results: [{ ...results[0], note: 'مختبر <script>alert(1)</script>' }] };
+    for (const read_only of [false, true]) {
+      const html = render({ ...data, read_only });
+      expect(html).toContain("<span>ملاحظة</span>");
+      expect(html).toContain("مختبر &lt;script&gt;alert(1)&lt;/script&gt;");
+      expect(html).not.toContain("<script>");
+      if (read_only) expect(html).not.toContain("owner-edit-delete-");
+      else expect(html).toContain("owner-edit-delete-");
+    }
+  });
   it("BR-LAB-026 follows the selected server status without inferring a medical range", () => {
     const warning = "هذه القيم للمتابعة فقط، ولا تغني عن استشارة الطبيب.";
     const outside = { ...results[1], status: { code: "low", label_ar: "منخفض", tone: "outside" } };
