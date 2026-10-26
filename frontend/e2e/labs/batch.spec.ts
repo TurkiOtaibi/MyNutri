@@ -155,7 +155,7 @@ test("whitespace is omitted, zero is saved, and no live medical status appears",
   await expect(dialog(page).locator("[data-tone]")).toHaveCount(0);
   const request = page.waitForRequest((request) => request.url() === `${API_URL}/labs/results` && request.method() === "POST");
   await save(page);
-  expect((await request).postDataJSON()).toEqual({ test_date: today, results: [{ test_key: "eosinophils_pct", entered_value: "0", entered_unit: "%" }] });
+  expect((await request).postDataJSON()).toEqual({ test_date: today, note: null, results: [{ test_key: "eosinophils_pct", entered_value: "0", entered_unit: "%" }] });
   await expect(page.getByText("تم حفظ النتائج.", { exact: true })).toBeVisible();
   expect((await labsApi.detail("eosinophils_pct")).results).toHaveLength(1);
   expect((await labsApi.detail("hba1c")).results).toHaveLength(0);
@@ -221,6 +221,7 @@ test("committed response loss freezes dismissal and retries the identical key/bo
     await expect(dialog(page).getByRole("button", { name: "إلغاء" })).toBeDisabled();
     release();
     await expect(dialog(page).getByRole("button", { name: "إعادة المحاولة" })).toBeVisible();
+    await expect(dialog(page)).toContainText("لم نتأكد من حفظ النتائج. اضغط «إعادة المحاولة»، ولن تتكرر النتائج.");
     await page.keyboard.press("Escape");
     await page.mouse.click(2, 2);
     await expect(dialog(page)).toBeVisible();

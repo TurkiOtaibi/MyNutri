@@ -12,6 +12,7 @@ export function LabHistoryList({ results, selectedResultId, onSelectResult, owne
       <button type="button" className="btn" aria-pressed={result.id === selectedResultId} onClick={() => onSelectResult(result.id)}><time dateTime={result.test_date}>{formatGregorianArabicDate(result.test_date)}</time></button>
       <span className={styles.exactValue}><bdi dir="ltr">{result.display_is_approximate ? "≈ " : ""}{result.display_value} {result.display_unit}</bdi></span>
       <span className={styles.status} data-tone={result.status.tone}>{result.status.label_ar}</span>
+      {result.note ? <p className={styles.historyNote}><span>ملاحظة</span>{" "}{result.note}</p> : null}
       {ownerResultActions?.(result)}
     </li>)}</ul>
   </section>;

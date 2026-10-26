@@ -62,7 +62,7 @@ test("a second browser context cannot overwrite a result changed after its dialo
     await expect(first.getByText("تم حفظ التعديل.", { exact: true })).toBeVisible();
     await secondSession.page.locator("#lab-edit-value").fill("41.00");
     await save(secondSession.page);
-    await expect(edit(secondSession.page)).toContainText("النتيجة الحالية تختلف عن القيم التي أدخلتها.");
+    await expect(edit(secondSession.page)).toContainText("تغيّرت هذه النتيجة منذ فتحها. راجع قيمها الحالية قبل تعديلها مجددًا.");
     await expect(secondSession.page.getByTestId("lab-current-facts")).toContainText("40.00 mmol/mol");
     await expect(secondSession.page.locator("#lab-edit-value")).toHaveValue("41.00");
     await expect(edit(secondSession.page).getByRole("button", { name: "حفظ التعديل" })).toHaveCount(0);
@@ -200,7 +200,7 @@ for (const outcome of ["matches", "different", "absent", "failed"] as const) {
       else await route.continue();
     });
     await page.locator("#lab-edit-value").fill(" ٤٠٫٠٠٠ "); await save(page);
-    await expect(edit(page)).toContainText(outcome === "matches" ? "تعذر تأكيد الحفظ، لكن النتيجة الحالية تطابق القيم التي أدخلتها. يمكنك إغلاق النافذة لمراجعتها." : outcome === "different" ? "النتيجة الحالية تختلف عن القيم التي أدخلتها. أغلق النافذة لمراجعتها قبل تعديلها مجددًا." : outcome === "absent" ? "هذه النتيجة لم تعد موجودة" : "تعذر تأكيد الحفظ أو قراءة النتيجة الحالية");
+    await expect(edit(page)).toContainText(outcome === "matches" ? "تعذر تأكيد الحفظ، لكن النتيجة الحالية تطابق القيم التي أدخلتها. يمكنك إغلاق النافذة لمراجعتها." : outcome === "different" ? "تغيّرت هذه النتيجة منذ فتحها. راجع قيمها الحالية قبل تعديلها مجددًا." : outcome === "absent" ? "هذه النتيجة لم تعد موجودة" : "تعذر تأكيد الحفظ أو قراءة النتيجة الحالية");
     await expect(page.locator("#lab-edit-value")).toHaveValue(" ٤٠٫٠٠٠ ");
     await expect(page.locator("#lab-edit-value")).toBeDisabled();
     await expect(edit(page).getByRole("button", { name: "حفظ التعديل" })).toHaveCount(0);
@@ -252,7 +252,7 @@ for (const position of ["latest", "oldest", "final"] as const) {
     const target = position === "latest" ? latest : oldest;
     await page.goto("/labs/hba1c"); await open(page, target.id, "delete"); await confirmDelete(page);
     await expect(deletion(page)).toHaveCount(0);
-    await expect(page.getByText("تم حذف النتيجة.", { exact: true })).toBeVisible();
+    await expect(page.getByText("تم حذف النتيجة", { exact: true })).toBeVisible();
     await expect(row(page, target.id)).toHaveCount(0);
     const fresh = await labsApi.detail("hba1c");
     expect(fresh.results).toHaveLength(position === "final" ? 0 : 1);
@@ -305,7 +305,7 @@ test("lost DELETE response and failed read retains its target until GET proves a
   failRead = false;
   await deletion(page).getByRole("button", { name: "إعادة قراءة النتيجة" }).click();
   await expect(deletion(page)).toHaveCount(0);
-  await expect(page.getByText("تم حذف النتيجة.", { exact: true })).toBeVisible();
+  await expect(page.getByText("تم حذف النتيجة", { exact: true })).toBeVisible();
   expect(deletes).toBe(1);
 });
 

@@ -7,6 +7,7 @@ import { ApiError, createLabResults, getLabs, type LabsAuth } from "@/lib/api";
 import type { LabCatalogResponse, LabFieldError } from "@/lib/types";
 import { batchReducer, createBatchDraft, freezeBatch, populatedCount, type BatchAction, type BatchPhase, type PendingBatch } from "@/features/labs/lab-batch-model";
 import { labsQueryKeys } from "@/features/labs/lab-query-keys";
+import { useUnsavedChanges } from "./UnsavedChangesProvider";
 
 function fieldErrors(error: ApiError): LabFieldError[] {
   if (Array.isArray(error.detail)) {
@@ -68,6 +69,18 @@ export function useLabBatch(
     phaseRef.current = next;
     setPhase(next);
   }
+
+  const draft = phase && "draft" in phase ? phase.draft : null;
+  useUnsavedChanges({
+    identity: `labs-add:${actorId}`,
+    enabled: Boolean(draft),
+    dirty: Boolean(draft && (draft.note !== "" || draft.date !== sessionToday
+      || draft.panelKeys.length || draft.individualKeys.length || populatedCount(draft))),
+    discard: () => {
+      generation.current += 1;
+      dispatch({ type: "RESET" });
+    },
+  });
 
   async function open(individualKeys: string[] = []) {
     if (!actorId || !catalog || auth.signal.aborted || openingRef.current

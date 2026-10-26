@@ -11,6 +11,19 @@ import {
 import { catalogFixture, draftFixture } from "./fixtures/labs";
 
 describe("Labs batch model", () => {
+  it("freezes the trimmed note across ambiguous retries and maps note errors to the date step", () => {
+    const draft = { ...draftFixture, note: "  مختبر تجريبي  " };
+    const pending = freezeBatch(draft, "note-key");
+    draft.note = "changed";
+    expect(pending.payload.note).toBe("مختبر تجريبي");
+    const ambiguous: BatchPhase = { kind: "ambiguous", draft, pending };
+    expect(batchReducer(ambiguous, { type: "EDIT_NOTE", note: "different" })).toBe(ambiguous);
+    expect(batchReducer(ambiguous, { type: "RETRY" })).toMatchObject({ pending });
+    const error = { loc: ["body", "note"], field: "note", msg: "يجب ألا تتجاوز الملاحظة 500 حرف.", type: "LAB_NOTE_TOO_LONG" };
+    expect(batchErrorTarget(error)).toEqual({ step: "date", id: "lab-batch-note" });
+    expect(mapLabErrors([error]).note).toBe(error.msg);
+    expect(freezeBatch({ ...draft, note: " \n " }, "empty").payload.note).toBeNull();
+  });
   it("returns profile errors to the earlier step without losing the form and maps unit focus", () => {
     expect(batchErrorTarget({ loc: ["body"], code: "LAB_PROFILE_REQUIRED", msg: "أكمل الملف", type: "LAB_PROFILE_REQUIRED" }))
       .toEqual({ step: "date", id: "lab-batch-errors" });
@@ -53,7 +66,7 @@ describe("Labs batch model", () => {
     draft.rows.ferritin.value = "٬";
     expect(populatedCount(draft)).toBe(2);
     const pending = freezeBatch(draft, "k");
-    expect(pending.payload).toEqual({ test_date: "2026-09-20", results: [
+    expect(pending.payload).toEqual({ test_date: "2026-09-20", note: null, results: [
       { test_key: "hba1c", entered_value: "0", entered_unit: "%" },
       { test_key: "ferritin", entered_value: "٬", entered_unit: "ng/mL" },
     ] });

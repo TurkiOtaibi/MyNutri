@@ -71,8 +71,8 @@
 .batchSteps [aria-current="step"] { color: var(--ink); font-weight: 800; }
 .batchFields { display: grid; gap: 12px; margin: 0; padding: 0; border: 0; min-width: 0; }
 .batchFields label { display: grid; gap: 6px; min-width: 0; }
-.batchFields input:not([type="checkbox"]), .batchFields select { min-width: 0; width: 100%; min-height: 44px; background: white; color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; }
-.batchFields input:focus, .batchFields select:focus { outline: 3px solid color-mix(in srgb, var(--accent) 22%, white); border-color: var(--accent); }
+.batchFields input:not([type="checkbox"]), .batchFields select, .batchFields textarea { min-width: 0; width: 100%; min-height: 44px; background: white; color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; }
+.batchFields input:focus, .batchFields select:focus, .batchFields textarea:focus { outline: 3px solid color-mix(in srgb, var(--accent) 22%, white); border-color: var(--accent); }
 .batchFields .batchChoice { display: flex; align-items: center; min-height: 44px; gap: 10px; }
 .batchChoice input { width: 20px; height: 20px; flex-shrink: 0; }
 .batchRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 150px); gap: 12px; min-width: 0; margin: 0; padding: 14px 0; border: 0; border-bottom: 1px solid var(--line); }
@@ -87,3 +87,6 @@
   .row { grid-template-columns: 1fr; }
   .latest { justify-items: start; text-align: start; }
 }
+
+.historyNote { grid-column: 1 / -1; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.batchNote { display: grid; gap: 6px; min-width: 0; }

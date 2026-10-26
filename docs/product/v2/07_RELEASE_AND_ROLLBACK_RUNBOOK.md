@@ -61,8 +61,8 @@ copy in the BA field dictionary when implementing the lifecycle.
 
 ## Release identity
 
-The current migration head is Food normalized-brand duplicate revision `c7f5d3b89201`,
-with parent Admin lifecycle revision `b6e4c2a78190`. Confirm the intended application
+The current migration head is private Labs note revision `d8a6e4c90312`,
+with parent Food normalized-brand duplicate revision `c7f5d3b89201`. Apply this migration before running the backend built from this revision. Downgrade refuses to drop the note column while any non-null note remains; do not delete notes to bypass this guard. Production migration requires separate explicit release authorization. Confirm the intended application
 commit, generated contract, single Alembic head, and approved environment before
 any rollout action.
 

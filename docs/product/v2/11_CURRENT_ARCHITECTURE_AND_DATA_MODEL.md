@@ -124,7 +124,7 @@ history. A successful change invalidates Labs queries for fresh interpretation.
 ## Labs persistence
 
 `LabResult` stores `id`, `principal_id`, `test_key`, `test_date`, `entered_value`,
-`entered_unit`, and timezone-aware `created_at`/`updated_at`. Entered values use
+`entered_unit`, nullable `note` (up to 500 characters after trimming; empty becomes null), and timezone-aware `created_at`/`updated_at`. The optional batch note is copied to each result, displayed in owner and read-only Admin history, retained during date/value/unit edits, and removed only with that result. Undo re-creates the result and its note through the create API with a new ID. Entered values use
 unscaled `NUMERIC`; PostgreSQL preserves fractional trailing zeros and enforces
 finite nonnegative values and normalized text length at most 128. Test/unit keys
 are nonempty strings bounded to 64 characters. Ownership uses `ON DELETE RESTRICT`.
@@ -187,7 +187,7 @@ directly; ambiguous or conflicting reuse fails closed.
 `lab_results.create.v1` receipts are durable with null `expires_at`; all other
 operations require non-null expiry. The existing completion/uniqueness checks
 and expiry index remain. Target Plan expiry and replay data are unchanged.
-Labs hashes retain decimal scale and unit while normalizing row order. Same-key
+Labs hashes retain decimal scale, unit, and normalized non-null note while normalizing row order. Omitted/null/empty notes retain the pre-note hash for durable receipt compatibility. Same-key
 same-payload replay returns the original ID-only receipt even after edit/delete
 or rule/DOB changes; it never recreates deleted facts. Different payload is 409.
 The browser keeps ambiguous payload/key only in actor-scoped volatile memory and
@@ -229,7 +229,7 @@ same-subject overview/detail navigation preserves current queries and cache.
 
 ## Migration and recovery
 
-The sole Alembic head is `c7f5d3b89201` (Food normalized-brand duplicate identity). Historical migrations remain immutable and
+The sole Alembic head is `d8a6e4c90312` (private Labs notes), following `c7f5d3b89201` (Food normalized-brand duplicate identity). Historical migrations remain immutable and
 reconstruct the schema. Destructive cutovers are forward-only: real rollback after
 removed schema or data requires a matching pre-cutover database restore and compatible
 application revision, not a synthesized downgrade.

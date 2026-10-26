@@ -768,6 +768,8 @@ export interface LabResultResponse {
   id: string;
   /** Medical Rules Version */
   medical_rules_version: string;
+  /** Note */
+  note?: string | null;
   /** Reference Zones */
   reference_zones: LabStatusZone[];
   status: LabStatus;
@@ -2185,6 +2187,8 @@ export namespace Labs {
     export type RequestParams = {};
     export type RequestQuery = {};
     export type RequestBody = {
+      /** Note */
+      note?: string | null;
       /**
        * Results
        * @maxItems 51
