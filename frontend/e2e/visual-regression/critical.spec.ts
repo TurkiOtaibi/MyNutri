@@ -198,6 +198,14 @@ test.describe("critical visual regression", () => {
     await expect(preview).toContainText("799");
     await stableRendering(page);
 
+    // The expanded explanation must be fully visible above the fixed save bar.
+    // Scroll the real page; do not hide or mask any UI for the capture.
+    await preview.evaluate((node) => node.scrollIntoView({ block: "start" }));
+    const previewBox = await preview.boundingBox();
+    const saveBarBox = await page.locator(".profile-save-bar").boundingBox();
+    expect(previewBox).not.toBeNull();
+    expect(saveBarBox).not.toBeNull();
+    expect(previewBox!.y + previewBox!.height).toBeLessThanOrEqual(saveBarBox!.y);
     await expect(preview).toHaveScreenshot("profile-blocked-safety.png", {
       maxDiffPixelRatio: 0.01
     });

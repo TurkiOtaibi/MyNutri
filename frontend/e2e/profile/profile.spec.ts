@@ -84,6 +84,8 @@ async function assertBlockedResponsiveAndAxe(page: Page, message: string): Promi
     await page.setViewportSize({ width, height: 844 });
     await expect(panel).toBeVisible();
     await expect(panel.getByText(message, { exact: true })).toBeVisible();
+    const macroCells = page.locator(".profile-preview-values > *");
+    expect(await macroCells.evaluateAll((cells) => cells.every((cell) => cell.scrollWidth <= cell.clientWidth))).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
     const panelBox = await panel.boundingBox();
