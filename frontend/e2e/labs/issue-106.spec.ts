@@ -44,7 +44,7 @@ test("undo rejected by a new same-date result reports failure without replacing 
   await expect(page.getByText("تم حذف النتيجة", { exact: true })).toBeVisible();
   const replacement = await labsApi.create(before.test_date, [{ test_key: "hba1c", entered_value: "6", entered_unit: "%" }]);
   await page.getByRole("button", { name: "تراجع", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("تعذر تأكيد استعادة النتيجة. أعد تحميل التحاليل للتحقق.");
+  await expect(page.locator('[role="alert"][tabindex="-1"]')).toContainText("تعذر تأكيد استعادة النتيجة. أعد تحميل التحاليل للتحقق.");
   await expect(page.getByText("تمت استعادة النتيجة", { exact: true })).toHaveCount(0);
   expect((await labsApi.detail("hba1c")).results.map(result => result.id)).toEqual(replacement.result_ids);
 });
@@ -58,6 +58,7 @@ test("note-only draft guards browser navigation and preserves focus on continuin
   const guard = page.getByRole("dialog", { name: "تغييرات غير محفوظة", exact: true });
   await expect(guard).toBeVisible();
   await guard.getByRole("button", { name: "متابعة التعديل", exact: true }).click();
+  await expect(page).toHaveURL(/\/labs$/);
   await expect(page.getByLabel("ملاحظة", { exact: true })).toHaveValue("ملاحظة غير محفوظة");
   await expect(page.getByLabel("ملاحظة", { exact: true })).toBeFocused();
   await page.goBack();
@@ -109,7 +110,7 @@ test("lost undo response reports uncertainty and refreshes the actual restored r
     await route.abort("connectionfailed");
   });
   await page.getByRole("button", { name: "تراجع", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("تعذر تأكيد استعادة النتيجة. أعد تحميل التحاليل للتحقق.");
+  await expect(page.locator('[role="alert"][tabindex="-1"]')).toContainText("تعذر تأكيد استعادة النتيجة. أعد تحميل التحاليل للتحقق.");
   await expect(page.getByText("تمت استعادة النتيجة", { exact: true })).toHaveCount(0);
   const restored = (await labsApi.detail("hba1c")).results;
   expect(restored).toHaveLength(1);

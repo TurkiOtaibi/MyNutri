@@ -52,12 +52,15 @@ def test_labs_openapi_routes_and_exact_wire_contracts():
             }
     assert "Idempotent-Replayed" in paths["/labs/results"]["post"]["responses"]["201"]["headers"]
     for path, method, keys in (
-        ("/labs/results", "post", {"test_date", "results"}),
+        ("/labs/results", "post", {"test_date", "results", "note"}),
         ("/labs/results/{result_id}", "patch", {"test_date", "entered_value", "entered_unit", "expected_updated_at"}),
     ):
         body = _request_schema(path, method)
         assert set(body["properties"]) == keys
-        assert set(body["required"]) == keys and body["additionalProperties"] is False
+        assert set(body["required"]) == keys - {"note"} and body["additionalProperties"] is False
+        if method == "post":
+            assert body["properties"]["note"]["anyOf"] == [{"type": "string", "maxLength": 500}, {"type": "null"}]
+        assert models["LabResultResponse"]["properties"]["note"]["anyOf"] == [{"type": "string"}, {"type": "null"}]
         if method == "patch":
             assert body["properties"]["expected_updated_at"]["type"] == "string"
             assert body["properties"]["expected_updated_at"]["format"] == "date-time"
