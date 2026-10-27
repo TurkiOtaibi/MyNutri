@@ -1,5 +1,14 @@
 # V2 Data Migration and Cutover
 
+## APPROVED TARGET login cutover — pending #110–#114
+
+The Supabase lifecycle transitions and preservation checks below describe CURRENT implemented migrations. They are not the future login cutover, and their account-preservation statements must not override the approved test-account purge. At that future cutover, delete all current test accounts and their private data, retain the Food list, remove Supabase Auth/email from the system and recreate the single Admin through a server-side command that can also reset its password. This is a target release requirement, not an executable procedure or authorization to delete data now. (Product Owner, 17 October 2026 AUT/USM/FOD decision tables; BR-AUT-001/012, related BR-USM-027/043; command requirement in issue #100.)
+
+The exact treatment of retained Food attribution references, purge ordering, credential/session schema and command interface is **to be decided in issue #110**, with the reviewed cutover procedure in #114. No attribution IDs, Food rows, existing migration or current head are changed here. Production execution still requires explicit release authorization. (17 October 2026 cutover decisions; BR-USM-043, BR-FOD-021; issue #100.)
+
+## CURRENT migration authority
+
+
 The Admin-managed lifecycle below is approved migration authority implemented
 by forward revision `b6e4c2a78190`, following private Labs revision
 `e8b7a42f6c31`.
