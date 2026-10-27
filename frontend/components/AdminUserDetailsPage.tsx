@@ -8,11 +8,11 @@ import { AdminAccountActions, AdminAccountActionsProvider } from "./AdminAccount
 import type { DaySummary, TargetResponse } from "@/lib/types";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { entryQuantityLabel, mealLabels } from "@/features/diary/diary-model";
-import { accountStatusLabels, formatAdminDate } from "@/lib/admin-display";
+import { accountStatusLabels, formatAdminDate, formatAdminDateTime } from "@/lib/admin-display";
 import { type AdminAccount, getAdminUser, getAdminUserDiary, getAdminDiarySummaries } from "@/lib/api";
 
 const labels: Record<string, string> = {
-  display_name: "الاسم", email: "البريد الإلكتروني", status: "حالة الحساب",
+  display_name: "الاسم", email: "البريد الإلكتروني", username: "اسم المستخدم", last_login_at: "آخر دخول", status: "حالة الحساب",
   created_at: "تاريخ التسجيل", goal: "الهدف", weight_kg: "الوزن",
   height_cm: "الطول", activity_level: "مستوى النشاط", effective_from: "تاريخ السريان",
   revision: "النسخة", entry_date: "التاريخ", sex: "الجنس", age: "العمر", plan_created_at: "تاريخ إنشاء الخطة",
@@ -32,7 +32,9 @@ const semanticLabels: Record<string, string> = {
 };
 
 function displayValue(key: string, value: unknown): string {
+  if (key === "last_login_at") return value ? formatAdminDateTime(String(value)) ?? "غير متوفر" : "لم يسجل الدخول بعد.";
   if (value == null || value === "") return "غير متوفر";
+  if (key === "username") return String(value);
   if (typeof value === "boolean") return value ? "نعم" : "لا";
   if (typeof value === "object") return "متوفر ضمن السجل";
   if (["created_at", "plan_created_at", "effective_from", "entry_date"].includes(key)) {
@@ -55,7 +57,7 @@ function readField(data: object, key: string): unknown {
 function ReadOnlyFields({ data, keys }: { data: object | null; keys: string[] }) {
   if (!data) return <p className="state-note">غير متوفر.</p>;
   return <dl className="admin-readonly-grid">{keys.map((key) => (
-    <div key={key} className={`admin-field-${key}`}><dt>{labels[key] ?? key}</dt><dd><bdi dir={key === "email" ? "ltr" : "auto"}>{displayValue(key, readField(data, key === "plan_created_at" ? "created_at" : key))}</bdi></dd></div>
+    <div key={key} className={`admin-field-${key}`}><dt>{labels[key] ?? key}</dt><dd><bdi dir={["email", "username"].includes(key) ? "ltr" : "auto"}>{displayValue(key, readField(data, key === "plan_created_at" ? "created_at" : key))}</bdi></dd></div>
   ))}</dl>;
 }
 
@@ -124,13 +126,13 @@ export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
   if (detail.isPending) return <div className="state-note">جارٍ تحميل بيانات المستخدم...</div>;
   if (detail.isError) return <div className="state-note" role="alert"><p>تعذر تحميل بيانات المستخدم.</p><button ref={detailRetryRef} className="btn" type="button" disabled={detail.isFetching} onClick={() => detail.refetch()}>{detail.isFetching ? "جارٍ إعادة تحميل بيانات المستخدم..." : "إعادة محاولة تحميل بيانات المستخدم"}</button></div>;
   const { account, profile, current_target: target, plan_history: history } = detail.data;
-  const selectedName = String(account.display_name || account.email || principalId);
+  const selectedName = String(account.display_name || account.username || account.email || principalId);
 
   return <AdminAccountActionsProvider onDeleted={() => router.push(backHref)}>
     <div className="selected-user-banner"><strong>عرض مستخدم آخر: {selectedName}</strong><span>وضع قراءة فقط</span></div>
     <div className="page-head admin-detail-head"><Link className="icon-button detail-back" href={backHref} aria-label="رجوع"><ArrowRight size={21} aria-hidden="true" /></Link><div><h1 className="page-title">تفاصيل المستخدم</h1><p className="page-kicker">بيانات الحساب والتغذية المعروضة للمراقبة دون صلاحية تعديل.</p></div><div className="actions"><AdminAccountActions account={account} /><Link className="btn" href={`/admin/users/${encodeURIComponent(principalId)}/labs`}>عرض التحاليل</Link></div></div>
     <nav className="admin-section-links" aria-label="أقسام الصفحة">{detailSections.map(([id, title]) => <a key={id} href={`#admin-section-${id}`}>{title}</a>)}</nav>
-    <section id="admin-section-account" className="section-panel admin-detail-section"><h2>ملخص الحساب</h2><ReadOnlyFields data={account} keys={["display_name", "email", "status", "created_at"]} /></section>
+    <section id="admin-section-account" className="section-panel admin-detail-section"><h2>ملخص الحساب</h2><ReadOnlyFields data={{ ...account, username: account.username ?? account.email }} keys={["display_name", "username", "status", "created_at", "last_login_at"]} />{!account.username && <p>حساب قديم</p>}{account.role !== "admin" && account.is_locked && <span className="account-status-badge">مقفل</span>}</section>
     <section id="admin-section-profile" className="section-panel admin-detail-section"><h2>الملف</h2><ReadOnlyFields data={profile ? { ...profile, age: detail.data.age } : null} keys={["sex", "age", "goal", "weight_kg", "height_cm", "activity_level"]} /></section>
     <section id="admin-section-target" className="section-panel admin-detail-section"><h2>الأهداف المطبقة اليوم</h2><MacroValues targets={target?.targets ?? null} /><ReadOnlyFields data={target?.plan ?? null} keys={["effective_from", "revision", "plan_created_at"]} /></section>
     <section id="admin-section-plans" className="section-panel admin-detail-section"><h2>سجل الخطط</h2>{history.items?.length ? <ul className="admin-readonly-list">{history.items.map((plan, index) => <li key={String(plan.id ?? index)}><ReadOnlyFields data={plan} keys={["effective_from", "revision", "plan_created_at"]} /></li>)}</ul> : <p className="state-note">لا توجد خطط محفوظة.</p>}</section>

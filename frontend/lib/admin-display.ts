@@ -30,3 +30,13 @@ export function adminResultsLabel(page: number, pageSize: number, total: number)
     : `${total} ${total === 0 || (suffix >= 3 && suffix <= 10) ? "مستخدمين" : suffix >= 11 && suffix <= 99 ? "مستخدمًا" : "مستخدم"}`;
   return `عرض ${first}-${last} من ${users}`;
 }
+
+// Timestamp precision is retained for login history; use Riyadh and Gregorian explicitly.
+export function formatAdminDateTime(value: string): string | null {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const time = new Intl.DateTimeFormat("ar-SA-u-ca-gregory-nu-latn", {
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "Asia/Riyadh"
+  }).format(parsed);
+  return `${gregorianDate("Asia/Riyadh").format(parsed)}، ${time}`;
+}

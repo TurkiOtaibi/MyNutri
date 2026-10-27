@@ -37,3 +37,19 @@ export function accountActionErrorMessage(error: unknown, action: AccountAction)
 export function accountActionSuccessMessage(action: AccountAction): string {
   return successes[action];
 }
+
+export function passwordValidationMessage(value: string): string {
+  return Array.from(value).length < 8 ? "كلمة المرور قصيرة. استخدم 8 أحرف على الأقل." : "";
+}
+
+export function usernameValidationMessage(value: string): string {
+  if (!value.trim()) return "أدخل اسم المستخدم.";
+  return /^[A-Za-z0-9._-]{3,32}$/.test(value.trim()) ? ""
+    : "استخدم من 3 إلى 32 حرفًا لاسم المستخدم: أحرف إنجليزية أو أرقام أو . أو _ أو - فقط.";
+}
+
+export function deletionConfirmationMessage(value: string, account: { username?: string | null; email?: string | null }): string {
+  const identity = account.username ?? account.email;
+  if (identity && value.trim().toLowerCase() === identity.toLowerCase()) return "";
+  return account.username ? "اسم المستخدم المدخل لا يطابق هذا الحساب." : "البريد الإلكتروني المدخل لا يطابق بريد المستخدم.";
+}

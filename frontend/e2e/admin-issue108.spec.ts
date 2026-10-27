@@ -28,7 +28,7 @@ test("Admin list debounces search and preserves search filter page through detai
   await expect(page.locator(".admin-results-count")).toHaveText("عرض 1-20 من 35 مستخدمًا");
   await expect(page.locator(".admin-account-counts")).toContainText("نشط: 35");
   await expect(page.locator(".admin-account-counts .account-status-provisioning")).toHaveCount(0);
-  await page.getByLabel("البحث بالاسم أو البريد").fill("تجريبي");
+  await page.getByPlaceholder("ابحث بالاسم أو اسم المستخدم...").fill("تجريبي");
   await expect(page).toHaveURL(/search=/);
   await expect(page.locator(".account-self-row")).toHaveCount(0);
   await page.getByLabel("حالة الحساب").selectOption("active");
@@ -41,7 +41,7 @@ test("Admin list debounces search and preserves search filter page through detai
   await expect(page.getByRole("heading", { name: "تفاصيل المستخدم" })).toBeVisible();
   await page.getByRole("link", { name: "رجوع", exact: true }).click();
   await expect(page).toHaveURL(/status=active&page=2/);
-  await expect(page.getByLabel("البحث بالاسم أو البريد")).toHaveValue("تجريبي");
+  await expect(page.getByPlaceholder("ابحث بالاسم أو اسم المستخدم...")).toHaveValue("تجريبي");
   await page.getByRole("button", { name: "مسح البحث" }).click();
   await expect(page).toHaveURL(/users\?status=active$/);
   await expect(page.locator(".account-self-row")).toHaveCount(0);
@@ -56,12 +56,12 @@ test("cancel clears all add fields and disable requires confirmation with date f
   await page.goto("/admin/users");
   await page.getByRole("button", { name: "إضافة مستخدم" }).click();
   const add = page.getByRole("dialog", { name: "إضافة مستخدم" });
-  await add.getByLabel("البريد الإلكتروني").fill("discard@example.test");
+  await add.getByLabel("اسم المستخدم", { exact: true }).fill("discard.user");
   await add.getByLabel("الاسم المعروض").fill("مؤقت");
   await add.getByLabel("كلمة المرور الأولية").fill("discard-password");
   await add.getByRole("button", { name: "إلغاء", exact: true }).click();
   await page.getByRole("button", { name: "إضافة مستخدم" }).click();
-  for (const label of ["البريد الإلكتروني", "الاسم المعروض", "كلمة المرور الأولية"]) await expect(add.getByLabel(label)).toHaveValue("");
+  for (const label of ["اسم المستخدم", "الاسم المعروض", "كلمة المرور الأولية"]) await expect(add.getByLabel(label)).toHaveValue("");
   await add.getByRole("button", { name: "إلغاء", exact: true }).click();
   const row = page.locator(".account-row").filter({ hasText: account.email });
   await row.getByRole("button", { name: /^إجراءات/ }).click();
@@ -127,7 +127,7 @@ test("newer search text survives an earlier in-flight search response", async ({
   const pending = new Promise<void>(resolve => { started = resolve; });
   await page.route(url => url.origin === new URL(API).origin && url.pathname === "/admin/accounts" && url.searchParams.get("search") === "a", async route => { started(); await held; await route.fulfill({ json: { items: [account], total: 1, page_size: 20, page: 1, counts } }); });
   try {
-    const input = page.getByLabel("البحث بالاسم أو البريد");
+    const input = page.getByPlaceholder("ابحث بالاسم أو اسم المستخدم...");
     await input.fill("a");
     await pending;
     await input.fill("ab");
@@ -147,7 +147,7 @@ test("Escape keeps pending creation open and its failure visible", async ({ page
   await page.goto("/admin/users");
   await page.getByRole("button", { name: "إضافة مستخدم" }).click();
   const dialog = page.getByRole("dialog", { name: "إضافة مستخدم" });
-  await dialog.getByLabel("البريد الإلكتروني").fill("pending@example.test");
+  await dialog.getByLabel("اسم المستخدم", { exact: true }).fill("pending.user");
   await dialog.getByLabel("الاسم المعروض").fill("قيد الإنشاء");
   await dialog.getByLabel("كلمة المرور الأولية").fill("Initial-password-2026!");
   try {

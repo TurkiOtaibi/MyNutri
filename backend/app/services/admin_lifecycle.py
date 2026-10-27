@@ -23,7 +23,7 @@ from app.models import (
 )
 from app.services.admin_auth import AdminAuthError, AdminAuthGateway, AdminIdentity
 from app.services.internal_auth import revoke_sessions
-from app.core.credentials import hash_password, validate_password
+from app.core.credentials import hash_password, normalize_username, validate_password, verify_password
 
 logger = logging.getLogger(__name__)
 
@@ -261,6 +261,56 @@ def _resolve_duplicate(
     raise _duplicate_email()
 
 
+def create_internal_account(
+    session: Session,
+    admin_id: UUID,
+    username: str,
+    display_name: str,
+    password: str,
+    idempotency_key: str,
+    now: datetime,
+) -> Principal:
+    _admin(session, admin_id)
+    try:
+        normalized = normalize_username(username)
+    except ValueError as error:
+        raise LifecycleError(422, "INVALID_USERNAME", str(error)) from None
+    try:
+        validate_password(password)
+    except ValueError as error:
+        raise LifecycleError(422, "INVALID_PASSWORD", str(error)) from None
+    name = " ".join(display_name.split())
+    existing = session.exec(select(Principal).where(
+        Principal.creation_idempotency_key == idempotency_key,
+    ).with_for_update()).one_or_none()
+    if existing is not None:
+        # Never restore a deleted account or overwrite credentials after reset/change.
+        if (existing.normalized_username == normalized and existing.display_name == name
+                and existing.status in {PrincipalStatus.active, PrincipalStatus.disabled}
+                and existing.password_hash is not None
+                and verify_password(password, existing.password_hash)):
+            return existing
+        raise _creation_incomplete()
+    if session.exec(select(Principal.id).where(
+        Principal.normalized_username == normalized,
+    )).first() is not None:
+        raise LifecycleError(409, "DUPLICATE_USERNAME", "اسم المستخدم هذا مستخدم بالفعل.")
+    row = Principal(
+        username=username, normalized_username=normalized, display_name=name,
+        password_hash=hash_password(password), must_change_password=True,
+        role=PrincipalRole.user, status=PrincipalStatus.active,
+        creation_idempotency_key=idempotency_key, created_at=now, updated_at=now,
+    )
+    session.add(row)
+    try:
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise LifecycleError(409, "DUPLICATE_USERNAME", "اسم المستخدم هذا مستخدم بالفعل.") from error
+    session.refresh(row)
+    return row
+
+
 def create_account(
     session: Session,
     admin_id: UUID,
@@ -356,6 +406,23 @@ def _purge_private_rows(session: Session, principal_id: UUID) -> None:
         session.exec(delete(model).where(model.principal_id == principal_id))
 
 
+def _scrub_deleted_account(row: Principal, auth_id: UUID | None, now: datetime) -> None:
+    row.auth_user_id = None
+    row.retired_auth_user_id = auth_id
+    row.email = None
+    row.display_name = None
+    row.username = None
+    row.normalized_username = None
+    row.password_hash = None
+    row.must_change_password = False
+    row.failed_login_count = 0
+    row.locked_at = None
+    row.last_login_at = None
+    row.status = PrincipalStatus.deleted
+    row.deleted_at = now
+    row.updated_at = now
+
+
 def delete_account(
     session: Session,
     admin_id: UUID,
@@ -364,17 +431,31 @@ def delete_account(
     now: datetime,
     timeout_seconds: int,
     confirmation_email: str | None = None,
+    confirmation_username: str | None = None,
+    require_confirmation: bool = False,
 ) -> Principal:
     _admin(session, admin_id)
     row = _target(session, admin_id, principal_id)
-    if confirmation_email is not None and row.status != PrincipalStatus.deleting:
-        if row.email is None or confirmation_email.strip().lower() != row.email.lower():
+    if row.username is not None and (require_confirmation or confirmation_username is not None or confirmation_email is not None):
+        if confirmation_username is None or confirmation_username.lower() != row.normalized_username:
+            raise LifecycleError(422, "DELETE_USERNAME_MISMATCH", "اسم المستخدم المدخل لا يطابق هذا الحساب.")
+    elif (require_confirmation or confirmation_email is not None) and row.status != PrincipalStatus.deleting:
+        if row.email is None or confirmation_email is None or confirmation_email.strip().lower() != row.email.lower():
             raise LifecycleError(
                 422,
                 "DELETE_EMAIL_MISMATCH",
                 "البريد الإلكتروني المدخل لا يطابق بريد المستخدم.",
             )
     if row.status == PrincipalStatus.deleted:
+        return row
+    if row.auth_user_id is None and row.username is not None:
+        # Internal deletion has no external saga: purge and tombstone commit together.
+        _purge_private_rows(session, principal_id)
+        row.deletion_started_at = now
+        _scrub_deleted_account(row, None, now)
+        session.add(row)
+        session.commit()
+        session.refresh(row)
         return row
     if row.status == PrincipalStatus.provisioning and row.identity_requested_at is not None:
         lease = timedelta(seconds=max(300, 10 * timeout_seconds))
@@ -401,20 +482,7 @@ def delete_account(
     row = _target(session, admin_id, principal_id)
     if row.status == PrincipalStatus.deleted:
         return row
-    row.auth_user_id = None
-    row.retired_auth_user_id = auth_id
-    row.email = None
-    row.display_name = None
-    row.username = None
-    row.normalized_username = None
-    row.password_hash = None
-    row.must_change_password = False
-    row.failed_login_count = 0
-    row.locked_at = None
-    row.last_login_at = None
-    row.status = PrincipalStatus.deleted
-    row.deleted_at = now
-    row.updated_at = now
+    _scrub_deleted_account(row, auth_id, now)
     session.add(row)
     session.commit()
     session.refresh(row)

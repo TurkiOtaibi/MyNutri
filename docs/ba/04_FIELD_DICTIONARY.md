@@ -8,19 +8,22 @@ Status: supporting requirements. Backend schemas and database constraints are ex
 |---|---:|---|
 | `id` | Yes | Durable UUID ownership key |
 | `auth_user_id` | No | Unique Supabase subject when linked; cleared only after confirmed Auth deletion |
-| `retired_auth_user_id` | Deleted tombstone | Permanent unique former Auth subject; never used for admission or relinked to a Principal |
+| `retired_auth_user_id` | Legacy provider-linked deleted tombstone | Permanent unique former Auth subject; never used for admission or relinked to a Principal |
 | `identity_requested_at` | Provisioning after create request | Starts the bounded creation lease; refreshed before every provider create attempt |
 | `sessions_valid_after` | After password reset or status change | A token is rejected when its latest valid Supabase `amr[].timestamp` authentication time is before this rounded-up cutoff, including after access-token refresh; missing or malformed AMR is always rejected |
+| `username` / `normalized_username` | New internal accounts | Immutable 3–32 ASCII letters/digits/`.`/`_`/`-`; lowercase normalized uniqueness; scrubbed on deletion so a new Principal may reuse it (BR-USM-022/023/025/036/043; #112 and 27 October PO decision) |
+| `last_login_at` | No | Actual successful internal login time; nullable for never-login/legacy accounts; shown as «آخر دخول» (BR-USM-013; #112) |
+| `is_locked` (Admin response) | Yes | Derived normal-user internal lock flag, not lifecycle status; false for Admin; «مقفل» badge/filter (BR-USM-006/014; #112) |
 | `email` | No | Unique case-insensitively when present; maximum 320; erased on deleted tombstone |
 | `display_name` | No | Maximum 120; erased on deleted tombstone |
 | `role` | Yes | `user` or `admin`; never accepted from browser metadata or account-management input; partial unique index permits at most one Admin |
 | `status` | Yes | CURRENT lifecycle: `provisioning`, `active`, `disabled`, `deleting`, `deleted`; internal lock behavior is separate, stored as `failed_login_count` and `locked_at` in #110 (27 October 2026) (17 October 2026; BR-AUT-011, BR-USM-006/014) |
-| creation idempotency key | For Admin creation | Stored with the `provisioning` Principal so the same-key retry resumes rather than creates another account |
+| creation idempotency key | For Admin creation | Internal creation stores it atomically with the active Principal; a matching replay returns that account. Legacy `provisioning` retries resume the original account (BR-USM-025/049; #112) |
 
 These account-lifecycle fields are implemented in the forward lifecycle revision;
 Production activation remains a separate release action.
-Admin creates a normal user with email, display name, and an initial password.
-Admin may edit display name, reset password while revoking the user's internal sessions when an internal hash exists, otherwise existing Supabase sessions through FastAPI, and enable/disable; email and role
+Admin creates a normal user with immutable username, display name, and an initial password (#112; BR-USM-022/023/025/036).
+Admin may edit display name, reset password while revoking the user's internal sessions when an internal hash exists, otherwise existing Supabase sessions through FastAPI, and enable/disable; username, legacy email and role
 cannot be changed through the product. Raw passwords are input-only and never stored,
 logged, or returned; internal accounts store only a scrypt hash (#110; 27 October 2026; BR-AUT-001/017, BR-USM-030/033). Unknown and non-active legacy identities receive the
 existing `401 INVALID_CREDENTIAL`. `deleting` remains locked out and Admin-visible
@@ -29,27 +32,27 @@ as incomplete until a retry reaches the scrubbed `deleted` tombstone. A
 identity counts as success. Global
 Foods retain creator/updater Principal IDs; their attribution is not displayed to any role, including a deleted-user label. (17 October 2026 FOD decision, BR-FOD-021; already implemented, unchanged by issue #100.)
 The irreversible-delete confirmation requires the Admin to type the target
-user's email; a mismatch prevents submission.
+user's username; only a legacy account without username uses the retained email confirmation. A mismatch prevents submission (#112; BR-USM-038/042).
 
 ## CURRENT fields versus APPROVED TARGET
 
-CURRENT in #111: the browser uses internal username/password login, opaque bearer sessions, forced initial-password change, and own-password change in Profile. Only the session token is persisted in localStorage; passwords stay in memory and no auth cookies are used. Reload during an initial-password change requires re-authentication. Forgotten/reset-password browser flows are absent; forgotten passwords go to the Admin. The backend retains legacy Supabase JWT admission for accounts without internal credentials until #113; an internal password hash takes precedence and rejects JWT admission with `INTERNAL_LOGIN_REQUIRED`. Internal password changes/resets never update Supabase. Admin email-based creation UI/API remains CURRENT until #112; provider/email removal (#113) and destructive cutover (#114) remain APPROVED TARGET. This describes repository implementation, not deployment. (Product Owner decisions of 17 and 27 October 2026; issues #110/#111; BR-AUT-001/003/004/005/007/008/010/011/012/017, BR-PRF-024–026, BR-USM-030/033.)
+CURRENT in #111: the browser uses internal username/password login, opaque bearer sessions, forced initial-password change, and own-password change in Profile. Only the session token is persisted in localStorage; passwords stay in memory and no auth cookies are used. Reload during an initial-password change requires re-authentication. Forgotten/reset-password browser flows are absent; forgotten passwords go to the Admin. The backend retains legacy Supabase JWT admission for accounts without internal credentials until #113; an internal password hash takes precedence and rejects JWT admission with `INTERNAL_LOGIN_REQUIRED`. Internal password changes/resets never update Supabase. Admin username-based creation and management UI is CURRENT in #112: new users have internal credentials only, with no email or provider call. Legacy backend email/provider lifecycle support and clearly marked email fallback for existing accounts remain until #113/#114; provider/email removal (#113) and destructive cutover (#114) remain APPROVED TARGET. No existing account migration or cutover is performed. This describes repository implementation, not deployment. (Product Owner decisions of 17 and 27 October 2026; issues #110/#111/#112; BR-USM-005/006/012/013/014/022/023/025/030/036/038/042/043/049/054; BR-AUT-001/003/004/005/007/008/010/011/012/017, BR-PRF-024–026, BR-USM-030/033.)
 
 In the APPROVED TARGET there is no Supabase Auth, email anywhere, MFA or self-service recovery. Only initial Admin-set passwords require a forced change; reset passwords allow immediate login. Five consecutive failures lock an account, successful login resets the counter, Admin reset alone unlocks a user and signs out every device, and the single Admin unlocks automatically after 30 minutes. Own-password change requires the correct current password and signs out other devices. Backend minimum length is 8. (17 October 2026 final AUT/USM decisions; BR-AUT-004/007–012, BR-PRF-024–026, BR-USM-023/030/033.)
 
-## CURRENT login/Profile copy beside APPROVED TARGET Admin username copy
+## CURRENT login/Profile and Admin username copy
 
-Target strings below are copied exactly from the final BRD requirements, approved **17 October 2026**. Login, session and Profile password strings are CURRENT in #111; Admin username-management strings remain pending #112. Current email strings apply only to the retained Admin surface. An em dash means that Admin feature is not yet presented, not a new UI string. Older «فتح القفل», «تم فتح قفل الحساب.» and «نسيت كلمة المرور؟ تواصل مع المشرف.» were superseded by the final same-day USM/AUT decisions (BR-AUT-003/011, BR-USM-030).
+Strings below follow the final BRD requirements approved **17 October 2026** and the [27 October deletion-copy decision](https://github.com/TurkiOtaibi/MyNutri/issues/112#issuecomment-6437936388). Login/session/Profile strings are CURRENT in #111 and Admin username-management strings in #112. Legacy accounts without usernames retain clearly marked email display/confirmation fallback until #113/#114. Older «فتح القفل», «تم فتح قفل الحساب.» and «نسيت كلمة المرور؟ تواصل مع المشرف.» remain superseded (BR-AUT-003/011, BR-USM-030).
 
 | Context | CURRENT | APPROVED TARGET exact copy | BRD authority (17 October 2026) |
 |---|---|---|---|
-| Login / account identity | اسم المستخدم (login); البريد الإلكتروني (Admin) | اسم المستخدم | BR-AUT-001, BR-USM-022/054 |
+| Login / account identity | اسم المستخدم | اسم المستخدم | BR-AUT-001, BR-USM-022/054 |
 | Required username | أدخل اسم المستخدم. | أدخل اسم المستخدم. | BR-AUT-004 |
-| Admin search | ابحث بالاسم أو البريد... | ابحث بالاسم أو اسم المستخدم... | BR-USM-005 |
-| Immutable login identifier | لا يمكن تغيير البريد الإلكتروني بعد إنشاء المستخدم. | لا يمكن تغيير اسم المستخدم بعد إنشاء الحساب. | BR-USM-023/036 |
-| Duplicate identity | هذا البريد الإلكتروني مستخدم بالفعل. | اسم المستخدم هذا مستخدم بالفعل. | BR-USM-025 |
-| Delete confirmation identifier | اكتب البريد الإلكتروني للمستخدم لتأكيد الحذف النهائي. | اسم المستخدم | BR-USM-038; the BRD gives the field name, not a replacement instruction sentence |
-| Delete mismatch | البريد الإلكتروني المدخل لا يطابق بريد المستخدم. | اسم المستخدم المدخل لا يطابق هذا الحساب. | BR-USM-042 |
+| Admin search | ابحث بالاسم أو اسم المستخدم... | ابحث بالاسم أو اسم المستخدم... | BR-USM-005 |
+| Immutable login identifier | لا يمكن تغيير اسم المستخدم بعد إنشاء الحساب. | لا يمكن تغيير اسم المستخدم بعد إنشاء الحساب. | BR-USM-023/036 |
+| Duplicate identity | اسم المستخدم هذا مستخدم بالفعل. | اسم المستخدم هذا مستخدم بالفعل. | BR-USM-025 |
+| Delete confirmation identifier | اكتب اسم المستخدم لتأكيد الحذف النهائي. | اكتب اسم المستخدم لتأكيد الحذف النهائي. | BR-USM-038; Product Owner, 27 October 2026, issue #112 comment |
+| Delete mismatch | اسم المستخدم المدخل لا يطابق هذا الحساب. | اسم المستخدم المدخل لا يطابق هذا الحساب. | BR-USM-042 |
 | No account / forgotten password | ليس لديك حساب أو نسيت كلمة المرور؟ تواصل مع المشرف. | ليس لديك حساب أو نسيت كلمة المرور؟ تواصل مع المشرف. | BR-AUT-003/012 |
 | Password hint | استخدم 8 أحرف على الأقل. | استخدم 8 أحرف على الأقل. | BR-AUT-007, BR-PRF-024, BR-USM-023 |
 | Backend minimum-length failure | كلمة المرور قصيرة. استخدم 8 أحرف على الأقل. | كلمة المرور قصيرة. استخدم 8 أحرف على الأقل. | BR-AUT-004, BR-PRF-025, BR-USM-023 |
@@ -57,7 +60,7 @@ Target strings below are copied exactly from the final BRD requirements, approve
 | Connection failure | تعذر الاتصال بالخادم. حاول مرة أخرى. | تعذر الاتصال بالخادم. حاول مرة أخرى. | BR-AUT-005 |
 | User lock | تم قفل الحساب بعد 5 محاولات دخول فاشلة. تواصل مع المشرف لفتحه. | تم قفل الحساب بعد 5 محاولات دخول فاشلة. تواصل مع المشرف لفتحه. | BR-AUT-011 |
 | Admin lock | تم قفل الحساب بعد 5 محاولات دخول فاشلة. حاول مرة أخرى بعد 30 دقيقة. | تم قفل الحساب بعد 5 محاولات دخول فاشلة. حاول مرة أخرى بعد 30 دقيقة. | BR-AUT-011 |
-| Locked badge/filter | — | مقفل | BR-USM-006/014 |
+| Locked badge/filter | مقفل | مقفل | BR-USM-006/014 |
 | Disabled admission | حسابك موقوف. تواصل مع المشرف. | حسابك موقوف. تواصل مع المشرف. | BR-AUT-010/015 |
 | Expired session | انتهت جلستك. سجّل الدخول مرة أخرى. | انتهت جلستك. سجّل الدخول مرة أخرى. | BR-AUT-015 |
 | Initial / own change title | تغيير كلمة المرور | تغيير كلمة المرور | BR-AUT-007, BR-PRF-024 |
@@ -67,7 +70,7 @@ Target strings below are copied exactly from the final BRD requirements, approve
 | Own change action | تغيير كلمة المرور | تغيير كلمة المرور | BR-PRF-024 |
 | Own change success | تم تغيير كلمة المرور. | تم تغيير كلمة المرور. | BR-PRF-025 |
 | Current-password mismatch | كلمة المرور الحالية غير صحيحة. | كلمة المرور الحالية غير صحيحة. | BR-PRF-025/026 |
-| Admin reset warning | — | سيخرج المستخدم من كل أجهزته. | BR-USM-030 |
+| Admin reset warning | سيخرج المستخدم من كل أجهزته. | سيخرج المستخدم من كل أجهزته. | BR-USM-030 |
 
 ## CURRENT sex correction — issue #109
 
@@ -106,14 +109,14 @@ The retained email-based account-management copy below belongs to the CURRENT im
 | Irreversible-delete dialog title | حذف المستخدم نهائيًا؟ |
 | Irreversible-delete dialog body | سيُحذف حساب هذا المستخدم وجميع بياناته الخاصة نهائيًا. لا يمكن التراجع عن هذا الإجراء. |
 | Delete confirmation instruction | اكتب البريد الإلكتروني للمستخدم لتأكيد الحذف النهائي. |
-| Delete confirmation mismatch | البريد الإلكتروني المدخل لا يطابق بريد المستخدم. |
+| Delete confirmation mismatch | اسم المستخدم المدخل لا يطابق هذا الحساب. |
 | Incomplete-deletion status | حذف غير مكتمل |
 | Incomplete-deletion explanation (17 October 2026 final USM requirements, BR-USM-040; already implemented) | تعذر إكمال حذف المستخدم. لا يستطيع الدخول الآن، ويمكنك إعادة المحاولة. |
 | Deletion retry action | إعادة محاولة الحذف |
 | Retired Food-attribution label; not displayed to any role (17 October 2026, BR-FOD-021) | مستخدم محذوف |
 | Admin self-mutation rejection | لا يمكن تعطيل حساب المشرف أو حذفه أو تغيير دوره. |
 | Second-Admin rejection | لا يمكن إنشاء مشرف آخر. |
-| Duplicate-email rejection | هذا البريد الإلكتروني مستخدم بالفعل. |
+| Duplicate-email rejection | اسم المستخدم هذا مستخدم بالفعل. |
 | Incomplete-create explanation | تعذر إكمال إنشاء المستخدم. أعد المحاولة. |
 | Edit failure | تعذر حفظ تغييرات المستخدم. حاول مرة أخرى. |
 | Enable/disable failure | تعذر تحديث حالة المستخدم. حاول مرة أخرى. |
@@ -132,7 +135,7 @@ for the merged Admin Users list (issues #91 and #93).
 | Context | Approved exact Arabic string |
 |---|---|
 | Password hint (create, reset and creation retry) | استخدم 8 أحرف على الأقل. |
-| Email cannot be changed note (create) | لا يمكن تغيير البريد الإلكتروني بعد إنشاء المستخدم. |
+| Email cannot be changed note (create) | لا يمكن تغيير اسم المستخدم بعد إنشاء الحساب. |
 | User details section-links label (accessible name) | أقسام الصفحة |
 
 ## Profile input

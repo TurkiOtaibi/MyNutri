@@ -120,7 +120,9 @@ export interface AdminAccountCreate {
 /** AdminAccountDelete */
 export interface AdminAccountDelete {
   /** Confirm Email */
-  confirm_email: string;
+  confirm_email?: string | null;
+  /** Confirm Username */
+  confirm_username?: string | null;
 }
 
 /** AdminAccountEdit */
@@ -148,6 +150,7 @@ export interface AdminAccountList {
   page: number;
   /** Page Size */
   page_size: number;
+  self?: AdminAccountSummary | null;
   /** Total */
   total: number;
 }
@@ -186,6 +189,13 @@ export interface AdminAccountSummary {
   /** Email */
   email: string | null;
   /**
+   * Is Locked
+   * @default false
+   */
+  is_locked?: boolean;
+  /** Last Login At */
+  last_login_at?: string | null;
+  /**
    * Principal Id
    * @format uuid
    */
@@ -201,6 +211,8 @@ export interface AdminAccountSummary {
    * @format date-time
    */
   updated_at: string;
+  /** Username */
+  username?: string | null;
 }
 
 /** AdminDiaryItem */
@@ -234,6 +246,28 @@ export interface AdminDiaryPage {
   items: AdminDiaryItem[];
   /** Next Cursor */
   next_cursor: string | null;
+}
+
+/** AdminInternalAccountCreate */
+export interface AdminInternalAccountCreate {
+  /**
+   * Display Name
+   * @minLength 1
+   * @maxLength 120
+   */
+  display_name: string;
+  /**
+   * Initial Password
+   * @minLength 1
+   * @maxLength 256
+   */
+  initial_password: string;
+  /**
+   * Username
+   * @minLength 1
+   * @maxLength 32
+   */
+  username: string;
 }
 
 /** AdminProfileSexCorrection */
@@ -277,8 +311,15 @@ export interface AdminUserSummary {
   display_name: string | null;
   /** Email */
   email: string | null;
+  /**
+   * Is Locked
+   * @default false
+   */
+  is_locked?: boolean;
   /** Last Activity At */
   last_activity_at: string | null;
+  /** Last Login At */
+  last_login_at?: string | null;
   /**
    * Principal Id
    * @format uuid
@@ -288,6 +329,8 @@ export interface AdminUserSummary {
   profile_complete: boolean;
   role: PrincipalRole;
   status: PrincipalStatus;
+  /** Username */
+  username?: string | null;
 }
 
 /** CalculationWarningResponse */
@@ -1519,7 +1562,7 @@ export namespace Admin {
   export namespace CreateAdminAccountsPost {
     export type RequestParams = {};
     export type RequestQuery = {};
-    export type RequestBody = AdminAccountCreate;
+    export type RequestBody = AdminInternalAccountCreate | AdminAccountCreate;
     export type RequestHeaders = {
       /**
        * Idempotency-Key
@@ -1580,7 +1623,7 @@ export namespace Admin {
       /** Search */
       search?: string | null;
       /** Status */
-      status?: PrincipalStatus | null;
+      status?: PrincipalStatus | "locked" | null;
     };
     export type RequestBody = never;
     export type RequestHeaders = {};

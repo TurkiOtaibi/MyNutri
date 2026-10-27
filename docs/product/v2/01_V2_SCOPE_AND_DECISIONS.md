@@ -2,7 +2,7 @@
 
 ## State boundary for authentication
 
-CURRENT in #111: the browser uses internal username/password login, opaque bearer sessions, forced initial-password change, and own-password change in Profile. Only the session token is persisted in localStorage; passwords stay in memory and no auth cookies are used. Reload during an initial-password change requires re-authentication. Forgotten/reset-password browser flows are absent; forgotten passwords go to the Admin. The backend retains legacy Supabase JWT admission for accounts without internal credentials until #113; an internal password hash takes precedence and rejects JWT admission with `INTERNAL_LOGIN_REQUIRED`. Internal password changes/resets never update Supabase. Admin email-based creation UI/API remains CURRENT until #112; provider/email removal (#113) and destructive cutover (#114) remain APPROVED TARGET. This describes repository implementation, not deployment. (Product Owner decisions of 17 and 27 October 2026; issues #110/#111; BR-AUT-001/003/004/005/007/008/010/011/012/017, BR-PRF-024–026, BR-USM-030/033.)
+CURRENT in #111: the browser uses internal username/password login, opaque bearer sessions, forced initial-password change, and own-password change in Profile. Only the session token is persisted in localStorage; passwords stay in memory and no auth cookies are used. Reload during an initial-password change requires re-authentication. Forgotten/reset-password browser flows are absent; forgotten passwords go to the Admin. The backend retains legacy Supabase JWT admission for accounts without internal credentials until #113; an internal password hash takes precedence and rejects JWT admission with `INTERNAL_LOGIN_REQUIRED`. Internal password changes/resets never update Supabase. Admin username-based creation and management UI is CURRENT in #112: new users have internal credentials only, with no email or provider call. Legacy backend email/provider lifecycle support and clearly marked email fallback for existing accounts remain until #113/#114; provider/email removal (#113) and destructive cutover (#114) remain APPROVED TARGET. No existing account migration or cutover is performed. This describes repository implementation, not deployment. (Product Owner decisions of 17 and 27 October 2026; issues #110/#111/#112; BR-USM-005/006/012/013/014/022/023/025/030/036/038/042/043/049/054; BR-AUT-001/003/004/005/007/008/010/011/012/017, BR-PRF-024–026, BR-USM-030/033.)
 
 The CURRENT implementation allows only Admin correction of another user's «الجنس» in issue #109; all other private-data monitoring remains read-only. Cutover deletes current test accounts/private data, preserves Foods, and creates the single Admin through a server-side create/reset command. No cutover is performed here. (17 October 2026 PRF/USM/AUT/FOD decisions; BR-PRF-006, BR-USM-027/032/043/061/067/074; issue #100; [V2 06](06_DATA_MIGRATION_AND_CUTOVER.md).)
 
@@ -35,19 +35,19 @@ Diary, Target Plans, nutrition calculations, recommendations or Progress.
   non-active identities receive `401 INVALID_CREDENTIAL`; existing Principals
   are preserved. Admin account management is separate from read-only monitoring
   of another user's Profile, Diary, Target Plans, and Labs.
-- An Admin creates a normal user with email, display name, and an initial
-  Admin-set password. They may edit display name, reset password (revoking the
+- An Admin creates a normal user with immutable username, display name, and an initial
+  Admin-set password (#112; BR-USM-022/023/025/036). They may edit display name, reset password (revoking the
   user's internal sessions when an internal hash exists, otherwise existing Supabase sessions through FastAPI), enable or disable the
   user, and request permanent deletion. Email changes are out of scope.
   Raw passwords are never stored, logged, or returned; internal accounts store only a scrypt hash (#110; 27 October 2026; BR-AUT-001/017, BR-USM-030/033).
-- Creation is resumable: the backend commits a `provisioning` Principal with an
+- Legacy email/provider creation is resumable: the backend commits a `provisioning` Principal with an
   idempotency key and pre-assigned Supabase Auth UUID before sending create with
   that UUID. It records `identity_requested_at` on each create attempt. A retry
   with the same key resumes; `provisioning` cannot authenticate. The Admin HTTP
   timeout is explicit and bounded. A provisioning account cannot be deleted
   until `now > identity_requested_at + max(5 minutes, 10 x timeout)`; an attempt
   during that lease returns 409 with the approved creation-incomplete copy.
-- Permanent deletion is allowed for a `provisioning` account as well as other
+- Legacy provider-linked permanent deletion is allowed for a `provisioning` account as well as other
   normal-user states, using the same fail-closed, resumable saga: commit
   `deleting` under the Principal lock; purge all Principal-owned private data in one locked
   transaction; delete the stored Supabase Auth UUID and verify its absence with

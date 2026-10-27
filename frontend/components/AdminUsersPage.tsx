@@ -7,8 +7,8 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import {
   type AdminAccount, createAdminAccount, listAdminAccounts
 } from "@/lib/api";
-import { accountActionErrorMessage, accountActionSuccessMessage } from "@/lib/admin-account-messages";
-import { accountStatusLabels, formatAdminDate, adminResultsLabel } from "@/lib/admin-display";
+import { accountActionErrorMessage, accountActionSuccessMessage, passwordValidationMessage, usernameValidationMessage } from "@/lib/admin-account-messages";
+import { accountStatusLabels, formatAdminDate, formatAdminDateTime, adminResultsLabel } from "@/lib/admin-display";
 import { reconcileAdminSearch } from "@/lib/admin-search";
 import { AdminStatusBadge } from "./AdminStatusBadge";
 import { useAuth } from "./AuthProvider";
@@ -16,20 +16,22 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AdminAccountActions, AdminAccountActionsProvider, FormDialog, PasswordInput } from "./AdminAccountActions";
 
 type AccountStatus = AdminAccount["status"];
-const filterStatuses = ["active", "disabled", "provisioning", "deleting"] as const;
+const countStatuses = ["active", "disabled", "provisioning", "deleting"] as const;
+const filterStatuses = [...countStatuses, "locked"] as const;
+const filterLabels = { ...accountStatusLabels, locked: "مقفل" };
 // Only these states have read-only monitoring details; lifecycle-incomplete accounts have no data to monitor.
 const monitoredStatuses: AccountStatus[] = ["active", "disabled"];
 
 export function AdminUsersPage() {
   const client = useQueryClient();
-  const { account: self } = useAuth();
+  const { account: authSelf } = useAuth();
   const params = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
   const rawPage = Number(params.get("page") || 1);
   const page = Number.isSafeInteger(rawPage) && rawPage > 0 ? rawPage : 1;
   const search = params.get("search") ?? "";
-  const rawStatus = params.get("status") as AccountStatus;
+  const rawStatus = params.get("status") as typeof filterStatuses[number];
   const statusFilter = filterStatuses.some(status => status === rawStatus) ? rawStatus : "";
   const [searchInput, setSearchInput] = useState(search);
   const [lastUrlSearch, setLastUrlSearch] = useState(search);
@@ -65,6 +67,7 @@ export function AdminUsersPage() {
     queryKey: ["admin-users", "accounts", { page, search, status: statusFilter }],
     queryFn: () => listAdminAccounts({ page, search, status: statusFilter || undefined })
   });
+  const self = query.data?.self ?? authSelf;
   const showSelf = Boolean(self) && page === 1 && !statusFilter && !searchInput.trim() && !search;
   async function refreshAccounts() {
     await Promise.all([
@@ -74,7 +77,7 @@ export function AdminUsersPage() {
   }
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState("");
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [createName, setCreateName] = useState("");
   const [createPassword, setCreatePassword] = useState("");
   const [key, setKey] = useState(() => crypto.randomUUID());
@@ -82,14 +85,17 @@ export function AdminUsersPage() {
   const [notice, setNotice] = useState("");
   function closeCreate() {
     if (busy) return;
-    setCreateOpen(false); setEmail(""); setCreateName(""); setCreatePassword(""); setCreateError(""); setKey(crypto.randomUUID());
+    setCreateOpen(false); setUsername(""); setCreateName(""); setCreatePassword(""); setCreateError(""); setKey(crypto.randomUUID());
   }
   async function submitCreate(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setNotice(""); setCreateError("");
+    event.preventDefault();
+    const validation = usernameValidationMessage(username) || passwordValidationMessage(createPassword);
+    if (validation) { setCreateError(validation); return; }
+    setBusy(true); setNotice(""); setCreateError("");
     try {
-      await createAdminAccount({ email, display_name: createName, initial_password: createPassword }, key);
+      await createAdminAccount({ username: username.trim(), display_name: createName, initial_password: createPassword }, key);
       await refreshAccounts();
-      setEmail(""); setCreateName(""); setCreatePassword(""); setKey(crypto.randomUUID()); setCreateOpen(false);
+      setUsername(""); setCreateName(""); setCreatePassword(""); setKey(crypto.randomUUID()); setCreateOpen(false);
       setNotice(accountActionSuccessMessage("create"));
     } catch (error) {
       setCreateError(accountActionErrorMessage(error, "create"));
@@ -103,7 +109,7 @@ export function AdminUsersPage() {
       <button className="btn primary" type="button" onClick={() => { setCreateError(""); setNotice(""); setCreateOpen(true); }}><Plus size={18} aria-hidden="true" />إضافة مستخدم</button>
     </div>
     {query.data?.counts && <div className="admin-account-counts" aria-live="polite">
-      {filterStatuses.map(status => ["active", "disabled"].includes(status) || (query.data!.counts[status] ?? 0) > 0 ? <span key={status} className={`account-status-badge account-status-${status}`}>
+      {countStatuses.map(status => ["active", "disabled"].includes(status) || (query.data!.counts[status] ?? 0) > 0 ? <span key={status} className={`account-status-badge account-status-${status}`}>
         {accountStatusLabels[status]}: <bdi dir="ltr">{query.data!.counts[status]}</bdi>{["provisioning", "deleting"].includes(status) ? " · تنتظر إعادة المحاولة" : ""}
       </span> : null)}
     </div>}
@@ -111,13 +117,13 @@ export function AdminUsersPage() {
       <div className="admin-list-controls">
         <form className="foods-search-field admin-search" onSubmit={event => { event.preventDefault(); updateUrl({ search: searchInput.trim(), page: 1 }); }}>
           <Search size={18} aria-hidden="true" />
-          <input aria-label="البحث بالاسم أو البريد" value={searchInput} onChange={event => setSearchInput(event.target.value)} placeholder="ابحث بالاسم أو البريد..." />
+          <input aria-label="ابحث بالاسم أو اسم المستخدم..." value={searchInput} onChange={event => setSearchInput(event.target.value)} placeholder="ابحث بالاسم أو اسم المستخدم..." />
           <button className="btn" type="submit">بحث</button>
           {searchInput && <button className="btn" type="button" onClick={() => { setSearchInput(""); updateUrl({ search: "", page: 1 }); }}>مسح البحث</button>}
         </form>
         <select className="admin-status-filter" aria-label="حالة الحساب" value={statusFilter} onChange={event => { updateUrl({ search: searchInput.trim(), status: event.target.value, page: 1 }); }}>
           <option value="">الكل</option>
-          {filterStatuses.map(status => <option key={status} value={status}>{accountStatusLabels[status]}</option>)}
+          {filterStatuses.map(status => <option key={status} value={status}>{filterLabels[status]}</option>)}
         </select>
       </div>
       {query.isPending && <p className="state-note">جارٍ تحميل المستخدمين...</p>}
@@ -127,16 +133,19 @@ export function AdminUsersPage() {
       {showSelf && self && <article className="account-row account-self-row" key={self.principal_id}>
         <div className="account-identity">
           <span className="account-name-line"><strong>{self.display_name}</strong><span className="account-self-marker">(أنت)</span><AdminStatusBadge status={self.status} /></span>
-          <span className="account-email"><bdi dir="ltr">{self.email}</bdi></span>
+          <span className="account-email">اسم المستخدم: <bdi dir="ltr">{self.username ?? self.email}</bdi>{!self.username && <span> · حساب قديم</span>}</span>
+          {query.data?.self && <span className="account-meta">تاريخ التسجيل: <time dateTime={query.data.self.created_at}>{formatAdminDate(query.data.self.created_at)}</time></span>}
+          <span className="account-meta">آخر دخول: {query.data?.self?.last_login_at ? <time dateTime={query.data.self.last_login_at}>{formatAdminDateTime(query.data.self.last_login_at)}</time> : "لم يسجل الدخول بعد."}</span>
         </div>
       </article>}
       {query.data?.items.map(account => {
         const identity = <>
-          <span className="account-name-line"><strong>{account.display_name}</strong><AdminStatusBadge status={account.status} /></span>
-          <span className="account-email"><bdi dir="ltr">{account.email}</bdi></span>
+          <span className="account-name-line"><strong>{account.display_name}</strong><AdminStatusBadge status={account.status} />{account.is_locked && <span className="account-status-badge">مقفل</span>}</span>
+          <span className="account-email">اسم المستخدم: <bdi dir="ltr">{account.username ?? account.email}</bdi>{!account.username && <span> · حساب قديم</span>}</span>
           {account.status === "disabled" && account.disabled_at && <span>معطّل منذ <time dateTime={account.disabled_at}>{formatAdminDate(account.disabled_at)}</time></span>}
-          {["provisioning", "deleting"].includes(account.status) && <span className="account-meta">أعد المحاولة، أو احذف الحساب وأنشئه من جديد</span>}
+          {!account.username && ["provisioning", "deleting"].includes(account.status) && <span className="account-meta">أعد المحاولة، أو احذف الحساب وأنشئه من جديد</span>}
           <span className="account-meta">تاريخ التسجيل: <time dateTime={account.created_at}>{formatAdminDate(account.created_at)}</time></span>
+          <span className="account-meta">آخر دخول: {account.last_login_at ? <time dateTime={account.last_login_at}>{formatAdminDateTime(account.last_login_at)}</time> : "لم يسجل الدخول بعد."}</span>
         </>;
         return <article className="account-row" key={account.principal_id}>
           {monitoredStatuses.includes(account.status)
@@ -154,11 +163,11 @@ export function AdminUsersPage() {
     {createOpen && <FormDialog title="إضافة مستخدم" className="account-create-dialog" busy={busy} onClose={closeCreate}>
       <form className="account-form" onSubmit={submitCreate}>
         <div className="account-field">
-          <label>البريد الإلكتروني<input type="email" dir="ltr" autoComplete="off" required aria-describedby="account-email-note" value={email} onChange={event => { setEmail(event.target.value); setKey(crypto.randomUUID()); }} /></label>
-          <small id="account-email-note" className="account-field-hint">لا يمكن تغيير البريد الإلكتروني بعد إنشاء المستخدم.</small>
+          <label>اسم المستخدم<input type="text" dir="ltr" autoComplete="off" aria-describedby="account-username-note" value={username} onChange={event => { setUsername(event.target.value); setKey(crypto.randomUUID()); }} /></label>
+          <small id="account-username-note" className="account-field-hint">لا يمكن تغيير اسم المستخدم بعد إنشاء الحساب.</small>
         </div>
-        <label>الاسم المعروض<input required value={createName} onChange={event => { setCreateName(event.target.value); setKey(crypto.randomUUID()); }} /></label>
-        <PasswordInput label="كلمة المرور الأولية" value={createPassword} onChange={setCreatePassword} />
+        <div className="account-field"><label>الاسم المعروض<input required maxLength={120} aria-describedby="create-name-note" value={createName} onChange={event => { setCreateName(event.target.value); setKey(crypto.randomUUID()); }} /></label><small id="create-name-note" className="account-field-hint">120 حرفًا كحد أقصى</small></div>
+        <PasswordInput label="كلمة المرور الأولية" value={createPassword} onChange={value => { setCreatePassword(value); setKey(crypto.randomUUID()); }} />
         {createError && <p role="alert" className="account-dialog-error">{createError}</p>}
         <div className="actions"><button type="button" className="btn" disabled={busy} onClick={closeCreate}>إلغاء</button><button className="btn primary" type="submit" disabled={busy}>إنشاء المستخدم</button></div>
       </form>

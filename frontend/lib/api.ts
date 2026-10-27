@@ -27,7 +27,8 @@ import type {
 } from "./types";
 import type {
   AccountResponse,
-  AdminAccountCreate,
+  AdminInternalAccountCreate,
+  AdminAccountDelete,
   AdminAccountEdit,
   AdminAccountList,
   AdminAccountSummary,
@@ -257,7 +258,7 @@ export function getAdminUser(principalId: string, auth?: LabsAuth): Promise<Admi
 }
 
 export function listAdminAccounts(
-  { page = 1, search = "", status }: { page?: number; search?: string; status?: AdminAccountSummary["status"] } = {}
+  { page = 1, search = "", status }: { page?: number; search?: string; status?: AdminAccountSummary["status"] | "locked" } = {}
 ): Promise<AdminAccountList> {
   const params = new URLSearchParams({ page: String(page) });
   if (search.trim()) params.set("search", search.trim());
@@ -265,7 +266,7 @@ export function listAdminAccounts(
   return apiFetch<AdminAccountList>(`/admin/accounts?${params}`);
 }
 
-export function createAdminAccount(payload: AdminAccountCreate, key: string): Promise<AdminAccountSummary> {
+export function createAdminAccount(payload: AdminInternalAccountCreate, key: string): Promise<AdminAccountSummary> {
   return apiFetch<AdminAccountSummary>("/admin/accounts", {
     method: "POST", headers: { "Idempotency-Key": key }, body: JSON.stringify(payload)
   });
@@ -287,8 +288,8 @@ export function setAdminAccountEnabled(id: string, enabled: boolean): Promise<Ad
   return apiFetch<AdminAccountSummary>(`/admin/accounts/${id}/status`, { method: "PUT", body: JSON.stringify({ enabled }) });
 }
 
-export function deleteAdminAccount(id: string, email: string): Promise<AdminAccountSummary> {
-  return apiFetch<AdminAccountSummary>(`/admin/accounts/${id}`, { method: "DELETE", body: JSON.stringify({ confirm_email: email }) });
+export function deleteAdminAccount(id: string, payload: AdminAccountDelete): Promise<AdminAccountSummary> {
+  return apiFetch<AdminAccountSummary>(`/admin/accounts/${id}`, { method: "DELETE", body: JSON.stringify(payload) });
 }
 
 export function retryAdminAccountCreation(id: string, password: string): Promise<AdminAccountSummary> {
