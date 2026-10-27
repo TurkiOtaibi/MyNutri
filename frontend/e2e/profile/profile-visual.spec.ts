@@ -1,3 +1,4 @@
+import { fixtureUsername } from "../internal-auth";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
@@ -52,7 +53,7 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
       await provisionUser(freshEmail, LOCAL_TEST_PASSWORD);
       await freshPage.setViewportSize({ width: 390, height: 844 });
       await freshPage.goto("/auth/login");
-      await freshPage.locator('input[type="email"]').fill(freshEmail);
+      await freshPage.getByLabel("اسم المستخدم", { exact: true }).fill(fixtureUsername(freshEmail));
       await freshPage.locator('input[type="password"]').fill(LOCAL_TEST_PASSWORD);
       await freshPage.locator('button[type="submit"]').click();
       await freshPage.waitForURL(/\/diary$/);

@@ -5,7 +5,6 @@
 | Capability | User | Admin | Decision / requirement (17 October 2026) |
 |---|---|---|---|
 | Write any other field in another user's Profile, or another user's Diary/plans/Labs | No | No; selected-user access otherwise stays read-only | BR-USM-061, BR-USM-067, BR-USM-074 |
-| Integrate the internal own-password change into the browser UI | Yes | Yes | Backend CURRENT in #110; UI pending #111; BR-PRF-024–026 |
 | Integrate internal reset/lock state into the Admin UI | No | Yes | Backend CURRENT in #110; UI pending #112; BR-AUT-011, BR-USM-030/033 |
 | Manage accounts by username, change username, or self-register | No account management or self-registration | Create normal users by username; cannot change username or assign roles | BR-AUT-009, BR-USM-022/027/028/036; issues #110–#112 |
 
@@ -14,7 +13,7 @@ No independent unlock permission is added: the final USM decision cancels that a
 
 ## CURRENT implemented authorization
 
-CURRENT in #110: the backend supports internal username/password login alongside the existing Supabase/email browser flow. Internal credentials take precedence: any account with an internal password hash is rejected on the Supabase JWT path with `INTERNAL_LOGIN_REQUIRED`. Internal password changes and resets never update Supabase; accounts without internal credentials retain the existing JWT path. Frontend integration (#111), username-based Admin UI (#112), provider/email removal (#113), and destructive cutover (#114) remain APPROVED TARGET, not implemented or deployed by this change. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
+CURRENT in #111: the browser uses internal username/password login, opaque bearer sessions, forced initial-password change, and own-password change in Profile. Only the session token is persisted in localStorage; passwords stay in memory and no auth cookies are used. Reload during an initial-password change requires re-authentication. Forgotten/reset-password browser flows are absent; forgotten passwords go to the Admin. The backend retains legacy Supabase JWT admission for accounts without internal credentials until #113; an internal password hash takes precedence and rejects JWT admission with `INTERNAL_LOGIN_REQUIRED`. Internal password changes/resets never update Supabase. Admin email-based creation UI/API remains CURRENT until #112; provider/email removal (#113) and destructive cutover (#114) remain APPROVED TARGET. This describes repository implementation, not deployment. (Product Owner decisions of 17 and 27 October 2026; issues #110/#111; BR-AUT-001/003/004/005/007/008/010/011/012/017, BR-PRF-024–026, BR-USM-030/033.)
 
 | Capability | User | Admin |
 | --- | --- | --- |
@@ -33,7 +32,7 @@ CURRENT in #110: the backend supports internal username/password login alongside
 | Self-register or auto-provision from an unknown Auth identity | No | No |
 | Create a normal user with Admin-set initial password | No | Yes, through FastAPI |
 | Edit another user's display name or reset password | No | Yes, normal users only; internal reset unlocks without forced change and revokes all internal sessions, never calls Supabase; legacy-only reset retains Supabase behavior (17/27 October 2026; BR-USM-030/033; #110) |
-| Change own internal password with correct current password | Yes | Yes; current session survives, other sessions revoked; no Supabase update (17/27 October 2026; BR-PRF-024–026; #110) |
+| Change own internal password with correct current password | Yes | Yes; current session survives, other sessions revoked; no Supabase update; Profile UI CURRENT #111 (17/27 October 2026; BR-PRF-024–026; #110/#111) |
 | Enable/disable or permanently delete another account | No | Yes, normal users only; deletion includes `provisioning` accounts via the same saga, with absent Auth identity counted as success |
 | Change email or grant/change Admin role | No | No |
 | Disable/delete own Admin account | No | No |

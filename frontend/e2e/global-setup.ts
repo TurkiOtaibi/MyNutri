@@ -2,9 +2,9 @@ import { chromium, type FullConfig } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fixtureUsername, internalLogin, seedInternalUser } from "./internal-auth";
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
-const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
 const EMAIL = "admin.e2e@example.test";
 const PASSWORD = "E2e-only-password-2026!";
 const AUTH_DIR = path.join(process.cwd(), "e2e", ".auth");
@@ -17,20 +17,15 @@ async function ensureSuccessful(response: Response, operation: string): Promise<
 }
 
 export default async function globalSetup(config: FullConfig): Promise<void> {
-  for (const value of [API_URL, AUTH_URL]) {
+  for (const value of [API_URL]) {
     const hostname = new URL(value).hostname;
     if (hostname !== "127.0.0.1" && hostname !== "localhost") {
       throw new Error(`E2E setup refuses non-local target ${value}`);
     }
   }
   await mkdir(AUTH_DIR, { recursive: true });
-  const tokenResponse = await fetch(`${AUTH_URL}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: { apikey: "e2e-public-key", "Content-Type": "application/json" },
-    body: JSON.stringify({ email: EMAIL, password: PASSWORD })
-  });
-  await ensureSuccessful(tokenResponse, "Local Auth sign-in");
-  const auth = await tokenResponse.json() as { access_token: string };
+  seedInternalUser(EMAIL, PASSWORD);
+  const auth = await internalLogin(EMAIL, PASSWORD);
   await writeFile(TOKEN_FILE, auth.access_token, { encoding: "utf8", mode: 0o600 });
   const headers = { Authorization: `Bearer ${auth.access_token}`, "Content-Type": "application/json" };
 
@@ -85,7 +80,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   const page = await browser.newPage();
   const baseURL = config.projects[0]?.use.baseURL as string;
   await page.goto(`${baseURL}/auth/login`);
-  await page.locator('input[type="email"]').fill(EMAIL);
+  await page.getByLabel("اسم المستخدم", { exact: true }).fill(fixtureUsername(EMAIL));
   await page.locator('input[type="password"]').fill(PASSWORD);
   await page.locator('button[type="submit"]').click();
   await page.waitForURL(/\/(diary|profile)$/);

@@ -1,4 +1,4 @@
-"""Create the sole internal Admin, or reset its password; no password arguments."""
+"""Create, attach credentials to, or reset the sole Admin; no password arguments."""
 
 import argparse
 import getpass
@@ -35,6 +35,18 @@ def manage_admin(
             role=PrincipalRole.admin,
             must_change_password=True,
         )
+    elif action == "attach":
+        if row is None or row.status != PrincipalStatus.active:
+            raise ValueError("The active Admin was not found.")
+        if any(
+            value is not None
+            for value in (row.username, row.normalized_username, row.password_hash)
+        ):
+            raise ValueError("The Admin already has internal credentials; refusing to replace them.")
+        row.username = username
+        row.normalized_username = normalized
+        row.password_hash = encoded
+        row.must_change_password = False
     elif action == "reset":
         if (
             row is None
@@ -56,7 +68,7 @@ def manage_admin(
         session.commit()
     except IntegrityError:
         session.rollback()
-        raise ValueError("Admin creation conflicts with an existing account.") from None
+        raise ValueError("Admin operation conflicts with an existing account.") from None
 
 
 class SafeArgumentParser(argparse.ArgumentParser):
@@ -68,8 +80,8 @@ class SafeArgumentParser(argparse.ArgumentParser):
 
 
 def main() -> None:
-    parser = SafeArgumentParser(description="Create or reset the single internal Admin.")
-    parser.add_argument("action", choices=("create", "reset"))
+    parser = SafeArgumentParser(description="Create, attach, or reset the single internal Admin.")
+    parser.add_argument("action", choices=("create", "attach", "reset"))
     parser.add_argument("--username", required=True)
     parser.add_argument(
         "--password-stdin",

@@ -1,3 +1,4 @@
+import { fixtureUsername } from "../internal-auth";
 import { approvedSafetyCopy as safetyCopy } from "../../tests/unit/fixtures/profile-safety";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test as base, type APIRequestContext, type Page, type Route } from "@playwright/test";
@@ -9,7 +10,7 @@ import { applyProfileThroughTargetPlan } from "../profile-api";
 import { provisionUser } from "../provision-user";
 
 const apiHeaders = () => ({ Authorization: `Bearer ${API_TOKEN}` });
-const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
+const AUTH_URL = API_URL;
 const API_ORIGIN = new URL(API_URL).origin;
 const AUTH_ORIGIN = new URL(AUTH_URL).origin;
 const ADMIN_EMAIL = "admin.e2e@example.test";
@@ -923,7 +924,7 @@ test.describe("@profile Profile and targets redesign", () => {
       const email = `profile-cut-${Date.now()}-${test.info().parallelIndex}@example.test`;
       await provisionUser(email, LOCAL_TEST_PASSWORD);
       await page.goto("/auth/login");
-      await page.locator('input[type="email"]').fill(email);
+      await page.getByLabel("اسم المستخدم", { exact: true }).fill(fixtureUsername(email));
       await page.locator('input[type="password"]').fill(LOCAL_TEST_PASSWORD);
       await page.locator('button[type="submit"]').click();
       await page.waitForURL(/\/diary$/);
@@ -1378,7 +1379,7 @@ test.describe("@profile Profile and targets redesign", () => {
 
   test("@plan016 sign-out cancel retains the draft and confirmed remote failure signs out locally", async ({ page, originalProfile }) => {
     let logoutCalls = 0;
-    await page.route((url) => url.origin === AUTH_ORIGIN && url.pathname === "/auth/v1/logout", async (route) => {
+    await page.route((url) => url.origin === AUTH_ORIGIN && url.pathname === "/auth/logout", async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       logoutCalls += 1;
       await route.fulfill({ status: 500, contentType: "application/json", json: { message: "forced remote revocation failure" } });
@@ -1413,7 +1414,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(page.locator(".nav-signout")).toHaveCount(0);
     await expect(dialog).toHaveCount(0);
 
-    await page.locator('input[type="email"]').fill(ADMIN_EMAIL);
+    await page.getByLabel("اسم المستخدم", { exact: true }).fill(fixtureUsername(ADMIN_EMAIL));
     await page.locator('input[type="password"]').fill(ADMIN_PASSWORD);
     await page.locator('button[type="submit"]').click();
     await page.waitForURL(/\/(diary|profile)$/);

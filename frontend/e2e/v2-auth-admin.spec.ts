@@ -1,25 +1,19 @@
+import { fixtureUsername, internalLogin } from "./internal-auth";
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { provisionUser } from "./provision-user";
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
-const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
 const USER_PASSWORD = "E2e-user-password-2026!";
 
 async function localToken(email: string): Promise<string> {
   await provisionUser(email, USER_PASSWORD);
-  const response = await fetch(`${AUTH_URL}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: { apikey: "e2e-public-key", "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password: USER_PASSWORD })
-  });
-  expect(response.status).toBe(200);
-  return ((await response.json()) as { access_token: string }).access_token;
+  return (await internalLogin(email, USER_PASSWORD)).access_token;
 }
 
 async function signInAsUser(page: Page, email: string): Promise<void> {
   await page.goto("/auth/login?next=%2Ffoods");
-  await page.locator('input[type="email"]').fill(email);
+  await page.getByLabel("اسم المستخدم", { exact: true }).fill(fixtureUsername(email));
   await page.locator('input[type="password"]').fill(USER_PASSWORD);
   await page.locator('button[type="submit"]').click();
   await page.waitForURL(/\/foods$/);
@@ -30,7 +24,7 @@ test("unauthenticated navigation redirects to Arabic login", async ({ browser })
   const page = await context.newPage();
   await page.goto("/profile");
   await expect(page).toHaveURL(/\/auth\/login\?next=%2Fprofile/);
-  await expect(page.locator('input[type="email"]')).toBeVisible();
+  await expect(page.getByLabel("اسم المستخدم", { exact: true })).toBeVisible();
   await expect(page.locator('input[type="password"]')).toBeVisible();
   await context.close();
 });

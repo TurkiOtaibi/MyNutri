@@ -311,7 +311,7 @@ test.describe("Foods navigation and standalone pages @foods", () => {
 
   test("[FOOD-TC-012] @plan016 dirty Food sign-out cancel is zero calls and confirm is one call", async ({ page }) => {
     let logoutCalls = 0;
-    await page.route("**/auth/v1/logout**", async (route) => {
+    await page.route("**/auth/logout", async (route) => {
       logoutCalls += 1;
       await route.continue();
     });

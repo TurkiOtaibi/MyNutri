@@ -14,6 +14,7 @@ import {
 import { ApiError, getCalendarAuthority, getNutritionRegistry, getProfile, listTargetPlanHistory, previewProfile, writeTargetPlan } from "@/lib/api";
 import type { ActivityLevel, Goal, ProfileResponse, Sex, TargetPlanWriteResponse, TargetResponse } from "@/lib/types";
 import { useAuth } from "./AuthProvider";
+import { ProfilePasswordSection, useProfilePassword } from "./ProfilePasswordSection";
 import { useSessionAbortSignal } from "./SessionQueryProvider";
 import { useUnsavedChanges } from "./UnsavedChangesProvider";
 import { ProfileLoadError, ProfileSkeleton } from "@/features/profile/profile-dialogs";
@@ -25,6 +26,7 @@ export function ProfilePage() {
   const { session } = useAuth();
   const subjectId = session?.user.id ?? null;
   const accessToken = session?.access_token;
+  const password = useProfilePassword(subjectId, accessToken);
   const sessionSignal = useSessionAbortSignal();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<DraftProfile>(blankDraft);
@@ -138,9 +140,10 @@ export function ProfilePage() {
 
   const { requestDiscard } = useUnsavedChanges({
     identity: "profile",
-    dirty,
-    enabled: !writeOwnsAuthority,
+    dirty: (!writeOwnsAuthority && dirty) || password.dirty,
+    enabled: !writeOwnsAuthority || password.dirty,
     discard: () => {
+      password.discard();
       setSavedDraft(draft);
       savedProfileSubjectRef.current = subjectId;
       setSavedEffectiveFrom(selectedEffectiveFrom || null);
@@ -544,6 +547,8 @@ export function ProfilePage() {
         cancelWriteConfirmation,
         confirmWrite: () => void writeConfirmedPlan(),
       }}
-    />
+    >
+      <ProfilePasswordSection password={password} />
+    </ProfileView>
   );
 }

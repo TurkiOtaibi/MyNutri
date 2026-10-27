@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DiaryEntryInput, ProfileInput } from "@/lib/types";
+import { rejectSession } from "@/lib/internal-session";
 
 const getSession = vi.hoisted(() => vi.fn());
 
-vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => ({ auth: { getSession } }),
+vi.mock("@/lib/internal-session", () => ({
+  readSessionToken: getSession,
+  rejectSession: vi.fn(),
 }));
 
 import {
@@ -17,6 +19,8 @@ import {
   getProfile,
   listFoodPicker,
   listFoodsPage,
+  loginAccount,
+  changeAccountPassword,
   previewProfile,
   writeTargetPlan,
 } from "@/lib/api";
@@ -52,7 +56,7 @@ describe("API transport behavior", () => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     getSession.mockReset();
-    getSession.mockResolvedValue({ data: { session: { access_token: "session-token" } } });
+    getSession.mockReturnValue("session-token");
   });
 
   afterEach(() => {
@@ -77,6 +81,23 @@ describe("API transport behavior", () => {
     });
     expect(request.headers.get("Authorization")).toBe("Bearer session-token");
     expect(request.init.cache).toBe("no-store");
+    expect(request.init.credentials).toBe("omit");
+  });
+
+  it.each(["INVALID_CREDENTIAL", "ACCOUNT_DISABLED"])("invalidates only the request token on %s", async code => {
+    fetchMock.mockResolvedValue(jsonResponse({ detail: { code, message_ar: "انتهت جلستك. سجّل الدخول مرة أخرى." } }, 401));
+    await expect(getFood("food")).rejects.toMatchObject({ code, message: "انتهت جلستك. سجّل الدخول مرة أخرى." });
+    expect(rejectSession).toHaveBeenCalledWith("session-token", code);
+  });
+
+  it("keeps an existing session on rejected login and incorrect current password", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ detail: { code: "INVALID_CREDENTIAL" } }, 401))
+      .mockResolvedValueOnce(jsonResponse({ detail: { code: "CURRENT_PASSWORD_INCORRECT", message_ar: "كلمة المرور الحالية غير صحيحة." } }, 400));
+    await expect(loginAccount({ username: "example", password: "synthetic" })).rejects.toMatchObject({ code: "INVALID_CREDENTIAL" });
+    expect(requestAt(fetchMock).headers.has("Authorization")).toBe(false);
+    await expect(changeAccountPassword({ current_password: "synthetic", new_password: "synthetic-new" }, "explicit-token"))
+      .rejects.toMatchObject({ message: "كلمة المرور الحالية غير صحيحة." });
+    expect(rejectSession).not.toHaveBeenCalled();
   });
 
   it("sends explicit authorization, JSON, and idempotency metadata for Profile writes", async () => {

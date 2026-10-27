@@ -1,3 +1,4 @@
+import { internalLogin, SESSION_TOKEN_KEY } from "../internal-auth";
 import { formatGregorianArabicDate } from "../../lib/dates";
 import { randomUUID } from "node:crypto";
 import type { Page } from "@playwright/test";
@@ -335,12 +336,11 @@ test("delivered POST response after actor takeover cannot restore the old draft,
     await page.locator("#lab-hba1c-value").fill("5.270");
     await save(page); await started;
     const oldSubject = await page.evaluate(() => (window as Window & { __mynutriE2ESessionSubjectKey?: () => string }).__mynutriE2ESessionSubjectKey?.());
-    const switched = await page.evaluate(async (email) => {
-      const signIn = (window as Window & { __mynutriE2ESignInWithPassword?: (email: string, password: string) => Promise<{ error: unknown }> }).__mynutriE2ESignInWithPassword;
-      if (!signIn) throw Error("Missing local auth fixture control");
-      return signIn(email, "Labs-owner-password-2026!");
-    }, takeoverEmail);
-    expect(switched.error).toBeNull();
+    const switched = await internalLogin(takeoverEmail, "Labs-owner-password-2026!");
+    await page.evaluate(({ token, key }) => {
+      localStorage.setItem(key, token);
+      window.dispatchEvent(new StorageEvent("storage", { key }));
+    }, { token: switched.access_token, key: SESSION_TOKEN_KEY });
     await expect(dialog(page)).toHaveCount(0);
     const delivered = page.waitForResponse((response) => response.url() === `${API_URL}/labs/results` && response.request().method() === "POST");
     release();

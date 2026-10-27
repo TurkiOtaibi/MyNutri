@@ -2,7 +2,7 @@
 
 ## State boundary for authentication
 
-CURRENT in #110: the backend supports internal username/password login alongside the existing Supabase/email browser flow. Internal credentials take precedence: any account with an internal password hash is rejected on the Supabase JWT path with `INTERNAL_LOGIN_REQUIRED`. Internal password changes and resets never update Supabase; accounts without internal credentials retain the existing JWT path. Frontend integration (#111), username-based Admin UI (#112), provider/email removal (#113), and destructive cutover (#114) remain APPROVED TARGET, not implemented or deployed by this change. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
+CURRENT in #111: the browser uses internal username/password login, opaque bearer sessions, forced initial-password change, and own-password change in Profile. Only the session token is persisted in localStorage; passwords stay in memory and no auth cookies are used. Reload during an initial-password change requires re-authentication. Forgotten/reset-password browser flows are absent; forgotten passwords go to the Admin. The backend retains legacy Supabase JWT admission for accounts without internal credentials until #113; an internal password hash takes precedence and rejects JWT admission with `INTERNAL_LOGIN_REQUIRED`. Internal password changes/resets never update Supabase. Admin email-based creation UI/API remains CURRENT until #112; provider/email removal (#113) and destructive cutover (#114) remain APPROVED TARGET. This describes repository implementation, not deployment. (Product Owner decisions of 17 and 27 October 2026; issues #110/#111; BR-AUT-001/003/004/005/007/008/010/011/012/017, BR-PRF-024–026, BR-USM-030/033.)
 
 The CURRENT implementation allows only Admin correction of another user's «الجنس» in issue #109; all other private-data monitoring remains read-only. Cutover deletes current test accounts/private data, preserves Foods, and creates the single Admin through a server-side create/reset command. No cutover is performed here. (17 October 2026 PRF/USM/AUT/FOD decisions; BR-PRF-006, BR-USM-027/032/043/061/067/074; issue #100; [V2 06](06_DATA_MIGRATION_AND_CUTOVER.md).)
 
@@ -15,7 +15,7 @@ in the lifecycle revision; Production activation remains a separate release acti
 
 ## Objective
 
-V2 supports internal backend authentication alongside the current Supabase email/password browser flow (#110; 27 October 2026; BR-AUT-001/017), durable Principal ownership, `user`
+V2 supports internal username/password browser authentication and transitional backend-only legacy Supabase JWT admission (#110/#111; 27 October 2026; BR-AUT-001/017), durable Principal ownership, `user`
 and `admin` roles, read-only admin monitoring, and a global admin-managed Food
 catalog. Food taxonomy and provenance are intentionally small and stable.
 Standalone Labs lets adults record private numeric laboratory facts and follow

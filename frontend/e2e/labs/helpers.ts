@@ -9,7 +9,7 @@ import {
   type Page,
   type Response,
 } from "@playwright/test";
-import { createChunks, stringToBase64URL } from "@supabase/ssr";
+import { internalLogin, SESSION_TOKEN_KEY } from "../internal-auth";
 
 import type {
   LabCreateReceipt,
@@ -25,12 +25,11 @@ import { provisionUser } from "../provision-user";
 import { createResultCleanupRegistry } from "./result-cleanup";
 
 export const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
-const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
 const PASSWORD = "Labs-owner-password-2026!";
 const API_ORIGIN = new URL(API_URL).origin;
-const AUTH_COOKIE_KEY = `sb-${new URL(AUTH_URL).hostname.split(".")[0]}-auth-token`;
+const FRONTEND_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
 
-for (const value of [API_URL, AUTH_URL]) {
+for (const value of [API_URL, FRONTEND_URL]) {
   const hostname = new URL(value).hostname;
   if (hostname !== "127.0.0.1" && hostname !== "localhost") {
     throw new Error(`Labs E2E helper refuses non-loopback target ${value}`);
@@ -41,11 +40,6 @@ export type LabsActor = {
   email: string;
   token: string;
   principalId: string;
-  authCookies: Array<{
-    name: string;
-    value: string;
-    expires: number;
-  }>;
 };
 
 export type LabsApi = {
@@ -91,18 +85,9 @@ export async function createActor(
 ): Promise<LabsActor> {
   const email = `labs-owner-${randomUUID()}@example.test`;
   await provisionUser(email, PASSWORD);
-  const tokenResponse = await fetch(`${AUTH_URL}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: { apikey: "e2e-public-key", "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password: PASSWORD }),
-  });
-  expect(tokenResponse.status).toBe(200);
-  const authSession = await tokenResponse.json() as {
-    access_token: string;
-    expires_at: number;
-  } & Record<string, unknown>;
+  const authSession = await internalLogin(email, PASSWORD);
   const token = authSession.access_token;
-  expect(Number.isFinite(authSession.expires_at)).toBe(true);
+  expect(Number.isFinite(Date.parse(authSession.expires_at))).toBe(true);
   const accountResponse = await request.get(`${API_URL}/account/me`, { headers: headers(token) });
   expect(accountResponse.status(), await accountResponse.text()).toBe(200);
   const account = await accountResponse.json() as { principal_id: string; role: string };
@@ -112,10 +97,6 @@ export async function createActor(
     email,
     token,
     principalId: account.principal_id,
-    authCookies: createChunks(
-      AUTH_COOKIE_KEY,
-      `base64-${stringToBase64URL(JSON.stringify(authSession))}`,
-    ).map(({ name, value }) => ({ name, value, expires: authSession.expires_at })),
   };
 }
 
@@ -177,17 +158,11 @@ export async function loginOwner(browser: Browser, actor: LabsActor, hasTouch: b
     hasTouch,
     serviceWorkers: allowServiceWorkers ? "allow" : "block",
     storageState: {
-      cookies: actor.authCookies.map(({ name, value, expires }) => ({
-        name,
-        value,
-        domain: "127.0.0.1",
-        path: "/",
-        expires,
-        httpOnly: false,
-        secure: false,
-        sameSite: "Lax",
-      })),
-      origins: [],
+      cookies: [],
+      origins: [{
+        origin: new URL(FRONTEND_URL).origin,
+        localStorage: [{ name: SESSION_TOKEN_KEY, value: actor.token }],
+      }],
     },
   });
   const page = await context.newPage();
