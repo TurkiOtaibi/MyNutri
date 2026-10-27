@@ -195,8 +195,8 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
       return {
         primary: <button className="btn" onClick={() => select(account, "edit")}>تعديل المستخدم</button>,
         menu: [
-          { label: "تصحيح الجنس", disabled: busy || !account.profile_complete, onSelect: () => { onActionStart?.(); setNotice(""); setSexError(""); setSexTarget(account); } },
           { label: "إعادة تعيين كلمة المرور", onSelect: () => select(account, "password") },
+          { label: "تصحيح الجنس", disabled: busy || !account.profile_complete, onSelect: () => { onActionStart?.(); setNotice(""); setSexError(""); setSexTarget(account); } },
           { label: account.status === "active" ? "تعطيل المستخدم" : "تفعيل المستخدم", disabled: busy, onSelect: () => account.status === "active" ? setDisableTarget(account) : void execute(() => setAdminAccountEnabled(account.principal_id, true), "status") },
           remove
         ]

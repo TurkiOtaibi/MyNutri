@@ -110,7 +110,7 @@ test("details display demographics targets dated totals and units without nutrit
   await expect(day).toContainText("120 / 2000 سعرة");
   await expect(page.locator(".admin-detail-section").getByRole("button", { name: /حفظ|تعديل|حذف/ })).toHaveCount(0);
   await page.getByRole("button", { name: /^إجراءات/ }).click();
-  await expect(page.getByRole("menuitem")).toHaveText(["إعادة تعيين كلمة المرور", "تعطيل المستخدم", "حذف المستخدم نهائيًا"]);
+  await expect(page.getByRole("menuitem")).toHaveText(["إعادة تعيين كلمة المرور", "تصحيح الجنس", "تعطيل المستخدم", "حذف المستخدم نهائيًا"]);
   await page.keyboard.press("Escape");
   await page.getByLabel("التاريخ", { exact: true }).fill("2026-10-18");
   await expect(day.locator("time")).toHaveAttribute("datetime", "2026-10-18");
