@@ -3,22 +3,34 @@ import type { ProfileInput } from "../lib/types";
 import { fillRequiredFoodForm, submitFoodForm } from "./foods/helpers";
 import { applyProfileThroughTargetPlan } from "./profile-api";
 import { provisionUser } from "./provision-user";
+import { fixtureUsername, internalLogin, SESSION_TOKEN_KEY } from "./internal-auth";
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
-const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
 const PASSWORD = "Session-isolation-password-2026!";
 const ADMIN_EMAIL = "admin.e2e@example.test";
 const ADMIN_PASSWORD = "E2e-only-password-2026!";
 
+const tokenSubjects = new Map<string, string>();
+const observedPages = new WeakSet<Page>();
+
 async function token(email: string, password = PASSWORD): Promise<string> {
   await provisionUser(email, password);
-  const response = await fetch(`${AUTH_URL}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: { apikey: "e2e-public-key", "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password })
+  const result = await internalLogin(email, password);
+  tokenSubjects.set(result.access_token, result.account.principal_id);
+  return result.access_token;
+}
+
+async function observeBrowserLogin(page: Page) {
+  if (observedPages.has(page)) return;
+  observedPages.add(page);
+  await page.route(`${API_URL}/auth/login`, async (route) => {
+    const response = await route.fetch();
+    if (response.ok()) {
+      const result = await response.json() as { access_token: string; account: { principal_id: string } };
+      tokenSubjects.set(result.access_token, result.account.principal_id);
+    }
+    await route.fulfill({ response });
   });
-  expect(response.status).toBe(200);
-  return ((await response.json()) as { access_token: string }).access_token;
 }
 
 function headers(accessToken: string) {
@@ -26,10 +38,9 @@ function headers(accessToken: string) {
 }
 
 function tokenSubject(accessToken: string): string {
-  const payload = accessToken.split(".")[1];
-  if (!payload) throw new Error("fixture token has no JWT payload");
-  const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-  return (JSON.parse(Buffer.from(normalized, "base64").toString("utf8")) as { sub: string }).sub;
+  const subject = tokenSubjects.get(accessToken);
+  if (!subject) throw new Error("Internal fixture token has no recorded Principal identity.");
+  return subject;
 }
 
 function profile(weight: number): ProfileInput {
@@ -58,7 +69,8 @@ async function signIn(page: Page, email: string, password: string, next: string)
 }
 
 async function submitLogin(page: Page, email: string, password: string, next: string, waitForDestination = true) {
-  await page.locator('input[type="email"]').fill(email);
+  await observeBrowserLogin(page);
+  await page.locator('input[autocomplete="username"]').fill(fixtureUsername(email));
   await page.locator('input[type="password"]').fill(password);
   await page.locator('button[type="submit"]').click();
   if (waitForDestination) await page.waitForURL(new RegExp(`${next.replace("/", "\\/")}$`));
@@ -96,7 +108,8 @@ function authUrl(next: string | null) {
 }
 
 async function submitAuthForm(page: Page, email: string) {
-  await page.locator('input[type="email"]').fill(email);
+  await observeBrowserLogin(page);
+  await page.locator('input[autocomplete="username"]').fill(fixtureUsername(email));
   await page.locator('input[type="password"]').fill(PASSWORD);
   await page.locator('button[type="submit"]').click();
 }
@@ -216,28 +229,28 @@ function createReleaseGate() {
   };
 }
 
-async function e2eAuthAction(page: Page, action: "refresh" | "signOut" | "signIn" | "duplicate", credentials?: { email: string; password: string }) {
-  const result = await page.evaluate(async ({ operation, login }) => {
-    const testWindow = window as Window & {
-      __mynutriE2ERefreshSession?: () => Promise<{ error: { message: string } | null }>;
-      __mynutriE2ESignOut?: () => Promise<{ error: { message: string } | null }>;
-      __mynutriE2ESignInWithPassword?: (email: string, password: string) => Promise<{ error: { message: string } | null }>;
-      __mynutriE2EDuplicateSession?: () => Promise<void>;
-    };
-    const call = operation === "refresh" ? testWindow.__mynutriE2ERefreshSession : testWindow.__mynutriE2ESignOut;
-    if (operation === "signIn") {
-      if (!testWindow.__mynutriE2ESignInWithPassword || !login) throw new Error("Local E2E auth control is unavailable.");
-      return testWindow.__mynutriE2ESignInWithPassword(login.email, login.password);
-    }
-    if (operation === "duplicate") {
-      if (!testWindow.__mynutriE2EDuplicateSession) throw new Error("Local E2E auth control is unavailable.");
-      await testWindow.__mynutriE2EDuplicateSession();
-      return { error: null };
-    }
-    if (!call) throw new Error("Local E2E auth control is unavailable.");
-    return call();
-  }, { operation: action, login: credentials });
-  expect(result.error).toBeNull();
+async function e2eAuthAction(page: Page, action: "signOut" | "signIn" | "duplicate", credentials?: { email: string; password: string }) {
+  const currentToken = await page.evaluate((key) => localStorage.getItem(key), SESSION_TOKEN_KEY);
+  let nextToken = currentToken;
+  if (action === "signOut") {
+    if (!currentToken) throw new Error("No internal session to sign out.");
+    const response = await fetch(`${API_URL}/auth/logout`, {
+      method: "POST", headers: headers(currentToken),
+    });
+    expect(response.status).toBe(204);
+    nextToken = null;
+  }
+  if (action === "signIn") {
+    const login = credentials;
+    if (!login) throw new Error("Internal actor credentials unavailable for session replacement.");
+    nextToken = await token(login.email, login.password);
+  }
+  await page.evaluate(({ key, value }) => {
+    const oldValue = localStorage.getItem(key);
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+    window.dispatchEvent(new StorageEvent("storage", { key, oldValue, newValue: value, storageArea: localStorage }));
+  }, { key: SESSION_TOKEN_KEY, value: nextToken });
 }
 
 function authorizationSubject(authorization: string | undefined): string | undefined {
@@ -310,7 +323,7 @@ async function prepareLabsIsolation(browser: Browser, request: APIRequestContext
   try {
     actorA = await createActor("a", "98.7654321");
     actorB = await createActor("b", "1.23456789");
-    context = await browser.newContext({ storageState: undefined });
+    context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
     page = await context.newPage();
   } catch (primaryFailure) {
     const cleanupFailures = await cleanupTrackedResults();
@@ -421,10 +434,10 @@ async function withLabsIsolation(
 }
 
 test("@plan016 @strictmode development StrictMode replay keeps one session and History API owner live", async ({ browser }) => {
-  const context = await browser.newContext({ storageState: undefined });
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
   await page.goto("/auth/login");
-  await expect(page.locator('input[type="email"]')).toBeVisible();
+  await expect(page.locator('input[autocomplete="username"]')).toBeVisible();
   await page.waitForFunction(() =>
     typeof (window as SessionInspectionWindow).__mynutriE2ESessionSignalAborted === "function"
   );
@@ -447,7 +460,7 @@ test("@plan016 @strictmode development StrictMode replay keeps one session and H
 
 for (const [index, scenario] of postLoginReturnPathCases.entries()) {
     test(`@plan006 login post-auth return path: ${scenario.name}`, async ({ browser }) => {
-      const context = await browser.newContext({ storageState: undefined });
+      const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
       const page = await context.newPage();
       const hostileRequests: string[] = [];
       page.on("request", (request) => {
@@ -470,7 +483,7 @@ for (const [index, scenario] of postLoginReturnPathCases.entries()) {
 }
 
 test("@plan006 self-registration route is removed", async ({ browser }) => {
-  const context = await browser.newContext({ storageState: undefined });
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
   try {
     await page.goto("/auth/sign-up");
@@ -524,7 +537,7 @@ test("same browser context isolates cached profile and diary data across A to B 
   });
   expect(diaryResponse.status()).toBe(201);
 
-  const context = await browser.newContext({ storageState: undefined });
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
   const historyDateA = "2099-07-18";
   const historyMarkerA = "18 يوليو 2099";
@@ -555,7 +568,7 @@ test("same browser context isolates cached profile and diary data across A to B 
 
   await page.locator(".nav-signout").click();
   await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
-  await expect(page.locator('input[type="email"]')).toBeVisible();
+  await expect(page.locator('input[autocomplete="username"]')).toBeVisible();
   blockHistoryB = true;
   await installLeakObserver(page, [emailA, diaryNameA, historyMarkerA], ["71"]);
   let releaseProfileB!: () => void;
@@ -602,7 +615,7 @@ test("same browser context isolates cached profile and diary data across A to B 
 
   await page.locator(".nav-signout").click();
   await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
-  await expect(page.locator('input[type="email"]')).toBeVisible();
+  await expect(page.locator('input[autocomplete="username"]')).toBeVisible();
   await signIn(page, emailA, PASSWORD, "/profile");
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("71");
   await context.close();
@@ -617,14 +630,13 @@ test("@plan016 external A to B subject change clears A's dirty Profile registrat
   await applyProfileThroughTargetPlan(request, tokenA, profile(71));
   await applyProfileThroughTargetPlan(request, tokenB, profile(89));
 
-  const context = await browser.newContext({ storageState: undefined });
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
   await signIn(page, emailA, PASSWORD, "/profile");
   const weight = page.locator('input[aria-label="الوزن"]');
   await expect(weight).toHaveValue("71");
   await weight.fill("72");
   await installLeakObserver(page, [], ["72"], true);
-  await e2eAuthAction(page, "signOut");
   await e2eAuthAction(page, "signIn", { email: emailB, password: PASSWORD });
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("89");
   await expect(page.getByRole("dialog", { name: "تغييرات غير محفوظة" })).toHaveCount(0);
@@ -637,13 +649,12 @@ test("@plan016 external Admin to User subject change clears a dirty Food draft b
   const emailB = `plan016-food-b-${Date.now()}@example.test`;
   await token(emailB);
   const marker = `Plan016 Admin-only draft ${Date.now()}`;
-  const context = await browser.newContext({ storageState: undefined });
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
   await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/foods/new");
   const name = page.locator("form.food-form-layout input").first();
   await name.fill(marker);
   await installLeakObserver(page, [marker], [marker], true);
-  await e2eAuthAction(page, "signOut");
   await e2eAuthAction(page, "signIn", { email: emailB, password: PASSWORD });
   await expect(page.locator("form.food-form-layout")).toHaveCount(0);
   await expect(page.getByRole("dialog", { name: "تغييرات غير محفوظة" })).toHaveCount(0);
@@ -659,7 +670,7 @@ test("a delivered delayed Admin account response cannot restore Admin identity a
   let bAccountRequestedOnAdminPage = false;
   let delayedAdminRequest: Request | null = null;
   const adminAccountBlocked = new Promise<void>((resolve) => { releaseAdminAccount = resolve; });
-  const context = await browser.newContext({ storageState: undefined });
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const adminPage = await context.newPage();
 
   await adminPage.addInitScript(() => {
@@ -685,10 +696,10 @@ test("a delivered delayed Admin account response cannot restore Admin identity a
     await route.continue();
   });
   await signIn(adminPage, ADMIN_EMAIL, ADMIN_PASSWORD, "/profile");
+  await e2eAuthAction(adminPage, "signIn", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
   await expect.poll(() => adminAccountWasBlocked).toBe(true);
   const delayedAdminResponse = adminPage.waitForResponse((response) => response.request() === delayedAdminRequest);
   await installLeakObserver(adminPage, [ADMIN_EMAIL, "الإدارة"]);
-  await e2eAuthAction(adminPage, "signOut");
   await e2eAuthAction(adminPage, "signIn", { email: emailB, password: PASSWORD });
   await expect.poll(() => bAccountRequestedOnAdminPage).toBe(true);
   await expect(adminPage.locator(".nav-signout")).toBeVisible();
@@ -720,7 +731,7 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
   let staleDetailRequested = false;
   const createGate = createReleaseGate();
   const bAccountGate = createReleaseGate();
-  const context = await browser.newContext({ storageState: undefined });
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
 
   // Force delivery after the subject boundary aborts so callback guards are
@@ -751,6 +762,7 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
   await expect(page.locator("form.food-form-layout")).toBeVisible();
   expect(await sessionSignalAborted(page)).toBe(false);
   const adminSubjectKey = await sessionSubjectKey(page);
+  adminAccountSubject = adminSubjectKey;
   await retainSessionSignalInspector(page);
   expect(adminAccountSubject).toBeTruthy();
   await fillRequiredFoodForm(page, { name: marker });
@@ -821,7 +833,7 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
     const subjectRotation = [...rotations].reverse().find((rotation) =>
       rotation.fromSubjectKey === adminSubjectKey && rotation.toSubjectKey === bSubjectKey
     );
-    if (!subjectRotation) throw new Error("Expected direct Admin-to-User boundary rotation record was not captured.");
+    if (!subjectRotation) throw new Error("Expected Admin-to-unvalidated-session boundary rotation record was not captured.");
     expect(subjectRotation.sequence).toBeGreaterThan(0);
     expect(subjectRotation.previousAbortedBefore).toBe(false);
     expect(subjectRotation.previousAbortedAfter).toBe(true);
@@ -869,7 +881,7 @@ test("a stale User A 401 cannot clear User B's same-page session", async ({ brow
   let bRequestWasSeen = false;
   let aRequest: Request | null = null;
   const a401Blocked = new Promise<void>((resolve) => { releaseA401 = resolve; });
-  const context = await browser.newContext({ storageState: undefined });
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
   await page.addInitScript(() => {
     const originalFetch = window.fetch.bind(window);
@@ -888,17 +900,17 @@ test("a stale User A 401 cannot clear User B's same-page session", async ({ brow
       aRequestWasBlocked = true;
       aRequest = route.request();
       await a401Blocked;
-      await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ detail: "expired" }) });
+      await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { code: "INVALID_CREDENTIAL", message_ar: "انتهت جلستك. سجّل الدخول مرة أخرى." } }) });
       return;
     }
     bRequestWasSeen = true;
     await route.continue();
   });
   await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/profile");
+  await e2eAuthAction(page, "signIn", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
   await expect.poll(() => aRequestWasBlocked).toBe(true);
   const staleResponse = page.waitForResponse((response) => response.request() === aRequest);
   await installLeakObserver(page, [ADMIN_EMAIL, "الإدارة"]);
-  await e2eAuthAction(page, "signOut");
   await e2eAuthAction(page, "signIn", { email: emailB, password: PASSWORD });
   await expect.poll(() => bRequestWasSeen).toBe(true);
   await expect(page.locator(".nav-signout")).toBeVisible();
@@ -911,67 +923,36 @@ test("a stale User A 401 cannot clear User B's same-page session", async ({ brow
   await context.close();
 });
 
-test("a same-subject refresh during a held 401 fingerprint stage cannot redirect", async ({ browser }) => {
-  const context = await browser.newContext({ storageState: undefined });
+test("a stale 401 cannot clear a replacement token for the same Principal", async ({ browser }) => {
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
-  const owner = `held-fingerprint-${Date.now()}`;
+  const delivery = createReleaseGate();
+  const started = createReleaseGate();
+  let heldRequest: Request | null = null;
   try {
-    let firstAccountRequest = true;
+    await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/profile");
     await page.route(`${API_URL}/account/me`, async (route) => {
-      if (firstAccountRequest) {
-        firstAccountRequest = false;
-        await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ detail: "expired" }) });
-        return;
-      }
-      await route.continue();
+      if (!heldRequest) {
+        heldRequest = route.request();
+        started.release();
+        await delivery.promise;
+        await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { code: "INVALID_CREDENTIAL", message_ar: "انتهت جلستك. سجّل الدخول مرة أخرى." } }) });
+      } else await route.continue();
     });
-    await page.goto("/auth/login?next=%2Fprofile");
-    await page.evaluate((hookOwner) => {
-      type OwnedCallback = (() => void) & { __mynutriOwner?: string };
-      type HeldFingerprintHook = (() => Promise<void>) & { __mynutriOwner?: string };
-      const testWindow = window as Window & {
-        __mynutriE2EHoldFingerprint?: HeldFingerprintHook;
-        __releaseFingerprint?: OwnedCallback;
-        __fingerprintHeld?: boolean;
-      };
-      let release!: OwnedCallback;
-      const held = new Promise<void>((resolve) => {
-        release = () => resolve();
-      });
-      release.__mynutriOwner = hookOwner;
-      const holdFingerprint: HeldFingerprintHook = () => {
-        testWindow.__fingerprintHeld = true;
-        return held;
-      };
-      holdFingerprint.__mynutriOwner = hookOwner;
-      testWindow.__mynutriE2EHoldFingerprint = holdFingerprint;
-      testWindow.__releaseFingerprint = release;
-    }, owner);
-    await submitLogin(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/profile", false);
-    await expect.poll(() => page.evaluate(() => Boolean((window as Window & { __fingerprintHeld?: boolean }).__fingerprintHeld))).toBe(true);
-    await e2eAuthAction(page, "refresh");
-    await page.evaluate(() => (window as Window & { __releaseFingerprint?: () => void }).__releaseFingerprint?.());
-    await expect(page.locator(".nav-signout")).toBeVisible();
+    await e2eAuthAction(page, "signIn", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+    await started.promise;
+    const staleResponse = page.waitForResponse((response) => response.request() === heldRequest);
+    await e2eAuthAction(page, "signIn", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+    await expect(page.locator('a[href="/admin/users"]')).toBeVisible();
+    const replacement = await page.evaluate((key) => localStorage.getItem(key), SESSION_TOKEN_KEY);
+    delivery.release();
+    expect((await staleResponse).status()).toBe(401);
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    expect(await page.evaluate((key) => localStorage.getItem(key), SESSION_TOKEN_KEY)).toBe(replacement);
     await expect(page).not.toHaveURL(/\/auth\/login/);
-    expect(await page.evaluate(() => document.cookie.includes("mynutri-auth-invalid-token"))).toBe(false);
+    await expect(page.locator('a[href="/admin/users"]')).toBeVisible();
   } finally {
-    await page.evaluate((hookOwner) => {
-      type OwnedCallback = (() => void) & { __mynutriOwner?: string };
-      type HeldFingerprintHook = (() => Promise<void>) & { __mynutriOwner?: string };
-      const testWindow = window as Window & {
-        __mynutriE2EHoldFingerprint?: HeldFingerprintHook;
-        __releaseFingerprint?: OwnedCallback;
-        __fingerprintHeld?: boolean;
-      };
-      const ownsHoldFingerprint = testWindow.__mynutriE2EHoldFingerprint?.__mynutriOwner === hookOwner;
-      const ownsReleaseFingerprint = testWindow.__releaseFingerprint?.__mynutriOwner === hookOwner;
-      if (ownsReleaseFingerprint) testWindow.__releaseFingerprint?.();
-      if (ownsHoldFingerprint) {
-        delete testWindow.__mynutriE2EHoldFingerprint;
-        delete testWindow.__fingerprintHeld;
-      }
-      if (ownsReleaseFingerprint) delete testWindow.__releaseFingerprint;
-    }, owner).catch(() => undefined);
+    delivery.release();
     await context.close();
   }
 });
@@ -980,25 +961,26 @@ test("a current account 401 clears the matching session before showing login", a
   const emailB = `current-401-b-${Date.now()}@example.test`;
   await token(emailB);
   let aRequest = true;
-  const context = await browser.newContext({ storageState: undefined });
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
   await page.route(`${API_URL}/account/me`, async (route) => {
     if (aRequest) {
       aRequest = false;
-      await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ detail: "expired" }) });
+      await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { code: "INVALID_CREDENTIAL", message_ar: "انتهت جلستك. سجّل الدخول مرة أخرى." } }) });
       return;
     }
     await route.continue();
   });
   await page.goto("/auth/login?next=%2Fprofile");
   const accountResponse = page.waitForResponse((response) => response.url() === `${API_URL}/account/me`);
-  await submitLogin(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/profile", false);
+  await submitLogin(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/profile");
+  await e2eAuthAction(page, "signIn", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
   expect((await accountResponse).status()).toBe(401);
   await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
   expect(new URL(page.url()).searchParams.get("next")).toBe("/profile");
-  await expect(page.locator('input[type="email"]')).toBeVisible();
+  await expect(page.locator('input[autocomplete="username"]')).toBeVisible();
   await expect(page.locator('a[href="/admin/users"]')).toHaveCount(0);
-  expect(await page.evaluate(() => document.cookie.includes("mynutri-auth-invalid-token"))).toBe(true);
+  expect(await page.evaluate((key) => localStorage.getItem(key), SESSION_TOKEN_KEY)).toBeNull();
   await submitLogin(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/profile", false);
   await expect(page.locator(".nav-signout")).toBeVisible();
   await expect(page.locator('a[href="/admin/users"]')).toBeVisible();
@@ -1025,7 +1007,7 @@ test("Admin private list and detail caches disappear when the same browser conte
   const monitoredPrincipalId = (await monitoredAccount.json() as { principal_id: string }).principal_id;
   expect((await request.get(`${API_URL}/account/me`, { headers: headers(adminToken) })).status()).toBe(200);
 
-  const context = await browser.newContext({ storageState: undefined });
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
   await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/admin/users");
   await expect(page.getByText(emailMonitored, { exact: true })).toBeVisible();
@@ -1042,7 +1024,7 @@ test("Admin private list and detail caches disappear when the same browser conte
 
   await page.locator(".nav-signout").click();
   await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
-  await expect(page.locator('input[type="email"]')).toBeVisible();
+  await expect(page.locator('input[autocomplete="username"]')).toBeVisible();
   await installLeakObserver(page, [emailMonitored, ADMIN_EMAIL]);
   let releaseProfileB!: () => void;
   let profileBWasBlocked = false;
@@ -1073,40 +1055,30 @@ test("Admin private list and detail caches disappear when the same browser conte
   await context.close();
 });
 
-test("a refresh-token session update keeps User A's query client and does not request another subject's profile", async ({ browser, request }) => {
-  const suffix = Date.now();
-  const emailA = `refresh-a-${suffix}@example.test`;
+test("an unchanged-token storage event keeps User A's query client and private data", async ({ browser, request }) => {
+  const emailA = `same-token-a-${Date.now()}@example.test`;
   const tokenA = await token(emailA);
   await applyProfileThroughTargetPlan(request, tokenA, profile(74));
-
-  const context = await browser.newContext({ storageState: undefined });
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
-  await signIn(page, emailA, PASSWORD, "/profile");
-  await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("74");
-  let accountRequestsAfterRefresh = 0;
-  let profileRequestsAfterRefresh = 0;
-  page.on("request", (requestEvent) => {
-    if (requestEvent.url() === `${API_URL}/account/me`) accountRequestsAfterRefresh += 1;
-    if (requestEvent.url() === `${API_URL}/profile`) profileRequestsAfterRefresh += 1;
-  });
-
-  let releaseAccountRefresh!: () => void;
-  let accountRefreshWasBlocked = false;
-  const accountRefreshBlocked = new Promise<void>((resolve) => { releaseAccountRefresh = resolve; });
-  await page.route(`${API_URL}/account/me`, async (route) => {
-    accountRefreshWasBlocked = true;
-    await accountRefreshBlocked;
-    await route.continue();
-  });
-  await e2eAuthAction(page, "refresh");
-  await expect.poll(() => accountRefreshWasBlocked).toBe(true);
-  await e2eAuthAction(page, "duplicate");
-  releaseAccountRefresh();
-  await expect.poll(() => accountRequestsAfterRefresh).toBeGreaterThanOrEqual(1);
-  await expect(page.locator(".nav-signout")).toBeVisible();
-  await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("74");
-  expect(profileRequestsAfterRefresh).toBe(0);
-  await context.close();
+  try {
+    await signIn(page, emailA, PASSWORD, "/profile");
+    await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("74");
+    await retainSessionSignalInspector(page);
+    const rotations = await sessionBoundaryRotations(page);
+    const requests: string[] = [];
+    page.on("request", (event) => {
+      if ([`${API_URL}/account/me`, `${API_URL}/profile`].includes(event.url())) requests.push(event.url());
+    });
+    await e2eAuthAction(page, "duplicate");
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    expect(await retainedSessionSignalAborted(page)).toBe(false);
+    expect(await sessionBoundaryRotations(page)).toEqual(rotations);
+    expect(requests).toEqual([]);
+    await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("74");
+  } finally {
+    await context.close();
+  }
 });
 
 test("@strictmode Labs old owner detail cannot repopulate a new actor session", async ({ browser, request }) => {
@@ -1247,7 +1219,7 @@ test("@strictmode held selected-user Labs GET cannot repaint after admin changes
   });
 });
 
-test("@strictmode admin logout to ordinary actor clears selected-user Labs while its URL remains", async ({ browser, request }) => {
+test("@strictmode admin logout clears selected-user Labs and ordinary actor cannot reopen its URL", async ({ browser, request }) => {
   await withLabsIsolation(browser, request, async (fixture) => {
     const { page, actorA, actorB } = fixture;
     await fixture.login({ ...actorA, email: ADMIN_EMAIL }, `/admin/users/${actorA.principalId}/labs`, ADMIN_PASSWORD);
@@ -1256,8 +1228,11 @@ test("@strictmode admin logout to ordinary actor clears selected-user Labs while
     await retainSessionSignalInspector(page);
     await installLeakObserver(page, [actorA.displayValue, actorA.resultId, ADMIN_EMAIL], [], true);
     await e2eAuthAction(page, "signOut");
-    await e2eAuthAction(page, "signIn", { email: actorB.email, password: PASSWORD });
+    await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
     expect(await retainedSessionSignalAborted(page)).toBe(true);
+    await expect(page.getByText(actorA.displayValue, { exact: false })).toHaveCount(0);
+    expect(await leakRecords(page)).toEqual([]);
+    await submitLogin(page, actorB.email, PASSWORD, `/admin/users/${actorA.principalId}/labs`);
     expect(new URL(page.url()).pathname).toBe(`/admin/users/${actorA.principalId}/labs`);
     await expect(page.locator('a[href="/admin/users"]')).toHaveCount(0);
     await expect(page.getByText(actorA.displayValue, { exact: false })).toHaveCount(0);

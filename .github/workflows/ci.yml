@@ -10,10 +10,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  EXPECTED_FUNCTIONAL_PLAYWRIGHT_TESTS: "468"
-  EXPECTED_BACKEND_TESTS: "1806"
+  EXPECTED_FUNCTIONAL_PLAYWRIGHT_TESTS: "479"
+  EXPECTED_BACKEND_TESTS: "1817"
   EXPECTED_BACKEND_UNIT_TESTS: "1507"
-  EXPECTED_BACKEND_POSTGRES_TESTS: "299"
+  EXPECTED_BACKEND_POSTGRES_TESTS: "310"
 
 jobs:
   backend-static:
@@ -595,6 +595,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
+      PLAYWRIGHT_DISPOSABLE_DATABASE: mynutri_e2e_ci_${{ matrix.shard }}
       DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_e2e_ci_${{ matrix.shard }}
       SUPABASE_URL: http://127.0.0.1:8765
       SUPABASE_JWT_AUDIENCE: authenticated
@@ -866,10 +867,6 @@ jobs:
     name: Plan 020 provider acceptance
     runs-on: ubuntu-latest
     env:
-      PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
-      PLAYWRIGHT_API_URL: http://127.0.0.1:65534
-      PLAYWRIGHT_SKIP_GLOBAL_SETUP: "1"
-      PLAN020_RECOVERY_EXPIRY_SECONDS: "20"
       PLAN020_PROJECT_ID: mynutri-plan020-provider-ci
     steps:
       - uses: actions/checkout@v4
@@ -880,11 +877,6 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/requirements.lock
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
       - name: Set up pinned Supabase CLI
         uses: supabase/setup-cli@v2
         with:
@@ -893,9 +885,6 @@ jobs:
         run: |
           pip install --require-hashes -r backend/requirements.lock
           pip install --no-deps --no-build-isolation -e ./backend
-          cd frontend
-          npm ci --no-audit --prefer-offline
-          npx playwright install --with-deps --only-shell chromium
       - name: Start isolated local Supabase Auth and Mailpit
         shell: bash
         run: |
@@ -981,74 +970,6 @@ jobs:
             PROVIDER_ACCEPTANCE_JWT_SECRET="$provider_jwt_secret" \
             PROVIDER_ACCEPTANCE_DISPOSABLE="$PLAN020_PROJECT_ID" \
             python scripts/provider_session_cutoff_acceptance.py
-      - name: Build and start loopback application
-        working-directory: frontend
-        shell: bash
-        run: |
-          set -euo pipefail
-          source /tmp/plan020-supabase.env
-          provider_url="$API_URL"
-          provider_public_key="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
-          unset SECRET_KEY SERVICE_ROLE_KEY DB_URL DATABASE_URL JWT_SECRET ANON_KEY PUBLISHABLE_KEY API_URL MAILPIT_URL
-          export NEXT_PUBLIC_API_URL=http://127.0.0.1:65534
-          export NEXT_PUBLIC_SUPABASE_URL="$provider_url"
-          export NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="$provider_public_key"
-          npm run build > /tmp/plan020-web-build.log 2>&1
-          setsid npm run start -- --hostname 127.0.0.1 --port 3000 > /tmp/plan020-web.log 2>&1 &
-          echo "$!" > /tmp/plan020-web.pgid
-          app_ready=0
-          for attempt in {1..60}; do
-            if curl --fail --silent --max-time 2 http://127.0.0.1:3000/auth/forgot-password >/dev/null; then
-              app_ready=1
-              break
-            fi
-            sleep 2
-          done
-          if [[ "$app_ready" -ne 1 ]]; then
-            echo "The loopback application did not become ready."
-            exit 1
-          fi
-      - name: Discover exact provider acceptance suite
-        working-directory: frontend
-        shell: bash
-        run: |
-          set -euo pipefail
-          source /tmp/plan020-supabase.env
-          provider_url="$API_URL"
-          provider_public_key="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
-          provider_admin_key="${SECRET_KEY:-${SERVICE_ROLE_KEY:-}}"
-          provider_mailpit_url="${MAILPIT_URL:-http://127.0.0.1:54324}"
-          unset SECRET_KEY SERVICE_ROLE_KEY DB_URL DATABASE_URL JWT_SECRET ANON_KEY PUBLISHABLE_KEY API_URL MAILPIT_URL
-          export PLAN020_SUPABASE_URL="$provider_url"
-          export PLAN020_SUPABASE_ANON_KEY="$provider_public_key"
-          export PLAN020_SUPABASE_SERVICE_ROLE_KEY="$provider_admin_key"
-          export PLAN020_MAILPIT_URL="$provider_mailpit_url"
-          discovery="$(npx playwright test --project=password-recovery-provider --list)"
-          provider_count="$(printf '%s\n' "$discovery" |
-            awk '/@plan020-provider/ { count += 1 } END { print count + 0 }')"
-          total_count="$(printf '%s\n' "$discovery" | awk '/^Total:/ { print $2 }')"
-          total_count="${total_count:-0}"
-          if [[ "$provider_count" -ne 7 || "$total_count" -ne 7 ]]; then
-            echo "Expected exactly 7 total and tagged Plan 020 provider tests; discovered $total_count total and $provider_count tagged."
-            exit 1
-          fi
-          echo "Discovered exactly 7 isolated Plan 020 provider tests."
-      - name: Run isolated real-provider acceptance
-        working-directory: frontend
-        shell: bash
-        run: |
-          set -euo pipefail
-          source /tmp/plan020-supabase.env
-          provider_url="$API_URL"
-          provider_public_key="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
-          provider_admin_key="${SECRET_KEY:-${SERVICE_ROLE_KEY:-}}"
-          provider_mailpit_url="${MAILPIT_URL:-http://127.0.0.1:54324}"
-          unset SECRET_KEY SERVICE_ROLE_KEY DB_URL DATABASE_URL JWT_SECRET ANON_KEY PUBLISHABLE_KEY API_URL MAILPIT_URL
-          export PLAN020_SUPABASE_URL="$provider_url"
-          export PLAN020_SUPABASE_ANON_KEY="$provider_public_key"
-          export PLAN020_SUPABASE_SERVICE_ROLE_KEY="$provider_admin_key"
-          export PLAN020_MAILPIT_URL="$provider_mailpit_url"
-          npx playwright test --project=password-recovery-provider
       - name: Clean up isolated provider resources
         if: always()
         shell: bash

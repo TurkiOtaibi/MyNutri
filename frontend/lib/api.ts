@@ -35,7 +35,8 @@ import type {
   AdminUserDetail,
   CalendarAuthorityResponse
 } from "./generated/openapi";
-import { createClient } from "./supabase/client";
+import type { LoginRequest, LoginResponse, PasswordChangeRequest, PasswordChangeResponse } from "./generated/openapi";
+import { readSessionToken, rejectSession } from "./internal-session";
 import { parseNutritionRegistry } from "./nutrients";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/+$/, "");
@@ -64,16 +65,15 @@ async function apiFetchWithResponse<T>(path: string, init: RequestInit = {}): Pr
   if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (!headers.has("Authorization")) {
-    const { data } = await createClient().auth.getSession();
-    if (data.session?.access_token) {
-      headers.set("Authorization", `Bearer ${data.session.access_token}`);
-    }
+  if (!headers.has("Authorization") && path !== "/auth/login") {
+    const token = readSessionToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
   }
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers,
+    credentials: "omit",
     cache: "no-store"
   });
 
@@ -88,7 +88,8 @@ async function apiFetchWithResponse<T>(path: string, init: RequestInit = {}): Pr
     try {
       const body = (await response.json()) as { detail?: string | Record<string, unknown>; error?: { code?: string; message_ar?: string } };
       detail = body.detail;
-      message = body.error?.message_ar ?? (typeof body.detail === "string" ? body.detail : message);
+      message = body.error?.message_ar ?? (typeof body.detail === "string" ? body.detail
+        : typeof body.detail?.message_ar === "string" ? body.detail.message_ar : message);
       const detailCode = typeof body.detail === "object" && body.detail !== null && typeof body.detail.code === "string"
         ? body.detail.code
         : undefined;
@@ -96,10 +97,28 @@ async function apiFetchWithResponse<T>(path: string, init: RequestInit = {}): Pr
     } catch {
       // Keep the status-based message when the server has no JSON body.
     }
+    if (path !== "/auth/login" && code && ["INVALID_CREDENTIAL", "ACCOUNT_DISABLED"].includes(code)) {
+      const token = headers.get("Authorization")?.replace(/^Bearer /, "");
+      if (token) rejectSession(token, code);
+    }
     throw new ApiError(message, response.status, detail, code);
   }
 
   return { body: await response.json() as T, response };
+}
+
+export function loginAccount(payload: LoginRequest): Promise<LoginResponse> {
+  return apiFetch<LoginResponse>("/auth/login", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function logoutAccount(accessToken: string): Promise<void> {
+  return apiFetch<void>("/auth/logout", authorizedInit(accessToken, undefined, { method: "POST" }));
+}
+
+export function changeAccountPassword(payload: PasswordChangeRequest, accessToken: string): Promise<PasswordChangeResponse> {
+  return apiFetch<PasswordChangeResponse>("/auth/change-password", authorizedInit(accessToken, undefined, {
+    method: "POST", body: JSON.stringify(payload),
+  }));
 }
 
 export function getCurrentAccount(options: { accessToken: string; signal?: AbortSignal }): Promise<CurrentAccount> {

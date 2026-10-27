@@ -1,263 +1,218 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Locator, type Page } from "@playwright/test";
-import { provisionUser } from "./provision-user";
+import { randomUUID } from "node:crypto";
+import { expect, test, type Page } from "@playwright/test";
+import { ADMIN_EMAIL, ADMIN_PASSWORD, fixtureUsername, internalLogin, seedInternalUser, SESSION_TOKEN_KEY } from "./internal-auth";
+import { applyProfileThroughTargetPlan } from "./profile-api";
 
-const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
-const ADMIN_EMAIL = "admin.e2e@example.test";
-const PASSWORD = "Plan-020-password-2026!";
+const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
+const PASSWORD = "Internal-initial-password-2026!";
+const NEW_PASSWORD = "Internal-updated-password-2026!";
+const GENERIC = "تعذر إكمال الطلب. تحقق من البيانات وحاول مرة أخرى.";
+const SHORT = "كلمة المرور قصيرة. استخدم 8 أحرف على الأقل.";
 
-type RecoveryWindow = Window & {
-  __mynutriE2EVerifyRecoveryOtp?: (email: string, token: string) => Promise<{ error: unknown }>;
-  __mynutriE2ERefreshSession?: () => Promise<{ error: unknown }>;
-  __mynutriE2ESignOut?: () => Promise<{ error: unknown }>;
-  __mynutriE2ESignInWithPassword?: (email: string, password: string) => Promise<{ error: unknown }>;
-};
+test.use({ storageState: { cookies: [], origins: [] }, trace: "off", screenshot: "off", video: "off" });
 
-async function waitForAuthControls(page: Page) {
-  await page.waitForFunction(() =>
-    typeof (window as RecoveryWindow).__mynutriE2EVerifyRecoveryOtp === "function"
-  );
+function actor(forced = false) {
+  const email = `internal-${randomUUID()}@example.test`;
+  seedInternalUser(email, PASSWORD, forced);
+  return email;
 }
 
-async function verifyRecovery(page: Page, code: string) {
-  await waitForAuthControls(page);
-  return page.evaluate(async ({ email, recoveryCode }) => {
-    const verify = (window as RecoveryWindow).__mynutriE2EVerifyRecoveryOtp;
-    if (!verify) throw new Error("Local recovery control is unavailable.");
-    const result = await verify(email, recoveryCode);
-    return { ok: !result.error };
-  }, { email: ADMIN_EMAIL, recoveryCode: code });
+async function signIn(page: Page, email: string, password = PASSWORD, next = "/diary") {
+  await page.goto(`/auth/login?next=${encodeURIComponent(next)}`);
+  await page.getByLabel("اسم المستخدم", { exact: true }).fill(fixtureUsername(email));
+  await page.getByLabel("كلمة المرور", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "دخول", exact: true }).click();
 }
 
-async function openReadyReset(page: Page, suffix: string) {
-  await page.goto("/auth/reset-password");
-  await expect(page.locator('.auth-message[role="alert"]')).toContainText("انتهت صلاحية الرابط");
-  expect(await verifyRecovery(page, `valid-recovery-code-${suffix}`)).toEqual({ ok: true });
-  await expect(page.getByLabel("كلمة المرور الجديدة", { exact: true })).toBeVisible();
+async function storedToken(page: Page) {
+  const token = await page.evaluate(key => localStorage.getItem(key), SESSION_TOKEN_KEY);
+  if (!token) throw new Error("Expected an internal session.");
+  return token;
 }
 
-async function callAuthControl(page: Page, action: "refresh" | "signOut") {
-  const ok = await page.evaluate(async (operation) => {
-    const testWindow = window as RecoveryWindow;
-    const control = operation === "refresh"
-      ? testWindow.__mynutriE2ERefreshSession
-      : testWindow.__mynutriE2ESignOut;
-    if (!control) throw new Error("Local auth control is unavailable.");
-    return !(await control()).error;
-  }, action);
-  expect(ok).toBe(true);
+function headers(token: string) { return { Authorization: `Bearer ${token}` }; }
+
+for (const [code, message] of [
+  ["ACCOUNT_DISABLED", "حسابك موقوف. تواصل مع المشرف."],
+  ["ADMIN_LOCKED", "تم قفل الحساب بعد 5 محاولات دخول فاشلة. حاول مرة أخرى بعد 30 دقيقة."],
+] as const) {
+  test(`@issue111 login maps ${code} to its governed message`, async ({ page }) => {
+    await page.route(`${API_URL}/auth/login`, route => route.fulfill({ status: 401, json: { detail: { code } } }));
+    await signIn(page, "message@example.test");
+    await expect(page.getByRole("status")).toHaveText(message);
+    expect(await page.evaluate(key => localStorage.getItem(key), SESSION_TOKEN_KEY)).toBeNull();
+  });
 }
 
-async function inputMatches(input: Locator, expected: string) {
-  return input.evaluate((element: HTMLInputElement, value) => element.value === value, expected);
-}
-
-test("@plan020 recovery request is neutral for known and unknown addresses", async ({ browser }) => {
-  const messages: string[] = [];
-  for (const email of [ADMIN_EMAIL, `unknown-${Date.now()}@example.test`]) {
-    const context = await browser.newContext({ storageState: undefined });
-    const page = await context.newPage();
-    let requests = 0;
-    await page.route((url) => url.origin === new URL(AUTH_URL).origin && url.pathname === "/auth/v1/recover", async (route) => {
-      requests += 1;
-      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
-    });
-    await page.goto("/auth/forgot-password");
-    await page.getByLabel("البريد الإلكتروني", { exact: true }).fill(email);
-    await page.getByRole("button", { name: "إرسال رابط الاستعادة", exact: true }).click();
-    const status = page.getByRole("status");
-    await expect(status).toBeVisible();
-    messages.push(await status.innerText());
-    expect(requests).toBe(1);
-    await context.close();
-  }
-  expect(messages).toEqual(["تحقق من بريدك لإكمال العملية.", "تحقق من بريدك لإكمال العملية."]);
+test("@issue111 login network failure has the governed connection message", async ({ page }) => {
+  await page.route(`${API_URL}/auth/login`, route => route.abort("failed"));
+  await signIn(page, "network@example.test");
+  await expect(page.getByRole("status")).toHaveText("تعذر الاتصال بالخادم. حاول مرة أخرى.");
 });
 
-test("@plan020 returned request failure unlocks exactly one retry and duplicate submit is locked", async ({ browser }) => {
-  const context = await browser.newContext({ storageState: undefined });
-  const page = await context.newPage();
-  let requests = 0;
-  let releaseFirst!: () => void;
-  const firstHeld = new Promise<void>((resolve) => { releaseFirst = resolve; });
-  await page.route((url) => url.origin === new URL(AUTH_URL).origin && url.pathname === "/auth/v1/recover", async (route) => {
-    requests += 1;
-    if (requests === 1) {
-      await firstHeld;
-      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ message: "private provider detail" }) });
-      return;
-    }
-    await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+for (const [code, message] of [
+  ["INVALID_CREDENTIAL", "انتهت جلستك. سجّل الدخول مرة أخرى."],
+  ["ACCOUNT_DISABLED", "حسابك موقوف. تواصل مع المشرف."],
+] as const) {
+  test(`@issue111 ${code} clears a restored session and preserves the requested page`, async ({ page }) => {
+    await signIn(page, actor());
+    await expect(page).toHaveURL(/\/diary$/);
+    await page.route(`${API_URL}/account/me`, route => route.fulfill({ status: 401, json: { detail: { code } } }));
+    await page.goto("/profile");
+    await expect(page).toHaveURL(/\/auth\/login\?/);
+    await expect(page.getByRole("status")).toHaveText(message);
+    expect(new URL(page.url()).searchParams.get("next")).toBe("/profile");
+    expect(await page.evaluate(key => localStorage.getItem(key), SESSION_TOKEN_KEY)).toBeNull();
   });
-  await page.goto("/auth/forgot-password");
-  await page.getByLabel("البريد الإلكتروني", { exact: true }).fill(ADMIN_EMAIL);
-  await page.locator("form").evaluate((form: HTMLFormElement) => {
-    form.requestSubmit();
-    form.requestSubmit();
-  });
-  await expect.poll(() => requests).toBe(1);
-  await expect(page.getByRole("button", { name: "جارٍ الإرسال...", exact: true })).toBeDisabled();
-  releaseFirst();
-  await expect(page.locator('.auth-message[role="alert"]')).toHaveText("تعذر إكمال الطلب. تحقق من الاتصال وحاول مرة أخرى.");
-  await expect(page.getByText("private provider detail", { exact: false })).toHaveCount(0);
-  await page.getByRole("button", { name: "إرسال رابط الاستعادة", exact: true }).click();
-  await expect(page.getByRole("status")).toHaveText("تحقق من بريدك لإكمال العملية.");
-  expect(requests).toBe(2);
-  await context.close();
+}
+
+test("@issue111 an already signed-in login visit goes to Diary after consuming return-to", async ({ page }) => {
+  const email = actor();
+  await signIn(page, email, PASSWORD, "/profile");
+  await expect(page).toHaveURL(/\/profile$/);
+  await expect(page.getByRole("heading", { name: "بياناتك وأهدافك", exact: true })).toBeVisible();
+  await page.evaluate(() => history.pushState(null, "", "/auth/login"));
+  await expect(page).toHaveURL(/\/diary$/);
 });
 
-test("@plan020 thrown recovery request failure unlocks a successful retry", async ({ browser }) => {
-  const context = await browser.newContext({ storageState: undefined });
-  const page = await context.newPage();
-  let requests = 0;
-  await page.route((url) => url.origin === new URL(AUTH_URL).origin && url.pathname === "/auth/v1/recover", async (route) => {
-    requests += 1;
-    if (requests === 1) await route.abort("connectionfailed");
-    else await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
-  });
-  await page.goto("/auth/forgot-password");
-  await page.getByLabel("البريد الإلكتروني", { exact: true }).fill(ADMIN_EMAIL);
-  await page.getByRole("button", { name: "إرسال رابط الاستعادة", exact: true }).click();
-  await expect(page.locator('.auth-message[role="alert"]')).toBeVisible();
-  await page.getByRole("button", { name: "إرسال رابط الاستعادة", exact: true }).click();
-  await expect(page.getByRole("status")).toHaveText("تحقق من بريدك لإكمال العملية.");
-  expect(requests).toBe(2);
-  await context.close();
+test("@issue111 login offers Admin help without recovery and is mobile accessible", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/auth/login");
+  await expect(page.getByText("ليس لديك حساب أو نسيت كلمة المرور؟ تواصل مع المشرف.")).toBeVisible();
+  await expect(page.locator('input[type="email"]')).toHaveCount(0);
+  await expect(page.locator('a[href*="forgot-password"], a[href*="reset-password"]')).toHaveCount(0);
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
 });
 
-test("@plan020 missing and expired recovery state send zero password updates", async ({ browser }) => {
-  for (const code of [null, "expired-recovery-code"] as const) {
-    const context = await browser.newContext({ storageState: undefined });
-    const page = await context.newPage();
-    let updates = 0;
-    page.on("request", (request) => {
-      if (request.method() === "PUT" && new URL(request.url()).pathname === "/auth/v1/user") updates += 1;
-    });
-    await page.goto("/auth/reset-password");
-    await expect(page.locator('.auth-message[role="alert"]')).toContainText("انتهت صلاحية الرابط");
-    if (code) expect(await verifyRecovery(page, code)).toEqual({ ok: false });
-    await expect(page.getByLabel("كلمة المرور الجديدة", { exact: true })).toHaveCount(0);
-    expect(updates).toBe(0);
-    await context.close();
+test("@issue111 missing username sends no login request", async ({ page }) => {
+  let calls = 0;
+  page.on("request", request => { if (new URL(request.url()).pathname === "/auth/login" && request.method() === "POST") calls++; });
+  await page.goto("/auth/login");
+  await page.getByLabel("كلمة المرور", { exact: true }).fill(PASSWORD);
+  await page.getByRole("button", { name: "دخول", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText("أدخل اسم المستخدم.");
+  expect(calls).toBe(0);
+});
+
+test("@issue111 short login password sends no login request", async ({ page }) => {
+  let calls = 0;
+  page.on("request", request => { if (new URL(request.url()).pathname === "/auth/login" && request.method() === "POST") calls++; });
+  await page.goto("/auth/login");
+  await page.getByLabel("اسم المستخدم", { exact: true }).fill("synthetic_user");
+  await page.getByLabel("كلمة المرور", { exact: true }).fill("short");
+  await page.getByRole("button", { name: "دخول", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText(SHORT);
+  expect(calls).toBe(0);
+});
+
+test("@issue111 unknown username and wrong password use the same generic response", async ({ page }) => {
+  const email = actor();
+  for (const identity of [email, `unknown-${randomUUID()}@example.test`]) {
+    await signIn(page, identity, "Wrong-password-2026!");
+    await expect(page.getByRole("status")).toHaveText(GENERIC);
+    await expect(page.getByLabel("كلمة المرور", { exact: true })).toBeFocused();
+    expect(await page.evaluate(key => localStorage.getItem(key) === null, SESSION_TOKEN_KEY)).toBe(true);
   }
 });
 
-test("@plan020 update provider failure preserves password and retry succeeds", async ({ browser }) => {
-  const context = await browser.newContext({ storageState: undefined });
-  const page = await context.newPage();
+test("@issue111 five failures lock a user until Admin reset permits direct login", async ({ page, request }) => {
+  const email = actor();
+  const prior = await internalLogin(email, PASSWORD);
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    await signIn(page, email, "Wrong-password-2026!");
+    await expect(page.getByRole("status")).toHaveText(attempt === 5
+      ? "تم قفل الحساب بعد 5 محاولات دخول فاشلة. تواصل مع المشرف لفتحه." : GENERIC);
+  }
+  const admin = await internalLogin(ADMIN_EMAIL, ADMIN_PASSWORD);
+  const reset = await request.put(`${API_URL}/admin/accounts/${prior.account.principal_id}/password`, {
+    headers: headers(admin.access_token), data: { new_password: NEW_PASSWORD },
+  });
+  expect(reset.status()).toBe(204);
+  expect((await request.get(`${API_URL}/account/me`, { headers: headers(prior.access_token) })).status()).toBe(401);
+  await signIn(page, email, NEW_PASSWORD);
+  await expect(page).toHaveURL(/\/diary$/);
+  await expect(page.getByRole("heading", { name: "تغيير كلمة المرور", exact: true })).toHaveCount(0);
+});
+
+test("@issue111 initial password gates product endpoints and rejects a short replacement", async ({ page, request }) => {
+  await signIn(page, actor(true));
+  await expect(page.getByRole("heading", { name: "تغيير كلمة المرور", exact: true })).toBeVisible();
+  const token = await storedToken(page);
+  for (const endpoint of ["/account/me", "/profile", "/foods"]) {
+    const response = await request.get(`${API_URL}${endpoint}`, { headers: headers(token) });
+    expect(response.status()).toBe(403);
+    expect((await response.json()).detail.code).toBe("PASSWORD_CHANGE_REQUIRED");
+  }
   let updates = 0;
-  await page.route((url) => url.origin === new URL(AUTH_URL).origin && url.pathname === "/auth/v1/user", async (route) => {
-    updates += 1;
-    if (updates === 1) {
-      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ message: "private update detail" }) });
-      return;
-    }
-    await route.continue();
+  page.on("request", request => { if (new URL(request.url()).pathname === "/auth/change-password") updates++; });
+  await expect(page.getByText("استخدم 8 أحرف على الأقل.")).toBeVisible();
+  await page.getByLabel("كلمة المرور الجديدة", { exact: true }).fill("short");
+  await page.getByRole("button", { name: "حفظ كلمة المرور" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: SHORT })).toHaveText(SHORT);
+  expect(updates).toBe(0);
+});
+
+test("@issue111 initial password change admits the user and rejects the old password", async ({ page, request }) => {
+  const email = actor(true);
+  await signIn(page, email);
+  await page.getByLabel("كلمة المرور الجديدة", { exact: true }).fill(NEW_PASSWORD);
+  await page.getByRole("button", { name: "حفظ كلمة المرور" }).click();
+  await expect(page).toHaveURL(/\/diary$/);
+  const account = await request.get(`${API_URL}/account/me`, { headers: headers(await storedToken(page)) });
+  expect(account.status()).toBe(200);
+  expect((await account.json()).must_change_password).toBe(false);
+  const old = await request.post(`${API_URL}/auth/login`, { data: { username: fixtureUsername(email), password: PASSWORD } });
+  expect(old.status()).toBe(401);
+  await page.reload();
+  await expect(page).toHaveURL(/\/diary$/);
+  await expect(page.getByRole("heading", { name: "تغيير كلمة المرور", exact: true })).toHaveCount(0);
+});
+
+test("@issue111 reloading initial change requires login without persisting the initial password", async ({ page }) => {
+  const email = actor(true);
+  await signIn(page, email);
+  await expect(page.getByRole("heading", { name: "تغيير كلمة المرور", exact: true })).toBeVisible();
+  expect(await page.evaluate(secret => [...Object.values(localStorage), ...Object.values(sessionStorage)].some(value => value.includes(secret)), PASSWORD)).toBe(false);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "تسجيل الدخول", exact: true })).toBeVisible();
+  expect(await page.evaluate(key => localStorage.getItem(key) === null, SESSION_TOKEN_KEY)).toBe(true);
+  await signIn(page, email);
+  await expect(page.getByRole("heading", { name: "تغيير كلمة المرور", exact: true })).toBeVisible();
+});
+
+test("@issue111 initial-change logout revokes its bearer session", async ({ page, request }) => {
+  await signIn(page, actor(true));
+  await expect(page.getByRole("heading", { name: "تغيير كلمة المرور", exact: true })).toBeVisible();
+  const token = await storedToken(page);
+  await page.getByRole("button", { name: "تسجيل الخروج", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "تسجيل الدخول", exact: true })).toBeVisible();
+  expect(await page.evaluate(key => localStorage.getItem(key) === null, SESSION_TOKEN_KEY)).toBe(true);
+  expect((await request.get(`${API_URL}/account/me`, { headers: headers(token) })).status()).toBe(401);
+});
+
+test("@issue111 Profile change requires current password and revokes only other sessions", async ({ page, request }) => {
+  const email = actor();
+  const other = await internalLogin(email, PASSWORD);
+  await applyProfileThroughTargetPlan(request, other.access_token, {
+    sex: "male", birth_date: "1990-01-01", height_cm: 175, weight_kg: 80,
+    activity_level: "moderate", goal: "maintain", protein_per_kg: 1.2, fat_pct: 0.25, selected_cut_intensity: 0.2,
   });
-  await openReadyReset(page, `retry-${Date.now()}`);
-  const password = page.getByLabel("كلمة المرور الجديدة", { exact: true });
-  await password.fill(PASSWORD);
-  await page.getByRole("button", { name: "حفظ كلمة المرور", exact: true }).click();
-  await expect(page.locator('.auth-message[role="alert"]')).toHaveText("تعذر إكمال الطلب. تحقق من الاتصال وحاول مرة أخرى.");
-  expect(await inputMatches(password, PASSWORD)).toBe(true);
-  await expect(page.getByText("private update detail", { exact: false })).toHaveCount(0);
-  await page.getByRole("button", { name: "حفظ كلمة المرور", exact: true }).click();
-  await page.waitForURL(/\/diary$/);
-  expect(updates).toBe(2);
-  await context.close();
-});
-
-test("@plan020 aborted password update preserves input and unlocks one successful retry", async ({ browser }) => {
-  const context = await browser.newContext({ storageState: undefined });
-  const page = await context.newPage();
-  let updates = 0;
-  await page.route((url) => url.origin === new URL(AUTH_URL).origin && url.pathname === "/auth/v1/user", async (route) => {
-    updates += 1;
-    if (updates === 1) {
-      await route.abort("connectionfailed");
-      return;
-    }
-    await route.continue();
-  });
-  await openReadyReset(page, `aborted-update-${Date.now()}`);
-  const password = page.getByLabel("كلمة المرور الجديدة", { exact: true });
-  await password.fill(PASSWORD);
-  await page.getByRole("button", { name: "حفظ كلمة المرور", exact: true }).click();
-  await expect(page.locator('.auth-message[role="alert"]')).toHaveText("تعذر إكمال الطلب. تحقق من الاتصال وحاول مرة أخرى.");
-  expect(await inputMatches(password, PASSWORD)).toBe(true);
-  expect(updates).toBe(1);
-  await page.getByRole("button", { name: "حفظ كلمة المرور", exact: true }).click();
-  await page.waitForURL(/\/diary$/);
-  expect(updates).toBe(2);
-  await context.close();
-});
-
-test("@plan020 duplicate reset submit sends one update and redirects only after success", async ({ browser }) => {
-  const context = await browser.newContext({ storageState: undefined });
-  const page = await context.newPage();
-  let updates = 0;
-  let releaseUpdate!: () => void;
-  const updateHeld = new Promise<void>((resolve) => { releaseUpdate = resolve; });
-  await page.route((url) => url.origin === new URL(AUTH_URL).origin && url.pathname === "/auth/v1/user", async (route) => {
-    updates += 1;
-    await updateHeld;
-    await route.continue();
-  });
-  await openReadyReset(page, `duplicate-${Date.now()}`);
-  await page.getByLabel("كلمة المرور الجديدة", { exact: true }).fill(PASSWORD);
-  await page.locator("form").evaluate((form: HTMLFormElement) => {
-    form.requestSubmit();
-    form.requestSubmit();
-  });
-  await expect.poll(() => updates).toBe(1);
-  await expect(page.getByRole("button", { name: "جارٍ الإرسال...", exact: true })).toBeDisabled();
-  await expect(page).toHaveURL(/\/auth\/reset-password$/);
-  releaseUpdate();
-  await page.waitForURL(/\/diary$/);
-  expect(updates).toBe(1);
-  await context.close();
-});
-
-test("@plan020 refresh preserves recovery readiness while sign-out invalidates it", async ({ browser }) => {
-  const context = await browser.newContext({ storageState: undefined });
-  const page = await context.newPage();
-  await openReadyReset(page, `lifecycle-${Date.now()}`);
-  const password = page.getByLabel("كلمة المرور الجديدة", { exact: true });
-  await password.fill(PASSWORD);
-  await callAuthControl(page, "refresh");
-  expect(await inputMatches(password, PASSWORD)).toBe(true);
-  await callAuthControl(page, "signOut");
-  await expect(page.locator('.auth-message[role="alert"]')).toContainText("انتهت صلاحية الرابط");
-  await expect(page.getByLabel("كلمة المرور الجديدة", { exact: true })).toHaveCount(0);
-  await context.close();
-});
-
-test("@plan020 a replacement subject invalidates the previous recovery action", async ({ browser }) => {
-  const replacementEmail = `plan020-subject-${Date.now()}@example.test`;
-  await provisionUser(replacementEmail, PASSWORD);
-  const context = await browser.newContext({ storageState: undefined });
-  const page = await context.newPage();
-  await openReadyReset(page, `subject-${Date.now()}`);
-  const password = page.getByLabel("كلمة المرور الجديدة", { exact: true });
-  await password.fill(PASSWORD);
-  const signedIn = await page.evaluate(async ({ email, replacementPassword }) => {
-    const signIn = (window as RecoveryWindow).__mynutriE2ESignInWithPassword;
-    if (!signIn) throw new Error("Local sign-in control is unavailable.");
-    return !(await signIn(email, replacementPassword)).error;
-  }, { email: replacementEmail, replacementPassword: PASSWORD });
-  expect(signedIn).toBe(true);
-  await expect(page.locator('.auth-message[role="alert"]')).toContainText("انتهت صلاحية الرابط");
-  await expect(password).toHaveCount(0);
-  await expect(page.locator('input[type="password"]')).toHaveCount(0);
-  await context.close();
-});
-
-test("@plan020 recovery UI is accessible at supported mobile width", async ({ browser }) => {
-  const context = await browser.newContext({ storageState: undefined, viewport: { width: 320, height: 700 } });
-  const page = await context.newPage();
-  await openReadyReset(page, `axe-${Date.now()}`);
-  const accessibility = await new AxeBuilder({ page }).include(".auth-panel").analyze();
-  expect(accessibility.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-  await context.close();
+  await signIn(page, email, PASSWORD, "/profile");
+  await expect(page).toHaveURL(/\/profile$/);
+  const current = await storedToken(page);
+  await page.getByLabel("كلمة المرور الحالية", { exact: true }).fill("Wrong-password-2026!");
+  await page.getByLabel("كلمة المرور الجديدة", { exact: true }).fill(NEW_PASSWORD);
+  await page.getByRole("button", { name: "تغيير كلمة المرور", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "كلمة المرور الحالية غير صحيحة." })).toBeVisible();
+  await expect(page.getByLabel("كلمة المرور الحالية", { exact: true })).toBeFocused();
+  await page.getByLabel("كلمة المرور الحالية", { exact: true }).fill(PASSWORD);
+  await page.getByRole("button", { name: "تغيير كلمة المرور", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "تم تغيير كلمة المرور." })).toBeVisible();
+  await expect(page.getByLabel("كلمة المرور الحالية", { exact: true })).toHaveValue("");
+  await expect(page.getByLabel("كلمة المرور الجديدة", { exact: true })).toHaveValue("");
+  expect((await request.get(`${API_URL}/account/me`, { headers: headers(current) })).status()).toBe(200);
+  expect((await request.get(`${API_URL}/account/me`, { headers: headers(other.access_token) })).status()).toBe(401);
 });

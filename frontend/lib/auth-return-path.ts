@@ -36,6 +36,7 @@ export function normalizePostLoginPath(raw: string | null, origin: string): stri
       target.origin !== applicationOrigin ||
       target.username ||
       target.password ||
+      target.pathname === "/auth" || target.pathname.startsWith("/auth/") ||
       target.pathname.startsWith("//")
     ) return FALLBACK_PATH;
 

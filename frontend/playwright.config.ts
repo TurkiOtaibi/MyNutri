@@ -49,24 +49,13 @@ export default defineConfig({
   projects: [
     {
       name: "foods-chromium",
-      testIgnore: [/pwa-shell\.spec\.ts/, /auth-password-recovery-provider\.spec\.ts/, /visual\.spec\.ts/, /visual-regression\/critical\.spec\.ts/],
+      testIgnore: [/pwa-shell\.spec\.ts/, /visual\.spec\.ts/, /visual-regression\/critical\.spec\.ts/],
       use: { ...devices["Desktop Chrome"] }
     },
     {
       name: "pwa-chromium",
       testMatch: /pwa-shell\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], serviceWorkers: "allow" }
-    },
-    {
-      name: "password-recovery-provider",
-      testMatch: /auth-password-recovery-provider\.spec\.ts/,
-      use: {
-        ...devices["Desktop Chrome"],
-        storageState: undefined,
-        trace: "off",
-        screenshot: "off",
-        video: "off"
-      }
     },
     {
       name: "manual-capture",

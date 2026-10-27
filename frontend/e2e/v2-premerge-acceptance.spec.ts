@@ -1,3 +1,4 @@
+import { fixtureUsername, internalLogin } from "./internal-auth";
 import { expect, test } from "@playwright/test";
 
 import type { ProfileInput } from "../lib/types";
@@ -5,17 +6,10 @@ import { applyProfileThroughTargetPlan } from "./profile-api";
 import { provisionUser } from "./provision-user";
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
-const AUTH_URL = process.env.PLAYWRIGHT_SUPABASE_URL ?? "http://127.0.0.1:8765";
 
 async function token(email: string, password = "Acceptance-only-password-2026!") {
   await provisionUser(email, password);
-  const response = await fetch(`${AUTH_URL}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: { apikey: "e2e-public-key", "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password })
-  });
-  expect(response.status).toBe(200);
-  return ((await response.json()) as { access_token: string }).access_token;
+  return (await internalLogin(email, password)).access_token;
 }
 
 function auth(accessToken: string) {
@@ -92,7 +86,7 @@ test("User A, User B, and Admin remain isolated through API and UI", async ({ br
   const context = await browser.newContext({ storageState: undefined });
   const page = await context.newPage();
   await page.goto("/auth/login");
-  await page.locator('input[type="email"]').fill(emailA);
+  await page.getByLabel("اسم المستخدم", { exact: true }).fill(fixtureUsername(emailA));
   await page.locator('input[type="password"]').fill("Acceptance-only-password-2026!");
   await page.locator('button[type="submit"]').click();
   await page.waitForURL(/\/diary$/);

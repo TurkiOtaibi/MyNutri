@@ -1,6 +1,6 @@
 # myNutri
 
-myNutri is an Arabic-first, RTL, online nutrition application. The current system uses a Next.js frontend, a FastAPI backend, PostgreSQL, Supabase authentication, Principal-scoped private data, role-aware administration, and a shared Food catalog.
+myNutri is an Arabic-first, RTL, online nutrition application. The current system uses a Next.js frontend, a FastAPI backend, PostgreSQL, internal username/password browser authentication with transitional backend Supabase JWT admission, Principal-scoped private data, role-aware administration, and a shared Food catalog.
 
 Start with the [documentation authority map](docs/README.md). Git history, migrations, tests, PRs, and CI retain historical evidence; the tracked documentation set describes the current system only.
 
@@ -54,8 +54,8 @@ Backend variable names:
 Frontend public variable names:
 
 - `NEXT_PUBLIC_API_URL`
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `NEXT_PUBLIC_SUPABASE_URL` (retained legacy configuration until #113; unused by internal login)
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (retained legacy configuration until #113; unused by internal login)
 
 Never expose a service-role key or database credential through a `NEXT_PUBLIC_` variable. Do not configure the removed shared-token path.
 
@@ -96,7 +96,7 @@ Set-Location frontend
 npm run dev
 ```
 
-The frontend expects Supabase email/password authentication. Requests are authorized by the backend from the bearer token's Principal and role; a branch name, local database row, or frontend route guard is not an authorization boundary. See the [auth and role model](docs/product/v2/02_AUTH_AND_ROLE_MODEL.md) and [authorization matrix](docs/product/v2/03_AUTHORIZATION_MATRIX.md).
+The frontend uses internal username/password authentication, persists only the opaque session token in localStorage, and uses no auth cookies. Initial-password and Profile-password values remain in memory; reloading an initial-change screen requires login again. Admin email-based creation remains until #112, and the backend legacy JWT/provider paths remain until #113. Requests are authorized by the backend from the bearer token's Principal and role; a branch name, local database row, or frontend route guard is not an authorization boundary. See the [auth and role model](docs/product/v2/02_AUTH_AND_ROLE_MODEL.md) and [authorization matrix](docs/product/v2/03_AUTHORIZATION_MATRIX.md).
 
 ## Database and migrations
 
@@ -149,7 +149,7 @@ npm audit --omit=dev
 npm run build
 ```
 
-CI additionally runs the complete Playwright suite, critical Linux visual regression, static-shell PWA isolation, development StrictMode smoke, real-provider password-recovery acceptance with mandatory cleanup, backend image build/runtime checks, and migration/preflight checks. The workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) is the exact gate definition.
+CI additionally runs the complete Playwright suite, critical Linux visual regression, static-shell PWA isolation, development StrictMode smoke, real internal-auth browser acceptance and retained real-provider backend session-cutoff acceptance with mandatory cleanup, backend image build/runtime checks, and migration/preflight checks. The workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) is the exact gate definition.
 
 The principal browser gates are:
 
@@ -160,7 +160,7 @@ npm run test:visual
 npx playwright test e2e/pwa-shell.spec.ts --project=pwa-chromium
 ```
 
-Run them only with the disposable E2E services and synthetic Principal fixtures described by CI. The provider-acceptance job has additional isolated Supabase and cleanup orchestration; use the workflow verbatim instead of pointing it at any hosted provider.
+Run them only with the disposable E2E services and synthetic Principal fixtures described by CI. The provider-acceptance job retains backend `provider_session_cutoff_acceptance.py` admission/revocation checks against isolated loopback Supabase with complete cleanup; use the workflow verbatim instead of pointing it at any hosted provider. The seven obsolete browser recovery cases were removed with the recovery UI (BR-AUT-012); ten real internal-auth browser cases replace the ten mocked recovery cases. This does not weaken the retained backend provider boundary.
 
 ## Online-only and PWA boundary
 

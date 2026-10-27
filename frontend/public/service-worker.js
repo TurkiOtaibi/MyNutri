@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "mynutri-shell-";
-const CACHE_NAME = `${CACHE_PREFIX}v4`;
+const CACHE_NAME = `${CACHE_PREFIX}v5`;
 const OFFLINE_URL = "/offline";
 const PRECACHE_URLS = [OFFLINE_URL, "/manifest.json", "/icon.svg"];
 const PRECACHE_PATHS = new Set(PRECACHE_URLS);

@@ -2,7 +2,7 @@
 
 ## CURRENT versus APPROVED TARGET
 
-CURRENT in #110: the backend supports internal username/password login alongside the existing Supabase/email browser flow. Internal credentials take precedence: any account with an internal password hash is rejected on the Supabase JWT path with `INTERNAL_LOGIN_REQUIRED`. Internal password changes and resets never update Supabase; accounts without internal credentials retain the existing JWT path. Frontend integration (#111), username-based Admin UI (#112), provider/email removal (#113), and destructive cutover (#114) remain APPROVED TARGET, not implemented or deployed by this change. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
+CURRENT in #111: the browser uses internal username/password login, opaque bearer sessions, forced initial-password change, and own-password change in Profile. Only the session token is persisted in localStorage; passwords stay in memory and no auth cookies are used. Reload during an initial-password change requires re-authentication. Forgotten/reset-password browser flows are absent; forgotten passwords go to the Admin. The backend retains legacy Supabase JWT admission for accounts without internal credentials until #113; an internal password hash takes precedence and rejects JWT admission with `INTERNAL_LOGIN_REQUIRED`. Internal password changes/resets never update Supabase. Admin email-based creation UI/API remains CURRENT until #112; provider/email removal (#113) and destructive cutover (#114) remain APPROVED TARGET. This describes repository implementation, not deployment. (Product Owner decisions of 17 and 27 October 2026; issues #110/#111; BR-AUT-001/003/004/005/007/008/010/011/012/017, BR-PRF-024–026, BR-USM-030/033.)
 
 Admin correction of another user's «الجنس» is the sole CURRENT Profile-write exception, implemented in #109; other Profile fields, Diary, plans and Labs stay read-only. At the target cutover, delete all current test accounts/private data, keep Foods and recreate the single Admin through a server-side create/reset command. Username and credential/session details are CURRENT backend contracts in V2 02/11 (#110; 27 October 2026; BR-AUT-001/011/017). (17 October 2026 PRF/USM/AUT/FOD decisions; BR-PRF-006, BR-USM-027/032/043/061/067/074; issue #100; V2 03/06.)
 
@@ -11,8 +11,8 @@ Status: supporting requirements. V2 Product and architecture documents remain au
 
 ## Product
 
-myNutri is an Arabic-first, responsive, online-only nutrition application. Supabase
-email/password authentication identifies a durable Backend Principal. Each Principal
+myNutri is an Arabic-first, responsive, online-only nutrition application. Internal
+username/password browser authentication identifies a durable Backend Principal. Each Principal
 owns private Profile, Target Plan, Diary, and idempotency data. Foods are a shared
 global catalog.
 Private LabResult facts form a standalone adult Labs domain interpreted using
@@ -20,8 +20,9 @@ the current immutable system catalog, independently of nutrition.
 
 ## User capabilities
 
-- Sign in, recover/reset their own password, and sign out. Self-registration is
-  retired; accounts are created only through Admin management.
+- Sign in, change the initial password when required, change their own password
+  from Profile using the current password, and sign out. Forgotten passwords go
+  to the Admin; self-service recovery and self-registration are absent.
 - Maintain the latest confirmed Profile inputs and preview calculated targets.
 - Create immutable Target Plan revisions effective on Riyadh today or a future date.
 - Read current, historical, and future-effective Target Plans by date.
@@ -44,7 +45,7 @@ the current immutable system catalog, independently of nutrition.
   the Admin cannot disable/delete self or change roles. Interrupted creation or
   deletion remains locked out and resumable. Global Foods survive user deletion.
 
-The Admin-managed Supabase/email UI remains CURRENT; #110 adds internal backend credentials/sessions and precedence, while the username-based UI/removal/cutover remains APPROVED TARGET (27 October 2026; BR-AUT-001/017). Its target copy and scope are separated in the field dictionary. (17 October 2026 AUT/USM decisions; BR-AUT-001, BR-USM-022/030/036; issue #100.)
+The Admin-managed Supabase/email creation UI/API remains CURRENT until #112; internal login/Profile UI is CURRENT in #111, while username-based Admin UI/provider removal/cutover remains APPROVED TARGET (27 October 2026; BR-AUT-001/017). Its target copy and scope are separated in the field dictionary. (17 October 2026 AUT/USM decisions; BR-AUT-001, BR-USM-022/030/036; issue #100.)
 
 Deleting a Food permanently deletes every referencing Diary entry across all
 Principals. This is intentional and has no archive, restore, tombstone, or audit event.

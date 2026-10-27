@@ -2,7 +2,7 @@
 
 ## CURRENT provider gates versus APPROVED TARGET release
 
-CURRENT in #110: the backend supports internal username/password login alongside the existing Supabase/email browser flow. Internal credentials take precedence: any account with an internal password hash is rejected on the Supabase JWT path with `INTERNAL_LOGIN_REQUIRED`. Internal password changes and resets never update Supabase; accounts without internal credentials retain the existing JWT path. Frontend integration (#111), username-based Admin UI (#112), provider/email removal (#113), and destructive cutover (#114) remain APPROVED TARGET, not implemented or deployed by this change. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.) Existing provider-acceptance and configuration gates remain required until #113; no deployment is implied.
+CURRENT in #111: the browser uses internal username/password login, opaque bearer sessions, forced initial-password change, and own-password change in Profile. Only the session token is persisted in localStorage; passwords stay in memory and no auth cookies are used. Reload during an initial-password change requires re-authentication. Forgotten/reset-password browser flows are absent; forgotten passwords go to the Admin. The backend retains legacy Supabase JWT admission for accounts without internal credentials until #113; an internal password hash takes precedence and rejects JWT admission with `INTERNAL_LOGIN_REQUIRED`. Internal password changes/resets never update Supabase. Admin email-based creation UI/API remains CURRENT until #112; provider/email removal (#113) and destructive cutover (#114) remain APPROVED TARGET. This describes repository implementation, not deployment. (Product Owner decisions of 17 and 27 October 2026; issues #110/#111; BR-AUT-001/003/004/005/007/008/010/011/012/017, BR-PRF-024–026, BR-USM-030/033.) Existing backend provider-acceptance and configuration gates remain required until #113; the removed recovery UI has no browser recovery gate (BR-AUT-012). No deployment is implied.
 
 The future #114 release must delete current test accounts/private data while keeping Foods and scrubbed attribution tombstones, then create the single Admin through the internal create/reset command implemented in #110. Its reviewed cutover/recovery procedure remains pending #114. Current migration and release safeguards remain in force; this is not production authorization. (17/27 October 2026 AUT/USM/FOD decisions; BR-USM-027/043, BR-FOD-021; #110.)
 
@@ -110,7 +110,7 @@ The current migration head is internal authentication revision `f0c8a6e12534`, p
   pass, together with generated-contract drift and complete UI/session/PWA gates.
 - Preserve locked dependency reproduction and both backend/frontend audits; execute
   every backend partition, all four functional shards and aggregate collectors,
-  Linux visual, PWA, development StrictMode and seven provider cases plus cleanup.
+  Linux visual, PWA, development StrictMode, real internal-auth browser cases and retained backend `provider_session_cutoff_acceptance.py` admission/revocation checks against isolated loopback Supabase, plus complete cleanup. The seven obsolete browser recovery cases were removed with that UI (BR-AUT-012); ten real internal-auth browser cases replace the ten mocked recovery cases without weakening the retained backend provider boundary.
   An unavailable or failing gate remains a blocker, not inferred success.
 
 ## Production preflight
@@ -217,3 +217,5 @@ with its compatible application release.
 
 Rollback is not permission to delete production data, rewrite historical
 migrations, revive retired features, or deploy without a separate authorization.
+
+Issue #111 adds `python -m app.ops.internal_admin attach --username <username>` for the existing active legacy Admin only. It refuses any existing internal username/normalized username/hash, attaches internal credentials to the same Principal with `must_change_password=false`, and preserves legacy identity/email, role/status, private data and Food attribution. It does not call Supabase or revoke sessions; internal credential precedence rejects subsequent legacy JWT admission. Password input is hidden or supplied through `--password-stdin`, never an argument or log. This is a user-run release step requiring authorization for the exact production action and revision; it has not been executed by this change. Admin creation/reset, provider removal and destructive cutover retain their separate boundaries. (Product Owner #111 authorization, 27 October 2026; BR-AUT-017, BR-USM-027.)

@@ -33,40 +33,40 @@ user's email; a mismatch prevents submission.
 
 ## CURRENT fields versus APPROVED TARGET
 
-CURRENT in #110: the backend supports internal username/password login alongside the existing Supabase/email browser flow. Internal credentials take precedence: any account with an internal password hash is rejected on the Supabase JWT path with `INTERNAL_LOGIN_REQUIRED`. Internal password changes and resets never update Supabase; accounts without internal credentials retain the existing JWT path. Frontend integration (#111), username-based Admin UI (#112), provider/email removal (#113), and destructive cutover (#114) remain APPROVED TARGET, not implemented or deployed by this change. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
+CURRENT in #111: the browser uses internal username/password login, opaque bearer sessions, forced initial-password change, and own-password change in Profile. Only the session token is persisted in localStorage; passwords stay in memory and no auth cookies are used. Reload during an initial-password change requires re-authentication. Forgotten/reset-password browser flows are absent; forgotten passwords go to the Admin. The backend retains legacy Supabase JWT admission for accounts without internal credentials until #113; an internal password hash takes precedence and rejects JWT admission with `INTERNAL_LOGIN_REQUIRED`. Internal password changes/resets never update Supabase. Admin email-based creation UI/API remains CURRENT until #112; provider/email removal (#113) and destructive cutover (#114) remain APPROVED TARGET. This describes repository implementation, not deployment. (Product Owner decisions of 17 and 27 October 2026; issues #110/#111; BR-AUT-001/003/004/005/007/008/010/011/012/017, BR-PRF-024–026, BR-USM-030/033.)
 
 In the APPROVED TARGET there is no Supabase Auth, email anywhere, MFA or self-service recovery. Only initial Admin-set passwords require a forced change; reset passwords allow immediate login. Five consecutive failures lock an account, successful login resets the counter, Admin reset alone unlocks a user and signs out every device, and the single Admin unlocks automatically after 30 minutes. Own-password change requires the correct current password and signs out other devices. Backend minimum length is 8. (17 October 2026 final AUT/USM decisions; BR-AUT-004/007–012, BR-PRF-024–026, BR-USM-023/030/033.)
 
-## CURRENT email copy beside APPROVED TARGET username copy
+## CURRENT login/Profile copy beside APPROVED TARGET Admin username copy
 
-Target strings below are copied exactly from the final BRD requirements, approved **17 October 2026**. They are pending #110–#112; current email strings remain applicable until the replacement is implemented. An em dash means there is no corresponding target feature in the current implementation, not a new UI string. Older «فتح القفل», «تم فتح قفل الحساب.» and «نسيت كلمة المرور؟ تواصل مع المشرف.» were superseded by the final same-day USM/AUT decisions (BR-AUT-003/011, BR-USM-030).
+Target strings below are copied exactly from the final BRD requirements, approved **17 October 2026**. Login, session and Profile password strings are CURRENT in #111; Admin username-management strings remain pending #112. Current email strings apply only to the retained Admin surface. An em dash means that Admin feature is not yet presented, not a new UI string. Older «فتح القفل», «تم فتح قفل الحساب.» and «نسيت كلمة المرور؟ تواصل مع المشرف.» were superseded by the final same-day USM/AUT decisions (BR-AUT-003/011, BR-USM-030).
 
 | Context | CURRENT | APPROVED TARGET exact copy | BRD authority (17 October 2026) |
 |---|---|---|---|
-| Login / account identity | البريد الإلكتروني | اسم المستخدم | BR-AUT-001, BR-USM-022/054 |
-| Required username | Email-based login input | أدخل اسم المستخدم. | BR-AUT-004 |
+| Login / account identity | اسم المستخدم (login); البريد الإلكتروني (Admin) | اسم المستخدم | BR-AUT-001, BR-USM-022/054 |
+| Required username | أدخل اسم المستخدم. | أدخل اسم المستخدم. | BR-AUT-004 |
 | Admin search | ابحث بالاسم أو البريد... | ابحث بالاسم أو اسم المستخدم... | BR-USM-005 |
 | Immutable login identifier | لا يمكن تغيير البريد الإلكتروني بعد إنشاء المستخدم. | لا يمكن تغيير اسم المستخدم بعد إنشاء الحساب. | BR-USM-023/036 |
 | Duplicate identity | هذا البريد الإلكتروني مستخدم بالفعل. | اسم المستخدم هذا مستخدم بالفعل. | BR-USM-025 |
 | Delete confirmation identifier | اكتب البريد الإلكتروني للمستخدم لتأكيد الحذف النهائي. | اسم المستخدم | BR-USM-038; the BRD gives the field name, not a replacement instruction sentence |
 | Delete mismatch | البريد الإلكتروني المدخل لا يطابق بريد المستخدم. | اسم المستخدم المدخل لا يطابق هذا الحساب. | BR-USM-042 |
-| No account / forgotten password | Current email-recovery flow | ليس لديك حساب أو نسيت كلمة المرور؟ تواصل مع المشرف. | BR-AUT-003/012 |
+| No account / forgotten password | ليس لديك حساب أو نسيت كلمة المرور؟ تواصل مع المشرف. | ليس لديك حساب أو نسيت كلمة المرور؟ تواصل مع المشرف. | BR-AUT-003/012 |
 | Password hint | استخدم 8 أحرف على الأقل. | استخدم 8 أحرف على الأقل. | BR-AUT-007, BR-PRF-024, BR-USM-023 |
-| Backend minimum-length failure | Current provider/input validation | كلمة المرور قصيرة. استخدم 8 أحرف على الأقل. | BR-AUT-004, BR-PRF-025, BR-USM-023 |
-| General login failure | Current Supabase failure mapping | تعذر إكمال الطلب. تحقق من البيانات وحاول مرة أخرى. | BR-AUT-005 |
+| Backend minimum-length failure | كلمة المرور قصيرة. استخدم 8 أحرف على الأقل. | كلمة المرور قصيرة. استخدم 8 أحرف على الأقل. | BR-AUT-004, BR-PRF-025, BR-USM-023 |
+| General login failure | تعذر إكمال الطلب. تحقق من البيانات وحاول مرة أخرى. | تعذر إكمال الطلب. تحقق من البيانات وحاول مرة أخرى. | BR-AUT-005 |
 | Connection failure | تعذر الاتصال بالخادم. حاول مرة أخرى. | تعذر الاتصال بالخادم. حاول مرة أخرى. | BR-AUT-005 |
-| User lock | — | تم قفل الحساب بعد 5 محاولات دخول فاشلة. تواصل مع المشرف لفتحه. | BR-AUT-011 |
-| Admin lock | — | تم قفل الحساب بعد 5 محاولات دخول فاشلة. حاول مرة أخرى بعد 30 دقيقة. | BR-AUT-011 |
+| User lock | تم قفل الحساب بعد 5 محاولات دخول فاشلة. تواصل مع المشرف لفتحه. | تم قفل الحساب بعد 5 محاولات دخول فاشلة. تواصل مع المشرف لفتحه. | BR-AUT-011 |
+| Admin lock | تم قفل الحساب بعد 5 محاولات دخول فاشلة. حاول مرة أخرى بعد 30 دقيقة. | تم قفل الحساب بعد 5 محاولات دخول فاشلة. حاول مرة أخرى بعد 30 دقيقة. | BR-AUT-011 |
 | Locked badge/filter | — | مقفل | BR-USM-006/014 |
-| Disabled admission | Current admission mapping | حسابك موقوف. تواصل مع المشرف. | BR-AUT-010/015 |
-| Expired session | Current session mapping | انتهت جلستك. سجّل الدخول مرة أخرى. | BR-AUT-015 |
-| Initial / own change title | — | تغيير كلمة المرور | BR-AUT-007, BR-PRF-024 |
-| Current password | — | كلمة المرور الحالية | BR-PRF-024/026 |
+| Disabled admission | حسابك موقوف. تواصل مع المشرف. | حسابك موقوف. تواصل مع المشرف. | BR-AUT-010/015 |
+| Expired session | انتهت جلستك. سجّل الدخول مرة أخرى. | انتهت جلستك. سجّل الدخول مرة أخرى. | BR-AUT-015 |
+| Initial / own change title | تغيير كلمة المرور | تغيير كلمة المرور | BR-AUT-007, BR-PRF-024 |
+| Current password | كلمة المرور الحالية | كلمة المرور الحالية | BR-PRF-024/026 |
 | New password | كلمة المرور الجديدة | كلمة المرور الجديدة | BR-AUT-007, BR-PRF-024, BR-USM-030 |
-| Initial save | — | حفظ كلمة المرور | BR-AUT-007 |
-| Own change action | — | تغيير كلمة المرور | BR-PRF-024 |
-| Own change success | — | تم تغيير كلمة المرور. | BR-PRF-025 |
-| Current-password mismatch | — | كلمة المرور الحالية غير صحيحة. | BR-PRF-025/026 |
+| Initial save | حفظ كلمة المرور | حفظ كلمة المرور | BR-AUT-007 |
+| Own change action | تغيير كلمة المرور | تغيير كلمة المرور | BR-PRF-024 |
+| Own change success | تم تغيير كلمة المرور. | تم تغيير كلمة المرور. | BR-PRF-025 |
+| Current-password mismatch | كلمة المرور الحالية غير صحيحة. | كلمة المرور الحالية غير صحيحة. | BR-PRF-025/026 |
 | Admin reset warning | — | سيخرج المستخدم من كل أجهزته. | BR-USM-030 |
 
 ## CURRENT sex correction — issue #109
@@ -284,6 +284,6 @@ separate, with GET-only reread and explicit close before editing again.
 
 ## CURRENT internal authentication fields (#110)
 
-Username identity is 3–32 ASCII English letters, digits, `.`, `_`, or `-`, with a unique lowercase normalized value. Passwords use standard-library scrypt with a random per-password salt; sessions use opaque random bearer tokens in the Authorization header, store only SHA-256 token hashes, and use no cookies. The implementation proposes a 30-day sliding inactivity expiry for Product Owner approval. Existing accounts retain null internal credentials. These details replace the former “to be decided in issue #110” placeholders. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
+Username identity is 3–32 ASCII English letters, digits, `.`, `_`, or `-`, with a unique lowercase normalized value. Passwords use standard-library scrypt with a random per-password salt; sessions use opaque random bearer tokens in the Authorization header, store only SHA-256 token hashes on the backend, and use no cookies; the browser persists only the raw session token in localStorage (#111). The Product Owner approved the 30-day sliding inactivity expiry for #111 on 27 October 2026. Existing accounts retain null internal credentials unless the explicitly authorized existing-Admin attach command is run. These details replace the former “to be decided in issue #110” placeholders. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
 
-`Principal` adds nullable `username`, unique `normalized_username`, secret `password_hash`, `locked_at` and `last_login_at`; `must_change_password` defaults false and `failed_login_count` defaults zero. `AuthSession` stores only the token hash and Principal/creation/last-use/expiry/revocation fields. The API never returns the stored password hash or session token hash. The raw session token is returned only on successful issuance. Governed failure/change/lock texts above are now used by the backend; their browser presentation remains pending #111/#112.
+`Principal` adds nullable `username`, unique `normalized_username`, secret `password_hash`, `locked_at` and `last_login_at`; `must_change_password` defaults false and `failed_login_count` defaults zero. `AuthSession` stores only the token hash and Principal/creation/last-use/expiry/revocation fields. The API never returns the stored password hash or session token hash. The raw session token is returned only on successful issuance. Governed failure/change/lock texts above are used by the backend and login/Profile browser UI (#111); username-based Admin UI remains pending #112.

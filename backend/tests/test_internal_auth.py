@@ -195,6 +195,121 @@ def test_cli_create_reset_and_second_admin_refusal(labs_postgresql_database, mon
 
 
 @pytest.mark.migration
+@pytest.mark.parametrize("password_stdin", [True, False])
+def test_cli_attach_preserves_legacy_admin_and_sessions(
+    labs_postgresql_database, monkeypatch, capsys, password_stdin
+):
+    import io
+    from uuid import uuid4
+    from app.ops import internal_admin
+    from app.core.credentials import verify_password
+
+    with Session(labs_postgresql_database.engine) as session:
+        admin = Principal(
+            role=PrincipalRole.admin,
+            auth_user_id=uuid4(),
+            email="legacy-admin@example.test",
+            display_name="Legacy Admin",
+            sessions_valid_after=NOW - timedelta(days=1),
+        )
+        session.add(admin)
+        session.commit()
+        existing = AuthSession(
+            principal_id=admin.id,
+            token_hash=token_digest("synthetic-existing-session"),
+            created_at=NOW,
+            last_used_at=NOW,
+            expires_at=NOW + timedelta(days=30),
+        )
+        session.add(existing)
+        session.commit()
+        before = {
+            key: getattr(admin, key)
+            for key in Principal.model_fields
+            if key not in {
+                "username", "normalized_username", "password_hash",
+                "must_change_password", "updated_at",
+            }
+        }
+        existing_before = {key: getattr(existing, key) for key in AuthSession.model_fields}
+    monkeypatch.setattr(internal_admin, "engine", labs_postgresql_database.engine)
+    arguments = ["internal_admin", "attach", "--username", "Administrator"]
+    if password_stdin:
+        arguments.append("--password-stdin")
+        monkeypatch.setattr("sys.stdin", io.StringIO(PASSWORD + "\n"))
+    else:
+        monkeypatch.setattr(internal_admin.getpass, "getpass", lambda _: PASSWORD)
+    monkeypatch.setattr("sys.argv", arguments)
+    internal_admin.main()
+    captured = capsys.readouterr()
+    assert PASSWORD not in captured.out + captured.err
+    with Session(labs_postgresql_database.engine) as session:
+        admin = session.exec(select(Principal)).one()
+        assert {key: getattr(admin, key) for key in before} == before
+        assert admin.username == "Administrator"
+        assert admin.normalized_username == "administrator"
+        assert verify_password(PASSWORD, admin.password_hash)
+        assert not admin.must_change_password
+        existing = session.exec(select(AuthSession)).one()
+        assert {key: getattr(existing, key) for key in existing_before} == existing_before
+        assert login(session, "ADMINISTRATOR", PASSWORD, NOW).principal.id == admin.id
+
+
+@pytest.mark.migration
+@pytest.mark.parametrize("status", [None, *[s for s in PrincipalStatus if s != PrincipalStatus.active]])
+def test_attach_requires_existing_active_admin(labs_postgresql_database, status):
+    from app.ops.internal_admin import manage_admin
+
+    with Session(labs_postgresql_database.engine) as session:
+        if status is not None:
+            session.add(Principal(role=PrincipalRole.admin, status=status))
+            session.commit()
+        with pytest.raises(ValueError, match="active.*Admin"):
+            manage_admin(session, "attach", "Administrator", PASSWORD, NOW)
+        assert all(row.password_hash is None for row in session.exec(select(Principal)).all())
+
+
+@pytest.mark.migration
+def test_attach_refuses_existing_credentials(labs_postgresql_database):
+    from app.ops.internal_admin import manage_admin
+
+    with Session(labs_postgresql_database.engine) as session:
+        admin = account(session, role=PrincipalRole.admin)
+        before = {key: getattr(admin, key) for key in Principal.model_fields}
+        with pytest.raises(ValueError, match="already.*credentials"):
+            manage_admin(session, "attach", "Administrator", "replacement-password", NOW)
+        session.refresh(admin)
+        assert {key: getattr(admin, key) for key in before} == before
+
+
+@pytest.mark.migration
+@pytest.mark.parametrize(
+    "username,password,message",
+    [
+        ("a b", PASSWORD, "3"),
+        ("EXAMPLE", PASSWORD, "conflicts"),
+        ("Administrator", "short", "8"),
+    ],
+    ids=["invalid-username", "taken-username", "invalid-password"],
+)
+def test_attach_rejects_invalid_or_taken_credentials(
+    labs_postgresql_database, username, password, message
+):
+    from app.ops.internal_admin import manage_admin
+
+    with Session(labs_postgresql_database.engine) as session:
+        account(session)
+        admin = Principal(role=PrincipalRole.admin)
+        session.add(admin)
+        session.commit()
+        before = {key: getattr(admin, key) for key in Principal.model_fields}
+        with pytest.raises(ValueError, match=message):
+            manage_admin(session, "attach", username, password, NOW)
+        session.refresh(admin)
+        assert {key: getattr(admin, key) for key in before} == before
+
+
+@pytest.mark.migration
 def test_username_case_insensitive_database_uniqueness(labs_postgresql_database):
     from sqlalchemy.exc import IntegrityError
 

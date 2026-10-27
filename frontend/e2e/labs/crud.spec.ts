@@ -1,3 +1,4 @@
+import { internalLogin, SESSION_TOKEN_KEY } from "../internal-auth";
 import { formatGregorianArabicDate } from "../../lib/dates";
 import { randomUUID } from "node:crypto";
 import type { Page } from "@playwright/test";
@@ -359,12 +360,11 @@ for (const method of ["PATCH", "DELETE"] as const) {
       if (method === "PATCH") await save(page); else await confirmDelete(page);
       await started;
       const oldSubject = await page.evaluate(() => (window as Window & { __mynutriE2ESessionSubjectKey?: () => string }).__mynutriE2ESessionSubjectKey?.());
-      const switched = await page.evaluate(async email => {
-        const signIn = (window as Window & { __mynutriE2ESignInWithPassword?: (email: string, password: string) => Promise<{ error: unknown }> }).__mynutriE2ESignInWithPassword;
-        if (!signIn) throw Error("Missing local auth fixture control");
-        return signIn(email, "Labs-owner-password-2026!");
-      }, takeoverEmail);
-      expect(switched.error).toBeNull();
+      const switched = await internalLogin(takeoverEmail, "Labs-owner-password-2026!");
+    await page.evaluate(({ token, key }) => {
+      localStorage.setItem(key, token);
+      window.dispatchEvent(new StorageEvent("storage", { key }));
+    }, { token: switched.access_token, key: SESSION_TOKEN_KEY });
       await expect(edit(page)).toHaveCount(0); await expect(deletion(page)).toHaveCount(0);
       const delivered = page.waitForResponse(response => response.url() === `${API_URL}/labs/results/${id}` && response.request().method() === method);
       release(); expect(await (await delivered).finished()).toBeNull();

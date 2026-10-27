@@ -1,18 +1,18 @@
 # Current requirements traceability
 
-## APPROVED TARGET traceability — no implementation claim
+## Approved requirements and current delivery boundary
 
-CURRENT in #110: the backend supports internal username/password login alongside the existing Supabase/email browser flow. Internal credentials take precedence: any account with an internal password hash is rejected on the Supabase JWT path with `INTERNAL_LOGIN_REQUIRED`. Internal password changes and resets never update Supabase; accounts without internal credentials retain the existing JWT path. Frontend integration (#111), username-based Admin UI (#112), provider/email removal (#113), and destructive cutover (#114) remain APPROVED TARGET, not implemented or deployed by this change. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
+CURRENT in #111: the browser uses internal username/password login, opaque bearer sessions, forced initial-password change, and own-password change in Profile. Only the session token is persisted in localStorage; passwords stay in memory and no auth cookies are used. Reload during an initial-password change requires re-authentication. Forgotten/reset-password browser flows are absent; forgotten passwords go to the Admin. The backend retains legacy Supabase JWT admission for accounts without internal credentials until #113; an internal password hash takes precedence and rejects JWT admission with `INTERNAL_LOGIN_REQUIRED`. Internal password changes/resets never update Supabase. Admin email-based creation UI/API remains CURRENT until #112; provider/email removal (#113) and destructive cutover (#114) remain APPROVED TARGET. This describes repository implementation, not deployment. (Product Owner decisions of 17 and 27 October 2026; issues #110/#111; BR-AUT-001/003/004/005/007/008/010/011/012/017, BR-PRF-024–026, BR-USM-030/033.)
 
 | Target requirement | Authority / BRD codes | Planned implementation / proof |
 |---|---|---|
-| Internal username/password; no Supabase Auth/email/MFA/self-service recovery | V2 02; AUT/USM final decisions; BR-AUT-001/003/012, BR-USM-022/036 | Backend CURRENT #110; UI/removal pending #111–#113 |
-| Backend minimum length 8 and initial-password-only forced change | V2 02; BR-AUT-004/007/008, BR-USM-023 | Backend CURRENT #110 (27 October 2026); UI pending #111/#112 |
-| Five-failure lock, user reset-unlock, Admin 30-minute unlock, success clears counter | V2 02; BR-AUT-011, BR-USM-030; final lock decision | Backend CURRENT #110 (27 October 2026); UI pending #111/#112 |
-| Current-password-verified self-change revokes other devices; Admin reset revokes all | V2 02; BR-PRF-024–026, BR-USM-030/033 | Backend CURRENT #110 (27 October 2026); UI pending #111/#112 |
+| Internal username/password; no Supabase Auth/email/MFA/self-service recovery | V2 02; AUT/USM final decisions; BR-AUT-001/003/012, BR-USM-022/036 | Backend CURRENT #110; login/Profile UI CURRENT #111; Admin UI/provider removal pending #112/#113 |
+| Backend minimum length 8 and initial-password-only forced change | V2 02; BR-AUT-004/007/008, BR-USM-023 | Backend CURRENT #110; login/Profile UI CURRENT #111; Admin UI pending #112 (27 October 2026) |
+| Five-failure lock, user reset-unlock, Admin 30-minute unlock, success clears counter | V2 02; BR-AUT-011, BR-USM-030; final lock decision | Backend CURRENT #110; login/Profile UI CURRENT #111; Admin UI pending #112 (27 October 2026) |
+| Current-password-verified self-change revokes other devices; Admin reset revokes all | V2 02; BR-PRF-024–026, BR-USM-030/033 | Backend CURRENT #110; login/Profile UI CURRENT #111; Admin UI pending #112 (27 October 2026) |
 | Delete test accounts/private data, preserve Foods, server-side single-Admin create/reset command | V2 06/07; AUT/USM/FOD cutover decisions, related BR-USM-027/043; issue #100 command requirement | #114 cutover pending; Admin command CURRENT #110 (27 October 2026) |
 
-Username identity is 3–32 ASCII English letters, digits, `.`, `_`, or `-`, with a unique lowercase normalized value. Passwords use standard-library scrypt with a random per-password salt; sessions use opaque random bearer tokens in the Authorization header, store only SHA-256 token hashes, and use no cookies. The implementation proposes a 30-day sliding inactivity expiry for Product Owner approval. Existing accounts retain null internal credentials. These details replace the former “to be decided in issue #110” placeholders. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
+Username identity is 3–32 ASCII English letters, digits, `.`, `_`, or `-`, with a unique lowercase normalized value. Passwords use standard-library scrypt with a random per-password salt; sessions use opaque random bearer tokens in the Authorization header, store only SHA-256 token hashes on the backend, and use no cookies; the browser persists only the raw session token in localStorage (#111). The Product Owner approved the 30-day sliding inactivity expiry for #111 on 27 October 2026. Existing accounts retain null internal credentials unless the explicitly authorized existing-Admin attach command is run. These details replace the former “to be decided in issue #110” placeholders. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
 
 ## CURRENT executable coverage
 
@@ -21,7 +21,7 @@ Status: supporting map. Exact executable coverage lives in tests and CI.
 
 | Requirement | Product authority | Runtime owner | Primary proof |
 |---|---|---|---|
-| Supabase identity and Principal isolation | V2 `02`, `03`, `11` | auth dependencies, Principal-scoped services/FKs | principal security and provider-acceptance tests |
+| Internal browser sessions, transitional backend Supabase identity, and Principal isolation | V2 `02`, `03`, `11` | auth dependencies, Principal-scoped services/FKs | principal security and provider-acceptance tests |
 | Admin read-only monitoring and sole sex-correction exception | V2 `03`, `11`; 17 October 2026, BR-PRF-006, BR-USM-032/034/061 | `/admin/users*` reads and `PUT /admin/accounts/{principal_id}/profile/sex` | `test_admin_sex_correction.py`, `admin-sex-correction.spec.ts` |
 | One global Food catalog and `/foods` UI | V2 `04` | Food routes/service and Foods pages | Food API, E2E, architecture tests |
 | Admin-only Food mutation | V2 `03`, `04` | `require_admin`, Food service locks | authorization/security tests |
@@ -48,4 +48,4 @@ Status: supporting map. Exact executable coverage lives in tests and CI.
 The canonical test inventory and partition completeness are measured by `.github/workflows/ci.yml`; documentation does not hard-code collection totals.
 
 
-CURRENT backend proof for #110: `test_internal_credentials.py` covers format/hash validation; `test_internal_auth.py` covers login/locks, forced change, session revocation/expiry, internal-over-JWT precedence, separate credentials, Admin command and migration round-trip. Browser integration remains pending #111/#112 and provider removal/cutover #113/#114. Tests prove repository behavior, not deployment. (17/27 October 2026; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
+CURRENT backend proof for #110: `test_internal_credentials.py` covers format/hash validation; `test_internal_auth.py` covers login/locks, forced change, session revocation/expiry, internal-over-JWT precedence, separate credentials, Admin command and migration round-trip. Browser login, forced initial change and own-password change are implemented in #111; Admin UI remains pending #112 and provider removal/cutover #113/#114. Browser coverage is in internal-session unit tests and authentication/Profile Playwright tests. Tests prove repository behavior, not deployment. (17/27 October 2026; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)

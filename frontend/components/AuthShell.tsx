@@ -1,22 +1,22 @@
 "use client";
 
 import { Eye, EyeOff, LogIn } from "lucide-react";
-import Link from "next/link";
 import { FormEvent, useLayoutEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/client";
-import { normalizePostLoginPath } from "@/lib/auth-return-path";
+import { ApiError } from "@/lib/api";
+import { useAuth } from "./AuthProvider";
 
 const GENERIC_ERROR = "تعذر إكمال الطلب. تحقق من البيانات وحاول مرة أخرى.";
 
 export function AuthShell() {
-  const router = useRouter();
+  const { signIn } = useAuth();
   const search = useSearchParams();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [visible, setVisible] = useState(false);
   const [pending, setPending] = useState(false);
+  const submitting = useRef(false);
   const [message, setMessage] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -58,23 +58,23 @@ export function AuthShell() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (submitting.current) return;
     setMessage("");
-    if (!email.trim() || password.length < 8) {
-      setMessage("أدخل بريدًا صحيحًا وكلمة مرور من 8 أحرف على الأقل.");
-      return;
-    }
+    if (!username.trim()) { setMessage("أدخل اسم المستخدم."); return; }
+    if (Array.from(password).length < 8) { setMessage("كلمة المرور قصيرة. استخدم 8 أحرف على الأقل."); return; }
     setPending(true);
-    const supabase = createClient();
-    const result = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (result.error) {
+    submitting.current = true;
+    try {
+      await signIn(username.trim(), password, search.get("next") ?? "/diary");
+      setPassword("");
+    } catch (error) {
       focusPasswordAfterFailureRef.current = true;
-      setPending(false);
-      setMessage(GENERIC_ERROR);
-      return;
-    }
-    setPending(false);
-    router.replace(normalizePostLoginPath(search.get("next"), window.location.origin));
-    router.refresh();
+      const code = error instanceof ApiError ? error.code : undefined;
+      setMessage(code === "ACCOUNT_DISABLED" ? "حسابك موقوف. تواصل مع المشرف."
+        : code === "USER_LOCKED" ? "تم قفل الحساب بعد 5 محاولات دخول فاشلة. تواصل مع المشرف لفتحه."
+        : code === "ADMIN_LOCKED" ? "تم قفل الحساب بعد 5 محاولات دخول فاشلة. حاول مرة أخرى بعد 30 دقيقة."
+        : error instanceof ApiError ? GENERIC_ERROR : "تعذر الاتصال بالخادم. حاول مرة أخرى.");
+    } finally { submitting.current = false; setPending(false); }
   }
 
   return (
@@ -84,8 +84,8 @@ export function AuthShell() {
         <h1>تسجيل الدخول</h1>
         <p>ادخل إلى بياناتك الغذائية بأمان.</p>
         <label>
-          <span>البريد الإلكتروني</span>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" inputMode="email" autoComplete="email" required dir="ltr" />
+          <span>اسم المستخدم</span>
+          <input value={username} onChange={(e) => setUsername(e.target.value)} type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={32} required dir="ltr" />
         </label>
         <label>
           <span>كلمة المرور</span>
@@ -96,12 +96,12 @@ export function AuthShell() {
             </button>
           </div>
         </label>
-        {message ? <div className="auth-message" role="status">{message}</div> : null}
+        {message || search.get("reason") ? <div className="auth-message" role="status">{message || (search.get("reason") === "disabled" ? "حسابك موقوف. تواصل مع المشرف." : "انتهت جلستك. سجّل الدخول مرة أخرى.")}</div> : null}
         <button className="btn primary" disabled={pending} type="submit">
           <LogIn size={18} />
           {pending ? "جارٍ الإرسال..." : "دخول"}
         </button>
-        <Link href="/auth/forgot-password">نسيت كلمة المرور؟</Link>
+        <p>ليس لديك حساب أو نسيت كلمة المرور؟ تواصل مع المشرف.</p>
       </form>
     </section>
   );

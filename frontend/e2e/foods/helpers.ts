@@ -1,6 +1,7 @@
 import { expect, test as base, type APIRequestContext, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { ADMIN_EMAIL, ADMIN_PASSWORD, internalLogin, SESSION_TOKEN_KEY } from "../internal-auth";
 
 export const API_URL = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
 const TOKEN_FILE = path.join(process.cwd(), "e2e", ".auth", "access-token.txt");
@@ -285,6 +286,17 @@ export class FoodsApi {
 type Fixtures = { foodsApi: FoodsApi; calendarAuthority: CalendarAuthority };
 
 export const test = base.extend<Fixtures>({
+  storageState: async ({ baseURL }, provide) => {
+    if (!baseURL) throw new Error("Foods browser sessions require a configured baseURL.");
+    const session = await internalLogin(ADMIN_EMAIL, ADMIN_PASSWORD);
+    await provide({
+      cookies: [],
+      origins: [{
+        origin: new URL(baseURL).origin,
+        localStorage: [{ name: SESSION_TOKEN_KEY, value: session.access_token }],
+      }],
+    });
+  },
   calendarAuthority: [async ({ request }, provide) => {
     const authority = await fetchCalendarAuthority(request);
     activeCalendarAuthority = authority;

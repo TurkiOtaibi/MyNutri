@@ -1,5 +1,5 @@
 import { Activity, CalendarDays, Check, ChevronDown, ChevronLeft, Info, LoaderCircle, RotateCcw, Ruler, Scale, SlidersHorizontal, Target, UserRound } from "lucide-react";
-import type { FormEvent, RefObject } from "react";
+import type { FormEvent, ReactNode, RefObject } from "react";
 import type { ActivityLevel, Goal, NutritionRegistryResponse, Sex, TargetPlanHistoryResponse, TargetResponse } from "@/lib/types";
 import { NumericSettingsRow, OptionList, SelectionCard, SettingsButton, CutIntensitySelector } from "./profile-controls";
 import { AdditionalTargetsCard, CalculationExplanation, ExpectedTargetsCard, RegistryState, TargetPlanHistory, TargetsCard } from "./profile-targets";
@@ -88,6 +88,7 @@ type ProfileViewIntents = {
 };
 
 type ProfileViewProps = {
+  children?: ReactNode;
   profile: ProfileViewState;
   targets: ProfileTargetsViewState;
   write: ProfileWriteViewState;
@@ -95,6 +96,7 @@ type ProfileViewProps = {
 };
 
 export function ProfileView({
+  children,
   profile,
   targets,
   write,
@@ -313,6 +315,8 @@ export function ProfileView({
         ) : null}
 
       </form>
+
+      {children}
 
       {dirty ? (
         <div className="profile-save-bar" role="region" aria-label="حفظ تغييرات الملف الشخصي">
