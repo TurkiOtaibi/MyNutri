@@ -15,7 +15,7 @@ from sqlmodel import Session, select
 from app.core.auth import PrincipalContext, require_admin
 from app.core.config import Settings, get_settings
 from app.db.session import engine, get_session
-from app.models import Principal, PrincipalStatus
+from app.models import Principal, PrincipalStatus, Profile
 from app.schemas import (
     AdminAccountCounts,
     AdminAccountCreate,
@@ -26,8 +26,10 @@ from app.schemas import (
     AdminAccountPasswordReset,
     AdminAccountRetryCreate,
     AdminAccountSummary,
+    AdminProfileSexCorrection,
 )
 from app.services.admin_auth import AdminAuthError, AdminAuthGateway, get_admin_auth_gateway
+from app.services.admin_profile import correct_profile_sex
 from app.services.admin_lifecycle import (
     LifecycleError,
     create_account,
@@ -111,7 +113,13 @@ _list_reconciliation_throttle = _RecentReconciliationThrottle()
 _LIST_RECONCILIATION_LOCK_KEY = 0x4D794E7574726941
 
 
-def _summary(row: Principal) -> AdminAccountSummary:
+def _summary(row: Principal, profile_complete: bool | None = None) -> AdminAccountSummary:
+    if profile_complete is None:
+        session = Session.object_session(row)
+        assert session is not None
+        profile_complete = session.scalar(
+            select(Profile.id).where(Profile.principal_id == row.id)
+        ) is not None
     return AdminAccountSummary(
         principal_id=row.id,
         email=row.email,
@@ -120,6 +128,7 @@ def _summary(row: Principal) -> AdminAccountSummary:
         created_at=row.created_at,
         updated_at=row.updated_at,
         disabled_at=row.disabled_at,
+        profile_complete=profile_complete,
     )
 
 
@@ -189,7 +198,9 @@ def list_accounts(
         conditions.append(
             or_(Principal.email.ilike(pattern), Principal.display_name.ilike(pattern))
         )
-    statement = select(Principal).where(*conditions)
+    statement = select(Principal, Profile.id).outerjoin(
+        Profile, Profile.principal_id == Principal.id
+    ).where(*conditions)
     total = int(session.exec(
         select(func.count()).select_from(Principal).where(*conditions)
     ).one())
@@ -205,8 +216,19 @@ def list_accounts(
     ).all())
     return AdminAccountList(
         counts=AdminAccountCounts(**counts),
-        items=[_summary(row) for row in rows], total=total, page=page, page_size=page_size
+        items=[_summary(row, profile_id is not None) for row, profile_id in rows],
+        total=total, page=page, page_size=page_size
     )
+
+
+@router.put("/{principal_id}/profile/sex", status_code=204)
+def correct_sex(
+    principal_id: UUID,
+    payload: AdminProfileSexCorrection,
+    admin: PrincipalContext = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> None:
+    correct_profile_sex(session, admin.principal_id, principal_id, payload.sex)
 
 
 @router.post("", response_model=AdminAccountSummary, status_code=201)

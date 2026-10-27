@@ -31,6 +31,7 @@ import type {
   AdminAccountEdit,
   AdminAccountList,
   AdminAccountSummary,
+  AdminProfileSexCorrection,
   AdminUserDetail,
   CalendarAuthorityResponse
 } from "./generated/openapi";
@@ -253,6 +254,10 @@ export function createAdminAccount(payload: AdminAccountCreate, key: string): Pr
 
 export function editAdminAccount(id: string, payload: AdminAccountEdit): Promise<AdminAccountSummary> {
   return apiFetch<AdminAccountSummary>(`/admin/accounts/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export function correctAdminProfileSex(id: string, payload: AdminProfileSexCorrection): Promise<void> {
+  return apiFetch<void>(`/admin/accounts/${id}/profile/sex`, { method: "PUT", body: JSON.stringify(payload) });
 }
 
 export function resetAdminAccountPassword(id: string, newPassword: string): Promise<void> {

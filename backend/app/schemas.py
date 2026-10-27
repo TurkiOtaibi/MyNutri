@@ -779,6 +779,13 @@ class AdminAccountSummary(BaseModel):
     created_at: datetime
     updated_at: datetime
     disabled_at: datetime | None = None
+    profile_complete: bool = False
+
+
+class AdminProfileSexCorrection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sex: Sex
 
 
 class AdminAccountList(BaseModel):

@@ -69,8 +69,17 @@ Target strings below are copied exactly from the final BRD requirements, approve
 | Own change success | — | تم تغيير كلمة المرور. | BR-PRF-025 |
 | Current-password mismatch | — | كلمة المرور الحالية غير صحيحة. | BR-PRF-025/026 |
 | Admin reset warning | — | سيخرج المستخدم من كل أجهزته. | BR-USM-030 |
-| Sole other-user Profile correction | Currently no other-user Profile writes | تصحيح الجنس | BR-PRF-006, BR-USM-032/061; #109 |
-| Correction warning | — | تصحيح الجنس يغيّر حساب الأهداف وتقييم نتائج التحاليل. | BR-USM-032; #109 |
+
+## CURRENT sex correction — issue #109
+
+Only an Admin can correct another active/disabled user with a saved Profile; all
+other private fields remain read-only (17 October 2026; BR-PRF-006, BR-USM-032/061).
+
+| Action | Approved copy | Authority |
+|---|---|---|
+| Correction | تصحيح الجنس | BR-USM-032 |
+| Warning | تصحيح الجنس يغيّر حساب الأهداف وتقييم نتائج التحاليل. | BR-USM-032 |
+| Success / failure | تم حفظ تغييرات المستخدم. / تعذر حفظ تغييرات المستخدم. حاول مرة أخرى. | BR-USM-034 |
 
 ## CURRENT account-management Arabic copy
 
@@ -131,7 +140,7 @@ for the merged Admin Users list (issues #91 and #93).
 
 | Field | Required | Current rule |
 |---|---:|---|
-| `sex` | Yes | `male` or `female`; immutable after first successful Profile save |
+| `sex` | Yes | `male` or `female`; owner-locked after first successful save, with the sole Admin correction exception (17 October 2026; BR-PRF-006, BR-USM-032/061; #109) |
 | `birth_date` | Yes | Valid Gregorian date; Profile age 10–100 on effective date remains. Labs separately requires age >=18 on each test date; a DOB change cannot invalidate stored adult history |
 | `height_cm` | Yes | Finite, 100–250 |
 | `weight_kg` | Yes | Finite, 20–300 |

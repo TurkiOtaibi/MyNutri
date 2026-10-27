@@ -4,7 +4,7 @@
 
 The Supabase/email and read-only monitoring statements below describe the CURRENT implemented repository state, not deployment evidence. The APPROVED TARGET is in-house username/password login with no Supabase Auth or email, no MFA or self-service recovery, and backend-enforced 8-character minimum. Lock after 5 consecutive failures; an Admin reset unlocks a user and signs out all devices without forcing another change, whereas the single Admin unlocks automatically after 30 minutes. Successful login resets the counter. Only an initial password forces change; own-password change requires the current password and signs out other devices. These are pending issues #110–#114, not live behavior. (Product Owner, 17 October 2026, AUT/USM decisions; BR-AUT-001/003/004/007–012, BR-PRF-024–026, BR-USM-023/030/033; details in [V2 02](02_AUTH_AND_ROLE_MODEL.md).)
 
-The APPROVED TARGET also allows only Admin correction of another user's «الجنس» in issue #109; all other private-data monitoring remains read-only. Cutover deletes current test accounts/private data, preserves Foods, and creates the single Admin through a server-side create/reset command. No cutover is performed here. (17 October 2026 PRF/USM/AUT/FOD decisions; BR-PRF-006, BR-USM-027/032/043/061/067/074; issue #100; [V2 06](06_DATA_MIGRATION_AND_CUTOVER.md).)
+The CURRENT implementation allows only Admin correction of another user's «الجنس» in issue #109; all other private-data monitoring remains read-only. Cutover deletes current test accounts/private data, preserves Foods, and creates the single Admin through a server-side create/reset command. No cutover is performed here. (17 October 2026 PRF/USM/AUT/FOD decisions; BR-PRF-006, BR-USM-027/032/043/061/067/074; issue #100; [V2 06](06_DATA_MIGRATION_AND_CUTOVER.md).)
 
 
 Status: Implementation authority
@@ -74,7 +74,8 @@ Diary, Target Plans, nutrition calculations, recommendations or Progress.
   attribution (including any deleted-user label) to any role, per BR-FOD-021
   and the Product Owner decision of 17 October 2026, reconfirmed on 25 October 2026.
   No Food history is rewritten. Every Principal-owned-data writer rechecks
-  `active` under the Principal lock so nothing private can be written after purge.
+  `active` under the Principal lock so nothing private can be written after purge;
+  the sex-only Admin correction permits active/disabled targets only (BR-USM-032; #109).
 - Privileged Supabase Auth calls for Admin creation, password reset, and identity
   deletion run only through FastAPI using a backend-only Service Role credential;
   the bootstrap tool remains permitted. The credential is never exposed to the
@@ -140,7 +141,8 @@ and CI, not in this authority document.
 - Complete Profile supplies sex and DOB. Labs requires complete Gregorian age
   at least 18 on each test date, with the existing leap-day behavior. Profile's
   nutrition age 10–100 rule remains separate. There is no pregnancy input.
-- Sex is immutable after the first successful Profile save. A DOB change cannot
+- Owners cannot change sex after the first successful Profile save; Admin correction
+  is the sole exception (17 October 2026; BR-PRF-006, BR-USM-032/061; #109). A DOB change cannot
   make any stored result pre-adult. An accepted DOB change reinterprets history.
 - Users own CRUD; admins read own/selected-user Labs and cannot mutate Labs,
   including their own. Owner/test/date is unique. Batch create and its durable
