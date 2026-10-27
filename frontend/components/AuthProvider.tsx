@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSelectedLayoutSegment } from "next/navigation";
 import { ApiError, changeAccountPassword, getCurrentAccount, loginAccount, logoutAccount, type CurrentAccount } from "@/lib/api";
 import { normalizePostLoginPath } from "@/lib/auth-return-path";
 import { clearSessionToken, readSessionToken, saveSessionToken, SESSION_CHANGED, SESSION_REJECTED, SESSION_TOKEN_KEY } from "@/lib/internal-session";
@@ -32,6 +32,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initial);
   const router = useRouter();
   const pathname = usePathname();
+  const offlineShell = useSelectedLayoutSegment() === "offline";
   const generation = useRef(0);
   const activeToken = useRef<string | null>(null);
   const initialPassword = useRef<string | null>(null);
@@ -61,9 +62,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     mounted.current = true;
-    const changed = () => { if (readSessionToken() !== activeToken.current) void restore(); };
+    const changed = () => { if (!offlineShell && readSessionToken() !== activeToken.current) void restore(); };
     const storage = (event: StorageEvent) => { if (event.key === SESSION_TOKEN_KEY || event.key === null) changed(); };
     const rejected = (event: Event) => {
+      if (offlineShell) return;
       const reason = (event as CustomEvent<string>).detail === "ACCOUNT_DISABLED" ? "disabled" : "expired";
       rejectionReason.current = reason;
       const next = window.location.pathname.startsWith("/auth/")
@@ -74,7 +76,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener("storage", storage);
     window.addEventListener(SESSION_CHANGED, changed);
     window.addEventListener(SESSION_REJECTED, rejected);
-    void restore();
+    if (offlineShell) { activeToken.current = null; dispatch({ type: "clear" }); }
+    else void restore();
     return () => {
       mounted.current = false;
       generation.current += 1;
@@ -83,17 +86,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener(SESSION_CHANGED, changed);
       window.removeEventListener(SESSION_REJECTED, rejected);
     };
-  }, [restore, router]);
+  }, [offlineShell, restore, router]);
 
   useEffect(() => {
-    if (!state.initialized || state.failed || state.account?.must_change_password) return;
+    if (offlineShell || !state.initialized || state.failed || state.account?.must_change_password) return;
     if (!state.session && pathname !== "/auth/login") {
       const next = `${window.location.pathname}${window.location.search}${window.location.hash}`;
       const reason = rejectionReason.current ? `reason=${rejectionReason.current}&` : "";
       router.replace(`/auth/login?${reason}next=${encodeURIComponent(next)}`);
     } else if (state.session && pathname === "/auth/login") router.replace(returnTo.current);
     else if (state.session) returnTo.current = "/diary";
-  }, [pathname, router, state.account, state.failed, state.initialized, state.session]);
+  }, [offlineShell, pathname, router, state.account, state.failed, state.initialized, state.session]);
 
   const signIn = useCallback(async (username: string, password: string, requested: string) => {
     const sequence = ++generation.current;
@@ -116,7 +119,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await logoutAccount(token);
       if (clearSessionToken(token)) router.replace("/auth/login");
     } catch {
-      if (token === activeToken.current) dispatch({ type: "logout-failed" });
+      // Explicit logout always removes this browser's credential and private UI,
+      // even when remote revocation could not be confirmed. Never clear a newer login.
+      if (token === activeToken.current && clearSessionToken(token)) {
+        dispatch({ type: "logout-failed" });
+        router.replace("/auth/login");
+      }
     } finally { loggingOut.current = false; }
   }, [router]);
 
@@ -138,7 +146,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
+  const offlineShell = useSelectedLayoutSegment() === "offline";
   const { content, permitted, signOutFailed } = useAuth();
+  // The cached /offline document keeps its route tree even at a deep fallback URL.
+  // It contains only the generic static shell, never account or domain data.
+  if (offlineShell) return children;
   return <>
     {signOutFailed ? <p role="alert" className="state-note" dir="rtl">تعذر تسجيل الخروج. حاول مرة أخرى.</p> : null}
     {content ?? (permitted ? children : null)}

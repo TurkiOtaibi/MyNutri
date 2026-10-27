@@ -138,7 +138,7 @@ The 27 October 2026 Product Owner decision keeps credentials separate and does n
 | Endpoint | Contract |
 |---|---|
 | `POST /auth/login` | Username/password to a bearer token returned once, expiry, and account/role/forced-change flag. Unknown usernames perform one dummy scrypt verification and return the same generic failure as a wrong password. Inactive accounts cannot log in; a correct password on a disabled account returns `ACCOUNT_DISABLED`. |
-| `POST /auth/logout` | Internal session only; revoke the caller's current session. The current browser uses this endpoint and clears its token only after successful logout. |
+| `POST /auth/logout` | Internal session only; revoke the caller's current session. The current browser uses this endpoint and clears its local token on logout even if remote revocation fails; the failure is shown explicitly (BR-NAV-008/009). |
 | `POST /auth/change-password` | Internal session and correct current password required; minimum 8, maximum 256 characters; clear initial-change flag and revoke only other internal sessions. Supabase credentials are untouched and cannot admit this account. |
 | `GET /account/me` | Account, role, username and forced-change flag, with nullable legacy Auth ID; no secrets. |
 | `PUT /admin/accounts/{principal_id}/password` | Existing Admin-only reset, never self-targeting: internal target resets hash, clears counter/lock, does not force another change, revokes all sessions; legacy-only target uses the existing Supabase reset. |
