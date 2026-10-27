@@ -1010,11 +1010,11 @@ test("Admin private list and detail caches disappear when the same browser conte
   const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
   await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/admin/users");
-  await expect(page.getByText(emailMonitored, { exact: true })).toBeVisible();
+  await expect(page.getByText(fixtureUsername(emailMonitored), { exact: true })).toBeVisible();
   await page.locator(`a[href="/admin/users/${monitoredPrincipalId}"]`).click();
   await page.waitForURL(new RegExp(`/admin/users/${monitoredPrincipalId}$`));
   await expect(page.locator(".selected-user-banner")).toBeVisible();
-  await expect(page.getByText(emailMonitored, { exact: true })).toBeVisible();
+  await expect(page.getByText(fixtureUsername(emailMonitored), { exact: true })).toBeVisible();
   expect(await page.evaluate(() => {
     const inspect = (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys;
     if (!inspect) throw new Error("E2E query inspection hook is unavailable.");
@@ -1025,7 +1025,7 @@ test("Admin private list and detail caches disappear when the same browser conte
   await page.locator(".nav-signout").click();
   await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
   await expect(page.locator('input[autocomplete="username"]')).toBeVisible();
-  await installLeakObserver(page, [emailMonitored, ADMIN_EMAIL]);
+  await installLeakObserver(page, [fixtureUsername(emailMonitored), fixtureUsername(ADMIN_EMAIL), emailMonitored, ADMIN_EMAIL]);
   let releaseProfileB!: () => void;
   let profileBWasBlocked = false;
   const profileBBlocked = new Promise<void>((resolve) => { releaseProfileB = resolve; });
