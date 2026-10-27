@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -269,6 +270,14 @@ class PrincipalRole(str, Enum):
 class Principal(SQLModel, table=True):
     __tablename__ = "principal"
     __table_args__ = (
+        UniqueConstraint("normalized_username", name="uq_principal_normalized_username"),
+        CheckConstraint("failed_login_count >= 0", name="ck_principal_failed_login_count"),
+        CheckConstraint(
+            "(username IS NULL AND normalized_username IS NULL AND password_hash IS NULL) OR "
+            "(username IS NOT NULL AND normalized_username = lower(username) AND "
+            "normalized_username IS NOT NULL AND password_hash IS NOT NULL)",
+            name="ck_principal_internal_credentials",
+        ),
         CheckConstraint("status IN ('provisioning', 'active', 'disabled', 'deleting', 'deleted')", name="ck_principal_status"),
         CheckConstraint("role IN ('user', 'admin')", name="ck_principal_role"),
         UniqueConstraint("auth_user_id", name="uq_principal_auth_user_id"),
@@ -318,6 +327,17 @@ class Principal(SQLModel, table=True):
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    username: str | None = Field(default=None, sa_column=Column(String(32)))
+    normalized_username: str | None = Field(default=None, sa_column=Column(String(32)))
+    password_hash: str | None = Field(default=None, repr=False, sa_column=Column(Text()))
+    must_change_password: bool = Field(
+        default=False, sa_column=Column(Boolean(), nullable=False, server_default=sa_text("false"))
+    )
+    failed_login_count: int = Field(
+        default=0, sa_column=Column(Integer(), nullable=False, server_default="0")
+    )
+    locked_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    last_login_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     auth_user_id: uuid.UUID | None = Field(default=None)
     retired_auth_user_id: uuid.UUID | None = Field(default=None)
     email: str | None = Field(default=None, sa_column=Column(String(320), nullable=True))
@@ -356,6 +376,21 @@ class Principal(SQLModel, table=True):
         default_factory=utcnow,
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )
+
+
+class AuthSession(SQLModel, table=True):
+    __tablename__ = "auth_session"
+    __table_args__ = (UniqueConstraint("token_hash", name="uq_auth_session_token_hash"),)
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    principal_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("principal.id", ondelete="RESTRICT"), nullable=False, index=True)
+    )
+    token_hash: str = Field(repr=False, sa_column=Column(String(64), nullable=False))
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    last_used_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    revoked_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
 
 
 class Profile(SQLModel, table=True):

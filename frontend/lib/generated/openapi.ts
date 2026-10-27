@@ -12,15 +12,17 @@
 
 /** AccountResponse */
 export interface AccountResponse {
-  /**
-   * Auth User Id
-   * @format uuid
-   */
-  auth_user_id: string;
+  /** Auth User Id */
+  auth_user_id: string | null;
   /** Display Name */
   display_name: string | null;
   /** Email */
   email: string | null;
+  /**
+   * Must Change Password
+   * @default false
+   */
+  must_change_password?: boolean;
   /**
    * Principal Id
    * @format uuid
@@ -28,6 +30,8 @@ export interface AccountResponse {
   principal_id: string;
   role: PrincipalRole;
   status: PrincipalStatus;
+  /** Username */
+  username?: string | null;
 }
 
 /** ActivityLevel */
@@ -894,6 +898,38 @@ export interface LegacyNutritionResponse {
   vitamin_a_mcg: number | null;
 }
 
+/** LoginRequest */
+export interface LoginRequest {
+  /**
+   * Password
+   * @format password
+   * @maxLength 256
+   */
+  password: string;
+  /**
+   * Username
+   * @maxLength 32
+   */
+  username: string;
+}
+
+/** LoginResponse */
+export interface LoginResponse {
+  /** Access Token */
+  access_token: string;
+  account: AccountResponse;
+  /**
+   * Expires At
+   * @format date-time
+   */
+  expires_at: string;
+  /**
+   * Token Type
+   * @default "bearer"
+   */
+  token_type?: string;
+}
+
 /** MealType */
 export type MealType =
   | "breakfast"
@@ -999,6 +1035,28 @@ export interface NutritionTotals {
   vitamin_k_mcg?: number | null;
   /** Zinc Mg */
   zinc_mg?: number | null;
+}
+
+/** PasswordChangeRequest */
+export interface PasswordChangeRequest {
+  /**
+   * Current Password
+   * @format password
+   * @maxLength 256
+   */
+  current_password: string;
+  /**
+   * New Password
+   * @format password
+   * @maxLength 256
+   */
+  new_password: string;
+}
+
+/** PasswordChangeResponse */
+export interface PasswordChangeResponse {
+  /** Message Ar */
+  message_ar: string;
 }
 
 /** PrincipalRole */
@@ -1778,6 +1836,55 @@ export namespace Admin {
     export type RequestBody = never;
     export type RequestHeaders = {};
     export type ResponseBody = LabTestDetailResponse;
+  }
+}
+
+export namespace Auth {
+  /**
+   * No description
+   * @tags internal-auth
+   * @name ChangeAccountPasswordAuthChangePasswordPost
+   * @summary Change Account Password
+   * @request POST:/auth/change-password
+   * @secure
+   */
+  export namespace ChangeAccountPasswordAuthChangePasswordPost {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = PasswordChangeRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = PasswordChangeResponse;
+  }
+
+  /**
+   * No description
+   * @tags internal-auth
+   * @name LoginAccountAuthLoginPost
+   * @summary Login Account
+   * @request POST:/auth/login
+   */
+  export namespace LoginAccountAuthLoginPost {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = LoginRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = LoginResponse;
+  }
+
+  /**
+   * No description
+   * @tags internal-auth
+   * @name LogoutAccountAuthLogoutPost
+   * @summary Logout Account
+   * @request POST:/auth/logout
+   * @secure
+   */
+  export namespace LogoutAccountAuthLogoutPost {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = void;
   }
 }
 

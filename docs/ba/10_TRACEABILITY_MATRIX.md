@@ -2,17 +2,17 @@
 
 ## APPROVED TARGET traceability — no implementation claim
 
-All rows in this table cite the Product Owner decisions of **17 October 2026**. The current proof table below remains evidence for the CURRENT Supabase/email implementation only; it does not prove these target requirements. Issue #100 changes documentation, not runtime coverage or the completion counts in #99.
+CURRENT in #110: the backend supports internal username/password login alongside the existing Supabase/email browser flow. Internal credentials take precedence: any account with an internal password hash is rejected on the Supabase JWT path with `INTERNAL_LOGIN_REQUIRED`. Internal password changes and resets never update Supabase; accounts without internal credentials retain the existing JWT path. Frontend integration (#111), username-based Admin UI (#112), provider/email removal (#113), and destructive cutover (#114) remain APPROVED TARGET, not implemented or deployed by this change. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
 
 | Target requirement | Authority / BRD codes | Planned implementation / proof |
 |---|---|---|
-| Internal username/password; no Supabase Auth/email/MFA/self-service recovery | V2 02; AUT/USM final decisions; BR-AUT-001/003/012, BR-USM-022/036 | #110–#113, pending |
-| Backend minimum length 8 and initial-password-only forced change | V2 02; BR-AUT-004/007/008, BR-USM-023 | #110–#112, pending |
-| Five-failure lock, user reset-unlock, Admin 30-minute unlock, success clears counter | V2 02; BR-AUT-011, BR-USM-030; final lock decision | #110–#112, pending |
-| Current-password-verified self-change revokes other devices; Admin reset revokes all | V2 02; BR-PRF-024–026, BR-USM-030/033 | #110–#112, pending |
-| Delete test accounts/private data, preserve Foods, server-side single-Admin create/reset command | V2 06/07; AUT/USM/FOD cutover decisions, related BR-USM-027/043; issue #100 command requirement | #114, pending; operational design #110 |
+| Internal username/password; no Supabase Auth/email/MFA/self-service recovery | V2 02; AUT/USM final decisions; BR-AUT-001/003/012, BR-USM-022/036 | Backend CURRENT #110; UI/removal pending #111–#113 |
+| Backend minimum length 8 and initial-password-only forced change | V2 02; BR-AUT-004/007/008, BR-USM-023 | Backend CURRENT #110 (27 October 2026); UI pending #111/#112 |
+| Five-failure lock, user reset-unlock, Admin 30-minute unlock, success clears counter | V2 02; BR-AUT-011, BR-USM-030; final lock decision | Backend CURRENT #110 (27 October 2026); UI pending #111/#112 |
+| Current-password-verified self-change revokes other devices; Admin reset revokes all | V2 02; BR-PRF-024–026, BR-USM-030/033 | Backend CURRENT #110 (27 October 2026); UI pending #111/#112 |
+| Delete test accounts/private data, preserve Foods, server-side single-Admin create/reset command | V2 06/07; AUT/USM/FOD cutover decisions, related BR-USM-027/043; issue #100 command requirement | #114 cutover pending; Admin command CURRENT #110 (27 October 2026) |
 
-Username format and unspecified session/credential design are **to be decided in issue #110**, not inferred from current provider behavior. (17 October 2026 decisions; BR-AUT-001/011/017, BR-USM-022/025/036.)
+Username identity is 3–32 ASCII English letters, digits, `.`, `_`, or `-`, with a unique lowercase normalized value. Passwords use standard-library scrypt with a random per-password salt; sessions use opaque random bearer tokens in the Authorization header, store only SHA-256 token hashes, and use no cookies. The implementation proposes a 30-day sliding inactivity expiry for Product Owner approval. Existing accounts retain null internal credentials. These details replace the former “to be decided in issue #110” placeholders. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
 
 ## CURRENT executable coverage
 
@@ -46,3 +46,6 @@ Status: supporting map. Exact executable coverage lives in tests and CI.
 | Labs static-shell isolation/nutrition independence | V2 `01`, `11` | service worker/query/domain architecture | PWA successful-write/cache/storage/offline tests and domain regressions |
 
 The canonical test inventory and partition completeness are measured by `.github/workflows/ci.yml`; documentation does not hard-code collection totals.
+
+
+CURRENT backend proof for #110: `test_internal_credentials.py` covers format/hash validation; `test_internal_auth.py` covers login/locks, forced change, session revocation/expiry, internal-over-JWT precedence, separate credentials, Admin command and migration round-trip. Browser integration remains pending #111/#112 and provider removal/cutover #113/#114. Tests prove repository behavior, not deployment. (17/27 October 2026; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)

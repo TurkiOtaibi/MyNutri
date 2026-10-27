@@ -2,9 +2,9 @@
 
 ## CURRENT provider gates versus APPROVED TARGET release
 
-The Supabase configuration, provider-acceptance, JWT/AMR and lifecycle gates below apply to the CURRENT implementation until the replacement is implemented and explicitly released. They are not instructions to configure Supabase in the APPROVED TARGET. Issues #110–#114 must deliver in-house username/password login, no Supabase Auth or email anywhere, no MFA or self-service recovery, the approved lock/initial-password rules and device revocation behavior in [V2 02](02_AUTH_AND_ROLE_MODEL.md). This documentation-only PR neither changes CI gates nor proves deployment. (Product Owner, 17 October 2026 AUT/USM decisions; BR-AUT-001/004/007–012/017, BR-PRF-024–026, BR-USM-023/030/033.)
+CURRENT in #110: the backend supports internal username/password login alongside the existing Supabase/email browser flow. Internal credentials take precedence: any account with an internal password hash is rejected on the Supabase JWT path with `INTERNAL_LOGIN_REQUIRED`. Internal password changes and resets never update Supabase; accounts without internal credentials retain the existing JWT path. Frontend integration (#111), username-based Admin UI (#112), provider/email removal (#113), and destructive cutover (#114) remain APPROVED TARGET, not implemented or deployed by this change. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.) Existing provider-acceptance and configuration gates remain required until #113; no deployment is implied.
 
-The future #114 release must implement the recorded test-account/private-data deletion while keeping Foods, then establish the single Admin through the server-side create/reset command. Its exact procedure and recovery implications are pending #110/#114; this text is not a destructive command or production authorization. The current migrations, Food preservation and existing release safeguards remain in force. (17 October 2026 AUT/USM/FOD cutover decisions; related BR-USM-027/043, BR-FOD-021; issue #100.)
+The future #114 release must delete current test accounts/private data while keeping Foods and scrubbed attribution tombstones, then create the single Admin through the internal create/reset command implemented in #110. Its reviewed cutover/recovery procedure remains pending #114. Current migration and release safeguards remain in force; this is not production authorization. (17/27 October 2026 AUT/USM/FOD decisions; BR-USM-027/043, BR-FOD-021; #110.)
 
 
 Status: Operational authority. This document does not authorize a deployment or
@@ -68,10 +68,7 @@ copy in the BA field dictionary when implementing the lifecycle.
 
 ## Release identity
 
-The current migration head is Principal disable timestamp revision `e9b7f5d01423`,
-with parent private Labs note revision `d8a6e4c90312`. Apply this migration before running the backend built from this revision; Render applies migrations at start. Its downgrade drops only `principal.disabled_at`, preserving account statuses. The preceding Labs note migration still refuses to drop its note column while any non-null note remains; do not delete notes to bypass that guard. Production migration requires separate explicit release authorization. Confirm the intended application
-commit, generated contract, single Alembic head, and approved environment before
-any rollout action.
+The current migration head is internal authentication revision `f0c8a6e12534`, parent `e9b7f5d01423`. Apply it before running the backend built from this revision; Render applies migrations at start. Upgrade preserves legacy identities/emails and adds nullable/defaulted credentials plus hashed sessions. Downgrade removes internal credentials/sessions, so internal-only accounts require an explicitly reviewed recovery plan before rollback; Principal/domain data survive and direct Data API grants remain revoked. Production migration requires separate explicit release authorization. Confirm the application commit, generated contract, single head and approved environment before rollout. (Issue #110, 27 October 2026; BR-AUT-001/011/017, BR-PRF-024–026.)
 
 ## Required pre-release validation
 

@@ -2,9 +2,9 @@
 
 ## CURRENT implementation versus APPROVED TARGET
 
-The Supabase/email authentication, JWT admission, lifecycle saga and bootstrap sections below describe the CURRENT implemented repository state, not proof of production deployment. Email-based self-service recovery is currently implemented in `/auth/forgot-password` and `/auth/reset-password`. They remain current contracts until replacement is implemented and released; the target below is not live. Authority for the replacement: Product Owner decisions of **17 October 2026**, BRD AUT/PRF/USM decision tables and the cited requirements. Issues #110–#114 implement the login transition; issue #109 implements the separate sex-correction exception as CURRENT authorization (BR-PRF-006, BR-USM-032/061).
+CURRENT in #110: the backend supports internal username/password login alongside the existing Supabase/email browser flow. Internal credentials take precedence: any account with an internal password hash is rejected on the Supabase JWT path with `INTERNAL_LOGIN_REQUIRED`. Internal password changes and resets never update Supabase; accounts without internal credentials retain the existing JWT path. Frontend integration (#111), username-based Admin UI (#112), provider/email removal (#113), and destructive cutover (#114) remain APPROVED TARGET, not implemented or deployed by this change. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
 
-## APPROVED TARGET — not yet implemented
+## APPROVED TARGET — backend delivered in #110; UI/removal/cutover pending
 
 | Target rule | Decision / requirement (17 October 2026) |
 |---|---|
@@ -19,7 +19,7 @@ The Supabase/email authentication, JWT admission, lifecycle saga and bootstrap s
 
 The final 17 October decisions supersede the earlier same-day email-as-login decision, forced change after every reset, separate «فتح القفل» / «تم فتح قفل الحساب.» action, and shorter contact-Admin sentence. Use the final requirements above, not those superseded entries.
 
-Username format, length, allowed characters, normalization and case-equivalence rules, credential representation, session transport/storage/lifetime and command interface are **to be decided in issue #110**; the BRD does not define those implementation details. Case-insensitive partial Admin search is already specified by BR-USM-005 and must not be mistaken for an approved username identity-normalization rule. No schema or API for this target is approved by this documentation change. (17 October 2026, BR-AUT-001/011/017, BR-USM-005/022/025/036; issue #100.)
+Username identity is 3–32 ASCII English letters, digits, `.`, `_`, or `-`, with a unique lowercase normalized value. Passwords use standard-library scrypt with a random per-password salt; sessions use opaque random bearer tokens in the Authorization header, store only SHA-256 token hashes, and use no cookies. The implementation proposes a 30-day sliding inactivity expiry for Product Owner approval. Existing accounts retain null internal credentials. These details replace the former “to be decided in issue #110” placeholders. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
 
 ## CURRENT implementation details
 
@@ -29,8 +29,7 @@ in the lifecycle revision; Production activation remains a separate release acti
 
 ## Authentication
 
-The browser authenticates with Supabase Auth using email/password and sends the
-current Supabase access token to FastAPI as `Authorization: Bearer <jwt>`.
+The current browser still authenticates with Supabase Auth using email/password and sends `Authorization: Bearer <jwt>`. The backend also accepts internal opaque bearer sessions; JWT admission is refused once `principal.password_hash` is non-null. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
 
 FastAPI verifies asymmetric Supabase JWTs against the project JWKS endpoint and
 validates signature algorithm, issuer, audience, expiry, and UUID subject. JWKS
@@ -68,9 +67,8 @@ role. The Admin cannot change their own role, disable, or delete themselves.
 
 An Admin creates normal users with email, display name, and an initial password
 they set; they may edit display name, reset password (including revocation of
-the user's existing Supabase sessions through FastAPI), enable/disable, and
-request permanent deletion. Email changes are not supported. Passwords are never
-persisted, logged, or returned by myNutri. Password reset and status changes
+the user's internal sessions when an internal hash exists, otherwise existing Supabase sessions through FastAPI), enable/disable, and
+request permanent deletion. Email changes are not supported. Raw passwords are never persisted, logged, or returned by myNutri; internal accounts store only the versioned scrypt hash. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.) Legacy password reset and status changes
 set `sessions_valid_after` to the next whole second. FastAPI compares that
 cutoff to the latest valid Supabase
 `amr[].timestamp` authentication time, not access-token `iat`; missing or
@@ -109,7 +107,7 @@ non-retired duplicate keeps the approved duplicate-email error. Failures are
 sanitized, logged by count/type only, and retried at the next trigger; they
 never recreate private data or reactivate a tombstone.
 
-`PrincipalContext` contains `principal_id`, `auth_user_id`, and `role`.
+`PrincipalContext` contains `principal_id`, optional `auth_user_id`, `role`, `username`, `must_change_password`, and the internal `session_id` when applicable. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
 
 ## Errors
 
@@ -131,3 +129,22 @@ FastAPI runtime only for Admin account-management creation, password reset,
 and Auth identity deletion. No other runtime path may use it. It is backend-only,
 never `NEXT_PUBLIC_`, logged, or returned. The frontend never calls privileged
 Supabase Auth operations directly.
+
+
+## CURRENT internal authentication backend (#110)
+
+The 27 October 2026 Product Owner decision keeps credentials separate and does not extend the privileged Supabase boundary above. Internal Admin reset dispatches by the target's stored credential, not a client-selected mode; it never calls Supabase when an internal hash exists. Legacy-only reset retains the provider operation and JWT cutoff. No existing email or username is migrated. (BR-AUT-017, BR-PRF-024–026, BR-USM-030/033.)
+
+| Endpoint | Contract |
+|---|---|
+| `POST /auth/login` | Username/password to a bearer token returned once, expiry, and account/role/forced-change flag. Unknown usernames perform one dummy scrypt verification and return the same generic failure as a wrong password. Inactive accounts cannot log in; a correct password on a disabled account returns `ACCOUNT_DISABLED`. |
+| `POST /auth/logout` | Internal session only; revoke the caller's current session. Legacy browser logout remains with Supabase until #113. |
+| `POST /auth/change-password` | Internal session and correct current password required; minimum 8, maximum 256 characters; clear initial-change flag and revoke only other internal sessions. Supabase credentials are untouched and cannot admit this account. |
+| `GET /account/me` | Account, role, username and forced-change flag, with nullable legacy Auth ID; no secrets. |
+| `PUT /admin/accounts/{principal_id}/password` | Existing Admin-only reset, never self-targeting: internal target resets hash, clears counter/lock, does not force another change, revokes all sessions; legacy-only target uses the existing Supabase reset. |
+
+These endpoints implement BR-AUT-001/004/005/007/008/010/011/015/017, BR-PRF-024–026 and BR-USM-030/033 (17/27 October 2026). Login returns enough account state to route an initial password change; until that change, all authenticated product endpoints, including `/account/me`, are refused with `PASSWORD_CHANGE_REQUIRED`, except POST change-password and logout. Public health/login remain available. Five consecutive failures lock a normal user until Admin reset; Admin unlocks at 30 minutes, and successful login clears the counter. Every internal admission rechecks active status, revocation and expiry. Disable/delete revoke sessions under the Principal lock; deletion purges sessions and scrubs credentials while preserving the Principal tombstone and Food attribution.
+
+Implementation choices proposed for approval: scrypt `n=32768, r=8, p=1`, 16 random salt bytes, 64-byte derived key, explicit 64 MiB maxmem; at most two concurrent hashes per worker limits hashing memory to roughly 64 MiB. The versioned stored encoding carries parameters/salt/hash and accepts only reviewed parameter sets. Tokens contain 32 random bytes, are never stored raw, and expire after 30 days without use; admission renews the inactivity deadline. No cookies, browser storage, offline queue or new dependency is introduced.
+
+The server-side command is `python -m app.ops.internal_admin create --username <username>` or `reset --username <username>`. It prompts without echo or accepts one line via `--password-stdin`; passwords are never command arguments or logs. Create refuses any existing Admin (including a legacy Admin), and sets the initial-change flag. Reset addresses the existing internal Admin, clears lock/counter/initial-change flag and revokes all sessions without touching Supabase. The database also enforces the single Admin. Running either command against production requires separate release authorization. (17/27 October 2026 AUT/USM decisions; BR-AUT-007/008/011, BR-USM-027/030; issue #110.)

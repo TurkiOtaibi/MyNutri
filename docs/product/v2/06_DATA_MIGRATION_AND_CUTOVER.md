@@ -4,7 +4,7 @@
 
 The Supabase lifecycle transitions and preservation checks below describe CURRENT implemented migrations. They are not the future login cutover, and their account-preservation statements must not override the approved test-account purge. At that future cutover, delete all current test accounts and their private data, retain the Food list, remove Supabase Auth/email from the system and recreate the single Admin through a server-side command that can also reset its password. This is a target release requirement, not an executable procedure or authorization to delete data now. (Product Owner, 17 October 2026 AUT/USM/FOD decision tables; BR-AUT-001/012, related BR-USM-027/043; command requirement in issue #100.)
 
-The exact treatment of retained Food attribution references, purge ordering, credential/session schema and command interface is **to be decided in issue #110**, with the reviewed cutover procedure in #114. No attribution IDs, Food rows, existing migration or current head are changed here. Production execution still requires explicit release authorization. (17 October 2026 cutover decisions; BR-USM-043, BR-FOD-021; issue #100.)
+Issue #110 and its 27 October 2026 decisions retain scrubbed Principal tombstones and never rewrite Food attribution IDs or transfer them to the Admin. The existing deletion saga purges private rows, including internal sessions, and scrubs username/hash along with existing identity data. The internal credential/session schema and Admin command are CURRENT in #110, specified in V2 02/11; the reviewed destructive cutover procedure remains pending #114. No cutover is authorized here. (BR-AUT-001/017, BR-USM-043, BR-FOD-021.)
 
 ## CURRENT migration authority
 
@@ -261,7 +261,7 @@ Before any release authorization:
 16. Confirm `d9f64a1c3e58` removed Food archive columns, installed the Diary Food
     `ON DELETE CASCADE`, preserved existing Food/Diary rows during migration, and
     revoked direct Food mutation from `PUBLIC`, `anon`, and `authenticated`.
-17. Confirm `e9b7f5d01423` is the sole head and agrees with all seven models;
+17. Confirm `f0c8a6e12534` is the sole head and agrees with all eight models (#110; 27 October 2026; BR-AUT-001/017);
     clean and populated-base upgrades preserve existing facts, grants and replay.
 18. Prove packaged Labs catalog availability, private privileges, finite/unscaled
     numeric storage, unique owner/test/date, and operation-specific receipt expiry.
@@ -305,3 +305,8 @@ only in an empty Labs schema. Offline downgrade is unavailable; production recov
 still requires explicit release authorization and the approved restore policy.
 
 Issue #108 authorizes revision `e9b7f5d01423`, parent `d8a6e4c90312`, for BR-USM-031. Upgrade adds nullable `principal.disabled_at TIMESTAMP WITH TIME ZONE`; existing rows remain null. Downgrade drops only this timestamp, preserving account status and all other data. Render applies migrations at start; production execution remains subject to explicit release authorization. Test upgrade/downgrade only on disposable loopback PostgreSQL.
+
+
+## Internal authentication transition
+
+Issue #110 authorizes revision `f0c8a6e12534`, parent `e9b7f5d01423` (27 October 2026; BR-AUT-001/007/008/011/017, BR-PRF-024–026, BR-USM-030/033). Upgrade adds nullable username/normalized username/password hash/lock/last-login fields, defaulted initial-change and failure-count fields, and `auth_session` with token hashes and timestamps. Existing identities/emails remain unchanged. Direct PUBLIC/anon/authenticated access to credentials and sessions is revoked; the new session table has default-deny RLS. Downgrade drops the internal session table and new credential fields, losing internal credentials/sessions but retaining Principals and domain data; it does not restore direct Data API grants. This is not a safe authentication rollback after internal-only accounts are in use without an explicitly reviewed recovery plan. Apply before the backend built from this revision runs; Render applies migrations at start. Production execution requires separate release authorization.

@@ -2,11 +2,11 @@
 
 ## CURRENT model and APPROVED TARGET boundary
 
-The seven entities, Supabase identity links, email, admission cutoffs, lifecycle saga and schema head below are the CURRENT implemented contracts. Issue #109 adds a sex-only Admin endpoint, with no new persisted field or migration, and does not establish the deployed revision. The APPROVED TARGET in issues #110–#114 replaces Supabase Auth/email with in-house username/password authentication; target account and session behavior is specified in [V2 02](02_AUTH_AND_ROLE_MODEL.md). (17 October 2026 AUT/USM decisions; BR-AUT-001/011/012/017, BR-USM-022/030/036.)
+CURRENT in #110: the backend supports internal username/password login alongside the existing Supabase/email browser flow. Internal credentials take precedence: any account with an internal password hash is rejected on the Supabase JWT path with `INTERNAL_LOGIN_REQUIRED`. Internal password changes and resets never update Supabase; accounts without internal credentials retain the existing JWT path. Frontend integration (#111), username-based Admin UI (#112), provider/email removal (#113), and destructive cutover (#114) remain APPROVED TARGET, not implemented or deployed by this change. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
 
-Target data responsibilities, not a physical schema: support immutable username identity, backend password validation, consecutive-failure accounting, the initial-password-change restriction, the Admin's 30-minute lock and per-device session revocation. Successful login clears the failure count; a user unlocks through Admin reset, which revokes all sessions without requiring another change; self-service change verifies the current password and revokes other devices. Column/table names, credential representation and session mechanism/lifetime are **to be decided in issue #110**. The existing Supabase `amr`/JWT model must not be assumed to be the target mechanism. (17 October 2026 decisions; BR-AUT-004/007/008/011, BR-PRF-024–026, BR-USM-023/030/033.)
+Username identity is 3–32 ASCII English letters, digits, `.`, `_`, or `-`, with a unique lowercase normalized value. Passwords use standard-library scrypt with a random per-password salt; sessions use opaque random bearer tokens in the Authorization header, store only SHA-256 token hashes, and use no cookies. The implementation proposes a 30-day sliding inactivity expiry for Product Owner approval. Existing accounts retain null internal credentials. These details replace the former “to be decided in issue #110” placeholders. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
 
-The CURRENT other-user Profile exception is Admin correction of «الجنس», implemented in issue #109; other Profile fields, Diary, plans and Labs remain read-only to Admin. Cutover will delete test accounts/private data while preserving Foods and recreate the single Admin with a server-side create/reset command; physical treatment of existing attribution references must be resolved in #110/#114 without inferring a Food rewrite from this document. Existing Food attribution/duplicate rules, Diary limits, Labs notes, `disabled_at` and the current migration head are unchanged. (17 October 2026 PRF/USM/AUT/FOD decisions; BR-PRF-006, BR-USM-027/032/043/061/067/074; issue #100.)
+The CURRENT other-user Profile exception remains Admin correction of «الجنس» (#109); other Profile fields, Diary, plans and Labs remain read-only. The future #114 cutover deletes test accounts/private data through the lifecycle saga while retaining scrubbed Principal tombstones and unchanged Food attribution IDs; it does not transfer attribution to the Admin. The internal Admin create/reset command is implemented in #110, but no cutover is performed. Existing Food, Diary, Labs and `disabled_at` behavior is unchanged. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
 
 
 Status: current architecture and data authority.
@@ -17,7 +17,7 @@ revision; Production activation remains a separate release action.
 ## System shape
 
 myNutri has a Next.js Arabic/RTL frontend, FastAPI Backend, PostgreSQL schema
-managed by Alembic, and Supabase Auth. Personal API behavior is online-only. The
+managed by Alembic, internal bearer sessions and transitional Supabase Auth (#110; 27 October 2026; BR-AUT-001/017). Personal API behavior is online-only. The
 PWA caches only the static shell. The generated OpenAPI contract is the frontend
 API boundary.
 Labs is a standalone domain. Its medical personal reads/writes follow the same
@@ -25,11 +25,12 @@ online-only/static-shell isolation and do not call the nutrition engine.
 
 ## Runtime entities and ownership
 
-There are seven persisted application entities:
+There are eight persisted application entities (#110; 27 October 2026; BR-AUT-017):
 
 | Entity | Scope and purpose |
 |---|---|
-| `Principal` | Durable authenticated owner and `user`/`admin` authorization identity |
+| `Principal` | Durable owner, role/status, nullable username/normalized unique username/password hash, initial-change flag, failed-login count, lock and last-login timestamps |
+| `AuthSession` | Principal-owned SHA-256 token hash, creation/last-use/expiry/revocation timestamps; backend-only, never raw bearer tokens |
 | `Profile` | One per Principal; latest confirmed calculation inputs/preferences |
 | `TargetPlan` | Principal-owned immutable dated calculation revision |
 | `IdempotencyRecord` | Principal/operation/key-scoped replay and atomic completion record |
@@ -56,13 +57,13 @@ Existing Principals remain. Unknown or non-active Auth identities receive
 is removed.
 
 Only the Admin account-management surface creates normal users, edits display
-name, resets password (revoking existing Supabase sessions through FastAPI),
+name, resets password (revoking internal sessions when an internal hash exists, otherwise existing Supabase sessions through FastAPI; #110, 27 October 2026, BR-USM-030/033),
 enables/disables, and starts/retries permanent deletion.
 Email is immutable in this surface. Initial and reset passwords are Admin-set
-input only: never persisted, logged, or returned. FastAPI alone calls privileged
+input only: raw passwords are never persisted, logged, or returned; internal credentials store a scrypt hash (#110; 27 October 2026; BR-AUT-001). FastAPI alone calls privileged
 Supabase Auth using a backend-only Service Role credential for create, reset,
 and delete; bootstrap remains permitted, and no other runtime route uses it.
-Password reset uses the supported Admin password-update operation, which
+Legacy-only password reset uses the supported Admin password-update operation, which
 revokes Supabase refresh sessions. Password reset and status changes also set
 `sessions_valid_after` to the next whole second. Admission compares it with
 the latest valid `amr[].timestamp` authentication time, never the refreshed
@@ -244,7 +245,7 @@ same-subject overview/detail navigation preserves current queries and cache.
 
 ## Migration and recovery
 
-The sole Alembic head is `e9b7f5d01423` (Principal disable timestamp), following `d8a6e4c90312` (private Labs notes). Historical migrations remain immutable and
+The sole Alembic head is `f0c8a6e12534` (internal credentials and hashed sessions), following `e9b7f5d01423` (Principal disable timestamp), authorized by issue #110 and the 27 October 2026 decision (BR-AUT-001/011/017, BR-PRF-024–026). Historical migrations remain immutable and
 reconstruct the schema. Destructive cutovers are forward-only: real rollback after
 removed schema or data requires a matching pre-cutover database restore and compatible
 application revision, not a synthesized downgrade.

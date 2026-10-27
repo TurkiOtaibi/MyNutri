@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 
 from app.core.auth import PrincipalContext, get_principal_context
 from app.core.calendar import diary_calendar_authority
@@ -9,10 +9,10 @@ router = APIRouter(prefix="/account", tags=["account"])
 
 @router.get("/me", response_model=AccountResponse)
 def current_account(
+    response: Response,
     principal: PrincipalContext = Depends(get_principal_context),
 ) -> AccountResponse:
-    if principal.auth_user_id is None:
-        raise RuntimeError("Authenticated Supabase account is not linked.")
+    response.headers["Cache-Control"] = "no-store"
     return AccountResponse(
         principal_id=principal.principal_id,
         auth_user_id=principal.auth_user_id,
@@ -20,6 +20,8 @@ def current_account(
         display_name=principal.display_name,
         role=principal.role,
         status="active",
+        username=principal.username,
+        must_change_password=principal.must_change_password,
     )
 
 

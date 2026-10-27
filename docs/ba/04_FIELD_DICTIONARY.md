@@ -14,16 +14,15 @@ Status: supporting requirements. Backend schemas and database constraints are ex
 | `email` | No | Unique case-insensitively when present; maximum 320; erased on deleted tombstone |
 | `display_name` | No | Maximum 120; erased on deleted tombstone |
 | `role` | Yes | `user` or `admin`; never accepted from browser metadata or account-management input; partial unique index permits at most one Admin |
-| `status` | Yes | CURRENT lifecycle: `provisioning`, `active`, `disabled`, `deleting`, `deleted`; target lock behavior is separate and its storage is to be decided in issue #110 (17 October 2026; BR-AUT-011, BR-USM-006/014) |
+| `status` | Yes | CURRENT lifecycle: `provisioning`, `active`, `disabled`, `deleting`, `deleted`; internal lock behavior is separate, stored as `failed_login_count` and `locked_at` in #110 (27 October 2026) (17 October 2026; BR-AUT-011, BR-USM-006/014) |
 | creation idempotency key | For Admin creation | Stored with the `provisioning` Principal so the same-key retry resumes rather than creates another account |
 
 These account-lifecycle fields are implemented in the forward lifecycle revision;
 Production activation remains a separate release action.
 Admin creates a normal user with email, display name, and an initial password.
-Admin may edit display name, reset password while revoking the user's existing
-Supabase sessions through FastAPI, and enable/disable; email and role
-cannot be changed through the product. Passwords are input-only: never stored,
-logged, or returned by myNutri. Unknown and non-active identities receive the
+Admin may edit display name, reset password while revoking the user's internal sessions when an internal hash exists, otherwise existing Supabase sessions through FastAPI, and enable/disable; email and role
+cannot be changed through the product. Raw passwords are input-only and never stored,
+logged, or returned; internal accounts store only a scrypt hash (#110; 27 October 2026; BR-AUT-001/017, BR-USM-030/033). Unknown and non-active legacy identities receive the
 existing `401 INVALID_CREDENTIAL`. `deleting` remains locked out and Admin-visible
 as incomplete until a retry reaches the scrubbed `deleted` tombstone. A
 `provisioning` account may be deleted through the same saga; an absent Supabase
@@ -34,7 +33,7 @@ user's email; a mismatch prevents submission.
 
 ## CURRENT fields versus APPROVED TARGET
 
-The Principal fields and provider rules below are CURRENT implemented contracts, not deployment evidence. The target username/password and session model is pending issues #110–#114. No target schema is declared here. Username format, length, allowed characters, normalization and case-equivalence, credential representation and session lifetime/storage are **to be decided in issue #110**. Case-insensitive partial search is already required by BR-USM-005; it does not decide username identity normalization. (Product Owner, 17 October 2026 AUT/USM decisions; BR-AUT-001/011/017, BR-USM-005/022/025/036.)
+CURRENT in #110: the backend supports internal username/password login alongside the existing Supabase/email browser flow. Internal credentials take precedence: any account with an internal password hash is rejected on the Supabase JWT path with `INTERNAL_LOGIN_REQUIRED`. Internal password changes and resets never update Supabase; accounts without internal credentials retain the existing JWT path. Frontend integration (#111), username-based Admin UI (#112), provider/email removal (#113), and destructive cutover (#114) remain APPROVED TARGET, not implemented or deployed by this change. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
 
 In the APPROVED TARGET there is no Supabase Auth, email anywhere, MFA or self-service recovery. Only initial Admin-set passwords require a forced change; reset passwords allow immediate login. Five consecutive failures lock an account, successful login resets the counter, Admin reset alone unlocks a user and signs out every device, and the single Admin unlocks automatically after 30 minutes. Own-password change requires the correct current password and signs out other devices. Backend minimum length is 8. (17 October 2026 final AUT/USM decisions; BR-AUT-004/007–012, BR-PRF-024–026, BR-USM-023/030/033.)
 
@@ -281,3 +280,10 @@ separate, with GET-only reread and explicit close before editing again.
 | `adequate_for_most` | كافٍ لمعظم الأشخاص |
 | `borderline` | حدّي |
 | `in_reference` | ضمن النطاق المرجعي |
+
+
+## CURRENT internal authentication fields (#110)
+
+Username identity is 3–32 ASCII English letters, digits, `.`, `_`, or `-`, with a unique lowercase normalized value. Passwords use standard-library scrypt with a random per-password salt; sessions use opaque random bearer tokens in the Authorization header, store only SHA-256 token hashes, and use no cookies. The implementation proposes a 30-day sliding inactivity expiry for Product Owner approval. Existing accounts retain null internal credentials. These details replace the former “to be decided in issue #110” placeholders. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
+
+`Principal` adds nullable `username`, unique `normalized_username`, secret `password_hash`, `locked_at` and `last_login_at`; `must_change_password` defaults false and `failed_login_count` defaults zero. `AuthSession` stores only the token hash and Principal/creation/last-use/expiry/revocation fields. The API never returns the stored password hash or session token hash. The raw session token is returned only on successful issuance. Governed failure/change/lock texts above are now used by the backend; their browser presentation remains pending #111/#112.

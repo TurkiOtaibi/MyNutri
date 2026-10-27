@@ -154,7 +154,7 @@ class SupabaseAdminClient:
             raise AdminAuthError("unavailable")
 
 
-def get_admin_auth_gateway(settings: Settings = Depends(get_settings)) -> AdminAuthGateway:
+def _configured_admin_client(settings: Settings) -> SupabaseAdminClient:
     key = settings.supabase_service_role_key
     if key is None:
         raise AdminAuthError("unavailable")
@@ -164,3 +164,29 @@ def get_admin_auth_gateway(settings: Settings = Depends(get_settings)) -> AdminA
         timeout_seconds=settings.supabase_admin_http_timeout_seconds,
         allow_loopback_http=settings.environment != "production",
     )
+
+
+class DeferredAdminAuthGateway:
+    """Internal-only account operations must not require or initialize a provider."""
+
+    def __init__(self, settings: Settings):
+        self._settings = settings
+
+    def create_user(self, auth_id: UUID, email: str, password: str) -> AdminIdentity:
+        return _configured_admin_client(self._settings).create_user(auth_id, email, password)
+
+    def get_user_by_id(self, auth_id: UUID) -> AdminIdentity | None:
+        return _configured_admin_client(self._settings).get_user_by_id(auth_id)
+
+    def find_user_by_email(self, email: str) -> AdminIdentity | None:
+        return _configured_admin_client(self._settings).find_user_by_email(email)
+
+    def reset_password(self, auth_id: UUID, password: str) -> None:
+        _configured_admin_client(self._settings).reset_password(auth_id, password)
+
+    def delete_user(self, auth_id: UUID) -> None:
+        _configured_admin_client(self._settings).delete_user(auth_id)
+
+
+def get_admin_auth_gateway(settings: Settings = Depends(get_settings)) -> AdminAuthGateway:
+    return DeferredAdminAuthGateway(settings)
