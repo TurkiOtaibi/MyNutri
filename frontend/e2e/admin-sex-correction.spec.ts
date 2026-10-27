@@ -6,6 +6,7 @@ const account = { principal_id: id, display_name: "مستخدم تجريبي", e
 
 for (const location of ["list", "details"]) {
   test(`sex correction from ${location} preserves warning, error, refresh and focus`, async ({ page }) => {
+    if (location === "list") await page.setViewportSize({ width: 390, height: 844 });
     let sex = "female", attempts = 0;
     await page.route(`${API}/admin/accounts?*`, route => route.fulfill({ json: { items: [account], total: 1, page_size: 20, page: 1, counts: { active: 1, disabled: 0, provisioning: 0, deleting: 0 } } }));
     await page.route(`${API}/admin/users/${id}`, route => route.fulfill({ json: { account, profile: { sex }, current_target: { targets: null, plan: null }, plan_history: { items: [] } } }));
@@ -23,7 +24,11 @@ for (const location of ["list", "details"]) {
     await page.getByRole("menuitem", { name: "تصحيح الجنس", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "تصحيح الجنس", exact: true });
     await expect(dialog).toContainText("تصحيح الجنس يغيّر حساب الأهداف وتقييم نتائج التحاليل.");
+    await expect(dialog).toHaveAccessibleDescription("تصحيح الجنس يغيّر حساب الأهداف وتقييم نتائج التحاليل.");
     await expect(dialog.getByLabel("أنثى", { exact: true })).toBeChecked();
+    expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    const radioWidth = await dialog.getByLabel("أنثى", { exact: true }).evaluate(element => element.getBoundingClientRect().width);
+    expect(radioWidth).toBeLessThanOrEqual(24);
     await dialog.getByLabel("ذكر", { exact: true }).check();
     await dialog.getByRole("button", { name: "حفظ التغييرات" }).click();
     await expect(dialog.getByRole("alert")).toHaveText("تعذر حفظ تغييرات المستخدم. حاول مرة أخرى.");

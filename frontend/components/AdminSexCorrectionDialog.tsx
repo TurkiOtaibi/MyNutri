@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { getAdminUser } from "@/lib/api";
 import type { Sex } from "@/lib/types";
 import { FormDialog } from "./AdminAccountActions";
@@ -15,6 +15,7 @@ export function AdminSexCorrectionDialog({ principalId, busy, error, onClose, on
 }) {
   const profile = useQuery({ queryKey: ["admin-profile-sex", principalId], queryFn: () => getAdminUser(principalId), retry: false, staleTime: 0, gcTime: 0 });
   const [selected, setSelected] = useState<Sex | null>(null);
+  const warningId = useId();
   const errorRef = useRef<HTMLParagraphElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const current = profile.data?.profile?.sex;
@@ -24,8 +25,8 @@ export function AdminSexCorrectionDialog({ principalId, busy, error, onClose, on
     event.preventDefault();
     if (current) await onSave(selected ?? current);
   }
-  return <FormDialog busy={busy} title="تصحيح الجنس" onClose={onClose}>
-    <p>تصحيح الجنس يغيّر حساب الأهداف وتقييم نتائج التحاليل.</p>
+  return <FormDialog busy={busy} title="تصحيح الجنس" className="account-sex-dialog" descriptionId={warningId} onClose={onClose}>
+    <p id={warningId}>تصحيح الجنس يغيّر حساب الأهداف وتقييم نتائج التحاليل.</p>
     {profile.isPending ? <p role="status">جارٍ تحميل بيانات المستخدم...</p>
       : profile.isError ? <p role="alert">تعذر تحميل بيانات المستخدم.</p>
         : !current ? <p role="alert">لا يمكن تصحيح الجنس قبل حفظ الملف الشخصي للمستخدم.</p>

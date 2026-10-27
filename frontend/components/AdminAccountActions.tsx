@@ -56,10 +56,11 @@ function DeleteDialog({ account, onClose, onDelete }: {
   </dialog>;
 }
 
-export function FormDialog({ title, className, onClose, children, busy = false }: {
+export function FormDialog({ title, className, onClose, children, busy = false, descriptionId }: {
   busy?: boolean;
   title: string;
   className?: string;
+  descriptionId?: string;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -74,7 +75,7 @@ export function FormDialog({ title, className, onClose, children, busy = false }
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
     };
   }, []);
-  return <dialog ref={dialog} className={`account-delete-dialog account-form-dialog ${className ?? ""}`} onCancel={event => { if (busy) event.preventDefault(); }} onClose={onClose} aria-label={title}>
+  return <dialog ref={dialog} className={`account-delete-dialog account-form-dialog ${className ?? ""}`} onCancel={event => { if (busy) event.preventDefault(); }} onClose={onClose} aria-label={title} aria-describedby={descriptionId}>
     <h2>{title}</h2>
     {children}
   </dialog>;
