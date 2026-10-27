@@ -10,7 +10,6 @@ The existing stories below describe CURRENT Supabase/email behavior. The followi
 | Enforce minimum length 8 on the backend and require changing only the initial Admin-set password before using the system. | BR-AUT-004/007/008, BR-USM-023 | #110–#112 |
 | Lock after 5 consecutive failures; Admin reset alone unlocks a normal user without forced change; Admin auto-unlocks after 30 minutes; success resets the counter. No independent unlock action. | Final AUT/USM decisions; BR-AUT-011, BR-USM-030 | #110–#112 |
 | Change my own password in «بياناتي» using the current password; other devices sign out. Admin reset signs the user out everywhere. | BR-PRF-024–026, BR-USM-030/033 | #110–#112 |
-| Admin corrects another user's «الجنس» with the approved warning, but cannot write any other Profile field or another user's Diary/plans/Labs. | BR-PRF-006, BR-USM-032/061/067/074 | #109 |
 | Replace current test accounts/private data at cutover, preserve Foods and create the single Admin with a server-side command also able to reset its password. | AUT/USM/FOD cutover decisions; related BR-USM-027/043; issue #100 command requirement | #114 |
 
 Username format and unspecified credential/session design are **to be decided in issue #110**. The final same-day decisions supersede email-as-login, forced change after every reset, and the independent unlock action. (17 October 2026 AUT/USM decisions; BR-AUT-001/007/008/011, BR-USM-030/036.)
@@ -23,7 +22,10 @@ Status: supporting requirements. V2 authority and executable tests control confl
 ## Authentication and isolation
 
 - As a user, I can authenticate through Supabase and access only my private resources.
-- As an Admin, I can monitor users read-only without gaining a cross-owner mutation path.
+- As an Admin, I can monitor users read-only and correct only «الجنس» on another
+  active/disabled user with a saved Profile, with the approved warning. Owner sex
+  locking and stored plans/Diary/Labs remain unchanged; new plan saves and fresh
+  Labs evaluations use the correction. (17 October 2026 decision; BR-PRF-006, BR-USM-032/061; issue #109.)
 - Missing/invalid credentials return 401; authenticated unauthorized mutations return 403; cross-owner private-resource lookup remains non-enumerating.
 
 Acceptance: direct API calls enforce the same authorization as the UI; frontend hiding is not an authorization boundary.

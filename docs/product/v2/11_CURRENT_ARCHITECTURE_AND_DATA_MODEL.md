@@ -2,11 +2,11 @@
 
 ## CURRENT model and APPROVED TARGET boundary
 
-The seven entities, Supabase identity links, email, admission cutoffs, lifecycle saga and schema head below are the CURRENT implemented contracts. This update adds no entity, field, endpoint or migration, and does not establish the deployed revision. The APPROVED TARGET in issues #110–#114 replaces Supabase Auth/email with in-house username/password authentication; target account and session behavior is specified in [V2 02](02_AUTH_AND_ROLE_MODEL.md). (17 October 2026 AUT/USM decisions; BR-AUT-001/011/012/017, BR-USM-022/030/036.)
+The seven entities, Supabase identity links, email, admission cutoffs, lifecycle saga and schema head below are the CURRENT implemented contracts. Issue #109 adds a sex-only Admin endpoint, with no new persisted field or migration, and does not establish the deployed revision. The APPROVED TARGET in issues #110–#114 replaces Supabase Auth/email with in-house username/password authentication; target account and session behavior is specified in [V2 02](02_AUTH_AND_ROLE_MODEL.md). (17 October 2026 AUT/USM decisions; BR-AUT-001/011/012/017, BR-USM-022/030/036.)
 
 Target data responsibilities, not a physical schema: support immutable username identity, backend password validation, consecutive-failure accounting, the initial-password-change restriction, the Admin's 30-minute lock and per-device session revocation. Successful login clears the failure count; a user unlocks through Admin reset, which revokes all sessions without requiring another change; self-service change verifies the current password and revokes other devices. Column/table names, credential representation and session mechanism/lifetime are **to be decided in issue #110**. The existing Supabase `amr`/JWT model must not be assumed to be the target mechanism. (17 October 2026 decisions; BR-AUT-004/007/008/011, BR-PRF-024–026, BR-USM-023/030/033.)
 
-The approved other-user Profile exception is Admin correction of «الجنس», pending issue #109; other Profile fields, Diary, plans and Labs remain read-only to Admin. Cutover will delete test accounts/private data while preserving Foods and recreate the single Admin with a server-side create/reset command; physical treatment of existing attribution references must be resolved in #110/#114 without inferring a Food rewrite from this document. Existing Food attribution/duplicate rules, Diary limits, Labs notes, `disabled_at` and the current migration head are unchanged. (17 October 2026 PRF/USM/AUT/FOD decisions; BR-PRF-006, BR-USM-027/032/043/061/067/074; issue #100.)
+The CURRENT other-user Profile exception is Admin correction of «الجنس», implemented in issue #109; other Profile fields, Diary, plans and Labs remain read-only to Admin. Cutover will delete test accounts/private data while preserving Foods and recreate the single Admin with a server-side create/reset command; physical treatment of existing attribution references must be resolved in #110/#114 without inferring a Food rewrite from this document. Existing Food attribution/duplicate rules, Diary limits, Labs notes, `disabled_at` and the current migration head are unchanged. (17 October 2026 PRF/USM/AUT/FOD decisions; BR-PRF-006, BR-USM-027/032/043/061/067/074; issue #100.)
 
 
 Status: current architecture and data authority.
@@ -103,12 +103,16 @@ are never rewritten by account deletion; the UI does not display Food creator or
 attribution (including any deleted-user label) to any role, per BR-FOD-021
 and the Product Owner decision of 17 October 2026, reconfirmed on 25 October 2026.
 Every writer of Principal-owned data must lock
-the Principal first and recheck `active`; this serializes writes with purge so
+the Principal first and recheck `active` (the sex-only Admin correction permits
+active/disabled targets, BR-USM-032, #109); this serializes writes with purge so
 no private row can be inserted after it.
 
 Admin account mutation routes are distinct from selected-user monitoring.
-Selected Profile, Diary, Target Plan, and Labs data remain read-only to Admin;
-the lifecycle does not add a general impersonation or private-data write path.
+Selected Profile, Diary, Target Plan, and Labs data remain read-only to Admin
+except `PUT /admin/accounts/{principal_id}/profile/sex`: it changes only sex for
+another active/disabled user with a saved Profile, locking Principal then Profile.
+It does not change timestamps, other Profile fields, accounts, saved plans, Diary
+or Labs rows. There is no general impersonation path. (17 October 2026 decision; BR-PRF-006, BR-USM-032/061; issue #109.)
 
 ## Profile and TargetPlan
 
@@ -125,7 +129,9 @@ or future; reads may resolve any date. GET resolution is pure read.
 No applicable plan returns `plan = null` and `targets = null`. Profile and a legacy
 snapshot never substitute. A first future plan updates Profile immediately while
 earlier dates remain without targets.
-Sex is immutable after the first successful Profile save. Profile retains its
+Sex is locked to the owner after the first successful Profile save. Admin correction
+does not rewrite saved plans; new plan saves use the corrected sex, and fresh Labs
+reads use it for evaluation. (17 October 2026 decision; BR-PRF-006, BR-USM-032/061; issue #109.) Profile retains its
 nutrition age 10–100 validation; Labs separately requires age >=18 on each test
 date. A DOB update is rejected atomically if it invalidates any stored adult Labs
 history. A successful change invalidates Labs queries for fresh interpretation.

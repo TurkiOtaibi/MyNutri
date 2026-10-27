@@ -4,7 +4,6 @@
 
 | Capability | User | Admin | Decision / requirement (17 October 2026) |
 |---|---|---|---|
-| Correct another user's «الجنس» | No | Yes, the sole other-user Profile write, through the correction action with «تصحيح الجنس يغيّر حساب الأهداف وتقييم نتائج التحاليل.» | BR-PRF-006, BR-USM-032, BR-USM-061; issue #109 |
 | Write any other field in another user's Profile, or another user's Diary/plans/Labs | No | No; selected-user access otherwise stays read-only | BR-USM-061, BR-USM-067, BR-USM-074 |
 | Change own password with correct current password | Yes | Yes; other devices sign out | BR-PRF-024–026; issues #110–#111 |
 | Reset a normal user's password | No | Yes; unlocks and signs out all devices, without forced change after reset | BR-AUT-011, BR-USM-030/033; issues #110–#112 |
@@ -15,7 +14,7 @@ No independent unlock permission is added: the final USM decision cancels that a
 
 ## CURRENT implemented authorization
 
-The matrix and enforcement rules below describe the CURRENT Supabase/email implementation, including the implemented Admin-managed account lifecycle. They do not claim production activation. The APPROVED TARGET exception and account changes are separated above; they are not permissions currently granted by this document update. (17 October 2026 decisions; BR-PRF-006, BR-USM-030/032/061; issue #100.)
+The matrix and enforcement rules below describe the CURRENT Supabase/email implementation, including the implemented Admin-managed account lifecycle. They do not claim production activation. The sex-correction exception is CURRENT in issue #109; the APPROVED TARGET account changes above remain pending. (17 October 2026 decisions; BR-PRF-006, BR-USM-030/032/061; issue #100.)
 
 | Capability | User | Admin |
 | --- | --- | --- |
@@ -28,7 +27,8 @@ The matrix and enforcement rules below describe the CURRENT Supabase/email imple
 | Read aggregate Food usage counts (Diary entries and distinct users only) | No | Yes |
 | List users | No | Yes |
 | Read another user's monitored data | No | Yes, read-only |
-| Mutate another user's Profile/Diary/Plans | No | No |
+| Correct another user's «الجنس» | No | Yes, only a saved Profile of another active/disabled user, with «تصحيح الجنس يغيّر حساب الأهداف وتقييم نتائج التحاليل.» (17 October 2026; BR-PRF-006, BR-USM-032/061; #109) |
+| Mutate any other field in another user's Profile, or their Diary/Plans | No | No |
 | Assign roles | No | No through product APIs |
 | Self-register or auto-provision from an unknown Auth identity | No | No |
 | Create a normal user with Admin-set initial password | No | Yes, through FastAPI |
@@ -51,10 +51,15 @@ The matrix and enforcement rules below describe the CURRENT Supabase/email imple
 - Unknown, `provisioning`, `disabled`, `deleting`, and `deleted` identities fail
   authentication with `401 INVALID_CREDENTIAL`. Even a previously issued token
   fails after `deleting` is committed because Principal status is checked per request.
-- Admin account management is distinct from selected-user monitoring. It never
-  grants write access to another user's Profile, Diary, Target Plans, or Labs.
+- Admin account management is distinct from selected-user monitoring. Its sole
+  private-data write is `PUT /admin/accounts/{principal_id}/profile/sex`, restricted
+  to another active/disabled user's saved Profile. It changes only sex under
+  Principal then Profile locks; other fields, timestamps, plans, Diary and Labs
+  rows remain unchanged. The owner's sex lock remains. New target saves use the
+  corrected sex; Labs evaluations use it on fresh reads. (17 October 2026 decision; BR-PRF-006, BR-USM-032/061; issue #109.)
 - Every writer of Principal-owned private data locks the Principal first and
-  rechecks `active` before writing, including receipt replay paths. No write
+  rechecks `active` before writing, including receipt replay paths. The sex-only
+  Admin correction also permits a `disabled` target (BR-USM-032; issue #109). No write
   can follow the locked purge of a `deleting` Principal.
 - Admin monitoring has dedicated `/admin/users/...` read routes.
 - Admin-selected IDs never replace the caller's `PrincipalContext`.

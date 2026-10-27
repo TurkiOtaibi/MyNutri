@@ -2808,6 +2808,9 @@ a.account-identity:hover strong { text-decoration: underline; }
 .account-delete-dialog form { display: grid; gap: 12px; }
 .account-delete-dialog h2 { margin: 0 0 12px; font-size: 1.2rem; }
 .account-delete-dialog .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.account-sex-dialog fieldset { display: flex; gap: 24px; margin: 0; padding: 12px; }
+.account-sex-dialog label { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+.account-sex-dialog input[type="radio"] { width: 20px; min-height: 20px; height: 20px; padding: 0; }
 @media (max-width: 640px) { .account-row { align-items: stretch; } .account-actions { width: 100%; } .account-actions > .btn { flex: 1; } .account-delete-dialog .actions > .btn { flex: 1; } }
 
 .admin-account-counts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }

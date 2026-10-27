@@ -186,6 +186,11 @@ export interface AdminAccountSummary {
    * @format uuid
    */
   principal_id: string;
+  /**
+   * Profile Complete
+   * @default false
+   */
+  profile_complete?: boolean;
   status: PrincipalStatus;
   /**
    * Updated At
@@ -225,6 +230,11 @@ export interface AdminDiaryPage {
   items: AdminDiaryItem[];
   /** Next Cursor */
   next_cursor: string | null;
+}
+
+/** AdminProfileSexCorrection */
+export interface AdminProfileSexCorrection {
+  sex: Sex;
 }
 
 /** AdminUserDetail */
@@ -1416,6 +1426,28 @@ export namespace Admin {
     export type RequestBody = AdminAccountEnable;
     export type RequestHeaders = {};
     export type ResponseBody = AdminAccountSummary;
+  }
+
+  /**
+   * No description
+   * @tags admin-accounts
+   * @name CorrectSexAdminAccountsPrincipalIdProfileSexPut
+   * @summary Correct Sex
+   * @request PUT:/admin/accounts/{principal_id}/profile/sex
+   * @secure
+   */
+  export namespace CorrectSexAdminAccountsPrincipalIdProfileSexPut {
+    export type RequestParams = {
+      /**
+       * Principal Id
+       * @format uuid
+       */
+      principalId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = AdminProfileSexCorrection;
+    export type RequestHeaders = {};
+    export type ResponseBody = void;
   }
 
   /**

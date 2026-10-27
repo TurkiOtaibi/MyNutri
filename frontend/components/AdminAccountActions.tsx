@@ -2,10 +2,11 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Eye, EyeOff, MoreVertical } from "lucide-react";
 import { createContext, useContext, FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
-import { type AdminAccount, deleteAdminAccount, editAdminAccount, resetAdminAccountPassword, retryAdminAccountCreation, retryAdminAccountDeletion, setAdminAccountEnabled } from "@/lib/api";
+import { type AdminAccount, correctAdminProfileSex, deleteAdminAccount, editAdminAccount, resetAdminAccountPassword, retryAdminAccountCreation, retryAdminAccountDeletion, setAdminAccountEnabled } from "@/lib/api";
 import { accountActionErrorMessage, accountActionSuccessMessage, type AccountAction } from "@/lib/admin-account-messages";
 import { useAuth } from "./AuthProvider";
-type ActionAccount = Pick<AdminAccount, "principal_id" | "email" | "display_name" | "status">;
+import { AdminSexCorrectionDialog } from "./AdminSexCorrectionDialog";
+type ActionAccount = Pick<AdminAccount, "principal_id" | "email" | "display_name" | "status" | "profile_complete">;
 type EditorMode = "edit" | "password" | "retry-create";
 
 const editorTitles: Record<EditorMode, string> = {
@@ -55,10 +56,11 @@ function DeleteDialog({ account, onClose, onDelete }: {
   </dialog>;
 }
 
-export function FormDialog({ title, className, onClose, children, busy = false }: {
+export function FormDialog({ title, className, onClose, children, busy = false, descriptionId }: {
   busy?: boolean;
   title: string;
   className?: string;
+  descriptionId?: string;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -73,7 +75,7 @@ export function FormDialog({ title, className, onClose, children, busy = false }
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
     };
   }, []);
-  return <dialog ref={dialog} className={`account-delete-dialog account-form-dialog ${className ?? ""}`} onCancel={event => { if (busy) event.preventDefault(); }} onClose={onClose} aria-label={title}>
+  return <dialog ref={dialog} className={`account-delete-dialog account-form-dialog ${className ?? ""}`} onCancel={event => { if (busy) event.preventDefault(); }} onClose={onClose} aria-label={title} aria-describedby={descriptionId}>
     <h2>{title}</h2>
     {children}
   </dialog>;
@@ -144,6 +146,8 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
   const client = useQueryClient();
   const [disableTarget, setDisableTarget] = useState<ActionAccount | null>(null);
   const [disableError, setDisableError] = useState("");
+  const [sexTarget, setSexTarget] = useState<ActionAccount | null>(null);
+  const [sexError, setSexError] = useState("");
   async function refreshAccounts() {
     await Promise.all([client.invalidateQueries({ queryKey: ["admin-users"] }), client.invalidateQueries({ queryKey: ["admin-user"] })]);
   }
@@ -193,6 +197,7 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
         primary: <button className="btn" onClick={() => select(account, "edit")}>تعديل المستخدم</button>,
         menu: [
           { label: "إعادة تعيين كلمة المرور", onSelect: () => select(account, "password") },
+          { label: "تصحيح الجنس", disabled: busy || !account.profile_complete, onSelect: () => { onActionStart?.(); setNotice(""); setSexError(""); setSexTarget(account); } },
           { label: account.status === "active" ? "تعطيل المستخدم" : "تفعيل المستخدم", disabled: busy, onSelect: () => account.status === "active" ? setDisableTarget(account) : void execute(() => setAdminAccountEnabled(account.principal_id, true), "status") },
           remove
         ]
@@ -208,6 +213,12 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
   return <ActionsContext.Provider value={renderActions}>
     {children}
     {(externalNotice || notice) && <p role="status" className="state-note account-notice">{externalNotice || notice}</p>}
+    {sexTarget && <AdminSexCorrectionDialog principalId={sexTarget.principal_id} busy={busy} error={sexError}
+      onClose={() => { if (!busy) setSexTarget(null); }}
+      onSave={async sex => {
+        setSexError("");
+        if (await execute(() => correctAdminProfileSex(sexTarget.principal_id, { sex }), "edit", setSexError)) setSexTarget(null);
+      }} />}
     {disableTarget && <FormDialog busy={busy} title="تعطيل المستخدم؟" onClose={() => { if (!busy) { setDisableTarget(null); setDisableError(""); } }}>
       {disableError && <p role="alert">{disableError}</p>}
       <div className="actions"><button className="btn" disabled={busy} onClick={() => { setDisableTarget(null); setDisableError(""); }}>إلغاء</button><button className="btn danger" disabled={busy} onClick={async () => {

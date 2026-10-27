@@ -2,7 +2,7 @@
 
 ## CURRENT implementation versus APPROVED TARGET
 
-The Supabase/email authentication, JWT admission, lifecycle saga and bootstrap sections below describe the CURRENT implemented repository state, not proof of production deployment. Email-based self-service recovery is currently implemented in `/auth/forgot-password` and `/auth/reset-password`. They remain current contracts until replacement is implemented and released; the target below is not live. Authority for the replacement: Product Owner decisions of **17 October 2026**, BRD AUT/PRF/USM decision tables and the cited requirements. Issues #110–#114 implement the login transition; issue #109 implements the separate sex-correction exception.
+The Supabase/email authentication, JWT admission, lifecycle saga and bootstrap sections below describe the CURRENT implemented repository state, not proof of production deployment. Email-based self-service recovery is currently implemented in `/auth/forgot-password` and `/auth/reset-password`. They remain current contracts until replacement is implemented and released; the target below is not live. Authority for the replacement: Product Owner decisions of **17 October 2026**, BRD AUT/PRF/USM decision tables and the cited requirements. Issues #110–#114 implement the login transition; issue #109 implements the separate sex-correction exception as CURRENT authorization (BR-PRF-006, BR-USM-032/061).
 
 ## APPROVED TARGET — not yet implemented
 
