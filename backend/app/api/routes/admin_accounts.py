@@ -17,6 +17,7 @@ from app.core.config import Settings, get_settings
 from app.db.session import engine, get_session
 from app.models import Principal, PrincipalStatus
 from app.schemas import (
+    AdminAccountCounts,
     AdminAccountCreate,
     AdminAccountDelete,
     AdminAccountEdit,
@@ -59,7 +60,7 @@ class AccountManagementRoute(APIRoute):
                 elif request.url.path.endswith("/password"):
                     code, message, status = "PASSWORD_RESET_FAILED", "تعذر إعادة تعيين كلمة المرور. حاول مرة أخرى.", 503
                 elif request.method == "DELETE" or request.url.path.endswith("/retry-delete"):
-                    code, message, status = "DELETION_INCOMPLETE", "تعذر إكمال حذف المستخدم. حسابه معطّل ويمكنك إعادة المحاولة.", 503
+                    code, message, status = "DELETION_INCOMPLETE", "تعذر إكمال حذف المستخدم. لا يستطيع الدخول الآن، ويمكنك إعادة المحاولة.", 503
                 else:
                     code, message, status = "CREATION_INCOMPLETE", "تعذر إكمال إنشاء المستخدم. أعد المحاولة.", 503
                 response = JSONResponse(
@@ -118,6 +119,7 @@ def _summary(row: Principal) -> AdminAccountSummary:
         status=row.status,
         created_at=row.created_at,
         updated_at=row.updated_at,
+        disabled_at=row.disabled_at,
     )
 
 
@@ -196,7 +198,13 @@ def list_accounts(
         .offset((page - 1) * page_size).limit(page_size)
     ).all()
     background_tasks.add_task(_background_reconcile_recent, datetime.now(timezone.utc), True)
+    counts = dict(session.exec(
+        select(Principal.status, func.count()).where(
+            Principal.role == "user", Principal.status != PrincipalStatus.deleted
+        ).group_by(Principal.status)
+    ).all())
     return AdminAccountList(
+        counts=AdminAccountCounts(**counts),
         items=[_summary(row) for row in rows], total=total, page=page, page_size=page_size
     )
 

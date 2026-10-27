@@ -152,6 +152,7 @@ const visualLabDetail: LabTestDetailResponse = {
 };
 
 async function routeVisualLabs(page: Page, principalId?: string) {
+  if (principalId) await page.route(`${API_URL}/admin/users/${principalId}`, route => route.fulfill({ json: { account: { principal_id: principalId, display_name: "مستخدم التحاليل", email: "labs-visual@example.test" }, profile: null, current_target: null, plan_history: { items: [], next_cursor: null } } }));
   await page.route((url) => isExactApiPath(url, "/labs/catalog"), (route) => route.fulfill({ json: catalogFixture }));
   const overviewPath = principalId ? `/admin/users/${principalId}/labs` : "/labs";
   const detailPath = principalId ? `/admin/users/${principalId}/labs/tests/ferritin` : "/labs/tests/ferritin";

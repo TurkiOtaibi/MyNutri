@@ -262,3 +262,20 @@ def weekly_summary(
         days=days,
         weekly_totals=weekly_totals,
     )
+
+
+def admin_day_summaries(session: Session, principal: PrincipalContext, dates: list[date]) -> list[DaySummary]:
+    days = sorted(set(dates), reverse=True)
+    if not days:
+        return []
+    context = resolve_week_target_context(session, principal, min(days), max(days))
+    rows = session.exec(
+        select(DiaryEntry, Food).join(Food, Food.id == DiaryEntry.food_id).where(
+            DiaryEntry.principal_id == principal.principal_id,
+            DiaryEntry.entry_date.in_(days),
+        )
+    ).all()
+    grouped: dict[date, list[tuple[DiaryEntry, Food]]] = {}
+    for entry, food in rows:
+        grouped.setdefault(entry.entry_date, []).append((entry, food))
+    return [_day_summary(day, grouped.get(day, []), context) for day in days]

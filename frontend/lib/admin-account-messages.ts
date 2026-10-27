@@ -8,8 +8,8 @@ const failures: Record<AccountAction, string> = {
   edit: "تعذر حفظ تغييرات المستخدم. حاول مرة أخرى.",
   password: "تعذر إعادة تعيين كلمة المرور. حاول مرة أخرى.",
   status: "تعذر تحديث حالة المستخدم. حاول مرة أخرى.",
-  delete: "تعذر إكمال حذف المستخدم. حسابه معطّل ويمكنك إعادة المحاولة.",
-  "retry-delete": "تعذر إكمال حذف المستخدم. حسابه معطّل ويمكنك إعادة المحاولة.",
+  delete: "تعذر إكمال حذف المستخدم. لا يستطيع الدخول الآن، ويمكنك إعادة المحاولة.",
+  "retry-delete": "تعذر إكمال حذف المستخدم. لا يستطيع الدخول الآن، ويمكنك إعادة المحاولة.",
 };
 
 const successes: Record<AccountAction, string> = {
@@ -23,6 +23,8 @@ const successes: Record<AccountAction, string> = {
 };
 
 export function accountActionErrorMessage(error: unknown, action: AccountAction): string {
+  if (error instanceof ApiError && error.code === "DELETION_INCOMPLETE") return failures.delete;
+  if (error instanceof ApiError && error.code === "CREATION_IN_PROGRESS") return "لا يمكن حذف المستخدم الآن لأن إنشاءه ما زال جاريًا. حاول بعد 5 دقائق.";
   if (error instanceof TypeError || (error instanceof ApiError && error.status === 0)) {
     return "تعذر الاتصال بالخادم. حاول مرة أخرى.";
   }

@@ -19,7 +19,7 @@ export function AppNav() {
   const { requestGuardedAction } = useUnsavedChanges();
   if (pathname.startsWith("/auth/")) return null;
   const visibleLinks = account?.role === "admin"
-    ? [...links, { href: "/admin", label: "الإدارة", icon: Shield }]
+    ? [...links, { href: "/admin/users", label: "الإدارة", icon: Shield }]
     : links;
 
   return (

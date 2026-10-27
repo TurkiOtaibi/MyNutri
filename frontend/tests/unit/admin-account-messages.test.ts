@@ -7,7 +7,7 @@ describe("Admin account action messages", () => {
     ["edit", "تعذر حفظ تغييرات المستخدم. حاول مرة أخرى."],
     ["status", "تعذر تحديث حالة المستخدم. حاول مرة أخرى."],
     ["password", "تعذر إعادة تعيين كلمة المرور. حاول مرة أخرى."],
-    ["delete", "تعذر إكمال حذف المستخدم. حسابه معطّل ويمكنك إعادة المحاولة."],
+    ["delete", "تعذر إكمال حذف المستخدم. لا يستطيع الدخول الآن، ويمكنك إعادة المحاولة."],
   ] as const)("does not show creation-incomplete for %s failures", (action, expected) => {
     expect(accountActionErrorMessage(new ApiError("تعذر إكمال إنشاء المستخدم. أعد المحاولة.", 409, undefined, "CREATION_INCOMPLETE"), action)).toBe(expected);
   });

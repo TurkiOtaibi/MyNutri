@@ -105,6 +105,10 @@ def set_account_enabled(
     row = _target(session, admin_id, principal_id)
     if row.status not in {PrincipalStatus.active, PrincipalStatus.disabled}:
         raise _creation_incomplete()
+    if enabled:
+        row.disabled_at = None
+    elif row.status != PrincipalStatus.disabled:
+        row.disabled_at = now
     row.status = PrincipalStatus.active if enabled else PrincipalStatus.disabled
     row.sessions_valid_after = _next_second(now)
     row.updated_at = now
@@ -350,7 +354,7 @@ def delete_account(
     if row.status == PrincipalStatus.provisioning and row.identity_requested_at is not None:
         lease = timedelta(seconds=max(300, 10 * timeout_seconds))
         if now <= _utc(row.identity_requested_at) + lease:
-            raise _creation_incomplete()
+            raise LifecycleError(409, "CREATION_IN_PROGRESS", "لا يمكن حذف المستخدم الآن لأن إنشاءه ما زال جاريًا. حاول بعد 5 دقائق.")
     if row.status != PrincipalStatus.deleting:
         row.status = PrincipalStatus.deleting
         row.deletion_started_at = now

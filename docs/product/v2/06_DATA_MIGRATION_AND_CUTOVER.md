@@ -252,7 +252,7 @@ Before any release authorization:
 16. Confirm `d9f64a1c3e58` removed Food archive columns, installed the Diary Food
     `ON DELETE CASCADE`, preserved existing Food/Diary rows during migration, and
     revoked direct Food mutation from `PUBLIC`, `anon`, and `authenticated`.
-17. Confirm `d8a6e4c90312` is the sole head and agrees with all seven models;
+17. Confirm `e9b7f5d01423` is the sole head and agrees with all seven models;
     clean and populated-base upgrades preserve existing facts, grants and replay.
 18. Prove packaged Labs catalog availability, private privileges, finite/unscaled
     numeric storage, unique owner/test/date, and operation-specific receipt expiry.
@@ -294,3 +294,5 @@ and Labs create receipts are absent. It locks the affected tables before checkin
 refuses populated rollback without deleting data, and restores `expires_at NOT NULL`
 only in an empty Labs schema. Offline downgrade is unavailable; production recovery
 still requires explicit release authorization and the approved restore policy.
+
+Issue #108 authorizes revision `e9b7f5d01423`, parent `d8a6e4c90312`, for BR-USM-031. Upgrade adds nullable `principal.disabled_at TIMESTAMP WITH TIME ZONE`; existing rows remain null. Downgrade drops only this timestamp, preserving account status and all other data. Render applies migrations at start; production execution remains subject to explicit release authorization. Test upgrade/downgrade only on disposable loopback PostgreSQL.

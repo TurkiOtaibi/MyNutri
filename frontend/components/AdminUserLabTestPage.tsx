@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { AdminSelectedUserBanner } from "./AdminSelectedUserBanner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/components/AuthProvider";
 import { useSessionAbortSignal } from "@/components/SessionQueryProvider";
@@ -34,9 +35,11 @@ export function AdminUserLabTestPage({ principalId, testKey }: { principalId: st
     });
   }, [actorId, principalId, queryClient]);
   return <div className={styles.labsPage}>
+    <AdminSelectedUserBanner principalId={principalId} />
     <Link href={`/admin/users/${encodeURIComponent(principalId)}/labs`}>رجوع إلى تحاليل المستخدم</Link>
     {detail.isPending ? <p role="status">جارٍ تحميل تحاليل المستخدم...</p> : null}
     {detail.isError ? <div role="alert">تعذر تحميل تحاليل المستخدم.<button type="button" className="btn" onClick={() => void detail.refetch()}>إعادة تحميل التحاليل</button></div> : null}
+    {detail.data?.results.length === 0 ? <p>لم يسجل المستخدم أي نتائج بعد.</p> : null}
     {detail.data ? <LabTestView detail={{ ...detail.data, read_only: true }} selectedResultId={selectedResultId} onSelectResult={setSelectedResultId} /> : null}
   </div>;
 }

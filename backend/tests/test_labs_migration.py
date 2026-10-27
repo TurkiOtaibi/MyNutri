@@ -11,7 +11,7 @@ from labs_fixtures import run_labs_alembic, safe_labs_database_url
 
 pytestmark = pytest.mark.migration
 BASE = "d9f64a1c3e58"
-CURRENT_HEAD = "d8a6e4c90312"
+CURRENT_HEAD = "e9b7f5d01423"
 LABS_HEAD = "e8b7a42f6c31"
 
 

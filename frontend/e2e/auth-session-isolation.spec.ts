@@ -594,7 +594,7 @@ test("same browser context isolates cached profile and diary data across A to B 
   await expect.poll(() => historyBWasBlocked).toBe(true);
   await expect.poll(() => page.locator('input[aria-label="الوزن"]').count()).toBe(0);
   expect(await leakRecords(page)).toEqual([]);
-  await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+  await expect(page.locator('a[href="/admin/users"]')).toHaveCount(0);
   releaseHistoryB();
   releaseProfileB();
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("89");
@@ -692,14 +692,14 @@ test("a delivered delayed Admin account response cannot restore Admin identity a
   await e2eAuthAction(adminPage, "signIn", { email: emailB, password: PASSWORD });
   await expect.poll(() => bAccountRequestedOnAdminPage).toBe(true);
   await expect(adminPage.locator(".nav-signout")).toBeVisible();
-  await expect(adminPage.locator('a[href="/admin"]')).toHaveCount(0);
+  await expect(adminPage.locator('a[href="/admin/users"]')).toHaveCount(0);
 
   releaseAdminAccount();
   const response = await delayedAdminResponse;
   expect(await response.finished()).toBeNull();
   await adminPage.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   expect(await leakRecords(adminPage)).toEqual([]);
-  await expect(adminPage.locator('a[href="/admin"]')).toHaveCount(0);
+  await expect(adminPage.locator('a[href="/admin/users"]')).toHaveCount(0);
   await context.close();
 });
 
@@ -837,7 +837,7 @@ test("a delivered delayed Admin food create cannot navigate or reveal its result
     expect(staleDetailRequested).toBe(false);
     expect(await leakRecords(page)).toEqual([]);
     await expect(page).toHaveURL(originalUrl);
-    await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+    await expect(page.locator('a[href="/admin/users"]')).toHaveCount(0);
     await expect(page.locator("form.food-form-layout")).toHaveCount(0);
     await expect(page.getByText(marker, { exact: true })).toHaveCount(0);
 
@@ -906,7 +906,7 @@ test("a stale User A 401 cannot clear User B's same-page session", async ({ brow
   expect((await staleResponse).status()).toBe(401);
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await expect(page).not.toHaveURL(/\/auth\/login/);
-  await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+  await expect(page.locator('a[href="/admin/users"]')).toHaveCount(0);
   expect(await leakRecords(page)).toEqual([]);
   await context.close();
 });
@@ -997,18 +997,18 @@ test("a current account 401 clears the matching session before showing login", a
   await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
   expect(new URL(page.url()).searchParams.get("next")).toBe("/profile");
   await expect(page.locator('input[type="email"]')).toBeVisible();
-  await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+  await expect(page.locator('a[href="/admin/users"]')).toHaveCount(0);
   expect(await page.evaluate(() => document.cookie.includes("mynutri-auth-invalid-token"))).toBe(true);
   await submitLogin(page, ADMIN_EMAIL, ADMIN_PASSWORD, "/profile", false);
   await expect(page.locator(".nav-signout")).toBeVisible();
-  await expect(page.locator('a[href="/admin"]')).toBeVisible();
+  await expect(page.locator('a[href="/admin/users"]')).toBeVisible();
   await expect(page).not.toHaveURL(/\/auth\/login/);
   await page.locator(".nav-signout").click();
   await page.waitForURL(/\/auth\/login(?:\?.*)?$/);
   await submitLogin(page, emailB, PASSWORD, "/profile", false);
   await expect(page.locator(".nav-signout")).toBeVisible();
   await expect(page).not.toHaveURL(/\/auth\/login/);
-  await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+  await expect(page.locator('a[href="/admin/users"]')).toHaveCount(0);
   await context.close();
 });
 
@@ -1059,7 +1059,7 @@ test("Admin private list and detail caches disappear when the same browser conte
   await expect.poll(() => profileBWasBlocked).toBe(true);
   await expect(page.locator(".selected-user-banner")).toHaveCount(0);
   await expect(page.locator(".account-row")).toHaveCount(0);
-  await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+  await expect(page.locator('a[href="/admin/users"]')).toHaveCount(0);
   expect(await page.evaluate(() => {
     const inspect = (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys;
     if (!inspect) throw new Error("E2E query inspection hook is unavailable.");
@@ -1230,7 +1230,7 @@ test("@strictmode held selected-user Labs GET cannot repaint after admin changes
     await pending.started;
     expect(pending.identity()).toEqual({ subjectMatches: true, differsFromExcluded: true });
     await installLeakObserver(page, [actorA.displayValue, actorA.resultId], [], true);
-    await page.locator('a[href="/admin"]').click();
+    await page.locator('a[href="/admin/users"]').click();
     await page.locator('a[href="/admin/users"]').click();
     await page.locator(`a[href="/admin/users/${actorB.principalId}"]`).click();
     await page.getByRole("link", { name: "عرض التحاليل", exact: true }).click();
@@ -1259,7 +1259,7 @@ test("@strictmode admin logout to ordinary actor clears selected-user Labs while
     await e2eAuthAction(page, "signIn", { email: actorB.email, password: PASSWORD });
     expect(await retainedSessionSignalAborted(page)).toBe(true);
     expect(new URL(page.url()).pathname).toBe(`/admin/users/${actorA.principalId}/labs`);
-    await expect(page.locator('a[href="/admin"]')).toHaveCount(0);
+    await expect(page.locator('a[href="/admin/users"]')).toHaveCount(0);
     await expect(page.getByText(actorA.displayValue, { exact: false })).toHaveCount(0);
     expect((await page.evaluate(() => (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys?.() ?? []))
       .some((key) => key.includes(oldAdminSubject))).toBe(false);

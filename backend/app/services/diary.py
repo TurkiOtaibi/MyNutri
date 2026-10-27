@@ -209,6 +209,10 @@ def admin_diary_page(
             DiaryEntry.meal_type,
             DiaryEntry.quantity,
             Food.name.label("food_name"),
+            DiaryEntry.recorded_unit_type,
+            DiaryEntry.recorded_unit_amount,
+            DiaryEntry.recorded_unit_basis,
+            DiaryEntry.recorded_unit_label,
             DiaryEntry.created_at,
         )
         .join(Food, Food.id == DiaryEntry.food_id)
@@ -241,6 +245,10 @@ def admin_diary_page(
                 meal_type=row.meal_type,
                 quantity=float(row.quantity),
                 food_name=row.food_name,
+                recorded_unit_type=row.recorded_unit_type,
+                recorded_unit_amount=float(row.recorded_unit_amount),
+                recorded_unit_basis=row.recorded_unit_basis,
+                recorded_unit_label=row.recorded_unit_label,
             )
             for row in items
         ],

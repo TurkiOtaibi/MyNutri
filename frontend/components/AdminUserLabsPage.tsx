@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { AdminSelectedUserBanner } from "./AdminSelectedUserBanner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -54,8 +55,10 @@ export function AdminUserLabsPage({ principalId }: { principalId: string }) {
   if (catalog.isPending || overview.isPending) return <div className={styles.loading}>جارٍ تحميل تحاليل المستخدم...</div>;
   if (catalog.isError || overview.isError) return <div className={styles.loading} role="alert">تعذر تحميل تحاليل المستخدم.</div>;
   return <div className={styles.labsPage}>
+    <AdminSelectedUserBanner principalId={principalId} />
     <header className={styles.heading}><div><h1>تحاليل المستخدم</h1><p>أحدث النتائج المحفوظة للمراقبة الإدارية.</p></div><Link className="btn" href={`/admin/users/${encodeURIComponent(principalId)}`}>رجوع</Link></header>
     <OwnedLabsView
+      adminSelected
       catalog={catalog.data}
       rows={rows}
       eligibility={overview.data.eligibility}

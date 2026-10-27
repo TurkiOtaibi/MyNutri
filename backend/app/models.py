@@ -330,6 +330,9 @@ class Principal(SQLModel, table=True):
         default=PrincipalStatus.active,
         sa_column=Column(Text(), nullable=False, server_default=PrincipalStatus.active.value),
     )
+    disabled_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
     creation_idempotency_key: str | None = Field(
         default=None, sa_column=Column(String(128), nullable=True)
     )

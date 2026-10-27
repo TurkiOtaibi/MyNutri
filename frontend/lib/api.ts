@@ -1,5 +1,6 @@
 import type {
   AdminDiaryPage,
+  DaySummary,
   DiaryEntryInput,
   DiaryEntryResponse,
   MealType,
@@ -231,8 +232,8 @@ export function deleteFood(foodId: string, accessToken: string | null | undefine
   return apiFetch<void>(`/foods/${foodId}`, authorizedInit(accessToken, signal, { method: "DELETE" }));
 }
 
-export function getAdminUser(principalId: string): Promise<AdminUserDetail> {
-  return apiFetch<AdminUserDetail>(`/admin/users/${principalId}`);
+export function getAdminUser(principalId: string, auth?: LabsAuth): Promise<AdminUserDetail> {
+  return apiFetch<AdminUserDetail>(`/admin/users/${principalId}`, auth ? authorizedInit(auth.accessToken, auth.signal) : undefined);
 }
 
 export function listAdminAccounts(
@@ -284,6 +285,12 @@ export function getAdminUserDiary(
   if (cursor) params.set("cursor", cursor);
   if (entryDate) params.set("entry_date", entryDate);
   return apiFetch<AdminDiaryPage>(`/admin/users/${principalId}/diary?${params.toString()}`);
+}
+
+export function getAdminDiarySummaries(principalId: string, dates: string[]): Promise<DaySummary[]> {
+  const params = new URLSearchParams();
+  dates.forEach(date => params.append("dates", date));
+  return apiFetch<DaySummary[]>(`/admin/users/${principalId}/diary/summaries?${params}`);
 }
 
 export function listDiaryEntries(entryDate: string): Promise<DiaryEntryResponse[]> {
