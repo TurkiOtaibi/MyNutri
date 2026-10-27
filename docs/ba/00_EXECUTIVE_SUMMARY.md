@@ -1,5 +1,12 @@
 # myNutri current product requirements
 
+## CURRENT versus APPROVED TARGET
+
+The capabilities below describe the CURRENT repository implementation: Supabase email/password login and self-service email recovery, with read-only other-user nutrition monitoring. This is not proof of production deployment. The APPROVED TARGET, pending issues #110–#114, is internal username/password login with no Supabase Auth, no email anywhere, no MFA and no self-service recovery. Passwords have a backend-enforced minimum of 8. Five consecutive failures lock an account; an Admin reset unlocks a user and signs out all devices without forcing a new change, while the single Admin unlocks after 30 minutes. Successful login resets the counter. Force change only for the initial password. Own-password change in «بياناتي» requires the current password and signs out other devices. (Product Owner, 17 October 2026 AUT/PRF/USM decisions; BR-AUT-001/003/004/007–012, BR-PRF-024–026, BR-USM-023/030/033; V2 02.)
+
+Admin correction of another user's «الجنس» is the sole approved Profile-write exception, pending #109; other Profile fields, Diary, plans and Labs stay read-only. At the target cutover, delete all current test accounts/private data, keep Foods and recreate the single Admin through a server-side create/reset command. Username format and unspecified implementation details are **to be decided in issue #110**. (17 October 2026 PRF/USM/AUT/FOD decisions; BR-PRF-006, BR-USM-027/032/043/061/067/074; issue #100; V2 03/06.)
+
+
 Status: supporting requirements. V2 Product and architecture documents remain authoritative.
 
 ## Product
@@ -37,9 +44,7 @@ the current immutable system catalog, independently of nutrition.
   the Admin cannot disable/delete self or change roles. Interrupted creation or
   deletion remains locked out and resumable. Global Foods survive user deletion.
 
-The Admin-managed lifecycle above is approved Product authority pending
-implementation. Its Arabic UI/error copy is approved as exact text in the
-field dictionary.
+The Admin-managed Supabase/email lifecycle above is CURRENT implemented behavior; the username-based replacement remains APPROVED TARGET. Its target copy and scope are separated in the field dictionary. (17 October 2026 AUT/USM decisions; BR-AUT-001, BR-USM-022/030/036; issue #100.)
 
 Deleting a Food permanently deletes every referencing Diary entry across all
 Principals. This is intentional and has no archive, restore, tombstone, or audit event.

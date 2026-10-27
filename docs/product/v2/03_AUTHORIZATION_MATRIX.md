@@ -1,8 +1,21 @@
 # V2 Authorization Matrix
 
-The Admin-managed account lifecycle rows below are approved target authority
-pending implementation; existing Profile, Diary, Target Plan, and Labs read-only
-boundaries continue unchanged.
+## APPROVED TARGET — permission changes, not live
+
+| Capability | User | Admin | Decision / requirement (17 October 2026) |
+|---|---|---|---|
+| Correct another user's «الجنس» | No | Yes, the sole other-user Profile write, through the correction action with «تصحيح الجنس يغيّر حساب الأهداف وتقييم نتائج التحاليل.» | BR-PRF-006, BR-USM-032, BR-USM-061; issue #109 |
+| Write any other field in another user's Profile, or another user's Diary/plans/Labs | No | No; selected-user access otherwise stays read-only | BR-USM-061, BR-USM-067, BR-USM-074 |
+| Change own password with correct current password | Yes | Yes; other devices sign out | BR-PRF-024–026; issues #110–#111 |
+| Reset a normal user's password | No | Yes; unlocks and signs out all devices, without forced change after reset | BR-AUT-011, BR-USM-030/033; issues #110–#112 |
+| Manage accounts by username, change username, or self-register | No account management or self-registration | Create normal users by username; cannot change username or assign roles | BR-AUT-009, BR-USM-022/027/028/036; issues #110–#112 |
+
+No independent unlock permission is added: the final USM decision cancels that action. The final FOD decision also cancels «إيقاف الطعام»; the existing no-status/permanent-delete Food rules remain unchanged. (17 October 2026 USM/FOD decisions; BR-USM-030, BR-FOD-035.)
+
+
+## CURRENT implemented authorization
+
+The matrix and enforcement rules below describe the CURRENT Supabase/email implementation, including the implemented Admin-managed account lifecycle. They do not claim production activation. The APPROVED TARGET exception and account changes are separated above; they are not permissions currently granted by this document update. (17 October 2026 decisions; BR-PRF-006, BR-USM-030/032/061; issue #100.)
 
 | Capability | User | Admin |
 | --- | --- | --- |

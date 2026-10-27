@@ -1,5 +1,12 @@
 # myNutri V2 Scope and Decisions
 
+## State boundary for authentication
+
+The Supabase/email and read-only monitoring statements below describe the CURRENT implemented repository state, not deployment evidence. The APPROVED TARGET is in-house username/password login with no Supabase Auth or email, no MFA or self-service recovery, and backend-enforced 8-character minimum. Lock after 5 consecutive failures; an Admin reset unlocks a user and signs out all devices without forcing another change, whereas the single Admin unlocks automatically after 30 minutes. Successful login resets the counter. Only an initial password forces change; own-password change requires the current password and signs out other devices. These are pending issues #110–#114, not live behavior. (Product Owner, 17 October 2026, AUT/USM decisions; BR-AUT-001/003/004/007–012, BR-PRF-024–026, BR-USM-023/030/033; details in [V2 02](02_AUTH_AND_ROLE_MODEL.md).)
+
+The APPROVED TARGET also allows only Admin correction of another user's «الجنس» in issue #109; all other private-data monitoring remains read-only. Cutover deletes current test accounts/private data, preserves Foods, and creates the single Admin through a server-side create/reset command. No cutover is performed here. (17 October 2026 PRF/USM/AUT/FOD decisions; BR-PRF-006, BR-USM-027/032/043/061/067/074; issue #100; [V2 06](06_DATA_MIGRATION_AND_CUTOVER.md).)
+
+
 Status: Implementation authority
 Release: V2 multi-user, shared Food catalog, simplified Food model, standalone Labs
 

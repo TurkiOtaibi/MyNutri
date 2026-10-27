@@ -1,5 +1,23 @@
 # Current requirements traceability
 
+## APPROVED TARGET traceability — no implementation claim
+
+All rows in this table cite the Product Owner decisions of **17 October 2026**. The current proof table below remains evidence for the CURRENT Supabase/email implementation only; it does not prove these target requirements. Issue #100 changes documentation, not runtime coverage or the completion counts in #99.
+
+| Target requirement | Authority / BRD codes | Planned implementation / proof |
+|---|---|---|
+| Internal username/password; no Supabase Auth/email/MFA/self-service recovery | V2 02; AUT/USM final decisions; BR-AUT-001/003/012, BR-USM-022/036 | #110–#113, pending |
+| Backend minimum length 8 and initial-password-only forced change | V2 02; BR-AUT-004/007/008, BR-USM-023 | #110–#112, pending |
+| Five-failure lock, user reset-unlock, Admin 30-minute unlock, success clears counter | V2 02; BR-AUT-011, BR-USM-030; final lock decision | #110–#112, pending |
+| Current-password-verified self-change revokes other devices; Admin reset revokes all | V2 02; BR-PRF-024–026, BR-USM-030/033 | #110–#112, pending |
+| Sole Admin Profile-write exception: correct sex; other private monitoring read-only | V2 03/11; BR-PRF-006, BR-USM-032/061/067/074 | #109, pending |
+| Delete test accounts/private data, preserve Foods, server-side single-Admin create/reset command | V2 06/07; AUT/USM/FOD cutover decisions, related BR-USM-027/043; issue #100 command requirement | #114, pending; operational design #110 |
+
+Username format and unspecified session/credential design are **to be decided in issue #110**, not inferred from current provider behavior. (17 October 2026 decisions; BR-AUT-001/011/017, BR-USM-022/025/036.)
+
+## CURRENT executable coverage
+
+
 Status: supporting map. Exact executable coverage lives in tests and CI.
 
 | Requirement | Product authority | Runtime owner | Primary proof |

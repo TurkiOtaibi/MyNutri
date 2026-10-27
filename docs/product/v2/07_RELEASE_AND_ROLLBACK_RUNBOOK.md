@@ -1,5 +1,12 @@
 # V2 Release and Rollback Runbook
 
+## CURRENT provider gates versus APPROVED TARGET release
+
+The Supabase configuration, provider-acceptance, JWT/AMR and lifecycle gates below apply to the CURRENT implementation until the replacement is implemented and explicitly released. They are not instructions to configure Supabase in the APPROVED TARGET. Issues #110–#114 must deliver in-house username/password login, no Supabase Auth or email anywhere, no MFA or self-service recovery, the approved lock/initial-password rules and device revocation behavior in [V2 02](02_AUTH_AND_ROLE_MODEL.md). This documentation-only PR neither changes CI gates nor proves deployment. (Product Owner, 17 October 2026 AUT/USM decisions; BR-AUT-001/004/007–012/017, BR-PRF-024–026, BR-USM-023/030/033.)
+
+The future #114 release must implement the recorded test-account/private-data deletion while keeping Foods, then establish the single Admin through the server-side create/reset command. Its exact procedure and recovery implications are pending #110/#114; this text is not a destructive command or production authorization. The current migrations, Food preservation and existing release safeguards remain in force. (17 October 2026 AUT/USM/FOD cutover decisions; related BR-USM-027/043, BR-FOD-021; issue #100.)
+
+
 Status: Operational authority. This document does not authorize a deployment or
 production mutation.
 

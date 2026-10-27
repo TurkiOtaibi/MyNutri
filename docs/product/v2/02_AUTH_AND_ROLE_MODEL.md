@@ -1,5 +1,29 @@
 # V2 Authentication and Role Model
 
+## CURRENT implementation versus APPROVED TARGET
+
+The Supabase/email authentication, JWT admission, lifecycle saga and bootstrap sections below describe the CURRENT implemented repository state, not proof of production deployment. Email-based self-service recovery is currently implemented in `/auth/forgot-password` and `/auth/reset-password`. They remain current contracts until replacement is implemented and released; the target below is not live. Authority for the replacement: Product Owner decisions of **17 October 2026**, BRD AUT/PRF/USM decision tables and the cited requirements. Issues #110–#114 implement the login transition; issue #109 implements the separate sex-correction exception.
+
+## APPROVED TARGET — not yet implemented
+
+| Target rule | Decision / requirement (17 October 2026) |
+|---|---|
+| In-house login with «اسم المستخدم» and «كلمة المرور»; remove Supabase Auth and email everywhere in the system. Username is immutable after account creation. | AUT/USM final username/provider-removal decisions; BR-AUT-001, BR-AUT-012, BR-USM-022, BR-USM-023, BR-USM-036 |
+| No MFA and no self-service password recovery. The Admin resets a forgotten password; display «ليس لديك حساب أو نسيت كلمة المرور؟ تواصل مع المشرف.». | AUT no-MFA decision; BR-AUT-003, BR-AUT-012, BR-USM-030 |
+| After 5 consecutive failed login attempts, lock the account. A normal user unlocks only through an Admin password reset; the single Admin unlocks automatically after 30 minutes. A successful login resets the failure counter. | BR-AUT-011, BR-USM-030; final AUT/USM lock decisions |
+| Force password change only for the initial password set by the Admin, before using the system. An Admin reset unlocks the user and permits direct login with the reset password, without another forced change. There is no independent unlock action. | BR-AUT-007, BR-AUT-008, BR-USM-030; final AUT/USM decisions superseding reset-time forced change and «فتح القفل» |
+| In «بياناتي», self-service «تغيير كلمة المرور» requires the correct current password and signs out the owner's other devices. Admin reset signs the user out of all devices. | BR-PRF-024, BR-PRF-025, BR-PRF-026, BR-USM-030, BR-USM-033 |
+| Minimum password length is 8, enforced by the backend, with «استخدم 8 أحرف على الأقل.» and «كلمة المرور قصيرة. استخدم 8 أحرف على الأقل.». | AUT/USM password-length decision; BR-AUT-004, BR-AUT-007, BR-PRF-024, BR-PRF-025, BR-USM-023 |
+| Admin-created normal accounts only; one Admin, no role assignment or self-registration through the product. The only Admin write to another user's Profile is correction of «الجنس»; all other Profile, Diary, plan and Labs access remains read-only. | BR-AUT-009, BR-USM-020, BR-USM-027, BR-USM-028, BR-PRF-006, BR-USM-032, BR-USM-061, BR-USM-067, BR-USM-074 |
+| At cutover delete all current test accounts and their private data, keep the Food list, and create the single Admin through a server-side command that can also reset its password. | AUT/USM/FOD cutover decisions; related BR-USM-027, BR-USM-043; operational command required by issue #100 |
+
+The final 17 October decisions supersede the earlier same-day email-as-login decision, forced change after every reset, separate «فتح القفل» / «تم فتح قفل الحساب.» action, and shorter contact-Admin sentence. Use the final requirements above, not those superseded entries.
+
+Username format, length, allowed characters, normalization/uniqueness rules, credential representation, session transport/storage/lifetime and command interface are **to be decided in issue #110**; the BRD does not define those implementation details. Case-insensitive partial Admin search is already specified by BR-USM-005 and must not be mistaken for an approved username identity-normalization rule. No schema or API for this target is approved by this documentation change. (17 October 2026, BR-AUT-001/011/017, BR-USM-005/022/025/036; issue #100.)
+
+## CURRENT implementation details
+
+
 The Admin-managed lifecycle in this document is approved authority implemented
 in the lifecycle revision; Production activation remains a separate release action.
 
