@@ -4,21 +4,24 @@ import logging
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 from uuid import UUID
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from sqlalchemy import func, or_, text
+from sqlalchemy import and_, func, or_, text
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext, require_admin
 from app.core.config import Settings, get_settings
+from app.core.credentials import USERNAME_MESSAGE
 from app.db.session import engine, get_session
 from app.models import Principal, PrincipalStatus, Profile
 from app.schemas import (
     AdminAccountCounts,
     AdminAccountCreate,
+    AdminInternalAccountCreate,
     AdminAccountDelete,
     AdminAccountEdit,
     AdminAccountEnable,
@@ -33,6 +36,7 @@ from app.services.admin_profile import correct_profile_sex
 from app.services.admin_lifecycle import (
     LifecycleError,
     create_account,
+    create_internal_account,
     delete_account,
     edit_display_name,
     reset_account_password,
@@ -69,6 +73,8 @@ class AccountManagementRoute(APIRoute):
                     status_code=status, content={"error": {"code": code, "message_ar": message}}
                 )
             except RequestValidationError as error:
+                if any(item.get("loc", ())[-1:] == ("username",) and item.get("type") in {"string_too_long", "string_too_short"} for item in error.errors()):
+                    return JSONResponse(status_code=422, headers={"Cache-Control": "no-store"}, content={"error": {"code": "INVALID_USERNAME", "message_ar": USERNAME_MESSAGE}})
                 response = JSONResponse(
                     status_code=422,
                     content={"error": {"code": "INVALID_REQUEST", "details": [
@@ -123,6 +129,9 @@ def _summary(row: Principal, profile_complete: bool | None = None) -> AdminAccou
     return AdminAccountSummary(
         principal_id=row.id,
         email=row.email,
+        username=row.username,
+        last_login_at=row.last_login_at,
+        is_locked=row.role == "user" and row.password_hash is not None and row.locked_at is not None,
         display_name=row.display_name,
         status=row.status,
         created_at=row.created_at,
@@ -186,17 +195,22 @@ def list_accounts(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     search: str | None = Query(default=None, max_length=320),
-    status: PrincipalStatus | None = None,
+    status: PrincipalStatus | Literal["locked"] | None = None,
     _admin: PrincipalContext = Depends(require_admin),
     session: Session = Depends(get_session),
 ) -> AdminAccountList:
     conditions = [Principal.role == "user", Principal.status != PrincipalStatus.deleted]
-    if status is not None:
+    if status == "locked":
+        conditions.extend([Principal.password_hash.is_not(None), Principal.locked_at.is_not(None)])
+    elif status is not None:
         conditions.append(Principal.status == status)
     if search and search.strip():
-        pattern = f"%{search.strip()}%"
+        escaped = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
         conditions.append(
-            or_(Principal.email.ilike(pattern), Principal.display_name.ilike(pattern))
+            or_(Principal.username.ilike(pattern, escape="\\"),
+                Principal.display_name.ilike(pattern, escape="\\"),
+                and_(Principal.username.is_(None), Principal.email.ilike(pattern, escape="\\")))
         )
     statement = select(Principal, Profile.id).outerjoin(
         Profile, Profile.principal_id == Principal.id
@@ -214,7 +228,9 @@ def list_accounts(
             Principal.role == "user", Principal.status != PrincipalStatus.deleted
         ).group_by(Principal.status)
     ).all())
+    self_row = session.get(Principal, _admin.principal_id) if page == 1 and not (search and search.strip()) and status is None else None
     return AdminAccountList(
+        self=_summary(self_row) if self_row is not None else None,
         counts=AdminAccountCounts(**counts),
         items=[_summary(row, profile_id is not None) for row, profile_id in rows],
         total=total, page=page, page_size=page_size
@@ -233,13 +249,18 @@ def correct_sex(
 
 @router.post("", response_model=AdminAccountSummary, status_code=201)
 def create(
-    payload: AdminAccountCreate,
+    payload: AdminInternalAccountCreate | AdminAccountCreate,
     idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=128),
     admin: PrincipalContext = Depends(require_admin),
     session: Session = Depends(get_session),
     gateway: AdminAuthGateway = Depends(get_admin_auth_gateway),
     settings: Settings = Depends(get_settings),
 ) -> AdminAccountSummary:
+    if isinstance(payload, AdminInternalAccountCreate):
+        return _summary(create_internal_account(
+            session, admin.principal_id, payload.username, payload.display_name,
+            payload.initial_password, idempotency_key, datetime.now(timezone.utc),
+        ))
     return _summary(create_account(
         session, admin.principal_id, payload.email, payload.display_name,
         payload.initial_password, idempotency_key, gateway,
@@ -301,8 +322,11 @@ def remove(
         session, admin.principal_id, principal_id, gateway,
         datetime.now(timezone.utc), settings.supabase_admin_http_timeout_seconds,
         confirmation_email=payload.confirm_email,
+        confirmation_username=payload.confirm_username,
+        require_confirmation=True,
     )
-    background_tasks.add_task(_background_reconcile_recent, datetime.now(timezone.utc))
+    if result.retired_auth_user_id is not None:
+        background_tasks.add_task(_background_reconcile_recent, datetime.now(timezone.utc))
     return _summary(result)
 
 
@@ -317,7 +341,7 @@ def retry_create(
     settings: Settings = Depends(get_settings),
 ) -> AdminAccountSummary:
     row = target
-    if row.status != PrincipalStatus.provisioning:
+    if row.status != PrincipalStatus.provisioning or row.username is not None:
         raise LifecycleError(409, "CREATION_INCOMPLETE", "تعذر إكمال إنشاء المستخدم. أعد المحاولة.")
     assert row.email is not None and row.display_name is not None
     assert row.creation_idempotency_key is not None
@@ -339,11 +363,12 @@ def retry_delete(
     settings: Settings = Depends(get_settings),
 ) -> AdminAccountSummary:
     row = target
-    if row.status != PrincipalStatus.deleting:
+    if row.status != PrincipalStatus.deleting or row.username is not None:
         raise LifecycleError(404, "RESOURCE_NOT_FOUND", "المورد غير موجود.")
     result = delete_account(
         session, admin.principal_id, principal_id, gateway,
         datetime.now(timezone.utc), settings.supabase_admin_http_timeout_seconds,
     )
-    background_tasks.add_task(_background_reconcile_recent, datetime.now(timezone.utc))
+    if result.retired_auth_user_id is not None:
+        background_tasks.add_task(_background_reconcile_recent, datetime.now(timezone.utc))
     return _summary(result)

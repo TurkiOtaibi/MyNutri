@@ -2,9 +2,9 @@
 
 ## CURRENT implementation versus APPROVED TARGET
 
-CURRENT in #111: the browser uses internal username/password login, opaque bearer sessions, forced initial-password change, and own-password change in Profile. Only the session token is persisted in localStorage; passwords stay in memory and no auth cookies are used. Reload during an initial-password change requires re-authentication. Forgotten/reset-password browser flows are absent; forgotten passwords go to the Admin. The backend retains legacy Supabase JWT admission for accounts without internal credentials until #113; an internal password hash takes precedence and rejects JWT admission with `INTERNAL_LOGIN_REQUIRED`. Internal password changes/resets never update Supabase. Admin email-based creation UI/API remains CURRENT until #112; provider/email removal (#113) and destructive cutover (#114) remain APPROVED TARGET. This describes repository implementation, not deployment. (Product Owner decisions of 17 and 27 October 2026; issues #110/#111; BR-AUT-001/003/004/005/007/008/010/011/012/017, BR-PRF-024–026, BR-USM-030/033.)
+CURRENT in #111: the browser uses internal username/password login, opaque bearer sessions, forced initial-password change, and own-password change in Profile. Only the session token is persisted in localStorage; passwords stay in memory and no auth cookies are used. Reload during an initial-password change requires re-authentication. Forgotten/reset-password browser flows are absent; forgotten passwords go to the Admin. The backend retains legacy Supabase JWT admission for accounts without internal credentials until #113; an internal password hash takes precedence and rejects JWT admission with `INTERNAL_LOGIN_REQUIRED`. Internal password changes/resets never update Supabase. Admin username-based creation and management UI is CURRENT in #112: new users have internal credentials only, with no email or provider call. Legacy backend email/provider lifecycle support and clearly marked email fallback for existing accounts remain until #113/#114; provider/email removal (#113) and destructive cutover (#114) remain APPROVED TARGET. No existing account migration or cutover is performed. This describes repository implementation, not deployment. (Product Owner decisions of 17 and 27 October 2026; issues #110/#111/#112; BR-USM-005/006/012/013/014/022/023/025/030/036/038/042/043/049/054; BR-AUT-001/003/004/005/007/008/010/011/012/017, BR-PRF-024–026, BR-USM-030/033.)
 
-## Approved rules — backend #110 and browser #111 delivered; Admin UI/removal/cutover pending
+## Approved rules — backend #110, browser #111 and Admin UI #112; removal/cutover pending
 
 | Target rule | Decision / requirement (17 October 2026) |
 |---|---|
@@ -65,7 +65,7 @@ at most one; bootstrap refuses if an Admin already exists, and release preflight
 must establish that one Admin exists. No product API creates or changes an Admin
 role. The Admin cannot change their own role, disable, or delete themselves.
 
-An Admin creates normal users with email, display name, and an initial password
+An Admin creates normal users with immutable username, display name, and an initial password (#112; BR-USM-022/023/025/036)
 they set; they may edit display name, reset password (including revocation of
 the user's internal sessions when an internal hash exists, otherwise existing Supabase sessions through FastAPI), enable/disable, and
 request permanent deletion. Email changes are not supported. Raw passwords are never persisted, logged, or returned by myNutri; internal accounts store only the versioned scrypt hash. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.) Legacy password reset and status changes
@@ -74,7 +74,7 @@ cutoff to the latest valid Supabase
 `amr[].timestamp` authentication time, not access-token `iat`; missing or
 malformed AMR always fails closed, so refreshing an older
 session cannot restore admission. The supported Admin password-update call
-also revokes Supabase refresh sessions. Creation commits a `provisioning`
+also revokes Supabase refresh sessions. Legacy email/provider creation commits a `provisioning`
 Principal and idempotency key before calling Supabase Auth; the same-key retry
 resumes creation and activation. Before the create call, the Principal also
 stores a backend-generated Supabase Auth UUID; the call uses that pre-assigned
@@ -84,7 +84,7 @@ Admin HTTP timeout determines the creation lease:
 refused with 409 and the approved creation-incomplete copy. `provisioning`
 never authenticates.
 
-Deletion of a `provisioning` account is allowed and follows the same saga as
+Legacy provider-linked deletion of a `provisioning` account is allowed and follows the same saga as
 deletion of another normal-user account: commit `deleting` under the Principal
 lock, purge private dependent data in one locked transaction, delete the stored
 Supabase Auth UUID and verify absence through the supported Admin API (absence
@@ -150,3 +150,13 @@ Implementation choices proposed for approval: scrypt `n=32768, r=8, p=1`, 16 ran
 The server-side command is `python -m app.ops.internal_admin create --username <username>` or `reset --username <username>`. It prompts without echo or accepts one line via `--password-stdin`; passwords are never command arguments or logs. Create refuses any existing Admin (including a legacy Admin), and sets the initial-change flag. Reset addresses the existing internal Admin, clears lock/counter/initial-change flag and revokes all sessions without touching Supabase. The database also enforces the single Admin. Running either command against production requires separate release authorization. (17/27 October 2026 AUT/USM decisions; BR-AUT-007/008/011, BR-USM-027/030; issue #110.)
 
 Issue #111 adds `python -m app.ops.internal_admin attach --username <username>` for the existing active legacy Admin only. It refuses any existing internal username/normalized username/hash, attaches internal credentials to the same Principal with `must_change_password=false`, and preserves legacy identity/email, role/status, private data and Food attribution. It does not call Supabase or revoke sessions; internal credential precedence rejects subsequent legacy JWT admission. Password input is hidden or supplied through `--password-stdin`, never an argument or log. This is a user-run release step requiring authorization for the exact production action and revision; it has not been executed by this change. Admin creation/reset, provider removal and destructive cutover retain their separate boundaries. (Product Owner #111 authorization, 27 October 2026; BR-AUT-017, BR-USM-027.)
+
+## CURRENT username account management — issue #112
+
+The Admin UI uses username, display name and initial password. Internal creation is one database transaction: an active normal-user Principal, unique normalized username, scrypt password hash, initial-change flag and idempotency key commit together or roll back together. It stores no email/Auth UUID and makes no provider call. A matching idempotency replay returns the same account; a conflicting request is rejected. Username is immutable, including retries; only legacy provider provisioning retains its resumable creation saga. (BR-USM-022/023/025/027/028/036/049; final USM decisions, 17 October 2026; [issue #112](https://github.com/TurkiOtaibi/MyNutri/issues/112).)
+
+Admin list and selected-user summary expose username, nullable `last_login_at` and `is_locked`. Search matches literal partial username/display name case-insensitively, with email fallback only for legacy accounts lacking username. «مقفل» is a filter and badge, not a lifecycle status; it reflects a normal internal user's lock, never the Admin's transient lock. Each row displays «آخر دخول» and Gregorian registration dates. Existing accounts without username remain clearly marked as legacy; no username or login date is inferred. Reset shows «سيخرج المستخدم من كل أجهزته.», clears an internal user's lock and sessions, and does not force another password change. Self rows have no account actions. (BR-USM-005/006/013/014/017/020/030/033/054; final USM decisions, 17 October 2026.)
+
+Deletion selects confirmation from the stored target identity: username for internal accounts, retained email fallback for legacy accounts without username. The approved instruction is «اكتب اسم المستخدم لتأكيد الحذف النهائي.» and mismatch is «اسم المستخدم المدخل لا يطابق هذا الحساب.». Internal-only deletion performs no provider call or provider reconciliation; it locks out the account, purges private data/sessions and scrubs username, normalized username, password/lock/login fields, email and display name on the durable tombstone. The cleared username can be reused by a new Principal without restoring deleted data. Food attribution keeps the original tombstone ID. Provider-linked accounts retain their legacy deletion/reconciliation safeguards. (BR-USM-012/038/042/043/044; [Product Owner decision, 27 October 2026](https://github.com/TurkiOtaibi/MyNutri/issues/112#issuecomment-6437936388).)
+
+This repository change adds no migration and performs no existing-account conversion, provider removal, production action or cutover. Legacy backend flows remain until #113/#114; the system-wide no-email/no-provider target is not yet current.

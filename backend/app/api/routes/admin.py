@@ -3,7 +3,7 @@ from math import ceil
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlmodel import Session, select
 
 from app.api.routes.labs import ERROR_RESPONSES, LabsRoute
@@ -79,6 +79,9 @@ def _summary_from_row(row) -> AdminUserSummary:
     return AdminUserSummary(
         principal_id=principal.id,
         email=principal.email,
+        username=principal.username,
+        last_login_at=principal.last_login_at,
+        is_locked=principal.role == "user" and principal.password_hash is not None and principal.locked_at is not None,
         display_name=principal.display_name,
         status=principal.status,
         role=principal.role,
@@ -115,9 +118,12 @@ def list_users(
     # surface, not the existing read-only user monitoring list.
     conditions = [Principal.status.in_([PrincipalStatus.active, PrincipalStatus.disabled])]
     if search and search.strip():
-        pattern = f"%{search.strip()}%"
+        escaped = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
         conditions.append(
-            or_(Principal.email.ilike(pattern), Principal.display_name.ilike(pattern))
+            or_(Principal.username.ilike(pattern, escape="\\"),
+                Principal.display_name.ilike(pattern, escape="\\"),
+                and_(Principal.username.is_(None), Principal.email.ilike(pattern, escape="\\")))
         )
     count = select(func.count()).select_from(Principal)
     statement = _summary_statement(conditions, page, page_size)

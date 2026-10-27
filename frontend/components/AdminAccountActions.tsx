@@ -3,10 +3,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Eye, EyeOff, MoreVertical } from "lucide-react";
 import { createContext, useContext, FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { type AdminAccount, correctAdminProfileSex, deleteAdminAccount, editAdminAccount, resetAdminAccountPassword, retryAdminAccountCreation, retryAdminAccountDeletion, setAdminAccountEnabled } from "@/lib/api";
-import { accountActionErrorMessage, accountActionSuccessMessage, type AccountAction } from "@/lib/admin-account-messages";
+import { accountActionErrorMessage, accountActionSuccessMessage, deletionConfirmationMessage, passwordValidationMessage, type AccountAction } from "@/lib/admin-account-messages";
 import { useAuth } from "./AuthProvider";
 import { AdminSexCorrectionDialog } from "./AdminSexCorrectionDialog";
-type ActionAccount = Pick<AdminAccount, "principal_id" | "email" | "display_name" | "status" | "profile_complete">;
+type ActionAccount = Pick<AdminAccount, "principal_id" | "username" | "email" | "display_name" | "status" | "profile_complete">;
 type EditorMode = "edit" | "password" | "retry-create";
 
 const editorTitles: Record<EditorMode, string> = {
@@ -16,40 +16,42 @@ const editorTitles: Record<EditorMode, string> = {
 function DeleteDialog({ account, onClose, onDelete }: {
   account: ActionAccount;
   onClose: () => void;
-  onDelete: (email: string) => Promise<void>;
+  onDelete: (confirmation: string) => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const emailInput = useRef<HTMLInputElement>(null);
-  const [email, setEmail] = useState("");
+  const confirmationInput = useRef<HTMLInputElement>(null);
+  const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const element = dialog.current;
     const opener = document.activeElement;
     element?.showModal();
-    emailInput.current?.focus();
+    confirmationInput.current?.focus();
     return () => {
       element?.close();
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
+      else document.querySelector<HTMLSelectElement>(".admin-status-filter")?.focus({ preventScroll: true });
     };
   }, []);
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (email.trim().toLowerCase() !== account.email?.toLowerCase()) {
-      setError("البريد الإلكتروني المدخل لا يطابق بريد المستخدم.");
-      emailInput.current?.focus();
+    const validation = deletionConfirmationMessage(confirmation, account);
+    if (validation) {
+      setError(validation);
+      confirmationInput.current?.focus();
       return;
     }
     setBusy(true);
-    try { await onDelete(email.trim()); }
-    catch (failure) { setError(accountActionErrorMessage(failure, "delete")); setBusy(false); emailInput.current?.focus(); }
+    try { await onDelete(confirmation.trim()); }
+    catch (failure) { setError(accountActionErrorMessage(failure, "delete")); setBusy(false); confirmationInput.current?.focus(); }
   }
   return <dialog ref={dialog} className="account-delete-dialog" onCancel={event => { if (busy) event.preventDefault(); }} onClose={onClose} aria-labelledby="delete-account-title" aria-describedby="delete-account-body">
     <form onSubmit={submit}>
       <h2 id="delete-account-title">حذف المستخدم نهائيًا؟</h2>
       <p id="delete-account-body">سيُحذف حساب هذا المستخدم وجميع بياناته الخاصة نهائيًا. لا يمكن التراجع عن هذا الإجراء.</p>
-      <label htmlFor="delete-account-email">اكتب البريد الإلكتروني للمستخدم لتأكيد الحذف النهائي.</label>
-      <input ref={emailInput} id="delete-account-email" type="email" dir="ltr" autoComplete="off" value={email} onChange={event => { setEmail(event.target.value); setError(""); }} aria-invalid={Boolean(error)} aria-describedby={error ? "delete-account-error" : undefined} />
+      <label htmlFor="delete-account-identity">{account.username ? "اكتب اسم المستخدم لتأكيد الحذف النهائي." : "اكتب البريد الإلكتروني للمستخدم لتأكيد الحذف النهائي."}</label>
+      <input ref={confirmationInput} id="delete-account-identity" type={account.username ? "text" : "email"} dir="ltr" autoComplete="off" value={confirmation} onChange={event => { setConfirmation(event.target.value); setError(""); }} aria-invalid={Boolean(error)} aria-describedby={error ? "delete-account-error" : undefined} />
       {error && <p id="delete-account-error" role="alert">{error}</p>}
       <div className="actions"><button type="button" className="btn" disabled={busy} onClick={onClose}>إلغاء</button><button className="btn danger" disabled={busy} type="submit">حذف المستخدم نهائيًا</button></div>
     </form>
@@ -73,6 +75,7 @@ export function FormDialog({ title, className, onClose, children, busy = false, 
     return () => {
       element?.close();
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
+      else document.querySelector<HTMLSelectElement>(".admin-status-filter")?.focus({ preventScroll: true });
     };
   }, []);
   return <dialog ref={dialog} className={`account-delete-dialog account-form-dialog ${className ?? ""}`} onCancel={event => { if (busy) event.preventDefault(); }} onClose={onClose} aria-label={title} aria-describedby={descriptionId}>
@@ -88,7 +91,7 @@ export function PasswordInput({ label, value, onChange }: { label: string; value
   const hintId = useId();
   return <div className="account-field"><label>{label}
     <span className="password-field">
-      <input type={visible ? "text" : "password"} dir="ltr" autoComplete="new-password" required aria-describedby={hintId} value={value} onChange={event => onChange(event.target.value)} />
+      <input type={visible ? "text" : "password"} dir="ltr" autoComplete="new-password" aria-required="true" aria-describedby={hintId} value={value} onChange={event => onChange(event.target.value)} />
       <button type="button" onClick={() => setVisible(current => !current)} aria-label={visible ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}>
         {visible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
       </button>
@@ -178,6 +181,10 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
   async function submitEditor(event: FormEvent) {
     event.preventDefault();
     if (!selected || !mode) return;
+    if (mode !== "edit") {
+      const validation = passwordValidationMessage(password);
+      if (validation) { setEditorError(validation); return; }
+    }
     const id = selected.principal_id;
     const succeeded = mode === "edit" ? await execute(() => editAdminAccount(id, { display_name: displayName }), "edit", setEditorError)
       : mode === "password" ? await execute(() => resetAdminAccountPassword(id, password), "password", setEditorError)
@@ -186,10 +193,10 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
   }
   function rowActions(account: ActionAccount): { primary: ReactNode; menu: MenuItem[] } {
     const remove: MenuItem = { label: "حذف المستخدم نهائيًا", danger: true, onSelect: () => { onActionStart?.(); setNotice(""); setDeleteTarget(account); } };
-    if (account.status === "deleting") {
+    if (account.status === "deleting" && !account.username) {
       return { primary: <button className="btn" disabled={busy} onClick={() => execute(() => retryAdminAccountDeletion(account.principal_id), "retry-delete")}>إعادة محاولة الحذف</button>, menu: [] };
     }
-    if (account.status === "provisioning") {
+    if (account.status === "provisioning" && !account.username) {
       return { primary: <button className="btn" onClick={() => select(account, "retry-create")}>إعادة محاولة الإنشاء</button>, menu: [remove] };
     }
     if (account.status === "active" || account.status === "disabled") {
@@ -208,7 +215,7 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
 
   function renderActions(account: ActionAccount) {
     const actions = rowActions(account);
-    return <div className="account-actions">{actions.primary}{actions.menu.length > 0 && <AccountActionsMenu name={account.display_name || account.email || ""} items={actions.menu} />}</div>;
+    return <div className="account-actions">{actions.primary}{actions.menu.length > 0 && <AccountActionsMenu name={account.display_name || account.username || account.email || ""} items={actions.menu} />}</div>;
   }
   return <ActionsContext.Provider value={renderActions}>
     {children}
@@ -228,15 +235,16 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
 
     {selected && mode && <FormDialog busy={busy} title={editorTitles[mode]} className="account-editor" onClose={closeEditor}>
       <form className="account-form" onSubmit={submitEditor}>
-        {mode === "edit" ? <label>الاسم المعروض<input required value={displayName} onChange={event => setDisplayName(event.target.value)} /></label>
+        {mode === "edit" ? <div className="account-field"><label>الاسم المعروض<input required maxLength={120} aria-describedby="edit-name-note" value={displayName} onChange={event => setDisplayName(event.target.value)} /></label><small id="edit-name-note" className="account-field-hint">120 حرفًا كحد أقصى</small></div>
           : <PasswordInput label={mode === "password" ? "كلمة المرور الجديدة" : "كلمة المرور الأولية"} value={password} onChange={setPassword} />}
+        {mode === "password" && <p>سيخرج المستخدم من كل أجهزته.</p>}
         {editorError && <p role="alert" className="account-dialog-error">{editorError}</p>}
         <div className="actions"><button type="button" className="btn" disabled={busy} onClick={closeEditor}>إلغاء</button><button type="submit" className="btn primary" disabled={busy}>{mode === "edit" ? "حفظ التغييرات" : mode === "password" ? "إعادة تعيين كلمة المرور" : "إعادة محاولة الإنشاء"}</button></div>
       </form>
     </FormDialog>}
-    {deleteTarget && <DeleteDialog account={deleteTarget} onClose={() => setDeleteTarget(null)} onDelete={async confirmedEmail => {
+    {deleteTarget && <DeleteDialog account={deleteTarget} onClose={() => setDeleteTarget(null)} onDelete={async confirmation => {
       try {
-        await deleteAdminAccount(deleteTarget.principal_id, confirmedEmail);
+        await deleteAdminAccount(deleteTarget.principal_id, deleteTarget.username ? { confirm_username: confirmation } : { confirm_email: confirmation });
         setDeleteTarget(null); setNotice(accountActionSuccessMessage("delete")); onDeleted?.();
       } finally {
         await refreshAccounts();

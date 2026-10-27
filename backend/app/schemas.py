@@ -695,6 +695,9 @@ class CalendarAuthorityResponse(BaseModel):
 
 
 class AdminUserSummary(BaseModel):
+    username: str | None = None
+    last_login_at: datetime | None = None
+    is_locked: bool = False
     principal_id: UUID
     email: str | None
     display_name: str | None
@@ -718,6 +721,21 @@ class AdminAccountCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: StrictStr = Field(min_length=3, max_length=320)
+    display_name: StrictStr = Field(min_length=1, max_length=120)
+    initial_password: StrictStr = Field(min_length=1, max_length=256)
+
+    @field_validator("display_name")
+    @classmethod
+    def nonblank_display_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("display_name is required")
+        return value
+
+
+class AdminInternalAccountCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    username: StrictStr = Field(min_length=1, max_length=32)
     display_name: StrictStr = Field(min_length=1, max_length=120)
     initial_password: StrictStr = Field(min_length=1, max_length=256)
 
@@ -757,7 +775,8 @@ class AdminAccountEnable(BaseModel):
 class AdminAccountDelete(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    confirm_email: StrictStr
+    confirm_email: StrictStr | None = None
+    confirm_username: StrictStr | None = None
 
 
 class AdminAccountRetryCreate(BaseModel):
@@ -774,6 +793,9 @@ class AdminAccountCounts(BaseModel):
 
 
 class AdminAccountSummary(BaseModel):
+    username: str | None = None
+    last_login_at: datetime | None = None
+    is_locked: bool = False
     principal_id: UUID
     email: str | None
     display_name: str | None
@@ -791,6 +813,7 @@ class AdminProfileSexCorrection(BaseModel):
 
 
 class AdminAccountList(BaseModel):
+    self: AdminAccountSummary | None = None
     counts: AdminAccountCounts
     items: list[AdminAccountSummary]
     total: int
