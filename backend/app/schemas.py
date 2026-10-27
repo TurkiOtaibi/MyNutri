@@ -679,11 +679,13 @@ class FoodListResponse(BaseModel):
 
 class AccountResponse(BaseModel):
     principal_id: UUID
-    auth_user_id: UUID
+    auth_user_id: UUID | None
     email: str | None
     display_name: str | None
     role: PrincipalRole
     status: PrincipalStatus
+    username: str | None = None
+    must_change_password: bool = False
 
 
 class CalendarAuthorityResponse(BaseModel):

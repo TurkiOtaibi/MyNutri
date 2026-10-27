@@ -220,6 +220,7 @@ def test_recent_and_full_reconciliation_remove_late_identity_idempotently(lifecy
 
 def test_principal_foreign_key_catalog_has_explicit_purge_or_food_attribution_decision() -> None:
     decisions = {
+        ("auth_session", "principal_id"),
         ("profile", "principal_id"),
         ("target_plan", "principal_id"),
         ("diary_entry", "principal_id"),

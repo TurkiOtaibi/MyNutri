@@ -5,8 +5,8 @@
 | Capability | User | Admin | Decision / requirement (17 October 2026) |
 |---|---|---|---|
 | Write any other field in another user's Profile, or another user's Diary/plans/Labs | No | No; selected-user access otherwise stays read-only | BR-USM-061, BR-USM-067, BR-USM-074 |
-| Change own password with correct current password | Yes | Yes; other devices sign out | BR-PRF-024–026; issues #110–#111 |
-| Reset a normal user's password | No | Yes; unlocks and signs out all devices, without forced change after reset | BR-AUT-011, BR-USM-030/033; issues #110–#112 |
+| Integrate the internal own-password change into the browser UI | Yes | Yes | Backend CURRENT in #110; UI pending #111; BR-PRF-024–026 |
+| Integrate internal reset/lock state into the Admin UI | No | Yes | Backend CURRENT in #110; UI pending #112; BR-AUT-011, BR-USM-030/033 |
 | Manage accounts by username, change username, or self-register | No account management or self-registration | Create normal users by username; cannot change username or assign roles | BR-AUT-009, BR-USM-022/027/028/036; issues #110–#112 |
 
 No independent unlock permission is added: the final USM decision cancels that action. The final FOD decision also cancels «إيقاف الطعام»; the existing no-status/permanent-delete Food rules remain unchanged. (17 October 2026 USM/FOD decisions; BR-USM-030, BR-FOD-035.)
@@ -14,7 +14,7 @@ No independent unlock permission is added: the final USM decision cancels that a
 
 ## CURRENT implemented authorization
 
-The matrix and enforcement rules below describe the CURRENT Supabase/email implementation, including the implemented Admin-managed account lifecycle. They do not claim production activation. The sex-correction exception is CURRENT in issue #109; the APPROVED TARGET account changes above remain pending. (17 October 2026 decisions; BR-PRF-006, BR-USM-030/032/061; issue #100.)
+CURRENT in #110: the backend supports internal username/password login alongside the existing Supabase/email browser flow. Internal credentials take precedence: any account with an internal password hash is rejected on the Supabase JWT path with `INTERNAL_LOGIN_REQUIRED`. Internal password changes and resets never update Supabase; accounts without internal credentials retain the existing JWT path. Frontend integration (#111), username-based Admin UI (#112), provider/email removal (#113), and destructive cutover (#114) remain APPROVED TARGET, not implemented or deployed by this change. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
 
 | Capability | User | Admin |
 | --- | --- | --- |
@@ -32,7 +32,8 @@ The matrix and enforcement rules below describe the CURRENT Supabase/email imple
 | Assign roles | No | No through product APIs |
 | Self-register or auto-provision from an unknown Auth identity | No | No |
 | Create a normal user with Admin-set initial password | No | Yes, through FastAPI |
-| Edit another user's display name or reset password | No | Yes, normal users only; reset revokes existing Supabase sessions through FastAPI |
+| Edit another user's display name or reset password | No | Yes, normal users only; internal reset unlocks without forced change and revokes all internal sessions, never calls Supabase; legacy-only reset retains Supabase behavior (17/27 October 2026; BR-USM-030/033; #110) |
+| Change own internal password with correct current password | Yes | Yes; current session survives, other sessions revoked; no Supabase update (17/27 October 2026; BR-PRF-024–026; #110) |
 | Enable/disable or permanently delete another account | No | Yes, normal users only; deletion includes `provisioning` accounts via the same saga, with absent Auth identity counted as success |
 | Change email or grant/change Admin role | No | No |
 | Disable/delete own Admin account | No | No |

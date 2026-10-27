@@ -2,7 +2,7 @@
 
 ## State boundary for authentication
 
-The Supabase/email and read-only monitoring statements below describe the CURRENT implemented repository state, not deployment evidence. The APPROVED TARGET is in-house username/password login with no Supabase Auth or email, no MFA or self-service recovery, and backend-enforced 8-character minimum. Lock after 5 consecutive failures; an Admin reset unlocks a user and signs out all devices without forcing another change, whereas the single Admin unlocks automatically after 30 minutes. Successful login resets the counter. Only an initial password forces change; own-password change requires the current password and signs out other devices. These are pending issues #110–#114, not live behavior. (Product Owner, 17 October 2026, AUT/USM decisions; BR-AUT-001/003/004/007–012, BR-PRF-024–026, BR-USM-023/030/033; details in [V2 02](02_AUTH_AND_ROLE_MODEL.md).)
+CURRENT in #110: the backend supports internal username/password login alongside the existing Supabase/email browser flow. Internal credentials take precedence: any account with an internal password hash is rejected on the Supabase JWT path with `INTERNAL_LOGIN_REQUIRED`. Internal password changes and resets never update Supabase; accounts without internal credentials retain the existing JWT path. Frontend integration (#111), username-based Admin UI (#112), provider/email removal (#113), and destructive cutover (#114) remain APPROVED TARGET, not implemented or deployed by this change. (Product Owner decisions of 17 and 27 October 2026; issue #110 and its comments; BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-030/033.)
 
 The CURRENT implementation allows only Admin correction of another user's «الجنس» in issue #109; all other private-data monitoring remains read-only. Cutover deletes current test accounts/private data, preserves Foods, and creates the single Admin through a server-side create/reset command. No cutover is performed here. (17 October 2026 PRF/USM/AUT/FOD decisions; BR-PRF-006, BR-USM-027/032/043/061/067/074; issue #100; [V2 06](06_DATA_MIGRATION_AND_CUTOVER.md).)
 
@@ -15,7 +15,7 @@ in the lifecycle revision; Production activation remains a separate release acti
 
 ## Objective
 
-V2 uses Supabase email/password accounts, durable Principal ownership, `user`
+V2 supports internal backend authentication alongside the current Supabase email/password browser flow (#110; 27 October 2026; BR-AUT-001/017), durable Principal ownership, `user`
 and `admin` roles, read-only admin monitoring, and a global admin-managed Food
 catalog. Food taxonomy and provenance are intentionally small and stable.
 Standalone Labs lets adults record private numeric laboratory facts and follow
@@ -37,9 +37,9 @@ Diary, Target Plans, nutrition calculations, recommendations or Progress.
   of another user's Profile, Diary, Target Plans, and Labs.
 - An Admin creates a normal user with email, display name, and an initial
   Admin-set password. They may edit display name, reset password (revoking the
-  user's existing Supabase sessions through FastAPI), enable or disable the
+  user's internal sessions when an internal hash exists, otherwise existing Supabase sessions through FastAPI), enable or disable the
   user, and request permanent deletion. Email changes are out of scope.
-  Passwords are never stored, logged, or returned by myNutri.
+  Raw passwords are never stored, logged, or returned; internal accounts store only a scrypt hash (#110; 27 October 2026; BR-AUT-001/017, BR-USM-030/033).
 - Creation is resumable: the backend commits a `provisioning` Principal with an
   idempotency key and pre-assigned Supabase Auth UUID before sending create with
   that UUID. It records `identity_requested_at` on each create attempt. A retry

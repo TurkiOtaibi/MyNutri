@@ -15,6 +15,7 @@ from app.core.config import Settings, get_settings
 from app.core.jwks import RotationSafeJwksClient
 from app.db.session import get_session
 from app.models import Principal, PrincipalRole, PrincipalStatus
+from app.services.internal_auth import AuthError, admit_session
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +25,9 @@ class PrincipalContext:
     role: PrincipalRole = PrincipalRole.user
     email: str | None = None
     display_name: str | None = None
+    username: str | None = None
+    must_change_password: bool = False
+    session_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,7 +141,13 @@ def _cached_verifier(
     )
 
 
-def get_token_verifier(settings: Settings = Depends(get_settings)) -> SupabaseTokenVerifier:
+def get_token_verifier(
+    settings: Settings = Depends(get_settings), request: Request = None,
+) -> SupabaseTokenVerifier | None:
+    if request is not None:
+        scheme, _, credential = request.headers.get("Authorization", "").partition(" ")
+        if scheme.lower() == "bearer" and credential.startswith("mn1_"):
+            return None
     return _cached_verifier(
         settings.normalized_supabase_url,
         settings.effective_supabase_jwks_url,
@@ -164,7 +174,7 @@ def _authentication_error(code: str, message_ar: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail={"code": code, "message_ar": message_ar},
-        headers={"WWW-Authenticate": "Bearer"},
+        headers={"WWW-Authenticate": "Bearer", "Cache-Control": "no-store"},
     )
 
 
@@ -187,10 +197,24 @@ def get_principal_context(
         HTTPAuthorizationCredentials | None,
         Security(bearer_auth),
     ],
-    verifier: SupabaseTokenVerifier = Depends(get_token_verifier),
+    verifier: SupabaseTokenVerifier | None = Depends(get_token_verifier),
     session: Session = Depends(get_session),
 ) -> PrincipalContext:
     credential = _credential_from_security(request, credentials)
+    if credential.startswith("mn1_"):
+        try:
+            principal, current = admit_session(session, credential, datetime.now(timezone.utc))
+        except AuthError as error:
+            raise _authentication_error(error.code, error.message_ar) from None
+        _enforce_password_change(request, principal)
+        return PrincipalContext(
+            principal_id=principal.id, auth_user_id=principal.auth_user_id,
+            role=principal.role, email=principal.email, display_name=principal.display_name,
+            username=principal.username, must_change_password=principal.must_change_password,
+            session_id=current.id,
+        )
+    if verifier is None:
+        raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
     try:
         claims = verifier.verify(credential)
     except (PyJWTError, ValueError, RuntimeError):
@@ -202,6 +226,10 @@ def get_principal_context(
     ).one_or_none()
     if principal is None or principal.status != PrincipalStatus.active:
         raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
+    if principal.password_hash is not None:
+        raise _authentication_error(
+            "INTERNAL_LOGIN_REQUIRED", "سجّل الدخول باسم المستخدم للمتابعة."
+        )
     if principal.sessions_valid_after is not None:
         cutoff = principal.sessions_valid_after
         if cutoff.tzinfo is None:
@@ -215,13 +243,27 @@ def get_principal_context(
             authenticated_at = None
         if authenticated_at is None or authenticated_at < cutoff:
             raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
+    _enforce_password_change(request, principal)
     return PrincipalContext(
         principal_id=principal.id,
         auth_user_id=claims.auth_user_id,
         role=principal.role,
         email=principal.email,
         display_name=principal.display_name,
+        username=principal.username,
+        must_change_password=principal.must_change_password,
     )
+
+
+def _enforce_password_change(request: Request, principal: Principal) -> None:
+    if principal.must_change_password and not (
+        request.method == "POST" and request.url.path in {"/auth/change-password", "/auth/logout"}
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "PASSWORD_CHANGE_REQUIRED", "message_ar": "يجب تغيير كلمة المرور الأولية للمتابعة."},
+            headers={"Cache-Control": "no-store"},
+        )
 
 
 def require_admin(

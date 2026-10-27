@@ -32,11 +32,11 @@ def verify_database_compatibility(database_engine: Engine, settings: Settings) -
             admin_count = connection.execute(
                 text(
                     "SELECT count(*) FROM principal WHERE status='active' "
-                    "AND role='admin' AND auth_user_id IS NOT NULL"
+                    "AND role='admin' AND (auth_user_id IS NOT NULL OR password_hash IS NOT NULL)"
                 )
             ).scalar_one()
             if admin_count < 1:
-                raise RuntimeError("No active linked admin Principal is configured.")
+                raise RuntimeError("No active authenticated admin Principal is configured.")
 
 
 def main() -> None:

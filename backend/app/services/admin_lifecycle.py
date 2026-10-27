@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.models import (
+    AuthSession,
     DiaryEntry,
     IdempotencyRecord,
     LabResult,
@@ -21,6 +22,8 @@ from app.models import (
     TargetPlan,
 )
 from app.services.admin_auth import AdminAuthError, AdminAuthGateway, AdminIdentity
+from app.services.internal_auth import revoke_sessions
+from app.core.credentials import hash_password, validate_password
 
 logger = logging.getLogger(__name__)
 
@@ -88,14 +91,35 @@ def reset_account_password(
 ) -> None:
     _admin(session, admin_id)
     row = _target(session, admin_id, principal_id)
-    if row.status not in {PrincipalStatus.active, PrincipalStatus.disabled} or row.auth_user_id is None:
+    if row.status not in {PrincipalStatus.active, PrincipalStatus.disabled} or (row.auth_user_id is None and row.password_hash is None):
         raise _creation_incomplete()
+    try:
+        validate_password(password)
+    except ValueError as error:
+        raise LifecycleError(422, "INVALID_PASSWORD", str(error)) from None
     auth_id = row.auth_user_id
+    encoded = hash_password(password) if row.password_hash is not None else None
+    revoke_sessions(session, row.id, now)
     row.sessions_valid_after = _next_second(now)
     row.updated_at = now
     session.add(row)
+    try:
+        # Internal credentials take precedence; never update the retired provider
+        # credential of an internally authenticated account (PO 27 October 2026).
+        if encoded is None and auth_id is not None:
+            gateway.reset_password(auth_id, password)
+    except AdminAuthError:
+        # A provider timeout is ambiguous. Revoke existing sessions even on failure;
+        # leave credentials/lock unchanged locally and report failure for explicit retry.
+        session.commit()
+        raise
+    if encoded is not None:
+        row.password_hash = encoded
+    row.must_change_password = False
+    row.failed_login_count = 0
+    row.locked_at = None
+    session.add(row)
     session.commit()
-    gateway.reset_password(auth_id, password)
 
 
 def set_account_enabled(
@@ -110,6 +134,7 @@ def set_account_enabled(
     elif row.status != PrincipalStatus.disabled:
         row.disabled_at = now
     row.status = PrincipalStatus.active if enabled else PrincipalStatus.disabled
+    revoke_sessions(session, row.id, now)
     row.sessions_valid_after = _next_second(now)
     row.updated_at = now
     session.add(row)
@@ -327,7 +352,7 @@ def create_account(
 
 
 def _purge_private_rows(session: Session, principal_id: UUID) -> None:
-    for model in (DiaryEntry, LabResult, IdempotencyRecord, TargetPlan, Profile):
+    for model in (AuthSession, DiaryEntry, LabResult, IdempotencyRecord, TargetPlan, Profile):
         session.exec(delete(model).where(model.principal_id == principal_id))
 
 
@@ -357,6 +382,7 @@ def delete_account(
             raise LifecycleError(409, "CREATION_IN_PROGRESS", "لا يمكن حذف المستخدم الآن لأن إنشاءه ما زال جاريًا. حاول بعد 5 دقائق.")
     if row.status != PrincipalStatus.deleting:
         row.status = PrincipalStatus.deleting
+        revoke_sessions(session, row.id, now)
         row.deletion_started_at = now
         row.updated_at = now
         session.add(row)
@@ -379,6 +405,13 @@ def delete_account(
     row.retired_auth_user_id = auth_id
     row.email = None
     row.display_name = None
+    row.username = None
+    row.normalized_username = None
+    row.password_hash = None
+    row.must_change_password = False
+    row.failed_login_count = 0
+    row.locked_at = None
+    row.last_login_at = None
     row.status = PrincipalStatus.deleted
     row.deleted_at = now
     row.updated_at = now
