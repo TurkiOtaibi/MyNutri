@@ -14,7 +14,7 @@ from app.models import Principal, PrincipalStatus
 from labs_fixtures import run_labs_alembic
 
 
-HEAD = "a1d9b7f23645"
+HEAD = "b2e0c8f34756"
 
 
 def test_principal_model_has_retired_identity_and_lease_fields() -> None:
@@ -78,7 +78,8 @@ def test_populated_upgrade_preserves_existing_principal(labs_postgresql_database
             INSERT INTO principal (id, auth_user_id, email, role, status, created_at, updated_at)
             VALUES (:id, :auth_id, 'existing@example.test', 'user', 'active', now(), now())
         """), {"id": uuid4(), "auth_id": identity})
-    run_labs_alembic("upgrade", "head")
+    # Historical preservation stops before the destructive account cutover.
+    run_labs_alembic("upgrade", "a1d9b7f23645")
     with labs_postgresql_database.engine.connect() as connection:
         row = connection.execute(text("""
             SELECT auth_user_id, status, retired_auth_user_id, sessions_valid_after
@@ -96,7 +97,7 @@ def test_upgrade_refuses_multiple_admins_without_picking_one(labs_postgresql_dat
                 INSERT INTO principal (id, auth_user_id, email, role, status, created_at, updated_at)
                 VALUES (:id, :auth_id, :email, 'admin', 'active', now(), now())
             """), {"id": uuid4(), "auth_id": uuid4(), "email": f"admin{index}@example.test"})
-    result = run_labs_alembic("upgrade", "head", check=False)
+    result = run_labs_alembic("upgrade", "a1d9b7f23645", check=False)
     assert result.returncode != 0
     assert "ADMIN_LIFECYCLE_MULTIPLE_ADMINS" in result.stderr
     with labs_postgresql_database.engine.connect() as connection:

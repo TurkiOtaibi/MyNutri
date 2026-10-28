@@ -2,8 +2,9 @@
 
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
 import os
+import secrets
 from pathlib import Path
 import subprocess
 import sys
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
 
 
 BACKEND_ROOT = Path(__file__).parents[1]
+CUTOVER_PARENT = "a1d9b7f23645"
+CURRENT_HEAD = "b2e0c8f34756"
 LABS_TODAY = date(2026, 9, 20)
 
 
@@ -122,6 +125,37 @@ def run_labs_alembic(*arguments: str, check: bool = True) -> subprocess.Complete
     return result
 
 
+def migrate_disposable_database_to_head() -> None:
+    """Exercise the real cutover guard, then remove only our synthetic bootstrap."""
+    from app.ops.internal_admin import manage_admin
+
+    url = safe_labs_database_url()
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            if inspect(connection).has_table("alembic_version"):
+                current = connection.scalar(text("SELECT version_num FROM alembic_version"))
+                if current == CURRENT_HEAD:
+                    return
+        run_labs_alembic("upgrade", CUTOVER_PARENT)
+        with Session(engine) as session:
+            manage_admin(
+                session, "create", "MigrationFixtureAdmin", secrets.token_urlsafe(24),
+                datetime.now(timezone.utc),
+            )
+            bootstrap_id = session.exec(
+                text("SELECT id FROM principal WHERE normalized_username=:username")
+                .bindparams(username="migrationfixtureadmin")
+            ).scalar_one()
+        run_labs_alembic("upgrade", "head")
+        with engine.begin() as connection:
+            connection.execute(
+                text("DELETE FROM principal WHERE id=:id"), {"id": bootstrap_id}
+            )
+    finally:
+        engine.dispose()
+
+
 def reset_labs_database() -> None:
     engine = create_engine(safe_labs_database_url())
     try:
@@ -144,14 +178,14 @@ def _labs_migrated_database() -> Iterator[LabsPostgresqlDatabase]:
     """Exclusive disposable database; callers may open independent committing sessions."""
     url = safe_labs_database_url()
     reset_labs_database()
-    run_labs_alembic("upgrade", "head")
+    migrate_disposable_database_to_head()
     engine = create_engine(url)
     try:
         yield LabsPostgresqlDatabase(engine=engine, url=url)
     finally:
         engine.dispose()
         reset_labs_database()
-        run_labs_alembic("upgrade", "head")
+        migrate_disposable_database_to_head()
 
 
 @pytest.fixture
@@ -172,7 +206,7 @@ def labs_postgresql_database(_labs_migrated_database) -> Iterator[LabsPostgresql
             ]
             if names:
                 connection.execute(text("TRUNCATE " + ", ".join(names) + " CASCADE"))
-        run_labs_alembic("upgrade", "head")
+        migrate_disposable_database_to_head()
 
 
 @pytest.fixture

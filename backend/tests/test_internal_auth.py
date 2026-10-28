@@ -437,6 +437,8 @@ def test_migration_preserves_legacy_and_downgrades(labs_postgresql_database):
     from uuid import uuid4
     from labs_fixtures import run_labs_alembic
 
+    # Model drift is checked at current head before the historical roundtrip.
+    run_labs_alembic("check")
     run_labs_alembic("downgrade", "e9b7f5d01423")
     identity = uuid4()
     with labs_postgresql_database.engine.begin() as connection:
@@ -452,7 +454,8 @@ def test_migration_preserves_legacy_and_downgrades(labs_postgresql_database):
             )
         )
         connection.execute(text("GRANT SELECT ON principal TO anon, authenticated"))
-    run_labs_alembic("upgrade", "head")
+    # Historical preservation stops before the destructive account cutover.
+    run_labs_alembic("upgrade", "a1d9b7f23645")
     with Session(labs_postgresql_database.engine) as session:
         legacy = session.get(Principal, identity)
         assert legacy.email == "legacy@example.test"
@@ -460,7 +463,6 @@ def test_migration_preserves_legacy_and_downgrades(labs_postgresql_database):
         assert legacy.failed_login_count == 0 and not legacy.must_change_password
         account(session)
         login(session, "Example", PASSWORD, NOW)
-    run_labs_alembic("check")
     sql = run_labs_alembic("upgrade", "e9b7f5d01423:head", "--sql")
     assert "CREATE TABLE auth_session" in sql.stdout
     with labs_postgresql_database.engine.connect() as connection:
@@ -490,7 +492,7 @@ def test_migration_preserves_legacy_and_downgrades(labs_postgresql_database):
             connection.scalar(text("SELECT email FROM principal WHERE id=:id"), {"id": identity})
             == "legacy@example.test"
         )
-    run_labs_alembic("upgrade", "head")
+    run_labs_alembic("upgrade", "a1d9b7f23645")
 
 
 

@@ -58,6 +58,8 @@ def test_plan_purge_migration_roundtrip_preserves_rows_and_restores_guard(
 ):
     plan_id = _plan(labs_postgresql_session, lab_owner)
     labs_postgresql_session.close()
+    # Model drift is checked at current head before the historical roundtrip.
+    assert "No new upgrade operations detected" in run_labs_alembic("check").stdout
     run_labs_alembic("downgrade", PARENT)
     with labs_postgresql_database.engine.begin() as connection:
         connection.execute(text("UPDATE principal SET status='deleting' WHERE id=:id"),
@@ -71,7 +73,6 @@ def test_plan_purge_migration_roundtrip_preserves_rows_and_restores_guard(
                                  {"id": plan_id}) == 1
         assert connection.execute(text("DELETE FROM target_plan WHERE id=:id"),
                                   {"id": plan_id}).rowcount == 1
-    assert "No new upgrade operations detected" in run_labs_alembic("check").stdout
 
 
 @pytest.mark.migration

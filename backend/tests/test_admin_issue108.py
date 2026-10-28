@@ -66,7 +66,8 @@ def test_disabled_time_migration_roundtrip(labs_postgresql_database, labs_postgr
     run_labs_alembic("downgrade", "d8a6e4c90312")
     with labs_postgresql_database.engine.begin() as connection:
         connection.execute(text("UPDATE principal SET status='disabled' WHERE id=:id"), {"id": owner_id})
-    run_labs_alembic("upgrade", "head")
+    # Historical preservation stops before the destructive account cutover.
+    run_labs_alembic("upgrade", "a1d9b7f23645")
     with labs_postgresql_database.engine.connect() as connection:
         assert connection.execute(text("SELECT disabled_at FROM principal WHERE id=:id"), {"id": owner_id}).scalar_one() is None
     assert "disabled_at" in {c["name"] for c in inspect(labs_postgresql_database.engine).get_columns("principal")}
@@ -74,7 +75,7 @@ def test_disabled_time_migration_roundtrip(labs_postgresql_database, labs_postgr
     assert "ADD COLUMN disabled_at TIMESTAMP WITH TIME ZONE" in sql
     run_labs_alembic("downgrade", "d8a6e4c90312")
     assert "disabled_at" not in {c["name"] for c in inspect(labs_postgresql_database.engine).get_columns("principal")}
-    run_labs_alembic("upgrade", "head")
+    run_labs_alembic("upgrade", "a1d9b7f23645")
 
 
 def test_normal_user_cannot_change_disable_time(labs_client, other_lab_owner):

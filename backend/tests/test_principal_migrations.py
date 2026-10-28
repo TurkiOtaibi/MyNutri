@@ -31,6 +31,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlmodel import SQLModel, Session, select
 
+from labs_fixtures import migrate_disposable_database_to_head
+
 from app.core.auth import PrincipalContext
 from app.core.calendar import current_diary_date
 from app.models import (
@@ -375,7 +377,7 @@ def database_restored_to_current_head() -> Iterator[str]:
         yield url
     finally:
         _reset_database(url)
-        _run_alembic(url, "upgrade", "head")
+        migrate_disposable_database_to_head()
 
 
 def _seed_0003(url: str) -> dict[str, UUID]:
@@ -459,6 +461,7 @@ def _assert_immutable_revision_hashes(versions: Path) -> None:
         "e9b7f5d01423_principal_disabled_at.py",
         "f0c8a6e12534_internal_auth.py",
         "a1d9b7f23645_allow_target_plan_account_purge.py",
+        "b2e0c8f34756_legacy_account_cutover.py",
     }
     actual = {name: _normalized_revision_hash(versions / name) for name in BASELINE_HASHES}
     assert actual == BASELINE_HASHES
@@ -725,7 +728,7 @@ def test_fresh_postgresql_upgrade_has_one_head_and_current_contract() -> None:
 def test_food_catalog_unification_current_head_schema_and_security() -> None:
     url = _database_url()
     _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
+    migrate_disposable_database_to_head()
 
     engine = create_engine(url)
     inspector = inspect(engine)
@@ -743,7 +746,7 @@ def test_food_catalog_unification_current_head_schema_and_security() -> None:
     assert diary_food_fks[0]["options"].get("ondelete") == "CASCADE"
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-            "a1d9b7f23645"
+            "b2e0c8f34756"
         )
         assert connection.execute(
             text("SELECT has_table_privilege(current_user, 'food', 'SELECT,INSERT,UPDATE,DELETE')")
@@ -782,7 +785,7 @@ def test_food_catalog_unification_revokes_data_api_food_mutation_and_preserves_b
         connection.execute(text("GRANT ALL PRIVILEGES ON TABLE food TO service_role"))
     engine.dispose()
 
-    _run_alembic(url, "upgrade", "head")
+    migrate_disposable_database_to_head()
     engine = create_engine(url)
     with engine.connect() as connection:
         for role in ("anon", "authenticated"):
@@ -2222,7 +2225,8 @@ def test_ambiguous_principal_backfill_is_rejected() -> None:
 def test_concurrent_first_future_writes_create_two_revisions_without_snapshot() -> None:
     url = _database_url()
     _reset_database(url)
-    _run_alembic(url, "upgrade", "0004_principal_expand")
+    # This actor exercises current writes; provision it after legacy cutover.
+    migrate_disposable_database_to_head()
     engine = create_engine(url)
     profile_id = uuid4()
     with engine.begin() as connection:
@@ -2232,7 +2236,6 @@ def test_concurrent_first_future_writes_create_two_revisions_without_snapshot() 
             ),
             {"id": DEPLOYMENT_PRINCIPAL},
         )
-    _run_alembic(url, "upgrade", "head")
     with engine.begin() as connection:
         connection.execute(
             text(
@@ -2278,7 +2281,7 @@ def test_concurrent_first_future_writes_create_two_revisions_without_snapshot() 
 def test_concurrent_plan_and_future_diary_creation_finish_with_canonical_binding() -> None:
     url = _database_url()
     _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
+    migrate_disposable_database_to_head()
     _seed_plan021_profile(url)
     engine = create_engine(
         url,
@@ -2359,7 +2362,7 @@ def test_food_delete_serializes_with_diary_mutations_and_keeps_responses_atomic(
 ) -> None:
     url = _database_url()
     _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
+    migrate_disposable_database_to_head()
     _seed_plan021_profile(url)
     engine = create_engine(
         url,
@@ -2438,7 +2441,7 @@ def test_food_delete_serializes_with_diary_mutations_and_keeps_responses_atomic(
 def test_concurrent_duplicate_food_delete_has_one_success_and_one_not_found() -> None:
     url = _database_url()
     _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
+    migrate_disposable_database_to_head()
     _seed_plan021_profile(url)
     engine = create_engine(
         url,
@@ -2468,7 +2471,7 @@ def test_concurrent_duplicate_food_delete_has_one_success_and_one_not_found() ->
 def test_food_delete_rolls_back_food_and_diary_cascade_when_database_rejects_delete() -> None:
     url = _database_url()
     _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
+    migrate_disposable_database_to_head()
     _seed_plan021_profile(url)
     engine = create_engine(url)
     food_id = _add_current_food(engine, "Atomic delete rollback")
@@ -2517,7 +2520,7 @@ def test_food_delete_rolls_back_food_and_diary_cascade_when_database_rejects_del
 def test_food_delete_serializes_with_food_update_and_target_rebind_without_deleting_plan() -> None:
     url = _database_url()
     _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
+    migrate_disposable_database_to_head()
     _seed_plan021_profile(url)
     engine = create_engine(
         url,
@@ -2601,7 +2604,7 @@ def test_food_delete_serializes_with_food_update_and_target_rebind_without_delet
 def test_plan021_concurrent_same_operation_is_one_execution_and_one_replay() -> None:
     url = _database_url()
     _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
+    migrate_disposable_database_to_head()
     _seed_plan021_profile(url)
     engine = create_engine(
         url,
@@ -2649,7 +2652,7 @@ def test_plan021_concurrent_same_operation_is_one_execution_and_one_replay() -> 
 def test_concurrent_write_key_reuse_with_different_payload_fails_closed() -> None:
     url = _database_url()
     _reset_database(url)
-    _run_alembic(url, "upgrade", "head")
+    migrate_disposable_database_to_head()
     _seed_plan021_profile(url)
     engine = create_engine(
         url,
