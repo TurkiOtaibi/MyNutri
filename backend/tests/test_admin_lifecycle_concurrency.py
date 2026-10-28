@@ -72,7 +72,7 @@ def test_deletion_racing_private_writer_cannot_leave_a_row(labs_postgresql_datab
                     write_target_plan(session, actor, payload, "race-target")
                 assert blocked.value.status_code == 401
             elif writer == "diary":
-                payload = DiaryEntryCreate(entry_date=date.today(), food_id=uuid4(), quantity=1)
+                payload = DiaryEntryCreate(meal_type="breakfast", entry_date=date.today(), food_id=uuid4(), quantity=1)
                 with pytest.raises(Exception) as blocked:
                     create_entry(session, actor, payload)
                 assert getattr(blocked.value, "status_code", None) == 401

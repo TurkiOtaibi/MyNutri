@@ -123,15 +123,45 @@ test.describe("@diary @meals Gregorian meal sections", () => {
     await expect(dialog.getByRole("button", { name: "إضافة إلى السناك" })).toBeEnabled();
   });
 
-  test("@p0 API accepts standard meals, defaults omitted values, and rejects tampering", async ({ foodsApi }) => {
+  test("@p0 API requires an explicit standard meal and rejects tampering", async ({ foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Meal API") });
     const base = { food_id: food.id, entry_date: localDate(), quantity: 1 };
     const omitted = await foodsApi.createDiaryRaw(base);
-    expect(omitted.status()).toBe(201);
-    expect((await omitted.json()).meal_type).toBe("unspecified");
-    const invalid = await foodsApi.createDiaryRaw({ ...base, meal_type: "brunch" });
-    expect(invalid.status()).toBe(422);
-    await foodsApi.removeDiary((await omitted.json()).id);
+    expect(omitted.status()).toBe(422);
+    expect((await omitted.json()).detail[0].code).toBe("DIARY_MEAL_REQUIRED");
+    for (const meal_type of ["unspecified", "brunch"]) {
+      const invalid = await foodsApi.createDiaryRaw({ ...base, meal_type });
+      expect(invalid.status()).toBe(422);
+      expect((await invalid.json()).detail[0].code).toBe("DIARY_MEAL_REQUIRED");
+    }
+    for (const meal_type of ["breakfast", "lunch", "dinner", "snack"]) {
+      const valid = await foodsApi.createDiaryRaw({ ...base, meal_type });
+      expect(valid.status()).toBe(201);
+      expect((await valid.json()).meal_type).toBe(meal_type);
+      await foodsApi.removeDiary((await valid.json()).id);
+    }
+  });
+
+  test("@p0 legacy entries remain editable and deletable without silently choosing an undo meal", async ({ page, foodsApi }) => {
+    const food = await foodsApi.create({ name: uniqueName("Legacy meal") });
+    const entry = await foodsApi.createDiary(food.id, localDate(), 1, "snack");
+    await foodsApi.updateDiary(entry.id, 1, "unspecified");
+    await page.goto("/diary");
+    await expect(page.getByRole("button", { name: /قسم غير مصنف$/ })).toBeVisible();
+    await page.getByRole("button", { name: new RegExp(`خيارات ${food.name}`) }).click();
+    await page.getByRole("menuitem", { name: "تعديل", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "تعديل الكمية والقسم" });
+    await dialog.getByRole("textbox", { name: "الكمية", exact: true }).fill("2");
+    await dialog.getByRole("button", { name: "حفظ التغييرات" }).click();
+    await expect(dialog).toHaveCount(0);
+    expect((await foodsApi.listDiary(localDate())).find((row) => row.id === entry.id)).toMatchObject({ quantity: 2, meal_type: "unspecified" });
+    await page.getByRole("button", { name: new RegExp(`خيارات ${food.name}`) }).click();
+    await page.getByRole("menuitem", { name: "حذف", exact: true }).click();
+    await page.getByRole("dialog", { name: "حذف الطعام؟" }).getByRole("button", { name: "حذف", exact: true }).click();
+    await page.getByRole("button", { name: "تراجع", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText("تعذر استعادة الطعام غير المصنف. أضفه مجددًا واختر وجبة.");
+    expect((await foodsApi.listDiary(localDate())).some((row) => row.id === entry.id)).toBe(false);
+    expect((await foodsApi.listDiary(localDate())).some((row) => row.food.id === food.id)).toBe(false);
   });
 
   test("@p0 edit moves entry between meals without exposing immutable fields", async ({ page, foodsApi }) => {

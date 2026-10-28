@@ -145,20 +145,26 @@ export function DiaryPage() {
   }, [undoEntry]);
 
   const restoreMutation = useMutation({
-    mutationFn: ({ entry }: { entry: DiaryEntryResponse; generation: number }) => createDiaryEntry({
-      id: crypto.randomUUID(), food_id: entry.food.id, entry_date: entry.entry_date,
-      meal_type: entry.meal_type ?? "unspecified", quantity: entry.quantity,
-    }, accessToken, sessionSignal),
+    mutationFn: async ({ entry }: { entry: DiaryEntryResponse; generation: number }) => {
+      if (!entry.meal_type || entry.meal_type === "unspecified") {
+        throw new ApiError("تعذر استعادة الطعام غير المصنف. أضفه مجددًا واختر وجبة.", 422, undefined, "DIARY_MEAL_REQUIRED");
+      }
+      return createDiaryEntry({
+        id: crypto.randomUUID(), food_id: entry.food.id, entry_date: entry.entry_date,
+        meal_type: entry.meal_type, quantity: entry.quantity,
+      }, accessToken, sessionSignal);
+    },
     onSuccess: async (_entry, submitted) => {
       if (sessionSignal.aborted) return;
       if (submitted.generation === undoGeneration.current) setUndoMessage("تمت استعادة الطعام");
       await invalidateDiary(queryClient);
     },
-    onError: async (_error, submitted) => {
+    onError: async (error, submitted) => {
       if (sessionSignal.aborted) return;
       if (submitted.generation === undoGeneration.current) {
         setUndoFailed(true);
-        setUndoMessage("تعذر تأكيد استعادة الطعام. حدّث اليوم للتحقق.");
+        setUndoMessage(error instanceof ApiError && error.code === "DIARY_MEAL_REQUIRED"
+          ? error.message : "تعذر تأكيد استعادة الطعام. حدّث اليوم للتحقق.");
       }
       await invalidateDiary(queryClient);
     },

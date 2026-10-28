@@ -189,7 +189,7 @@ limited to 120 characters. `brand` is optional up to 80, `notes` up to 500, and
 | `recorded_unit_amount` | Yes | Captured finite positive unit amount |
 | `recorded_unit_basis` | Yes | `g` or `ml` |
 | `recorded_unit_label` | No | Captured label, maximum 80 |
-| `meal_type` | Yes | `breakfast`, `lunch`, `dinner`, `snack`, or `unspecified` |
+| `meal_type` | Yes | New entries require explicit `breakfast`, `lunch`, `dinner`, or `snack`; existing `unspecified` entries retain read, edit, and delete support (BR-DRY-014; Product Owner decision, 28 October 2026, issue #139). |
 
 No nutrition snapshot, target provenance, day status, or day version is persisted.
 

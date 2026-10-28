@@ -106,8 +106,9 @@ def test_food_and_diary_openapi_bodies_expose_real_contracts() -> None:
     }
     assert {"name", "calories", "nutrition_data_source"} <= set(food_create["properties"])
     assert {"name", "calories", "nutrition_data_source"} <= set(food_update["properties"])
-    assert set(diary_create["required"]) == {"entry_date", "food_id", "quantity"}
-    assert diary_create["properties"]["meal_type"]["default"] == "unspecified"
+    assert set(diary_create["required"]) == {"entry_date", "food_id", "quantity", "meal_type"}
+    assert "default" not in diary_create["properties"]["meal_type"]
+    assert diary_create["properties"]["meal_type"]["enum"] == ["breakfast", "lunch", "dinner", "snack"]
     assert "required" not in diary_update
     assert {"quantity", "meal_type"} == set(diary_update["properties"])
     assert food_create.get("additionalProperties") is not True
