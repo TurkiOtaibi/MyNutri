@@ -292,14 +292,6 @@ export function deleteAdminAccount(id: string, payload: AdminAccountDelete): Pro
   return apiFetch<AdminAccountSummary>(`/admin/accounts/${id}`, { method: "DELETE", body: JSON.stringify(payload) });
 }
 
-export function retryAdminAccountCreation(id: string, password: string): Promise<AdminAccountSummary> {
-  return apiFetch<AdminAccountSummary>(`/admin/accounts/${id}/retry-create`, { method: "POST", body: JSON.stringify({ initial_password: password }) });
-}
-
-export function retryAdminAccountDeletion(id: string): Promise<AdminAccountSummary> {
-  return apiFetch<AdminAccountSummary>(`/admin/accounts/${id}/retry-delete`, { method: "POST" });
-}
-
 export function getAdminUserDiary(
   principalId: string,
   cursor?: string | null,

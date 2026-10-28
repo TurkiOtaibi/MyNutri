@@ -36,8 +36,7 @@ def test_incomplete_accounts_cannot_be_corrected(labs_client, labs_postgresql_se
     assert labs_client.put(endpoint(lab_owner), json={"sex": "male"}).status_code == 409
 
 
-def test_missing_profile_has_clear_error_and_list_flag(labs_client, labs_postgresql_session, lab_admin, as_actor, monkeypatch):
-    monkeypatch.setattr("app.api.routes.admin_accounts._background_reconcile_recent", lambda *args: None)
+def test_missing_profile_has_clear_error_and_list_flag(labs_client, labs_postgresql_session, lab_admin, as_actor):
     owner = Principal(email="no-profile@example.test")
     labs_postgresql_session.add(owner)
     labs_postgresql_session.commit()

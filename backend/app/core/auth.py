@@ -1,20 +1,14 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from functools import lru_cache
 from typing import Annotated
 from uuid import UUID
 
-import jwt
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jwt.exceptions import PyJWTError
 from sqlmodel import Session
-from sqlmodel import select
 
-from app.core.config import Settings, get_settings
-from app.core.jwks import RotationSafeJwksClient
 from app.db.session import get_session
-from app.models import Principal, PrincipalRole, PrincipalStatus
+from app.models import Principal, PrincipalRole
 from app.services.internal_auth import AuthError, admit_session
 
 
@@ -28,138 +22,6 @@ class PrincipalContext:
     username: str | None = None
     must_change_password: bool = False
     session_id: UUID | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class AuthClaims:
-    auth_user_id: UUID
-    email: str | None
-    display_name: str | None
-    authenticated_at: int | None = None
-
-
-def latest_authentication_time(amr: object) -> int | None:
-    if not isinstance(amr, list) or not amr or not all(
-        isinstance(entry, dict)
-        and isinstance(entry.get("method"), str)
-        and bool(entry["method"])
-        and isinstance(entry.get("timestamp"), int)
-        and not isinstance(entry["timestamp"], bool)
-        and entry["timestamp"] >= 0
-        for entry in amr
-    ):
-        return None
-    latest = max(entry["timestamp"] for entry in amr)
-    try:
-        datetime.fromtimestamp(latest, timezone.utc)
-    except (ValueError, OverflowError, OSError):
-        return None
-    return latest
-
-
-class SupabaseTokenVerifier:
-    def __init__(self, settings: Settings) -> None:
-        if not settings.normalized_supabase_url:
-            raise RuntimeError("SUPABASE_URL is required for authentication.")
-        self.issuer = settings.expected_supabase_issuer
-        self.audience = settings.supabase_jwt_audience
-        self.jwks = RotationSafeJwksClient(
-            settings.effective_supabase_jwks_url,
-            timeout_seconds=settings.supabase_jwks_timeout_seconds,
-            cache_lifespan_seconds=settings.supabase_jwks_cache_lifespan_seconds,
-            refresh_cooldown_seconds=settings.supabase_jwks_refresh_cooldown_seconds,
-            negative_cache_ttl_seconds=settings.supabase_jwks_negative_cache_ttl_seconds,
-            negative_cache_max_entries=(
-                settings.supabase_jwks_negative_cache_max_entries
-            ),
-            max_keys=settings.supabase_jwks_max_keys,
-            kid_max_length=settings.supabase_jwt_kid_max_length,
-        )
-
-    def verify(self, token: str) -> AuthClaims:
-        signing_key = self.jwks.get_signing_key_from_jwt(token)
-        payload = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["ES256", "RS256"],
-            audience=self.audience,
-            issuer=self.issuer,
-            options={"require": ["exp", "iss", "aud", "sub", "iat"]},
-        )
-        auth_user_id = UUID(str(payload["sub"]))
-        email_value = payload.get("email")
-        email = str(email_value).strip().lower()[:320] if email_value else None
-        metadata = payload.get("user_metadata")
-        display_name = None
-        if isinstance(metadata, dict):
-            candidate = next(
-                (
-                    metadata.get(key)
-                    for key in ("display_name", "full_name", "name")
-                    if metadata.get(key)
-                ),
-                None,
-            )
-            if candidate:
-                display_name = " ".join(str(candidate).strip().split())[:120] or None
-        issued_at = payload["iat"]
-        if not isinstance(issued_at, int) or isinstance(issued_at, bool):
-            raise ValueError("Invalid issued-at claim")
-        authenticated_at = latest_authentication_time(payload.get("amr"))
-        if authenticated_at is None:
-            raise ValueError("Invalid authentication-method reference claim")
-        return AuthClaims(auth_user_id, email, display_name, authenticated_at)
-
-
-@lru_cache(maxsize=8)
-def _cached_verifier(
-    url: str,
-    jwks_url: str,
-    audience: str,
-    timeout_seconds: int,
-    cache_lifespan_seconds: int,
-    refresh_cooldown_seconds: int,
-    negative_cache_ttl_seconds: int,
-    negative_cache_max_entries: int,
-    max_keys: int,
-    kid_max_length: int,
-) -> SupabaseTokenVerifier:
-    return SupabaseTokenVerifier(
-        Settings(
-            environment="test",
-            supabase_url=url,
-            supabase_jwks_url=jwks_url,
-            supabase_jwt_audience=audience,
-            supabase_jwks_timeout_seconds=timeout_seconds,
-            supabase_jwks_cache_lifespan_seconds=cache_lifespan_seconds,
-            supabase_jwks_refresh_cooldown_seconds=refresh_cooldown_seconds,
-            supabase_jwks_negative_cache_ttl_seconds=negative_cache_ttl_seconds,
-            supabase_jwks_negative_cache_max_entries=negative_cache_max_entries,
-            supabase_jwks_max_keys=max_keys,
-            supabase_jwt_kid_max_length=kid_max_length,
-        )
-    )
-
-
-def get_token_verifier(
-    settings: Settings = Depends(get_settings), request: Request = None,
-) -> SupabaseTokenVerifier | None:
-    if request is not None:
-        scheme, _, credential = request.headers.get("Authorization", "").partition(" ")
-        if scheme.lower() == "bearer" and credential.startswith("mn1_"):
-            return None
-    return _cached_verifier(
-        settings.normalized_supabase_url,
-        settings.effective_supabase_jwks_url,
-        settings.supabase_jwt_audience,
-        settings.supabase_jwks_timeout_seconds,
-        settings.supabase_jwks_cache_lifespan_seconds,
-        settings.supabase_jwks_refresh_cooldown_seconds,
-        settings.supabase_jwks_negative_cache_ttl_seconds,
-        settings.supabase_jwks_negative_cache_max_entries,
-        settings.supabase_jwks_max_keys,
-        settings.supabase_jwt_kid_max_length,
-    )
 
 
 bearer_auth = HTTPBearer(
@@ -197,61 +59,19 @@ def get_principal_context(
         HTTPAuthorizationCredentials | None,
         Security(bearer_auth),
     ],
-    verifier: SupabaseTokenVerifier | None = Depends(get_token_verifier),
     session: Session = Depends(get_session),
 ) -> PrincipalContext:
     credential = _credential_from_security(request, credentials)
-    if credential.startswith("mn1_"):
-        try:
-            principal, current = admit_session(session, credential, datetime.now(timezone.utc))
-        except AuthError as error:
-            raise _authentication_error(error.code, error.message_ar) from None
-        _enforce_password_change(request, principal)
-        return PrincipalContext(
-            principal_id=principal.id, auth_user_id=principal.auth_user_id,
-            role=principal.role, email=principal.email, display_name=principal.display_name,
-            username=principal.username, must_change_password=principal.must_change_password,
-            session_id=current.id,
-        )
-    if verifier is None:
-        raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
     try:
-        claims = verifier.verify(credential)
-    except (PyJWTError, ValueError, RuntimeError):
-        raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
-    if claims.authenticated_at is None:
-        raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
-    principal = session.exec(
-        select(Principal).where(Principal.auth_user_id == claims.auth_user_id)
-    ).one_or_none()
-    if principal is None or principal.status != PrincipalStatus.active:
-        raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
-    if principal.password_hash is not None:
-        raise _authentication_error(
-            "INTERNAL_LOGIN_REQUIRED", "سجّل الدخول باسم المستخدم للمتابعة."
-        )
-    if principal.sessions_valid_after is not None:
-        cutoff = principal.sessions_valid_after
-        if cutoff.tzinfo is None:
-            cutoff = cutoff.replace(tzinfo=timezone.utc)
-        try:
-            authenticated_at = (
-                datetime.fromtimestamp(claims.authenticated_at, timezone.utc)
-                if claims.authenticated_at is not None else None
-            )
-        except (ValueError, OverflowError, OSError):
-            authenticated_at = None
-        if authenticated_at is None or authenticated_at < cutoff:
-            raise _authentication_error("INVALID_CREDENTIAL", "بيانات الدخول غير صالحة.")
+        principal, current = admit_session(session, credential, datetime.now(timezone.utc))
+    except AuthError as error:
+        raise _authentication_error(error.code, error.message_ar) from None
     _enforce_password_change(request, principal)
     return PrincipalContext(
-        principal_id=principal.id,
-        auth_user_id=claims.auth_user_id,
-        role=principal.role,
-        email=principal.email,
-        display_name=principal.display_name,
-        username=principal.username,
-        must_change_password=principal.must_change_password,
+        principal_id=principal.id, auth_user_id=principal.auth_user_id,
+        role=principal.role, email=principal.email, display_name=principal.display_name,
+        username=principal.username, must_change_password=principal.must_change_password,
+        session_id=current.id,
     )
 
 

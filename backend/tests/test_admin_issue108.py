@@ -37,7 +37,6 @@ def test_disable_time_tracks_transition_not_repeated_requests(labs_postgresql_se
 
 
 def test_account_counts_ignore_filters_and_exclude_admin_and_deleted(labs_client, labs_postgresql_session, lab_admin, as_actor, monkeypatch):
-    monkeypatch.setattr("app.api.routes.admin_accounts._background_reconcile_recent", lambda *args: None)
     as_actor(lab_admin)
     for status in (PrincipalStatus.disabled, PrincipalStatus.provisioning, PrincipalStatus.deleting, PrincipalStatus.deleted):
         labs_postgresql_session.add(Principal(status=status, email=f"{uuid4()}@example.test"))

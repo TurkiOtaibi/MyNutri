@@ -169,7 +169,6 @@ def test_cli_create_reset_and_second_admin_refusal(labs_postgresql_database, mon
         Settings(
             environment="production",
             database_url=labs_postgresql_database.url,
-            supabase_url="https://example.supabase.co",
         ),
     )
     with Session(labs_postgresql_database.engine) as session:
@@ -345,7 +344,7 @@ def test_admin_reset_unlocks_without_forced_change_and_revokes_all(labs_postgres
 
     class NoProviderCalls:
         def reset_password(self, *args):
-            raise AssertionError("Internal-only users must not call Supabase")
+            raise AssertionError("Internal-only users must not call a provider")
 
     with Session(labs_postgresql_database.engine) as session:
         admin = Principal(role=PrincipalRole.admin)
@@ -359,7 +358,7 @@ def test_admin_reset_unlocks_without_forced_change_and_revokes_all(labs_postgres
         session.add(row)
         session.commit()
         reset_account_password(
-            session, admin.id, row.id, "changed-synthetic-password", NoProviderCalls(), NOW
+            session, admin.id, row.id, "changed-synthetic-password", NOW
         )
         assert not row.must_change_password
         assert row.locked_at is None and row.failed_login_count == 0
@@ -494,61 +493,6 @@ def test_migration_preserves_legacy_and_downgrades(labs_postgresql_database):
     run_labs_alembic("upgrade", "head")
 
 
-@pytest.mark.migration
-def test_legacy_password_resets_serialize_provider_updates(labs_postgresql_database):
-    from concurrent.futures import ThreadPoolExecutor
-    from threading import Event
-    from uuid import uuid4
-    from app.services.admin_lifecycle import reset_account_password
-    from sqlalchemy.exc import OperationalError
-
-    entered, release, second_started = Event(), Event(), Event()
-
-    class Provider:
-        calls = []
-
-        def reset_password(self, auth_id, password):
-            self.calls.append(password)
-            if len(self.calls) == 1:
-                entered.set()
-                assert release.wait(10)
-            self.current = password
-
-    gateway = Provider()
-    with Session(labs_postgresql_database.engine) as session:
-        admin = Principal(role=PrincipalRole.admin)
-        session.add(admin)
-        row = Principal(auth_user_id=uuid4())
-        session.add(row)
-        session.commit()
-        admin_id, user_id = admin.id, row.id
-
-    def reset(password, signal=None):
-        with Session(labs_postgresql_database.engine) as session:
-            if signal:
-                signal.set()
-            reset_account_password(session, admin_id, user_id, password, gateway, NOW)
-
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        first = pool.submit(reset, "first-synthetic-password")
-        assert entered.wait(10)
-        with Session(labs_postgresql_database.engine) as probe:
-            with pytest.raises(OperationalError) as blocked:
-                probe.exec(
-                    select(Principal).where(Principal.id == user_id).with_for_update(nowait=True)
-                ).one()
-            assert blocked.value.orig.sqlstate == "55P03"
-            probe.rollback()
-        second = pool.submit(reset, "second-synthetic-password", second_started)
-        assert second_started.wait(10)
-        release.set()
-        first.result()
-        second.result()
-    with Session(labs_postgresql_database.engine) as session:
-        row = session.get(Principal, user_id)
-        assert row.password_hash is None
-        assert gateway.current == gateway.calls[-1]
-        assert len(gateway.calls) == 2
 
 
 @pytest.mark.migration
@@ -559,7 +503,7 @@ def test_linked_internal_reset_never_calls_provider(labs_postgresql_database):
 
     class FailedProvider:
         def reset_password(self, *args):
-            raise AssertionError("Internal reset must never call Supabase")
+            raise AssertionError("Internal reset must never call a provider")
 
     with Session(labs_postgresql_database.engine) as session:
         admin = Principal(role=PrincipalRole.admin)
@@ -570,16 +514,15 @@ def test_linked_internal_reset_never_calls_provider(labs_postgresql_database):
         session.commit()
         issued = login(session, "example", PASSWORD, NOW)
         reset_account_password(
-            session, admin.id, row.id, "replacement-password", FailedProvider(), NOW
+            session, admin.id, row.id, "replacement-password", NOW
         )
         assert verify_password("replacement-password", row.password_hash)
-        assert row.sessions_valid_after > NOW
         with pytest.raises(AuthError):
             admit_session(session, issued.token, NOW)
 
 
 @pytest.mark.migration
-def test_internal_password_change_keeps_current_session_and_never_calls_supabase(
+def test_internal_password_change_keeps_current_session_without_network(
     labs_postgresql_database, monkeypatch, caplog
 ):
     from uuid import uuid4
@@ -588,9 +531,9 @@ def test_internal_password_change_keeps_current_session_and_never_calls_supabase
     from app.db.session import get_session
 
     def forbidden_provider(*args, **kwargs):
-        raise AssertionError("Internal password operations must never initialize Supabase")
+        raise AssertionError("Internal password operations must never initialize a provider")
 
-    monkeypatch.setattr("app.services.admin_auth._configured_admin_client", forbidden_provider)
+    monkeypatch.setattr("httpx.HTTPTransport.handle_request", forbidden_provider)
     with Session(labs_postgresql_database.engine) as session:
         row = account(session)
         row.auth_user_id = uuid4()
@@ -663,68 +606,6 @@ def test_internal_password_change_keeps_current_session_and_never_calls_supabase
         app.dependency_overrides.clear()
 
 
-@pytest.mark.migration
-def test_valid_supabase_jwt_admitted_only_without_internal_credentials(labs_postgresql_database):
-    from uuid import uuid4
-    from types import SimpleNamespace
-    import jwt
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from fastapi.testclient import TestClient
-    from app.core.auth import SupabaseTokenVerifier, get_token_verifier
-    from app.core.config import Settings
-    from app.main import app
-    from app.db.session import get_session
-
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    auth_id = uuid4()
-    now = int(datetime.now(timezone.utc).timestamp())
-    token = jwt.encode(
-        {
-            "sub": str(auth_id),
-            "iss": "https://example.supabase.co/auth/v1",
-            "aud": "authenticated",
-            "iat": now,
-            "exp": now + 600,
-            "amr": [{"method": "password", "timestamp": now}],
-        },
-        key,
-        algorithm="RS256",
-    )
-    verifier = SupabaseTokenVerifier(
-        Settings(environment="test", supabase_url="https://example.supabase.co")
-    )
-    verifier.jwks = SimpleNamespace(
-        get_signing_key_from_jwt=lambda _: SimpleNamespace(key=key.public_key())
-    )
-    with Session(labs_postgresql_database.engine) as session:
-        row = Principal(auth_user_id=auth_id)
-        session.add(row)
-        session.commit()
-        principal_id = row.id
-
-    def sessions():
-        with Session(labs_postgresql_database.engine) as session:
-            yield session
-
-    app.dependency_overrides[get_session] = sessions
-    app.dependency_overrides[get_token_verifier] = lambda: verifier
-    try:
-        with TestClient(app) as client:
-            headers = {"Authorization": "Bearer " + token}
-            assert client.get("/account/me", headers=headers).status_code == 200
-            with Session(labs_postgresql_database.engine) as session:
-                row = session.get(Principal, principal_id)
-                row.username, row.normalized_username = "Example", "example"
-                row.password_hash = hash_password(PASSWORD)
-                session.add(row)
-                session.commit()
-            denied = client.get("/account/me", headers=headers)
-            assert denied.status_code == 401
-            assert denied.json()["detail"]["code"] == "INTERNAL_LOGIN_REQUIRED"
-            assert token not in denied.text
-            assert denied.headers["cache-control"] == "no-store"
-    finally:
-        app.dependency_overrides.clear()
 
 
 @pytest.mark.migration
@@ -784,7 +665,7 @@ def test_admin_reset_serializes_concurrent_internal_password_operations(
     def reset():
         with Session(labs_postgresql_database.engine) as session:
             admin_lifecycle.reset_account_password(
-                session, admin_id, user_id, "replacement-password", None, NOW
+                session, admin_id, user_id, "replacement-password", NOW
             )
 
     def contend():

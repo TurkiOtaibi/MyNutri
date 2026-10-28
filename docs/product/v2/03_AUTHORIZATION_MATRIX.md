@@ -1,6 +1,6 @@
 # V2 Authorization Matrix
 
-## Approved permissions — implemented through #112; deployment separate
+## Approved permissions — implemented through #113; deployment separate
 
 | Capability | User | Admin | Decision / requirement (17 October 2026) |
 |---|---|---|---|
@@ -13,7 +13,7 @@ No independent unlock permission is added: the final USM decision cancels that a
 
 ## CURRENT implemented authorization
 
-CURRENT in #111: the browser uses internal username/password login, opaque bearer sessions, forced initial-password change, and own-password change in Profile. Only the session token is persisted in localStorage; passwords stay in memory and no auth cookies are used. Reload during an initial-password change requires re-authentication. Forgotten/reset-password browser flows are absent; forgotten passwords go to the Admin. The backend retains legacy Supabase JWT admission for accounts without internal credentials until #113; an internal password hash takes precedence and rejects JWT admission with `INTERNAL_LOGIN_REQUIRED`. Internal password changes/resets never update Supabase. Admin username-based creation and management UI is CURRENT in #112: new users have internal credentials only, with no email or provider call. Legacy backend email/provider lifecycle support and clearly marked email fallback for existing accounts remain until #113/#114; provider/email removal (#113) and destructive cutover (#114) remain APPROVED TARGET. No existing account migration or cutover is performed. This describes repository implementation, not deployment. (Product Owner decisions of 17 and 27 October 2026; issues #110/#111/#112; BR-USM-005/006/012/013/014/022/023/025/030/036/038/042/043/049/054; BR-AUT-001/003/004/005/007/008/010/011/012/017, BR-PRF-024–026, BR-USM-030/033.)
+CURRENT in #113: authentication uses only internal username/password and opaque bearer sessions. The browser persists only the session token in localStorage; passwords remain in memory and no auth cookies are used. Initial-password change and Profile password change are current; forgotten passwords go to the Admin. Supabase Auth/JWT admission, provider creation/reset/deletion, reconciliation and runtime Auth configuration are removed. Legacy-only accounts cannot log in; retained identity columns and the existing legacy deletion confirmation are historical compatibility until #114, not an authentication path. New users are created atomically by immutable username. No account conversion, destructive cutover, deployment or production configuration change is performed. Cutover #114 remains APPROVED TARGET. Authority: final 17 October 2026 AUT/USM decisions; 27 October #110/#112 decisions; issues #110–#113 and #128 (BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-022/030/033/036/043).
 
 | Capability | User | Admin |
 | --- | --- | --- |
@@ -31,9 +31,9 @@ CURRENT in #111: the browser uses internal username/password login, opaque beare
 | Assign roles | No | No through product APIs |
 | Self-register or auto-provision from an unknown Auth identity | No | No |
 | Create a normal user with Admin-set initial password | No | Yes, by immutable username through FastAPI; atomic internal-only creation, no email/provider call (#112; BR-USM-022/023/025/027/036) |
-| Edit another user's display name or reset password | No | Yes, normal users only; internal reset unlocks without forced change and revokes all internal sessions, never calls Supabase; legacy-only reset retains Supabase behavior (17/27 October 2026; BR-USM-030/033; #110) |
-| Change own internal password with correct current password | Yes | Yes; current session survives, other sessions revoked; no Supabase update; Profile UI CURRENT #111 (17/27 October 2026; BR-PRF-024–026; #110/#111) |
-| Enable/disable or permanently delete another account | No | Yes, normal users only; internal-only deletion uses username confirmation and no provider calls; legacy `provisioning` accounts retain the provider saga, with absent Auth identity counted as success (#112; BR-USM-038/042/043) |
+| Edit another user's display name or reset password | No | Yes, normal users only; internal reset unlocks without forced change and revokes all internal sessions, no external call; legacy-only reset is refused (17/27 October 2026; BR-USM-030/033; #110) |
+| Change own internal password with correct current password | Yes | Yes; current session survives, other sessions revoked; no external update; Profile UI CURRENT #111 (17/27 October 2026; BR-PRF-024–026; #110/#111) |
+| Enable/disable or permanently delete another account | No | Yes, normal users only; internal-only deletion uses username confirmation and no provider calls; legacy `provisioning` accounts use the local locked purge and scrubbed tombstone (#112; BR-USM-038/042/043) |
 | Change username, legacy email or grant/change Admin role | No | No |
 | Disable/delete own Admin account | No | No |
 | Read authenticated Labs catalog | Yes | Yes |

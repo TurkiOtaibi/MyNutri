@@ -1,24 +1,20 @@
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.models import (
-    ActivityLevel, DefaultUnitType, DiaryEntry, Food, Goal, IdempotencyRecord,
+    ActivityLevel, AuthSession, DefaultUnitType, DiaryEntry, Food, Goal, IdempotencyRecord,
     IdempotencyState, LabResult, NutritionBasis, NutritionDataSource, Principal, PrincipalRole,
     PrincipalStatus, Profile, Sex, TargetPlan, UnitBasis,
 )
-from app.services.admin_auth import AdminAuthError, AdminIdentity
 from app.services.admin_lifecycle import (
     LifecycleError,
-    create_account,
+    create_internal_account,
     delete_account,
-    reconcile_retired_identity,
-    reconcile_recent_tombstones,
-    reconcile_all_retired,
     reset_account_password,
     set_account_enabled,
 )
@@ -26,47 +22,8 @@ from app.services.food import to_food_response
 from app.api.routes.foods import read_food
 from app.api.routes.admin import list_users
 from app.core.auth import PrincipalContext
-from app.schemas import AdminAccountCreate, AdminAccountEdit
+from app.schemas import AdminInternalAccountCreate, AdminAccountEdit
 from pydantic import ValidationError
-
-
-class FakeAuth:
-    def __init__(self) -> None:
-        self.users: dict[UUID, str] = {}
-        self.passwords: dict[UUID, str] = {}
-        self.create_ids: list[UUID] = []
-        self.fail_create = False
-        self.fail_delete = False
-
-    def create_user(self, auth_id: UUID, email: str, password: str) -> AdminIdentity:
-        self.create_ids.append(auth_id)
-        if self.fail_create:
-            raise AdminAuthError("unavailable")
-        if any(existing_id != auth_id and existing_email == email for existing_id, existing_email in self.users.items()):
-            raise AdminAuthError("duplicate_email")
-        self.users[auth_id] = email
-        self.passwords[auth_id] = password
-        return AdminIdentity(auth_id, email)
-
-    def get_user_by_id(self, auth_id: UUID) -> AdminIdentity | None:
-        email = self.users.get(auth_id)
-        return AdminIdentity(auth_id, email) if email is not None else None
-
-    def find_user_by_email(self, email: str) -> AdminIdentity | None:
-        for auth_id, existing_email in self.users.items():
-            if existing_email == email:
-                return AdminIdentity(auth_id, email)
-        return None
-
-    def reset_password(self, auth_id: UUID, password: str) -> None:
-        if auth_id not in self.users:
-            raise AdminAuthError("unavailable")
-        self.passwords[auth_id] = password
-
-    def delete_user(self, auth_id: UUID) -> None:
-        if self.fail_delete:
-            raise AdminAuthError("unavailable")
-        self.users.pop(auth_id, None)
 
 
 @pytest.fixture
@@ -81,86 +38,6 @@ def lifecycle_session():
         yield session, admin.id
 
 
-def test_create_preassigns_identity_and_same_key_retry_resumes(lifecycle_session) -> None:
-    session, admin_id = lifecycle_session
-    fake = FakeAuth()
-    now = datetime(2026, 9, 28, tzinfo=timezone.utc)
-    fake.fail_create = True
-    with pytest.raises(AdminAuthError):
-        create_account(session, admin_id, "new@example.com", "New User", "secret", "key-1", fake, now, 10)
-    pending = session.exec(select(Principal).where(Principal.email == "new@example.com")).one()
-    assert pending.status == PrincipalStatus.provisioning
-    assert pending.auth_user_id is not None
-    assert pending.identity_requested_at.replace(tzinfo=timezone.utc) == now
-    fake.fail_create = False
-    active = create_account(session, admin_id, "new@example.com", "New User", "secret", "key-1", fake, now + timedelta(seconds=1), 10)
-    assert active.id == pending.id
-    assert active.status == PrincipalStatus.active
-    assert fake.create_ids == [pending.auth_user_id, pending.auth_user_id]
-
-
-def test_retry_with_existing_identity_sets_submitted_password(lifecycle_session) -> None:
-    session, admin_id = lifecycle_session
-    fake = FakeAuth()
-    now = datetime(2026, 9, 28, tzinfo=timezone.utc)
-    fake.fail_create = True
-    with pytest.raises(AdminAuthError):
-        create_account(session, admin_id, "late-password@example.com", "User", "first-password", "key-password", fake, now, 10)
-    pending = session.exec(select(Principal).where(Principal.email == "late-password@example.com")).one()
-    assert pending.auth_user_id is not None
-    fake.users[pending.auth_user_id] = pending.email
-    fake.passwords[pending.auth_user_id] = "first-password"
-    active = create_account(session, admin_id, pending.email, "User", "new-password", "key-password", fake, now + timedelta(seconds=1), 10)
-    assert active.status == PrincipalStatus.active
-    assert fake.passwords[pending.auth_user_id] == "new-password"
-
-
-def test_late_create_is_refused_during_lease_then_reconciled(lifecycle_session) -> None:
-    session, admin_id = lifecycle_session
-    fake = FakeAuth()
-    now = datetime(2026, 9, 28, tzinfo=timezone.utc)
-    fake.fail_create = True
-    with pytest.raises(AdminAuthError):
-        create_account(session, admin_id, "late@example.com", "Late", "secret", "key-late", fake, now, 10)
-    pending = session.exec(select(Principal).where(Principal.email == "late@example.com")).one()
-    retired_id = pending.auth_user_id
-    assert retired_id is not None
-    with pytest.raises(LifecycleError) as leased:
-        delete_account(session, admin_id, pending.id, fake, now + timedelta(minutes=1), 10)
-    assert leased.value.status_code == 409
-    assert leased.value.code == "CREATION_IN_PROGRESS"
-    assert leased.value.message_ar == "لا يمكن حذف المستخدم الآن لأن إنشاءه ما زال جاريًا. حاول بعد 5 دقائق."
-    deleted = delete_account(session, admin_id, pending.id, fake, now + timedelta(minutes=5, seconds=1), 10)
-    assert deleted.status == PrincipalStatus.deleted
-    assert deleted.auth_user_id is None
-    assert deleted.retired_auth_user_id == retired_id
-    fake.users[retired_id] = "late@example.com"
-    assert reconcile_retired_identity(session, retired_id, fake) is True
-    assert retired_id not in fake.users
-
-
-def test_recent_reconciliation_rotates_bounded_tombstone_batches(lifecycle_session) -> None:
-    session, _ = lifecycle_session
-    fake = FakeAuth()
-    now = datetime(2026, 9, 28, tzinfo=timezone.utc)
-    retired_ids = []
-    for index in range(101):
-        auth_id = uuid4()
-        retired_ids.append(auth_id)
-        session.add(Principal(
-            auth_user_id=None, retired_auth_user_id=auth_id, email=None, display_name=None,
-            status=PrincipalStatus.deleted, deleted_at=now - timedelta(days=1),
-            updated_at=now - timedelta(days=1),
-        ))
-        fake.users[auth_id] = f"late-{index}@example.com"
-    session.commit()
-    first = reconcile_recent_tombstones(session, fake, now, limit=100)
-    second = reconcile_recent_tombstones(session, fake, now + timedelta(seconds=1), limit=100)
-    assert first["checked"] == 100
-    assert second["checked"] == 100
-    assert all(auth_id not in fake.users for auth_id in retired_ids)
-
-
 def test_monitoring_list_excludes_deleting_and_deleted_accounts(lifecycle_session) -> None:
     session, _ = lifecycle_session
     session.add(Principal(auth_user_id=uuid4(), email="active@example.com", status=PrincipalStatus.active))
@@ -173,49 +50,40 @@ def test_monitoring_list_excludes_deleting_and_deleted_accounts(lifecycle_sessio
 
 def test_account_display_name_rejects_whitespace_only() -> None:
     with pytest.raises(ValidationError):
-        AdminAccountCreate(email="user@example.com", display_name=" \t ", initial_password="secret")
+        AdminInternalAccountCreate(username="user", display_name=" \t ", initial_password="secret")
     with pytest.raises(ValidationError):
         AdminAccountEdit(display_name=" \t ")
 
 
-def test_password_reset_and_disable_set_fail_closed_session_cutoff(lifecycle_session) -> None:
+def test_reset_disable_and_enable_revoke_all_existing_sessions(lifecycle_session) -> None:
     session, admin_id = lifecycle_session
-    fake = FakeAuth()
     now = datetime(2026, 9, 28, 12, 0, 0, 100_000, timezone.utc)
-    user = create_account(session, admin_id, "cutoff@example.com", "Cutoff", "initial", "key-cutoff", fake, now, 10)
-    reset_account_password(session, admin_id, user.id, "new-password", fake, now)
-    session.refresh(user)
-    assert user.sessions_valid_after.replace(tzinfo=timezone.utc) == datetime(2026, 9, 28, 12, 0, 1, tzinfo=timezone.utc)
-    set_account_enabled(session, admin_id, user.id, False, now + timedelta(seconds=3))
-    session.refresh(user)
-    assert user.status == PrincipalStatus.disabled
-    assert user.sessions_valid_after.replace(tzinfo=timezone.utc) == datetime(2026, 9, 28, 12, 0, 4, tzinfo=timezone.utc)
+    user = create_internal_account(session, admin_id, "cutoff", "Cutoff", "initial-password", "key-cutoff", now)
+    for index, operation in enumerate(("reset", "disable", "enable")):
+        tokens = [AuthSession(
+            principal_id=user.id, token_hash=f"{index * 2 + offset:064x}",
+            created_at=now, last_used_at=now, expires_at=now + timedelta(days=1),
+        ) for offset in range(2)]
+        session.add_all(tokens)
+        session.commit()
+        mutation_time = now + timedelta(seconds=index)
+        if operation == "reset":
+            reset_account_password(session, admin_id, user.id, "new-password", mutation_time)
+        else:
+            set_account_enabled(session, admin_id, user.id, operation == "enable", mutation_time)
+        for token in tokens:
+            session.refresh(token)
+            assert token.revoked_at.replace(tzinfo=timezone.utc) == mutation_time
+        session.refresh(user)
+        assert user.status == (PrincipalStatus.disabled if operation == "disable" else PrincipalStatus.active)
 
 
 def test_account_mutations_reject_admin_target(lifecycle_session) -> None:
     session, admin_id = lifecycle_session
-    fake = FakeAuth()
     now = datetime(2026, 9, 28, tzinfo=timezone.utc)
     with pytest.raises(LifecycleError) as caught:
-        delete_account(session, admin_id, admin_id, fake, now, 10)
+        delete_account(session, admin_id, admin_id, now)
     assert caught.value.status_code == 403
-
-
-def test_recent_and_full_reconciliation_remove_late_identity_idempotently(lifecycle_session) -> None:
-    session, admin_id = lifecycle_session
-    fake = FakeAuth()
-    now = datetime(2026, 9, 28, tzinfo=timezone.utc)
-    user = create_account(session, admin_id, "late2@example.com", "Late", "password", "key-late2", fake, now, 10)
-    retired_id = user.auth_user_id
-    assert retired_id is not None
-    delete_account(session, admin_id, user.id, fake, now + timedelta(minutes=6), 10)
-    fake.users[retired_id] = "late2@example.com"
-    assert reconcile_recent_tombstones(session, fake, now + timedelta(minutes=7), limit=10) == {"checked": 1, "failed": 0}
-    assert retired_id not in fake.users
-    fake.users[retired_id] = "late2@example.com"
-    assert reconcile_all_retired(session, fake, batch_size=10) == {"checked": 1, "failed": 0}
-    assert retired_id not in fake.users
-    assert reconcile_all_retired(session, fake, batch_size=10) == {"checked": 1, "failed": 0}
 
 
 def test_principal_foreign_key_catalog_has_explicit_purge_or_food_attribution_decision() -> None:
@@ -239,11 +107,19 @@ def test_principal_foreign_key_catalog_has_explicit_purge_or_food_attribution_de
     assert actual == decisions
 
 
-def test_deletion_purges_every_private_dependent_and_preserves_global_food(lifecycle_session) -> None:
+@pytest.mark.parametrize("legacy", [False, True])
+def test_deletion_purges_every_private_dependent_and_preserves_global_food(lifecycle_session, legacy) -> None:
     session, admin_id = lifecycle_session
-    fake = FakeAuth()
     now = datetime(2026, 9, 28, tzinfo=timezone.utc)
-    user = create_account(session, admin_id, "purge@example.com", "Purge", "password", "key-purge", fake, now, 10)
+    user = create_internal_account(session, admin_id, "purge", "Purge", "password", "key-purge", now)
+    if legacy:
+        user.auth_user_id = uuid4()
+        user.email = "purge@example.test"
+        user.username = user.normalized_username = user.password_hash = None
+        session.add(user)
+        session.commit()
+    auth_session = AuthSession(principal_id=user.id, token_hash="a" * 64, created_at=now, last_used_at=now, expires_at=now + timedelta(days=1))
+    session.add(auth_session)
     profile = Profile(
         principal_id=user.id, sex=Sex.male, birth_date=date(1990, 1, 1),
         height_cm=175, weight_kg=80, activity_level=ActivityLevel.moderate,
@@ -279,10 +155,10 @@ def test_deletion_purges_every_private_dependent_and_preserves_global_food(lifec
     )
     session.add_all([entry, lab, receipt])
     session.commit()
-    deleted = delete_account(session, admin_id, user.id, fake, now + timedelta(minutes=6), 10)
+    deleted = delete_account(session, admin_id, user.id, now + timedelta(minutes=6))
     assert deleted.status == PrincipalStatus.deleted
     assert deleted.email is None and deleted.display_name is None
-    for model in (Profile, TargetPlan, DiaryEntry, LabResult, IdempotencyRecord):
+    for model in (AuthSession, Profile, TargetPlan, DiaryEntry, LabResult, IdempotencyRecord):
         assert session.exec(select(model).where(model.principal_id == user.id)).all() == []
     session.refresh(food)
     assert food.created_by_principal_id == user.id
@@ -290,50 +166,85 @@ def test_deletion_purges_every_private_dependent_and_preserves_global_food(lifec
     assert read_food(food.id, PrincipalContext(principal_id=admin_id), session).created_by_label == "مستخدم محذوف"
 
 
-def test_creation_retry_refused_after_deletion_begins(lifecycle_session) -> None:
+@pytest.mark.parametrize("status", [PrincipalStatus.active, PrincipalStatus.disabled, PrincipalStatus.provisioning, PrincipalStatus.deleting])
+def test_legacy_deletion_is_local_atomic_and_idempotent(lifecycle_session, status):
     session, admin_id = lifecycle_session
-    fake = FakeAuth()
-    fake.fail_create = True
-    now = datetime(2026, 9, 28, tzinfo=timezone.utc)
-    with pytest.raises(AdminAuthError):
-        create_account(session, admin_id, "stopped@example.com", "Stopped", "pw", "key-stopped", fake, now, 10)
-    pending = session.exec(select(Principal).where(Principal.email == "stopped@example.com")).one()
-    delete_account(session, admin_id, pending.id, fake, now + timedelta(minutes=6), 10)
-    fake.fail_create = False
-    with pytest.raises(LifecycleError) as caught:
-        create_account(session, admin_id, "stopped@example.com", "Stopped", "pw", "key-stopped", fake, now + timedelta(minutes=7), 10)
-    assert caught.value.status_code == 409
-    assert len(fake.create_ids) == 1
-
-
-def test_new_account_cleans_retired_late_email_but_rejects_nonretired_duplicate(lifecycle_session) -> None:
-    session, admin_id = lifecycle_session
-    fake = FakeAuth()
-    now = datetime(2026, 9, 28, tzinfo=timezone.utc)
-    old = create_account(session, admin_id, "reuse@example.com", "Old", "pw", "key-old", fake, now, 10)
-    retired_id = old.auth_user_id
-    assert retired_id is not None
-    delete_account(session, admin_id, old.id, fake, now + timedelta(minutes=6), 10)
-    fake.users[retired_id] = "reuse@example.com"
-    replacement = create_account(session, admin_id, "reuse@example.com", "New", "pw", "key-new", fake, now + timedelta(minutes=7), 10)
-    assert replacement.auth_user_id != retired_id
-    assert retired_id not in fake.users
-    fake.users[uuid4()] = "taken@example.com"
-    with pytest.raises(LifecycleError) as caught:
-        create_account(session, admin_id, "taken@example.com", "Taken", "pw", "key-taken", fake, now + timedelta(minutes=8), 10)
-    assert caught.value.code == "DUPLICATE_EMAIL"
-
-
-def test_failed_identity_delete_leaves_locked_out_deleting_for_retry(lifecycle_session) -> None:
-    session, admin_id = lifecycle_session
-    fake = FakeAuth()
-    now = datetime(2026, 9, 28, tzinfo=timezone.utc)
-    user = create_account(session, admin_id, "retry@example.com", "Retry", "pw", "key-retry", fake, now, 10)
-    fake.fail_delete = True
-    with pytest.raises(AdminAuthError):
-        delete_account(session, admin_id, user.id, fake, now + timedelta(minutes=6), 10)
-    session.refresh(user)
-    assert user.status == PrincipalStatus.deleting
-    fake.fail_delete = False
-    deleted = delete_account(session, admin_id, user.id, fake, now + timedelta(minutes=7), 10)
+    now = datetime.now(timezone.utc)
+    auth_id = uuid4()
+    row = Principal(auth_user_id=auth_id, email="legacy@example.test", display_name="Legacy", status=status, identity_requested_at=now)
+    session.add(row)
+    session.commit()
+    deleted = delete_account(session, admin_id, row.id, now, confirmation_email="legacy@example.test", require_confirmation=True)
     assert deleted.status == PrincipalStatus.deleted
+    assert deleted.auth_user_id is None and deleted.retired_auth_user_id == auth_id
+    assert deleted.email is None and deleted.display_name is None
+    repeated = delete_account(session, admin_id, row.id, now, confirmation_email="legacy@example.test", require_confirmation=True)
+    assert repeated.id == row.id and repeated.retired_auth_user_id == auth_id
+
+
+@pytest.mark.parametrize("status", [PrincipalStatus.active, PrincipalStatus.disabled])
+def test_legacy_reset_refuses_without_attaching_credentials(lifecycle_session, status):
+    session, admin_id = lifecycle_session
+    row = Principal(auth_user_id=uuid4(), email="legacy@example.test", status=status)
+    session.add(row)
+    session.commit()
+    with pytest.raises(LifecycleError) as error:
+        reset_account_password(session, admin_id, row.id, "New-password", datetime.now(timezone.utc))
+    assert error.value.code == "CREATION_INCOMPLETE"
+    assert error.value.status_code == 409
+    session.rollback()
+    session.refresh(row)
+    assert row.password_hash is None and row.username is None
+
+
+@pytest.mark.parametrize("status", [PrincipalStatus.active, PrincipalStatus.provisioning, PrincipalStatus.deleting])
+def test_legacy_delete_checks_confirmation_before_purge(lifecycle_session, status):
+    session, admin_id = lifecycle_session
+    row = Principal(auth_user_id=uuid4(), email="legacy@example.test", status=status)
+    session.add(row)
+    session.commit()
+    with pytest.raises(LifecycleError) as error:
+        delete_account(session, admin_id, row.id, datetime.now(timezone.utc), confirmation_email="wrong@example.test", require_confirmation=True)
+    assert error.value.code == "DELETE_EMAIL_MISMATCH"
+    assert row.status == status and row.email == "legacy@example.test"
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_purge_failure_rolls_back_private_data_and_tombstone(lifecycle_session, monkeypatch, legacy):
+    from app.services import admin_lifecycle
+
+    session, admin_id = lifecycle_session
+    now = datetime.now(timezone.utc)
+    user = create_internal_account(session, admin_id, "rollback", "Rollback", "initial-password", "rollback-key", now)
+    if legacy:
+        user.auth_user_id = uuid4()
+        user.email = "rollback@example.test"
+        user.username = user.normalized_username = user.password_hash = None
+        session.add(user)
+    token = AuthSession(principal_id=user.id, token_hash="b" * 64, created_at=now, last_used_at=now, expires_at=now + timedelta(days=1))
+    session.add(token)
+    session.commit()
+    original_purge = admin_lifecycle._purge_private_rows
+
+    def fail_after_purge(session, principal_id):
+        original_purge(session, principal_id)
+        raise RuntimeError("synthetic purge failure")
+
+    monkeypatch.setattr(admin_lifecycle, "_purge_private_rows", fail_after_purge)
+    with pytest.raises(RuntimeError, match="synthetic purge failure"):
+        delete_account(session, admin_id, user.id, now)
+    session.rollback()
+    session.refresh(user)
+    assert user.status == PrincipalStatus.active and user.display_name == "Rollback"
+    assert session.get(AuthSession, token.id) is not None
+
+
+def test_deleted_creation_key_cannot_restore_private_identity(lifecycle_session):
+    session, admin_id = lifecycle_session
+    now = datetime.now(timezone.utc)
+    row = create_internal_account(session, admin_id, "retired", "Retired", "initial-password", "retired-key", now)
+    delete_account(session, admin_id, row.id, now)
+    with pytest.raises(LifecycleError) as error:
+        create_internal_account(session, admin_id, "retired", "Retired", "initial-password", "retired-key", now)
+    assert error.value.code == "CREATION_INCOMPLETE"
+    assert row.status == PrincipalStatus.deleted and row.username is None

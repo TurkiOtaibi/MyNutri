@@ -717,21 +717,6 @@ class AdminUserListResponse(BaseModel):
     total_pages: int
 
 
-class AdminAccountCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    email: StrictStr = Field(min_length=3, max_length=320)
-    display_name: StrictStr = Field(min_length=1, max_length=120)
-    initial_password: StrictStr = Field(min_length=1, max_length=256)
-
-    @field_validator("display_name")
-    @classmethod
-    def nonblank_display_name(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("display_name is required")
-        return value
-
-
 class AdminInternalAccountCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -777,12 +762,6 @@ class AdminAccountDelete(BaseModel):
 
     confirm_email: StrictStr | None = None
     confirm_username: StrictStr | None = None
-
-
-class AdminAccountRetryCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    initial_password: StrictStr = Field(min_length=1, max_length=256)
 
 
 class AdminAccountCounts(BaseModel):

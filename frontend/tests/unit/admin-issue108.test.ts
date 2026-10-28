@@ -11,9 +11,8 @@ describe("BR-USM list copy", () => {
   it("uses the current result range", () => {
     expect(adminResultsLabel(2, 20, 35)).toBe("عرض 21-35 من 35 مستخدمًا");
   });
-  it("maps deletion failures and the creation lease to exact governed copy", () => {
+  it("maps deletion failures to exact governed copy", () => {
     expect(accountActionErrorMessage(new ApiError("server", 503, undefined, "DELETION_INCOMPLETE"), "delete")).toBe("تعذر إكمال حذف المستخدم. لا يستطيع الدخول الآن، ويمكنك إعادة المحاولة.");
-    expect(accountActionErrorMessage(new ApiError("server", 409, undefined, "CREATION_IN_PROGRESS"), "delete")).toBe("لا يمكن حذف المستخدم الآن لأن إنشاءه ما زال جاريًا. حاول بعد 5 دقائق.");
   });
 });
 

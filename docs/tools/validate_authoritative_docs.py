@@ -65,7 +65,7 @@ EXPECTED_LABS_OPERATIONS = {
     "/admin/users/{principal_id}/labs/tests/{test_key}": {"get"},
 }
 VALIDATOR_PATH = "docs/tools/validate_authoritative_docs.py"
-EXPECTED_ALEMBIC_HEAD = "f0c8a6e12534"
+EXPECTED_ALEMBIC_HEAD = "a1d9b7f23645"
 EXPECTED_LABS_KEYS = frozenset("""
 hba1c total_cholesterol ldl_c hdl_c triglycerides wbc rbc hemoglobin hematocrit
 platelets mcv mch mchc rdw neutrophils_abs neutrophils_pct lymphocytes_abs

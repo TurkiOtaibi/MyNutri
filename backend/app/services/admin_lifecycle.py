@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import logging
-from datetime import datetime, timedelta, timezone
-from uuid import UUID, uuid4
+from datetime import datetime
+from uuid import UUID
 
-from sqlalchemy import delete, update
+from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -21,11 +20,8 @@ from app.models import (
     Profile,
     TargetPlan,
 )
-from app.services.admin_auth import AdminAuthError, AdminAuthGateway, AdminIdentity
 from app.services.internal_auth import revoke_sessions
 from app.core.credentials import hash_password, normalize_username, validate_password, verify_password
-
-logger = logging.getLogger(__name__)
 
 
 class LifecycleError(Exception):
@@ -38,10 +34,6 @@ class LifecycleError(Exception):
 
 def _creation_incomplete() -> LifecycleError:
     return LifecycleError(409, "CREATION_INCOMPLETE", "تعذر إكمال إنشاء المستخدم. أعد المحاولة.")
-
-
-def _duplicate_email() -> LifecycleError:
-    return LifecycleError(409, "DUPLICATE_EMAIL", "هذا البريد الإلكتروني مستخدم بالفعل.")
 
 
 def _invalid_target() -> LifecycleError:
@@ -73,48 +65,24 @@ def _target(session: Session, admin_id: UUID, principal_id: UUID) -> Principal:
     return row
 
 
-def _utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
-
-
-def _next_second(value: datetime) -> datetime:
-    return _utc(value).replace(microsecond=0) + timedelta(seconds=1)
-
-
 def reset_account_password(
     session: Session,
     admin_id: UUID,
     principal_id: UUID,
     password: str,
-    gateway: AdminAuthGateway,
     now: datetime,
 ) -> None:
     _admin(session, admin_id)
     row = _target(session, admin_id, principal_id)
-    if row.status not in {PrincipalStatus.active, PrincipalStatus.disabled} or (row.auth_user_id is None and row.password_hash is None):
+    if row.status not in {PrincipalStatus.active, PrincipalStatus.disabled} or row.password_hash is None:
         raise _creation_incomplete()
     try:
         validate_password(password)
     except ValueError as error:
         raise LifecycleError(422, "INVALID_PASSWORD", str(error)) from None
-    auth_id = row.auth_user_id
-    encoded = hash_password(password) if row.password_hash is not None else None
+    row.password_hash = hash_password(password)
     revoke_sessions(session, row.id, now)
-    row.sessions_valid_after = _next_second(now)
     row.updated_at = now
-    session.add(row)
-    try:
-        # Internal credentials take precedence; never update the retired provider
-        # credential of an internally authenticated account (PO 27 October 2026).
-        if encoded is None and auth_id is not None:
-            gateway.reset_password(auth_id, password)
-    except AdminAuthError:
-        # A provider timeout is ambiguous. Revoke existing sessions even on failure;
-        # leave credentials/lock unchanged locally and report failure for explicit retry.
-        session.commit()
-        raise
-    if encoded is not None:
-        row.password_hash = encoded
     row.must_change_password = False
     row.failed_login_count = 0
     row.locked_at = None
@@ -135,7 +103,6 @@ def set_account_enabled(
         row.disabled_at = now
     row.status = PrincipalStatus.active if enabled else PrincipalStatus.disabled
     revoke_sessions(session, row.id, now)
-    row.sessions_valid_after = _next_second(now)
     row.updated_at = now
     session.add(row)
     session.commit()
@@ -156,109 +123,6 @@ def edit_display_name(
     session.commit()
     session.refresh(row)
     return row
-
-
-def _is_retired(session: Session, auth_id: UUID) -> bool:
-    return session.exec(
-        select(Principal.id).where(Principal.retired_auth_user_id == auth_id)
-    ).first() is not None
-
-
-def reconcile_retired_identity(
-    session: Session, auth_id: UUID, gateway: AdminAuthGateway
-) -> bool:
-    """Return true only after a retired identity is verified absent."""
-    if not _is_retired(session, auth_id):
-        return False
-    gateway.delete_user(auth_id)
-    if gateway.get_user_by_id(auth_id) is not None:
-        raise AdminAuthError("identity_present")
-    return True
-
-
-def _reconcile_rows(
-    session: Session, rows: list[UUID], gateway: AdminAuthGateway
-) -> dict[str, int]:
-    failures: dict[str, int] = {}
-    for auth_id in rows:
-        try:
-            reconcile_retired_identity(session, auth_id, gateway)
-        except AdminAuthError as error:
-            failures[error.kind] = failures.get(error.kind, 0) + 1
-    for kind, count in failures.items():
-        logger.warning("retired identity reconciliation failed: type=%s count=%s", kind, count)
-    return {"checked": len(rows), "failed": sum(failures.values())}
-
-
-def reconcile_recent_tombstones(
-    session: Session,
-    gateway: AdminAuthGateway,
-    now: datetime,
-    *,
-    limit: int = 100,
-) -> dict[str, int]:
-    rows = session.exec(
-        select(Principal.id, Principal.retired_auth_user_id)
-        .where(
-            Principal.status == PrincipalStatus.deleted,
-            Principal.deleted_at >= now - timedelta(days=30),
-            Principal.retired_auth_user_id.is_not(None),
-        )
-        .order_by(Principal.updated_at, Principal.id)
-        .limit(limit)
-    ).all()
-    outcome = _reconcile_rows(session, [row[1] for row in rows], gateway)
-    if rows:
-        # Track attempts on the scrubbed tombstone so the next bounded list
-        # trigger can reach identities beyond the first page, including retries.
-        session.exec(
-            update(Principal)
-            .where(Principal.id.in_([row[0] for row in rows]))
-            .values(updated_at=now)
-        )
-        session.commit()
-    return outcome
-
-
-def reconcile_all_retired(
-    session: Session, gateway: AdminAuthGateway, *, batch_size: int = 100
-) -> dict[str, int]:
-    total = {"checked": 0, "failed": 0}
-    cursor: UUID | None = None
-    while True:
-        statement = (
-            select(Principal.id, Principal.retired_auth_user_id)
-            .where(
-                Principal.status == PrincipalStatus.deleted,
-                Principal.retired_auth_user_id.is_not(None),
-            )
-            .order_by(Principal.id)
-            .limit(batch_size)
-        )
-        if cursor is not None:
-            statement = statement.where(Principal.id > cursor)
-        rows = session.exec(statement).all()
-        if not rows:
-            break
-        outcome = _reconcile_rows(session, [row[1] for row in rows], gateway)
-        total["checked"] += outcome["checked"]
-        total["failed"] += outcome["failed"]
-        cursor = rows[-1][0]
-    return total
-
-
-def _resolve_duplicate(
-    session: Session, email: str, expected_id: UUID, gateway: AdminAuthGateway
-) -> AdminIdentity | None:
-    identity = gateway.find_user_by_email(email)
-    if identity is None:
-        raise AdminAuthError("unavailable")
-    if identity.id == expected_id:
-        return identity
-    if _is_retired(session, identity.id):
-        reconcile_retired_identity(session, identity.id, gateway)
-        return None
-    raise _duplicate_email()
 
 
 def create_internal_account(
@@ -311,96 +175,6 @@ def create_internal_account(
     return row
 
 
-def create_account(
-    session: Session,
-    admin_id: UUID,
-    email: str,
-    display_name: str,
-    password: str,
-    idempotency_key: str,
-    gateway: AdminAuthGateway,
-    now: datetime,
-    timeout_seconds: int,
-) -> Principal:
-    if not 1 <= timeout_seconds <= 60:
-        raise AdminAuthError("unavailable")
-    normalized_email = email.strip().lower()
-    normalized_name = " ".join(display_name.split())
-    _admin(session, admin_id)
-    row = session.exec(
-        select(Principal)
-        .where(Principal.creation_idempotency_key == idempotency_key)
-        .with_for_update()
-    ).one_or_none()
-    if row is None:
-        if session.exec(
-            select(Principal.id).where(Principal.email == normalized_email)
-        ).first() is not None:
-            raise _duplicate_email()
-        row = Principal(
-            auth_user_id=uuid4(),
-            email=normalized_email,
-            display_name=normalized_name,
-            status=PrincipalStatus.provisioning,
-            creation_idempotency_key=idempotency_key,
-        )
-        session.add(row)
-        try:
-            session.commit()
-        except IntegrityError as error:
-            session.rollback()
-            raise _duplicate_email() from error
-    elif row.email != normalized_email or row.display_name != normalized_name:
-        raise _duplicate_email()
-    if row.status == PrincipalStatus.active:
-        return row
-    if row.status != PrincipalStatus.provisioning or row.auth_user_id is None:
-        raise _creation_incomplete()
-
-    row = _target(session, admin_id, row.id)
-    if row.status != PrincipalStatus.provisioning:
-        raise _creation_incomplete()
-    row.identity_requested_at = now
-    row.updated_at = now
-    session.add(row)
-    session.commit()
-    auth_id = row.auth_user_id
-    assert auth_id is not None
-
-    identity = gateway.get_user_by_id(auth_id)
-    identity_preexisting = identity is not None
-    if identity is None:
-        try:
-            identity = gateway.create_user(auth_id, normalized_email, password)
-        except AdminAuthError as error:
-            if error.kind != "duplicate_email":
-                raise
-            identity = _resolve_duplicate(session, normalized_email, auth_id, gateway)
-            if identity is None:
-                identity = gateway.create_user(auth_id, normalized_email, password)
-            else:
-                identity_preexisting = True
-    if identity.id != auth_id or identity.email is None or identity.email.lower() != normalized_email:
-        raise AdminAuthError("identity_mismatch")
-
-    row = _target(session, admin_id, row.id)
-    if row.status == PrincipalStatus.active and row.auth_user_id == auth_id:
-        session.rollback()
-        return row
-    if row.status != PrincipalStatus.provisioning:
-        raise _creation_incomplete()
-    if identity_preexisting:
-        # A prior create may have completed after its response was lost. Apply the
-        # password submitted on this retry while the Principal remains locked out.
-        gateway.reset_password(auth_id, password)
-    row.status = PrincipalStatus.active
-    row.updated_at = now
-    session.add(row)
-    session.commit()
-    session.refresh(row)
-    return row
-
-
 def _purge_private_rows(session: Session, principal_id: UUID) -> None:
     for model in (AuthSession, DiaryEntry, LabResult, IdempotencyRecord, TargetPlan, Profile):
         session.exec(delete(model).where(model.principal_id == principal_id))
@@ -427,62 +201,33 @@ def delete_account(
     session: Session,
     admin_id: UUID,
     principal_id: UUID,
-    gateway: AdminAuthGateway,
     now: datetime,
-    timeout_seconds: int,
     confirmation_email: str | None = None,
     confirmation_username: str | None = None,
     require_confirmation: bool = False,
 ) -> Principal:
     _admin(session, admin_id)
     row = _target(session, admin_id, principal_id)
+    if row.status == PrincipalStatus.deleted:
+        return row
     if row.username is not None and (require_confirmation or confirmation_username is not None or confirmation_email is not None):
         if confirmation_username is None or confirmation_username.lower() != row.normalized_username:
             raise LifecycleError(422, "DELETE_USERNAME_MISMATCH", "اسم المستخدم المدخل لا يطابق هذا الحساب.")
-    elif (require_confirmation or confirmation_email is not None) and row.status != PrincipalStatus.deleting:
+    elif require_confirmation or confirmation_email is not None:
         if row.email is None or confirmation_email is None or confirmation_email.strip().lower() != row.email.lower():
             raise LifecycleError(
                 422,
                 "DELETE_EMAIL_MISMATCH",
                 "البريد الإلكتروني المدخل لا يطابق بريد المستخدم.",
             )
-    if row.status == PrincipalStatus.deleted:
-        return row
-    if row.auth_user_id is None and row.username is not None:
-        # Internal deletion has no external saga: purge and tombstone commit together.
-        _purge_private_rows(session, principal_id)
-        row.deletion_started_at = now
-        _scrub_deleted_account(row, None, now)
-        session.add(row)
-        session.commit()
-        session.refresh(row)
-        return row
-    if row.status == PrincipalStatus.provisioning and row.identity_requested_at is not None:
-        lease = timedelta(seconds=max(300, 10 * timeout_seconds))
-        if now <= _utc(row.identity_requested_at) + lease:
-            raise LifecycleError(409, "CREATION_IN_PROGRESS", "لا يمكن حذف المستخدم الآن لأن إنشاءه ما زال جاريًا. حاول بعد 5 دقائق.")
-    if row.status != PrincipalStatus.deleting:
-        row.status = PrincipalStatus.deleting
-        revoke_sessions(session, row.id, now)
-        row.deletion_started_at = now
-        row.updated_at = now
-        session.add(row)
-        session.commit()
-
-    row = _target(session, admin_id, principal_id)
+    # Mark the purge under the lock without committing; failures roll it back
+    # together with every private deletion and the final scrubbed tombstone.
+    row.status = PrincipalStatus.deleting
+    session.add(row)
+    session.flush()
     _purge_private_rows(session, principal_id)
-    session.commit()
-
-    auth_id = row.auth_user_id
-    if auth_id is not None:
-        gateway.delete_user(auth_id)
-        if gateway.get_user_by_id(auth_id) is not None:
-            raise AdminAuthError("identity_present")
-
-    row = _target(session, admin_id, principal_id)
-    if row.status == PrincipalStatus.deleted:
-        return row
-    _scrub_deleted_account(row, auth_id, now)
+    row.deletion_started_at = row.deletion_started_at or now
+    _scrub_deleted_account(row, row.auth_user_id or row.retired_auth_user_id, now)
     session.add(row)
     session.commit()
     session.refresh(row)

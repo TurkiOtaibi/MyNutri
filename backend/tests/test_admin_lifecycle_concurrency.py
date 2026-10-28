@@ -2,88 +2,64 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
-from threading import Barrier, Event, Lock
+from threading import Barrier, Event
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlmodel import Session, select
 
 from app.core.auth import PrincipalContext
 from app.labs import get_catalog
 from app.models import Principal, PrincipalRole, PrincipalStatus
 from app.schemas import DiaryEntryCreate, LabCreateRequest, TargetPlanWriteRequest
-from app.services.admin_auth import AdminAuthError, AdminIdentity
-from app.services.admin_lifecycle import create_account, delete_account
+from app.services.admin_lifecycle import create_internal_account, delete_account
 from app.services.diary import create_entry
 from app.services.labs import LabValidationError, create_results
 from app.services.target_plans import TargetPlanError, write_target_plan
 
 
-class ConcurrentAuth:
-    def __init__(self) -> None:
-        self.users: dict[UUID, str] = {}
-        self.mutex = Lock()
-        self.delete_entered: Event | None = None
-        self.finish_delete: Event | None = None
-
-    def create_user(self, auth_id: UUID, email: str, password: str) -> AdminIdentity:
-        with self.mutex:
-            if email in self.users.values() and auth_id not in self.users:
-                raise AdminAuthError("duplicate_email")
-            self.users[auth_id] = email
-        return AdminIdentity(auth_id, email)
-
-    def get_user_by_id(self, auth_id: UUID) -> AdminIdentity | None:
-        with self.mutex:
-            email = self.users.get(auth_id)
-        return AdminIdentity(auth_id, email) if email else None
-
-    def find_user_by_email(self, email: str) -> AdminIdentity | None:
-        with self.mutex:
-            return next((AdminIdentity(id_, value) for id_, value in self.users.items() if value == email), None)
-
-    def reset_password(self, auth_id: UUID, password: str) -> None:
-        pass
-
-    def delete_user(self, auth_id: UUID) -> None:
-        if self.delete_entered:
-            self.delete_entered.set()
-        if self.finish_delete:
-            assert self.finish_delete.wait(timeout=15)
-        with self.mutex:
-            self.users.pop(auth_id, None)
-
-
-def _actors(engine) -> tuple[UUID, UUID, ConcurrentAuth]:
-    admin_id, user_id, auth_id = uuid4(), uuid4(), uuid4()
-    gateway = ConcurrentAuth()
-    gateway.users[auth_id] = "writer@example.test"
+def _actors(engine) -> tuple[UUID, UUID]:
+    admin_id, user_id = uuid4(), uuid4()
     with Session(engine) as session:
-        session.add(Principal(id=admin_id, auth_user_id=uuid4(), email="admin@example.test", role=PrincipalRole.admin))
-        session.add(Principal(id=user_id, auth_user_id=auth_id, email="writer@example.test"))
+        session.add(Principal(id=admin_id, role=PrincipalRole.admin))
+        session.add(Principal(id=user_id, auth_user_id=uuid4(), email="writer@example.test"))
         session.commit()
-    return admin_id, user_id, gateway
+    return admin_id, user_id
 
 
 @pytest.mark.migration
 @pytest.mark.parametrize("writer", ["target", "diary", "labs"])
-def test_deletion_racing_private_writer_cannot_leave_a_row(labs_postgresql_database, writer: str) -> None:
+def test_deletion_racing_private_writer_cannot_leave_a_row(labs_postgresql_database, monkeypatch, writer: str) -> None:
     engine = labs_postgresql_database.engine
-    admin_id, user_id, gateway = _actors(engine)
-    gateway.delete_entered = Event()
-    gateway.finish_delete = Event()
+    admin_id, user_id = _actors(engine)
+    from app.services import admin_lifecycle
+
+    purge_entered, writer_entered = Event(), Event()
+    original_purge = admin_lifecycle._purge_private_rows
+
+    def paused_purge(session, principal_id):
+        purge_entered.set()
+        assert writer_entered.wait(timeout=15)
+        original_purge(session, principal_id)
+
+    monkeypatch.setattr(admin_lifecycle, "_purge_private_rows", paused_purge)
     now = datetime.now(timezone.utc)
 
     def delete() -> None:
         with Session(engine) as session:
-            delete_account(session, admin_id, user_id, gateway, now, 10)
+            delete_account(session, admin_id, user_id, now)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         future = pool.submit(delete)
-        assert gateway.delete_entered.wait(timeout=15)
-        # The saga has committed deleting and purged before the provider call.
+        assert purge_entered.wait(timeout=15)
+        # Signal the competing writer when it reaches its Principal lock.
         with Session(engine) as session:
+            def before_execute(connection, cursor, statement, parameters, context, many):
+                if "FOR UPDATE" in statement:
+                    writer_entered.set()
+
+            event.listen(session.connection(), "before_cursor_execute", before_execute)
             actor = PrincipalContext(principal_id=user_id)
             if writer == "target":
                 payload = TargetPlanWriteRequest.model_validate({
@@ -108,7 +84,6 @@ def test_deletion_racing_private_writer_cannot_leave_a_row(labs_postgresql_datab
                 with pytest.raises(LabValidationError) as blocked:
                     create_results(session, actor, payload, "race-labs", get_catalog())
                 assert blocked.value.status_code == 401
-        gateway.finish_delete.set()
         future.result(timeout=15)
     with engine.connect() as connection:
         for table in ("profile", "target_plan", "diary_entry", "lab_result", "idempotency_record"):
@@ -118,14 +93,14 @@ def test_deletion_racing_private_writer_cannot_leave_a_row(labs_postgresql_datab
 @pytest.mark.migration
 def test_two_concurrent_deletes_leave_one_scrubbed_tombstone(labs_postgresql_database) -> None:
     engine = labs_postgresql_database.engine
-    admin_id, user_id, gateway = _actors(engine)
+    admin_id, user_id = _actors(engine)
     start = Barrier(3)
     now = datetime.now(timezone.utc)
 
     def delete() -> PrincipalStatus:
         start.wait(timeout=15)
         with Session(engine) as session:
-            return delete_account(session, admin_id, user_id, gateway, now, 10).status
+            return delete_account(session, admin_id, user_id, now).status
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures = [pool.submit(delete) for _ in range(2)]
@@ -138,59 +113,18 @@ def test_two_concurrent_deletes_leave_one_scrubbed_tombstone(labs_postgresql_dat
 
 
 @pytest.mark.migration
-def test_delete_resuming_after_other_delete_preserves_retired_identity(labs_postgresql_database) -> None:
+def test_concurrent_same_key_creates_one_internal_account(labs_postgresql_database) -> None:
     engine = labs_postgresql_database.engine
-    admin_id, user_id, gateway = _actors(engine)
-    gateway.delete_entered = Event()
-    gateway.finish_delete = Event()
-    second_purged = Event()
-    first_finished = Event()
-    now = datetime.now(timezone.utc)
-
-    class PausingSession(Session):
-        def commit(self) -> None:
-            super().commit()
-            second_purged.set()
-            assert first_finished.wait(timeout=15)
-
-    def first_delete() -> None:
-        with Session(engine) as session:
-            delete_account(session, admin_id, user_id, gateway, now, 10)
-        first_finished.set()
-
-    def second_delete() -> None:
-        with PausingSession(engine) as session:
-            delete_account(session, admin_id, user_id, gateway, now, 10)
-
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        first = pool.submit(first_delete)
-        assert gateway.delete_entered.wait(timeout=15)
-        second = pool.submit(second_delete)
-        assert second_purged.wait(timeout=15)
-        gateway.finish_delete.set()
-        first.result(timeout=15)
-        second.result(timeout=15)
-
-    with Session(engine) as session:
-        row = session.get(Principal, user_id)
-        assert row.status == PrincipalStatus.deleted
-        assert row.auth_user_id is None
-        assert row.retired_auth_user_id is not None
-
-
-@pytest.mark.migration
-def test_concurrent_same_key_creates_one_account_and_identity(labs_postgresql_database) -> None:
-    engine = labs_postgresql_database.engine
-    admin_id, _, gateway = _actors(engine)
+    admin_id, _ = _actors(engine)
     start = Barrier(3)
     now = datetime.now(timezone.utc)
 
     def create() -> UUID:
         start.wait(timeout=15)
         with Session(engine) as session:
-            return create_account(
-                session, admin_id, "same@example.test", "Same", "password", "same-key",
-                gateway, now, 10,
+            return create_internal_account(
+                session, admin_id, "same-user", "Same", "password", "same-key",
+                now,
             ).id
 
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -199,5 +133,4 @@ def test_concurrent_same_key_creates_one_account_and_identity(labs_postgresql_da
         ids = [future.result(timeout=30) for future in futures]
     assert ids[0] == ids[1]
     with Session(engine) as session:
-        assert len(session.exec(select(Principal).where(Principal.email == "same@example.test")).all()) == 1
-    assert list(gateway.users.values()).count("same@example.test") == 1
+        assert len(session.exec(select(Principal).where(Principal.normalized_username == "same-user")).all()) == 1

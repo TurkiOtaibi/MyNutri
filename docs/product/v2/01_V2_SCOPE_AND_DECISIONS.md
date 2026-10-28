@@ -2,7 +2,7 @@
 
 ## State boundary for authentication
 
-CURRENT in #111: the browser uses internal username/password login, opaque bearer sessions, forced initial-password change, and own-password change in Profile. Only the session token is persisted in localStorage; passwords stay in memory and no auth cookies are used. Reload during an initial-password change requires re-authentication. Forgotten/reset-password browser flows are absent; forgotten passwords go to the Admin. The backend retains legacy Supabase JWT admission for accounts without internal credentials until #113; an internal password hash takes precedence and rejects JWT admission with `INTERNAL_LOGIN_REQUIRED`. Internal password changes/resets never update Supabase. Admin username-based creation and management UI is CURRENT in #112: new users have internal credentials only, with no email or provider call. Legacy backend email/provider lifecycle support and clearly marked email fallback for existing accounts remain until #113/#114; provider/email removal (#113) and destructive cutover (#114) remain APPROVED TARGET. No existing account migration or cutover is performed. This describes repository implementation, not deployment. (Product Owner decisions of 17 and 27 October 2026; issues #110/#111/#112; BR-USM-005/006/012/013/014/022/023/025/030/036/038/042/043/049/054; BR-AUT-001/003/004/005/007/008/010/011/012/017, BR-PRF-024–026, BR-USM-030/033.)
+CURRENT in #113: authentication uses only internal username/password and opaque bearer sessions. The browser persists only the session token in localStorage; passwords remain in memory and no auth cookies are used. Initial-password change and Profile password change are current; forgotten passwords go to the Admin. Supabase Auth/JWT admission, provider creation/reset/deletion, reconciliation and runtime Auth configuration are removed. Legacy-only accounts cannot log in; retained identity columns and the existing legacy deletion confirmation are historical compatibility until #114, not an authentication path. New users are created atomically by immutable username. No account conversion, destructive cutover, deployment or production configuration change is performed. Cutover #114 remains APPROVED TARGET. Authority: final 17 October 2026 AUT/USM decisions; 27 October #110/#112 decisions; issues #110–#113 and #128 (BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-022/030/033/036/043).
 
 The CURRENT implementation allows only Admin correction of another user's «الجنس» in issue #109; all other private-data monitoring remains read-only. Cutover deletes current test accounts/private data, preserves Foods, and creates the single Admin through a server-side create/reset command. No cutover is performed here. (17 October 2026 PRF/USM/AUT/FOD decisions; BR-PRF-006, BR-USM-027/032/043/061/067/074; issue #100; [V2 06](06_DATA_MIGRATION_AND_CUTOVER.md).)
 
@@ -15,7 +15,7 @@ in the lifecycle revision; Production activation remains a separate release acti
 
 ## Objective
 
-V2 supports internal username/password browser authentication and transitional backend-only legacy Supabase JWT admission (#110/#111; 27 October 2026; BR-AUT-001/017), durable Principal ownership, `user`
+V2 supports internal username/password authentication and opaque bearer sessions (#113; BR-AUT-001/017), durable Principal ownership, `user`
 and `admin` roles, read-only admin monitoring, and a global admin-managed Food
 catalog. Food taxonomy and provenance are intentionally small and stable.
 Standalone Labs lets adults record private numeric laboratory facts and follow
@@ -31,44 +31,21 @@ Diary, Target Plans, nutrition calculations, recommendations or Progress.
   changes the Admin role. The Admin cannot change their own role, disable
   themselves, or delete themselves.
 - Accounts are Admin-created only. Self-registration and automatic Principal
-  provisioning for unknown Supabase identities are retired. Unknown and
+  provisioning for unknown identities are retired. Unknown and
   non-active identities receive `401 INVALID_CREDENTIAL`; existing Principals
   are preserved. Admin account management is separate from read-only monitoring
   of another user's Profile, Diary, Target Plans, and Labs.
 - An Admin creates a normal user with immutable username, display name, and an initial
   Admin-set password (#112; BR-USM-022/023/025/036). They may edit display name, reset password (revoking the
-  user's internal sessions when an internal hash exists, otherwise existing Supabase sessions through FastAPI), enable or disable the
+  user's internal sessions; legacy-only targets cannot reset without internal credentials), enable or disable the
   user, and request permanent deletion. Email changes are out of scope.
   Raw passwords are never stored, logged, or returned; internal accounts store only a scrypt hash (#110; 27 October 2026; BR-AUT-001/017, BR-USM-030/033).
-- Legacy email/provider creation is resumable: the backend commits a `provisioning` Principal with an
-  idempotency key and pre-assigned Supabase Auth UUID before sending create with
-  that UUID. It records `identity_requested_at` on each create attempt. A retry
-  with the same key resumes; `provisioning` cannot authenticate. The Admin HTTP
-  timeout is explicit and bounded. A provisioning account cannot be deleted
-  until `now > identity_requested_at + max(5 minutes, 10 x timeout)`; an attempt
-  during that lease returns 409 with the approved creation-incomplete copy.
-- Legacy provider-linked permanent deletion is allowed for a `provisioning` account as well as other
-  normal-user states, using the same fail-closed, resumable saga: commit
-  `deleting` under the Principal lock; purge all Principal-owned private data in one locked
-  transaction; delete the stored Supabase Auth UUID and verify its absence with
-  a supported Admin API (already absent succeeds); then scrub email/display
-  name and move the UUID from the Auth link to unique, permanent
-  `retired_auth_user_id` when marking `deleted`. Creation retry is refused once
-  `deleting` is committed.
-  Any failure leaves the account locked out in `deleting`, visible to the Admin
-  as incomplete with a retry action. Existing tokens fail the per-request
-  Principal status check.
-- After deletion completes, no Supabase identity for that account can ever be
-  admitted to myNutri: an unknown or retired UUID receives 401
-  `INVALID_CREDENTIAL`. A delayed provider-side create may temporarily leave
-  an Auth identity; reconciliation deletes it by retired UUID, verifies absence,
-  and never restores private data or reactivates the tombstone. Reconciliation
-  runs after each completed/retried deletion, asynchronously in bounded batches
-  for tombstones from the last 30 days when the Admin list loads, via an
-  idempotent full-sweep ops command, and before creation when Supabase reports
-  an email taken by a retired UUID. A non-retired duplicate retains the approved
-  duplicate-email error. Failures are sanitized, logged only by count/type,
-  and retried on the next trigger; they never block the Admin list.
+- Creation commits an active Principal, immutable normalized username, password hash,
+  initial-change flag and idempotency key atomically. No external identity is created.
+- Deletion commits `deleting` under the Principal lock, then purges private data and
+  sessions and scrubs the durable tombstone locally. Failed local deletion remains
+  locked out and retryable. Historical `provisioning` accounts may be deleted without
+  an external lease or absence check. No reconciliation or external lifecycle remains.
 - Global Foods survive deletion. Their creator/updater attribution retains the
   scrubbed Principal tombstone. The UI does not display Food creator or updater
   attribution (including any deleted-user label) to any role, per BR-FOD-021
@@ -76,10 +53,6 @@ Diary, Target Plans, nutrition calculations, recommendations or Progress.
   No Food history is rewritten. Every Principal-owned-data writer rechecks
   `active` under the Principal lock so nothing private can be written after purge;
   the sex-only Admin correction permits active/disabled targets only (BR-USM-032; #109).
-- Privileged Supabase Auth calls for Admin creation, password reset, and identity
-  deletion run only through FastAPI using a backend-only Service Role credential;
-  the bootstrap tool remains permitted. The credential is never exposed to the
-  frontend, logged, or returned, and no other runtime path may use it.
 - Foods form a global catalog; Food mutation requires `admin`.
 - Food taxonomy has exactly `primary_category` and `subcategory`.
 - Food nutrition provenance is only `nutrition_data_source`, with `official`

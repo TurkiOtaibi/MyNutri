@@ -3,6 +3,7 @@ from __future__ import annotations
 from base64 import urlsafe_b64encode
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -18,11 +19,12 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.api.routes import admin as admin_route
-from app.core.auth import AuthClaims, PrincipalContext, get_token_verifier
+from app.core.auth import PrincipalContext
 from app.db.session import get_session
 from app.main import app
 from app.models import (
     ActivityLevel,
+    AuthSession,
     DiaryEntry,
     Food,
     Goal,
@@ -32,6 +34,7 @@ from app.models import (
     Sex,
 )
 from app.services.diary import AdminDiaryCursorError, _encode_admin_diary_cursor
+from app.services.internal_auth import token_digest
 
 ADMIN_ID = UUID("00000000-0000-0000-0000-0000000000aa")
 USER_ID = UUID("00000000-0000-0000-0000-0000000000bb")
@@ -40,13 +43,8 @@ ADMIN_AUTH_ID = UUID("10000000-0000-0000-0000-0000000000aa")
 USER_AUTH_ID = UUID("10000000-0000-0000-0000-0000000000bb")
 
 
-class _Verifier:
-    def verify(self, token: str) -> AuthClaims:
-        if token == "admin":
-            return AuthClaims(ADMIN_AUTH_ID, "admin@example.com", "Admin", 1_780_000_002)
-        if token == "user":
-            return AuthClaims(USER_AUTH_ID, "user@example.com", "User", 1_780_000_002)
-        raise ValueError("invalid token")
+def _token(label: str) -> str:
+    return "mn1_" + urlsafe_b64encode(hashlib.sha256(label.encode()).digest()).decode().rstrip("=")
 
 
 @pytest.fixture
@@ -70,11 +68,17 @@ def admin_context():
     )
     session.commit()
 
+    now = datetime.now(timezone.utc)
+    for label, owner in (("admin", ADMIN_ID), ("user", USER_ID)):
+        session.add(AuthSession(principal_id=owner, token_hash=token_digest(_token(label)),
+                                created_at=now, last_used_at=now,
+                                expires_at=now + timedelta(days=30)))
+    session.commit()
+
     def override_session():
         yield session
 
     app.dependency_overrides[get_session] = override_session
-    app.dependency_overrides[get_token_verifier] = _Verifier
     client = TestClient(app)
     try:
         yield client, session
@@ -85,7 +89,7 @@ def admin_context():
 
 
 def _headers(token: str = "admin") -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": f"Bearer {_token(token)}"}
 
 
 def _cursor(payload: dict) -> str:
@@ -652,7 +656,7 @@ def test_plan025_migration_rehearsal_catalog_and_reversibility(
     plan025_postgresql_database: str,
 ) -> None:
     heads = _run_alembic(plan025_postgresql_database, "heads")
-    assert heads.stdout.strip() == "f0c8a6e12534 (head)"
+    assert heads.stdout.strip() == "a1d9b7f23645 (head)"
     _run_alembic(plan025_postgresql_database, "upgrade", "9f2a1b6c3d05")
     engine = sa_create_engine(plan025_postgresql_database)
     try:

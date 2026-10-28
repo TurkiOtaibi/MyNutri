@@ -1,10 +1,14 @@
 # V2 Data Migration and Cutover
 
-## APPROVED TARGET login cutover — pending #110–#114
+## APPROVED TARGET login cutover — pending #114
 
-The Supabase lifecycle transitions and preservation checks below describe CURRENT implemented migrations. They are not the future login cutover, and their account-preservation statements must not override the approved test-account purge. At that future cutover, delete all current test accounts and their private data, retain the Food list, remove Supabase Auth/email from the system and recreate the single Admin through a server-side command that can also reset its password. This is a target release requirement, not an executable procedure or authorization to delete data now. (Product Owner, 17 October 2026 AUT/USM/FOD decision tables; BR-AUT-001/012, related BR-USM-027/043; command requirement in issue #100.)
+Historical lifecycle migrations remain immutable schema evidence. Supabase Auth runtime
+integration is removed in #113 while PostgreSQL hosting and `DATABASE_URL` remain.
+The future #114 cutover deletes current test accounts/private data, retains Foods and
+scrubbed Principal tombstones, and recreates the single Admin through the internal
+create/reset command. This is an approved target, not authorization to execute it.
 
-Issue #110 and its 27 October 2026 decisions retain scrubbed Principal tombstones and never rewrite Food attribution IDs or transfer them to the Admin. The existing deletion saga purges private rows, including internal sessions, and scrubs username/hash along with existing identity data. The internal credential/session schema and Admin command are CURRENT in #110, specified in V2 02/11; the reviewed destructive cutover procedure remains pending #114. No cutover is authorized here. (BR-AUT-001/017, BR-USM-043, BR-FOD-021.)
+Issue #110 and its 27 October 2026 decisions retain scrubbed Principal tombstones and never rewrite Food attribution IDs or transfer them to the Admin. The local deletion lifecycle purges private rows, including internal sessions, and scrubs username/hash along with existing identity data. The internal credential/session schema and Admin command are CURRENT in #110, specified in V2 02/11; the reviewed destructive cutover procedure remains pending #114. No cutover is authorized here. (BR-AUT-001/017, BR-USM-043, BR-FOD-021.)
 
 ## CURRENT migration authority
 
@@ -21,62 +25,22 @@ Issue #106 authorizes revision `d8a6e4c90312`, parent `c7f5d3b89201`, for BR-LAB
 
 Revision `c7f5d3b89201` follows `b6e4c2a78190` and implements the Product Owner decision of 25 October 2026 for BR-FOD-029. It backfills non-null `food.normalized_brand` using the same case folding and whitespace normalization as names, mapping absent/blank brands to an empty string. The unique Food identity includes normalized name, normalized brand, and the existing serving definition. Upgrade locks Food and checks collisions before replacing the constraint. Downgrade restores the former identity only if no cross-brand rows collide; otherwise it stops without rewriting or deleting data. Release migration still requires explicit authorization.
 
-## Admin-managed account lifecycle transition
+## Historical Admin-managed account lifecycle transition
 
-- Preflight inventories Principals by role/status and their Supabase Auth links.
-  More than one Admin, ambiguous Auth links, or private rows without a resolvable
-  owner stop cutover. A partial unique index on `role='admin'` enforces at most
-  one Admin; bootstrap and release preflight establish exactly one. Existing
-  Principals and their private data are not removed by this transition.
-- Expand Principal status to `active`, `disabled`, `provisioning`, `deleting`,
-  and `deleted`, with a durable creation idempotency key, pre-assigned Auth UUID,
-  `identity_requested_at`, unique permanent `retired_auth_user_id`, and the indexes and
-  constraints required for resumable lifecycle operations. An unknown or
-  non-active Supabase identity returns `401 INVALID_CREDENTIAL`; automatic
-  Principal provisioning and public signup are retired. The public signup
-  setting must be disabled as part of the coordinated cutover.
-- Introduce backend-only Service Role configuration for FastAPI Admin account
-  creation, password reset, and Auth deletion; bootstrap remains permitted.
-  No frontend variable, response, or log may contain the credential or a
-  user password. Rollout must prove these settings before enabling management.
-- Deletion retains the Principal row as a scrubbed `deleted` tombstone so
-  global `Food.created_by_principal_id` and `Food.updated_by_principal_id`
-  continue to reference it. Private `DiaryEntry`, `TargetPlan`, `Profile`,
-  `LabResult`, `IdempotencyRecord`, and every other Principal-owned dependent
-  row are purged in one Principal-locked transaction, in dependency-safe order.
-  Food rows and attribution IDs are never deleted or rewritten by user deletion.
-- Every Principal-owned-data writer must take the Principal lock and verify
-  `active` before insertion/update, including writes concurrent with deletion.
-  No private row can appear after the locked purge. The lifecycle cutover is
-  blocked until this holds for all writers, not only new account endpoints.
-Session-admission metadata is the narrow exception: #128 permits a conditional refresh of an existing unrevoked, unexpired session after five minutes without a Principal lock; it cannot insert or revive sessions. Revocation writers retain their existing lock order and every admission rechecks status (BR-AUT-017; approved 30-day sliding lifetime, 27 October 2026).
-- Cross-system work is resumable, not a single database transaction. Creation
-  commits `provisioning`, key, and backend-generated Auth UUID, records
-  `identity_requested_at` for every call, creates with that UUID, then activates.
-  The explicit bounded Admin HTTP timeout yields a lease of
-  `max(5 minutes, 10 x timeout)`; deletion of `provisioning` is refused with
-  409 until `now > identity_requested_at + lease`.
-  Deletion commits `deleting`, purges private rows transactionally, deletes the
-  stored Auth UUID, verifies absence via a supported Admin API (already absent
-  succeeds), then scrubs and marks `deleted`, moving that UUID from the Auth link
-  to `retired_auth_user_id`.
-  Any failure remains locked out in `deleting`, visible for Admin retry; do not
-  clear the Auth link before verified absence. Creation retry is forbidden after
-  `deleting`. Retry must not create a
-  second identity or re-create purged private data.
-- A late provider create after tombstoning may temporarily leave an Auth
-  identity. Admission of retired or unknown IDs remains 401. Idempotent
-  reconciliation deletes by retired ID and verifies absence after deletion,
-  on a bounded non-blocking recent-tombstone Admin-list trigger, through an
-  ops full sweep, and before creating with an email held by a retired ID.
-  Reconciliation failure is sanitized, logged by count/type only, and retried;
-  a tombstone and its purged private data are never reversed.
+Revision `b6e4c2a78190` remains frozen. Its Principal status, unique Admin index,
+creation idempotency and legacy identity/tombstone columns remain in the schema.
+It preserved existing Principals/private data. Historical Supabase Auth links,
+leases and cross-system sagas are not current runtime instructions: #113 removes
+provider admission, create/reset/delete operations and reconciliation without
+rewriting this migration or converting existing accounts.
 
-Clean and populated disposable PostgreSQL migration tests must prove the
-single-Admin index, status/ownership constraints, preservation of existing
-accounts and Foods, and both complete and interrupted lifecycle states. A
-production migration or Auth configuration change requires its own release
-authorization and preflight; this document does not perform either action.
+Current deletion remains local: lock out the Principal, purge private dependents
+and sessions under its lock, and scrub the tombstone without changing Food rows or
+attribution IDs. All private writers retain Principal-first locking and status
+checks; the #128 conditional session refresh remains the narrow exception described
+in V2 02/03/11. The future destructive cutover needs its own reviewed #114 procedure
+and explicit release authorization. Migration tests still prove single-Admin and
+ownership constraints, populated upgrade preservation and historical downgrade guards.
 
 ## Migration topology
 
@@ -262,7 +226,7 @@ Before any release authorization:
 16. Confirm `d9f64a1c3e58` removed Food archive columns, installed the Diary Food
     `ON DELETE CASCADE`, preserved existing Food/Diary rows during migration, and
     revoked direct Food mutation from `PUBLIC`, `anon`, and `authenticated`.
-17. Confirm `f0c8a6e12534` is the sole head and agrees with all eight models (#110; 27 October 2026; BR-AUT-001/017);
+17. Confirm `a1d9b7f23645` is the sole head and agrees with all eight models (#113; Product Owner approval, 28 October 2026); the trigger-only change adds no model fields;
     clean and populated-base upgrades preserve existing facts, grants and replay.
 18. Prove packaged Labs catalog availability, private privileges, finite/unscaled
     numeric storage, unique owner/test/date, and operation-specific receipt expiry.
@@ -311,3 +275,7 @@ Issue #108 authorizes revision `e9b7f5d01423`, parent `d8a6e4c90312`, for BR-USM
 ## Internal authentication transition
 
 Issue #110 authorizes revision `f0c8a6e12534`, parent `e9b7f5d01423` (27 October 2026; BR-AUT-001/007/008/011/017, BR-PRF-024–026, BR-USM-030/033). Upgrade adds nullable username/normalized username/password hash/lock/last-login fields, defaulted initial-change and failure-count fields, and `auth_session` with token hashes and timestamps. Existing identities/emails remain unchanged. Direct PUBLIC/anon/authenticated access to credentials and sessions is revoked; the new session table has default-deny RLS. Downgrade drops the internal session table and new credential fields, losing internal credentials/sessions but retaining Principals and domain data; it does not restore direct Data API grants. This is not a safe authentication rollback after internal-only accounts are in use without an explicitly reviewed recovery plan. Apply before the backend built from this revision runs; Render applies migrations at start. Production execution requires separate release authorization.
+
+## Target Plan purge guard (#113)
+
+Product Owner approval of 28 October 2026 authorizes revision `a1d9b7f23645`, parent `f0c8a6e12534`. It replaces only the guard function: Target Plan DELETE requires an owning Principal in `deleting`; every UPDATE and all other DELETEs remain rejected. The existing account transaction sets that status before purging private rows and scrubbing the tombstone, preserving Food attribution. Downgrade restores unconditional rejection and cannot restore purged rows. Neither direction changes columns or existing data. Test upgrade/downgrade only on disposable loopback PostgreSQL; production execution requires separate release authorization.

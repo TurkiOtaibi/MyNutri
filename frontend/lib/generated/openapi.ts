@@ -95,28 +95,6 @@ export interface AdminAccountCounts {
   provisioning?: number;
 }
 
-/** AdminAccountCreate */
-export interface AdminAccountCreate {
-  /**
-   * Display Name
-   * @minLength 1
-   * @maxLength 120
-   */
-  display_name: string;
-  /**
-   * Email
-   * @minLength 3
-   * @maxLength 320
-   */
-  email: string;
-  /**
-   * Initial Password
-   * @minLength 1
-   * @maxLength 256
-   */
-  initial_password: string;
-}
-
 /** AdminAccountDelete */
 export interface AdminAccountDelete {
   /** Confirm Email */
@@ -163,16 +141,6 @@ export interface AdminAccountPasswordReset {
    * @maxLength 256
    */
   new_password: string;
-}
-
-/** AdminAccountRetryCreate */
-export interface AdminAccountRetryCreate {
-  /**
-   * Initial Password
-   * @minLength 1
-   * @maxLength 256
-   */
-  initial_password: string;
 }
 
 /** AdminAccountSummary */
@@ -1562,7 +1530,7 @@ export namespace Admin {
   export namespace CreateAdminAccountsPost {
     export type RequestParams = {};
     export type RequestQuery = {};
-    export type RequestBody = AdminInternalAccountCreate | AdminAccountCreate;
+    export type RequestBody = AdminInternalAccountCreate;
     export type RequestHeaders = {
       /**
        * Idempotency-Key
@@ -1704,50 +1672,6 @@ export namespace Admin {
     export type RequestBody = AdminAccountPasswordReset;
     export type RequestHeaders = {};
     export type ResponseBody = void;
-  }
-
-  /**
-   * No description
-   * @tags admin-accounts
-   * @name RetryCreateAdminAccountsPrincipalIdRetryCreatePost
-   * @summary Retry Create
-   * @request POST:/admin/accounts/{principal_id}/retry-create
-   * @secure
-   */
-  export namespace RetryCreateAdminAccountsPrincipalIdRetryCreatePost {
-    export type RequestParams = {
-      /**
-       * Principal Id
-       * @format uuid
-       */
-      principalId: string;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = AdminAccountRetryCreate;
-    export type RequestHeaders = {};
-    export type ResponseBody = AdminAccountSummary;
-  }
-
-  /**
-   * No description
-   * @tags admin-accounts
-   * @name RetryDeleteAdminAccountsPrincipalIdRetryDeletePost
-   * @summary Retry Delete
-   * @request POST:/admin/accounts/{principal_id}/retry-delete
-   * @secure
-   */
-  export namespace RetryDeleteAdminAccountsPrincipalIdRetryDeletePost {
-    export type RequestParams = {
-      /**
-       * Principal Id
-       * @format uuid
-       */
-      principalId: string;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = AdminAccountSummary;
   }
 
   /**

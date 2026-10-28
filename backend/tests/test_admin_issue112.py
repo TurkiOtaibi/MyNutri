@@ -11,7 +11,6 @@ from app.core.credentials import verify_password
 @pytest.fixture
 def admin_api(labs_client, lab_admin, as_actor, monkeypatch):
     as_actor(lab_admin)
-    monkeypatch.setattr("app.api.routes.admin_accounts._background_reconcile_recent", lambda *args: None)
     return labs_client
 
 
@@ -109,14 +108,14 @@ def test_admin_cannot_mutate_self(admin_api, lab_admin, operation):
     assert response.status_code == 403
 
 
-def test_internal_delete_never_schedules_provider_reconciliation(admin_api, monkeypatch):
-    calls = []
-    monkeypatch.setattr("app.api.routes.admin_accounts._background_reconcile_recent", lambda *args: calls.append(args))
-    result = create(admin_api)
-    assert result.status_code == 201
-    response = admin_api.request("DELETE", "/admin/accounts/" + result.json()["principal_id"], json={"confirm_username": "Test_User"})
-    assert response.status_code == 200
-    assert calls == []
+def test_retired_lifecycle_routes_are_absent(admin_api):
+    from app.main import app
+
+    paths = app.openapi()["paths"]
+    assert not any("retry-create" in path or "retry-delete" in path for path in paths)
+    assert admin_api.post("/admin/accounts", headers={"Idempotency-Key": "legacy"}, json={
+        "email": "legacy@example.test", "display_name": "Legacy", "initial_password": "Initial-123",
+    }).status_code == 422
 
 
 def test_internal_create_requires_idempotency_key(admin_api):
@@ -146,10 +145,6 @@ def test_internal_reset_unlocks_revokes_and_preserves_username(admin_api, labs_p
     from datetime import timedelta
     from app.models import AuthSession
 
-    def provider_forbidden(*args, **kwargs):
-        raise AssertionError("Internal lifecycle must not initialize the provider")
-
-    monkeypatch.setattr("app.services.admin_auth._configured_admin_client", provider_forbidden)
     key = str(uuid4())
     result = create(admin_api, key=key)
     assert result.status_code == 201
@@ -199,7 +194,7 @@ def test_internal_delete_failure_rolls_back_status_and_identity(admin_api, labs_
         raise RuntimeError("synthetic purge failure")
     monkeypatch.setattr("app.services.admin_lifecycle._purge_private_rows", fail_purge)
     with pytest.raises(RuntimeError, match="synthetic purge failure"):
-        delete_account(labs_postgresql_session, admin.id, row.id, None, datetime.now(timezone.utc), 5, confirmation_username="Test_User")
+        delete_account(labs_postgresql_session, admin.id, row.id, datetime.now(timezone.utc), confirmation_username="Test_User")
     labs_postgresql_session.rollback()
     labs_postgresql_session.refresh(row)
     assert row.status == "active" and row.username == "Test_User" and row.password_hash is not None
@@ -211,3 +206,37 @@ def test_monitoring_search_uses_literal_username(admin_api):
     response = admin_api.get("/admin/users?search=ALPHA_")
     assert response.status_code == 200
     assert response.json()["total"] == 1
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_delete_purges_api_created_target_plan_with_immutable_trigger(
+    labs_client, labs_postgresql_session, lab_owner, lab_admin, as_actor, legacy,
+):
+    from app.core.calendar import current_diary_date
+    from app.core.credentials import hash_password
+    from app.models import AuthSession, DiaryEntry, IdempotencyRecord, LabResult, Profile, TargetPlan
+    from test_principal_security import profile_payload
+
+    owner = labs_postgresql_session.get(Principal, lab_owner.id)
+    if not legacy:
+        owner.username = owner.normalized_username = "purge-user"
+        owner.password_hash = hash_password("Initial-123")
+        labs_postgresql_session.add(owner)
+        labs_postgresql_session.commit()
+    as_actor(lab_owner)
+    payload = {**profile_payload(), "sex": "female", "effective_from": current_diary_date().isoformat()}
+    preview = labs_client.post("/profile/preview", json=payload)
+    assert preview.status_code == 200, preview.text
+    result = labs_client.post("/target-plans", headers={"Idempotency-Key": "purge-real-plan"}, json={
+        **payload, "confirmed": True, "expected_preview_hash": preview.json()["preview_hash"],
+    })
+    assert result.status_code == 201, result.text
+    assert labs_postgresql_session.exec(select(TargetPlan).where(TargetPlan.principal_id == owner.id)).first() is not None
+    as_actor(lab_admin)
+    confirmation = {"confirm_email": owner.email} if legacy else {"confirm_username": owner.username}
+    response = labs_client.request("DELETE", f"/admin/accounts/{owner.id}", json=confirmation)
+    assert response.status_code == 200, response.text
+    labs_postgresql_session.refresh(owner)
+    assert owner.status == "deleted"
+    for model in (AuthSession, DiaryEntry, IdempotencyRecord, LabResult, Profile, TargetPlan):
+        assert labs_postgresql_session.exec(select(model).where(model.principal_id == owner.id)).first() is None
