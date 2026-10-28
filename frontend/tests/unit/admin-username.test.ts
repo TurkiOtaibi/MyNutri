@@ -14,9 +14,9 @@ const state = vi.hoisted(() => ({ search: "", data: {
     { principal_id: "legacy", display_name: "مستخدم سابق", username: null, email: "legacy@example.test", role: "user", status: "active", created_at: "2026-08-15T22:30:00Z", last_login_at: null, is_locked: false },
   ],
 } }));
-vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({}), useQuery: ({ queryKey }: { queryKey: string[] }) => queryKey[0] === "admin-user" ? { data: {
+vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({}), useQuery: () => ({ data: state.data }), useInfiniteQuery: ({ queryKey }: { queryKey: string[] }) => ({ data: { pages: queryKey[0] === "admin-user" ? [{
   account: { ...state.data.items[0], username: "active" }, profile: null, current_target: null, plan_history: { items: [] }
-} } : { data: state.data }, useInfiniteQuery: () => ({ data: { pages: [] } }) }));
+}] : [] } }) }));
 vi.mock("@/components/AuthProvider", () => ({ useAuth: () => ({ account: state.data.self }) }));
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(state.search), usePathname: () => "/admin/users", useRouter: () => ({ replace: vi.fn() }) }));
 

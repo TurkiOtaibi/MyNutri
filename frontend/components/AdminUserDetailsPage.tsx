@@ -91,10 +91,27 @@ export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
   const backHref = `/admin/users${returnQuery.size ? `?${returnQuery}` : ""}`;
   const [selectedDate, setSelectedDate] = useState("");
   const detailRetryRef = useRef<HTMLButtonElement>(null);
+  const planRetryRef = useRef<HTMLButtonElement>(null);
+  const planHeadingRef = useRef<HTMLHeadingElement>(null);
+  const previousPlanPages = useRef(0);
   const initialDiaryRetryRef = useRef<HTMLButtonElement>(null);
   const nextDiaryRetryRef = useRef<HTMLButtonElement>(null);
   const refetchDiaryRetryRef = useRef<HTMLButtonElement>(null);
-  const detail = useQuery({ queryKey: ["admin-user", principalId], queryFn: () => getAdminUser(principalId) });
+  const detail = useInfiniteQuery({
+    queryKey: ["admin-user", principalId],
+    queryFn: ({ pageParam }) => getAdminUser(principalId, undefined, pageParam ? { plan_cursor: pageParam, plan_limit: 20 } : undefined),
+    initialPageParam: null as string | null,
+    getNextPageParam: page => page.plan_history.next_cursor,
+    retry: false,
+  });
+  const planPageCount = detail.data?.pages.length ?? 0;
+  useEffect(() => {
+    if (planPageCount > previousPlanPages.current && planPageCount > 1 && !detail.hasNextPage) {
+      planHeadingRef.current?.focus({ preventScroll: true });
+      planHeadingRef.current?.scrollIntoView({ block: "center" });
+    }
+    previousPlanPages.current = planPageCount;
+  }, [planPageCount, detail.hasNextPage]);
   const diaryQuery = useInfiniteQuery({
     queryKey: ["admin-user-diary", principalId, selectedDate],
     queryFn: ({ pageParam }) => getAdminUserDiary(principalId, pageParam, 50, selectedDate || undefined),
@@ -118,14 +135,16 @@ export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
   const nextPageFailure = diaryQuery.isFetchNextPageError;
   const refetchFailure = diaryQuery.isRefetchError;
 
-  useErrorOccurrenceFocus(detail.isError, detail.errorUpdatedAt, detailRetryRef);
+  useErrorOccurrenceFocus(detail.isLoadingError, detail.errorUpdatedAt, detailRetryRef);
+  useErrorOccurrenceFocus(detail.isFetchNextPageError || detail.isRefetchError, detail.errorUpdatedAt, planRetryRef);
   useErrorOccurrenceFocus(detail.isSuccess && initialDiaryFailure, diaryQuery.errorUpdatedAt, initialDiaryRetryRef);
   useErrorOccurrenceFocus(detail.isSuccess && nextPageFailure, diaryQuery.errorUpdatedAt, nextDiaryRetryRef);
   useErrorOccurrenceFocus(detail.isSuccess && refetchFailure, diaryQuery.errorUpdatedAt, refetchDiaryRetryRef);
 
   if (detail.isPending) return <div className="state-note">جارٍ تحميل بيانات المستخدم...</div>;
-  if (detail.isError) return <div className="state-note" role="alert"><p>تعذر تحميل بيانات المستخدم.</p><button ref={detailRetryRef} className="btn" type="button" disabled={detail.isFetching} onClick={() => detail.refetch()}>{detail.isFetching ? "جارٍ إعادة تحميل بيانات المستخدم..." : "إعادة محاولة تحميل بيانات المستخدم"}</button></div>;
-  const { account, profile, current_target: target, plan_history: history } = detail.data;
+  if (!detail.data) return <div className="state-note" role="alert"><p>تعذر تحميل بيانات المستخدم.</p><button ref={detailRetryRef} className="btn" type="button" disabled={detail.isFetching} onClick={() => detail.refetch()}>{detail.isFetching ? "جارٍ إعادة تحميل بيانات المستخدم..." : "إعادة محاولة تحميل بيانات المستخدم"}</button></div>;
+  const { account, profile, current_target: target } = detail.data.pages[0];
+  const plans = detail.data.pages.flatMap(page => page.plan_history.items);
   const selectedName = String(account.display_name || account.username || account.email || principalId);
 
   return <AdminAccountActionsProvider onDeleted={() => router.push(backHref)}>
@@ -133,9 +152,11 @@ export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
     <div className="page-head admin-detail-head"><Link className="icon-button detail-back" href={backHref} aria-label="رجوع"><ArrowRight size={21} aria-hidden="true" /></Link><div><h1 className="page-title">تفاصيل المستخدم</h1><p className="page-kicker">بيانات الحساب والتغذية المعروضة للمراقبة دون صلاحية تعديل.</p></div><div className="actions"><AdminAccountActions account={account} /><Link className="btn" href={`/admin/users/${encodeURIComponent(principalId)}/labs`}>عرض التحاليل</Link></div></div>
     <nav className="admin-section-links" aria-label="أقسام الصفحة">{detailSections.map(([id, title]) => <a key={id} href={`#admin-section-${id}`}>{title}</a>)}</nav>
     <section id="admin-section-account" className="section-panel admin-detail-section"><h2>ملخص الحساب</h2><ReadOnlyFields data={{ ...account, username: account.username ?? account.email }} keys={["display_name", "username", "status", "created_at", "last_login_at"]} />{!account.username && <p>حساب قديم</p>}{account.role !== "admin" && account.is_locked && <span className="account-status-badge">مقفل</span>}</section>
-    <section id="admin-section-profile" className="section-panel admin-detail-section"><h2>الملف</h2><ReadOnlyFields data={profile ? { ...profile, age: detail.data.age } : null} keys={["sex", "age", "goal", "weight_kg", "height_cm", "activity_level"]} /></section>
+    <section id="admin-section-profile" className="section-panel admin-detail-section"><h2>الملف</h2><ReadOnlyFields data={profile ? { ...profile, age: detail.data.pages[0].age } : null} keys={["sex", "age", "goal", "weight_kg", "height_cm", "activity_level"]} /></section>
     <section id="admin-section-target" className="section-panel admin-detail-section"><h2>الأهداف المطبقة اليوم</h2><MacroValues targets={target?.targets ?? null} /><ReadOnlyFields data={target?.plan ?? null} keys={["effective_from", "revision", "plan_created_at"]} /></section>
-    <section id="admin-section-plans" className="section-panel admin-detail-section"><h2>سجل الخطط</h2>{history.items?.length ? <ul className="admin-readonly-list">{history.items.map((plan, index) => <li key={String(plan.id ?? index)}><ReadOnlyFields data={plan} keys={["effective_from", "revision", "plan_created_at"]} /></li>)}</ul> : <p className="state-note">لا توجد خطط محفوظة.</p>}</section>
+    <section id="admin-section-plans" className="section-panel admin-detail-section"><h2 ref={planHeadingRef} tabIndex={-1}>سجل الخطط</h2>{plans.length ? <ul className="admin-readonly-list">{plans.map(plan => <li key={plan.id}><ReadOnlyFields data={plan} keys={["effective_from", "revision", "plan_created_at"]} /></li>)}</ul> : <p className="state-note">لا توجد خطط محفوظة.</p>}
+      {detail.isFetchNextPageError || detail.isRefetchError ? <div role="alert"><p>تعذر تحميل سجل الخطط</p><button ref={planRetryRef} className="btn" type="button" disabled={detail.isFetching} onClick={() => detail.isFetchNextPageError ? detail.fetchNextPage() : detail.refetch()}>إعادة المحاولة</button></div> : detail.hasNextPage ? <button className="btn" type="button" disabled={detail.isFetching} onClick={() => detail.fetchNextPage()}>{detail.isFetching ? "جارٍ التحميل…" : "عرض خطط أقدم"}</button> : null}
+    </section>
     <section id="admin-section-diary" className="section-panel admin-detail-section"><h2>اليوميات</h2><label className="admin-diary-date">التاريخ<input type="date" value={selectedDate} onChange={event => setSelectedDate(event.target.value)} /></label>{diaryQuery.isPending ? <p aria-live="polite">جارٍ التحميل...</p> : initialDiaryFailure ? <><p role="alert">تعذر تحميل اليوميات.</p><button ref={initialDiaryRetryRef} className="btn" type="button" onClick={() => diaryQuery.refetch()}>إعادة المحاولة</button></> : <>{diaryEntries.length ? <>{summaries.isError && <p role="alert">تعذر تحميل مجاميع اليوميات. <button className="btn" onClick={() => summaries.refetch()}>إعادة المحاولة</button></p>}
       {dates.map(day => {
         const summary = summaries.data?.find(item => item.date === day);
