@@ -62,9 +62,7 @@ Reset revokes every internal session and clears the lock without forcing another
 password change. Legacy-only accounts have no usable login/reset credential.
 Raw passwords are never persisted, logged or returned; only scrypt hashes are stored.
 Creation and idempotency commit in one transaction; no provisioning saga remains.
-Deletion commits `deleting` under the Principal lock, then purges all private dependent
-rows and sessions and scrubs the tombstone locally. Failures remain locked out and
-retryable. Historical identity/email columns remain. #114 clears both provider identity fields
+Deletion first commits `deleting`, `deletion_started_at` and revocation of every session under the Principal lock. A second transaction reacquires the Admin and target locks, purges all private dependent rows and sessions, and scrubs the tombstone locally. A purge failure rolls back only the second transaction: the account stays locked out in `deleting`, and the same confirmed delete action retries completion idempotently. Food rows/attribution and the Target Plan deletion trigger stay unchanged. Authority: BR-USM-040/044; [Product Owner option A, 28 October 2026, issue #136](https://github.com/TurkiOtaibi/MyNutri/issues/136#issuecomment-6477842407). Historical identity/email columns remain. #114 clears both provider identity fields
 only on selected legacy-user tombstones and preserves these fields on Admin/internal
 accounts; ordinary account deletion retains its existing tombstone constraints.
 No provider create/reset/delete, lease, absence check or reconciliation executes.
