@@ -1,14 +1,41 @@
 # V2 Data Migration and Cutover
 
-## APPROVED TARGET login cutover — pending #114
+## CURRENT selective legacy-user cutover — #114; production execution separate
 
-Historical lifecycle migrations remain immutable schema evidence. Supabase Auth runtime
-integration is removed in #113 while PostgreSQL hosting and `DATABASE_URL` remain.
-The future #114 cutover deletes current test accounts/private data, retains Foods and
-scrubbed Principal tombstones, and recreates the single Admin through the internal
-create/reset command. This is an approved target, not authorization to execute it.
+The Product Owner decision of 28 October 2026 supersedes the earlier proposal to
+delete all test accounts and recreate the Admin. Revision `b2e0c8f34756`, parent
+`a1d9b7f23645`, is CURRENT repository implementation, not evidence of deployment.
+Historical migrations remain frozen. Supabase Auth runtime was removed in #113;
+Supabase PostgreSQL hosting, `DATABASE_URL` and database configuration remain.
 
-Issue #110 and its 27 October 2026 decisions retain scrubbed Principal tombstones and never rewrite Food attribution IDs or transfer them to the Admin. The local deletion lifecycle purges private rows, including internal sessions, and scrubs username/hash along with existing identity data. The internal credential/session schema and Admin command are CURRENT in #110, specified in V2 02/11; the reviewed destructive cutover procedure remains pending #114. No cutover is authorized here. (BR-AUT-001/017, BR-USM-043, BR-FOD-021.)
+Upgrade selects exactly `role='user' AND password_hash IS NULL AND status <> 'deleted'`.
+It first requires exactly one Admin, active and with internal credentials, even on
+an empty database. Missing, inactive or legacy-only Admin fails before mutation;
+any failure rolls the transaction back. Do not skip this guard or stamp past it.
+
+Under the Principal-first lock, selected users become `deleting` before purging
+`auth_session`, `diary_entry`, `lab_result`, `idempotency_record`, `target_plan` and
+`profile`. This permits the parent revision's guarded Target Plan DELETE. The
+same transaction leaves `deleted` Principal tombstones and clears both
+`auth_user_id` and `retired_auth_user_id`, email, display name, username, normalized
+username, password hash and credential/lock/login state. Principal IDs survive.
+
+The Admin and all internal-credential accounts retain ALL data, including private
+rows, credentials and sessions. Already-deleted Principals remain untouched.
+Every Food row and attribution ID remains unchanged; attribution is never moved
+to the Admin. Notices report aggregate counts only, never identities or secrets.
+A rerun with a valid Admin selects zero accounts and changes no retained data.
+Downgrade is intentionally a no-op: moving the Alembic marker cannot restore
+accounts or private data. Real recovery requires the matching pre-cutover backup
+and compatible application, or a separately approved roll-forward.
+
+The backup-first release procedure, fresh-database bootstrap and Admin recovery
+commands are in V2 07. Merge into the Render deployment branch triggers startup
+migration and therefore executes this destructive cutover. This documentation and
+repository work authorize no merge, deployment, restart, production migration,
+environment change or production data mutation. Optional manual Supabase Auth
+Dashboard cleanup after release is separate; the migration makes no provider call.
+(BR-AUT-001/017, BR-USM-027/043, BR-FOD-021; Product Owner, 28 October 2026.)
 
 ## CURRENT migration authority
 
@@ -38,8 +65,8 @@ Current deletion remains local: lock out the Principal, purge private dependents
 and sessions under its lock, and scrub the tombstone without changing Food rows or
 attribution IDs. All private writers retain Principal-first locking and status
 checks; the #128 conditional session refresh remains the narrow exception described
-in V2 02/03/11. The future destructive cutover needs its own reviewed #114 procedure
-and explicit release authorization. Migration tests still prove single-Admin and
+in V2 02/03/11. The selective #114 cutover follows the procedure in V2 07
+and requires explicit release authorization. Migration tests still prove single-Admin and
 ownership constraints, populated upgrade preservation and historical downgrade guards.
 
 ## Migration topology
@@ -200,7 +227,8 @@ Registry content, and manifest/preview integrity are preserved.
 Before any release authorization:
 
 1. Verify the sole head and exact revision chain.
-2. Run a clean disposable PostgreSQL base-to-head upgrade.
+2. Upgrade disposable PostgreSQL to the cutover parent, create its synthetic
+   internal Admin, then upgrade to head; prove direct empty-database upgrade refuses.
 3. Run model/migration drift and offline upgrade SQL checks.
 4. Prove orphan and ambiguous measurement preflights fail without partial change.
 5. Regenerate OpenAPI and generated TypeScript deterministically.
@@ -226,8 +254,9 @@ Before any release authorization:
 16. Confirm `d9f64a1c3e58` removed Food archive columns, installed the Diary Food
     `ON DELETE CASCADE`, preserved existing Food/Diary rows during migration, and
     revoked direct Food mutation from `PUBLIC`, `anon`, and `authenticated`.
-17. Confirm `a1d9b7f23645` is the sole head and agrees with all eight models (#113; Product Owner approval, 28 October 2026); the trigger-only change adds no model fields;
-    clean and populated-base upgrades preserve existing facts, grants and replay.
+17. Confirm `b2e0c8f34756` is the sole head and agrees with all eight models (#114; Product Owner decision, 28 October 2026); the data-only cutover adds no model fields;
+    populated upgrades purge only eligible legacy users' private facts and replay;
+    retained accounts, their private facts/replay, Foods and grants remain unchanged.
 18. Prove packaged Labs catalog availability, private privileges, finite/unscaled
     numeric storage, unique owner/test/date, and operation-specific receipt expiry.
 19. Prove online empty-Labs downgrade succeeds, while any LabResult or in-progress/

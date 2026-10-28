@@ -11,9 +11,9 @@ concurrency:
 
 env:
   EXPECTED_FUNCTIONAL_PLAYWRIGHT_TESTS: "483"
-  EXPECTED_BACKEND_TESTS: "1749"
+  EXPECTED_BACKEND_TESTS: "1761"
   EXPECTED_BACKEND_UNIT_TESTS: "1385"
-  EXPECTED_BACKEND_POSTGRES_TESTS: "364"
+  EXPECTED_BACKEND_POSTGRES_TESTS: "376"
 
 jobs:
   backend-static:
@@ -103,7 +103,7 @@ jobs:
         working-directory: backend
         run: |
           alembic heads
-          alembic upgrade head
+          python -m scripts.bootstrap_disposable_database --keep-admin
           alembic check
       - name: Verify production database preflight
         working-directory: backend
@@ -112,15 +112,6 @@ jobs:
           PGPASSWORD: postgres
         run: |
           alembic upgrade head
-          python - <<'PY'
-          import secrets
-          from datetime import datetime, timezone
-          from sqlmodel import Session
-          from app.db.session import engine
-          from app.ops.internal_admin import manage_admin
-          with Session(engine) as session:
-              manage_admin(session, "create", "CIAdmin", secrets.token_urlsafe(24), datetime.now(timezone.utc))
-          PY
           python -m app.db.preflight
       - name: Check migration SQL
         working-directory: backend
@@ -668,7 +659,7 @@ jobs:
           PY
       - name: Upgrade disposable database
         working-directory: backend
-        run: alembic upgrade head
+        run: python -m scripts.bootstrap_disposable_database
       - name: Provision test Principal
         env:
           PGPASSWORD: postgres
@@ -894,7 +885,7 @@ jobs:
       - name: Migrate disposable database and verify real internal authentication
         working-directory: backend
         run: |
-          alembic upgrade head
+          python -m scripts.bootstrap_disposable_database
           python -m scripts.internal_auth_acceptance
       - name: Mandatory disposable acceptance cleanup
         if: always()

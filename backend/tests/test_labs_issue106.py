@@ -97,7 +97,8 @@ def test_note_migration_roundtrip_and_populated_downgrade_guard(labs_postgresql_
     labs_postgresql_session.close()
     run_labs_alembic("downgrade", "c7f5d3b89201")
     assert "note" not in {c["name"] for c in inspect(labs_postgresql_database.engine).get_columns("lab_result")}
-    run_labs_alembic("upgrade", "head")
+    # Historical preservation stops before the destructive account cutover.
+    run_labs_alembic("upgrade", "a1d9b7f23645")
     with labs_postgresql_database.engine.begin() as connection:
         assert connection.execute(text("SELECT note FROM lab_result WHERE id=:id"), {"id": result_id}).scalar_one() is None
         connection.execute(text("UPDATE lab_result SET note='synthetic note' WHERE id=:id"), {"id": result_id})

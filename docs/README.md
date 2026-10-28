@@ -40,7 +40,12 @@ remains in the V2 documents above.
 Supabase Auth/JWT admission, provider lifecycle sagas, reconciliation and Auth
 configuration are removed in #113. Supabase PostgreSQL hosting and `DATABASE_URL`
 remain. Retained identity columns and existing legacy deletion confirmation are
-historical compatibility; destructive account cutover remains pending #114.
+historical compatibility. Selective legacy-user cutover is CURRENT in repository
+revision `b2e0c8f34756` (#114); production execution remains separately authorized.
+The 28 October 2026 decision in V2 06/07 supersedes earlier all-test-account
+deletion and Admin recreation wording. CURRENT describes repository behavior,
+not the running production revision. Retained BA PDF copies record the 17 October
+baseline; updated Markdown and V2 authority govern this cutover.
 
 Day Logging Status, the Target Plan lifecycle, semantic Nutrition versions, legacy
 Target snapshots/Profile fallback, Food Archive/Restore, a separate Admin Food UI,

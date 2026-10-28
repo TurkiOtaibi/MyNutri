@@ -79,13 +79,15 @@ def test_brand_migration_backfill_downgrade_and_collision_guard(labs_postgresql_
     food = create_food(session, lab_admin.context, FoodCreate(**food_payload(brand="  STRAẞE   Brand  ")))
     food_id = food.id
     session.close()
+    # Model drift is checked at current head before the historical roundtrip.
+    assert "No new upgrade operations detected" in run_labs_alembic("check").stdout
     run_labs_alembic("downgrade", "b6e4c2a78190")
-    run_labs_alembic("upgrade", "head")
+    # Historical preservation stops before the destructive account cutover.
+    run_labs_alembic("upgrade", "a1d9b7f23645")
     with labs_postgresql_database.engine.connect() as connection:
         assert connection.execute(text("SELECT normalized_brand FROM food WHERE id=:id"), {"id": food_id}).scalar_one() == "strasse brand"
     unique = inspect(labs_postgresql_database.engine).get_unique_constraints("food")
     assert "normalized_brand" in next(item for item in unique if item["name"] == "uq_food_catalog_duplicate")["column_names"]
-    assert "No new upgrade operations detected" in run_labs_alembic("check").stdout
     create_food(session, lab_admin.context, FoodCreate(**food_payload(brand="Different")))
     session.close()
     blocked = run_labs_alembic("downgrade", "b6e4c2a78190", check=False)

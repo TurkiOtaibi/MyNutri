@@ -2,9 +2,9 @@
 
 ## CURRENT internal-auth gates versus APPROVED TARGET release
 
-CURRENT in #113: authentication uses only internal username/password and opaque bearer sessions. The browser persists only the session token in localStorage; passwords remain in memory and no auth cookies are used. Initial-password change and Profile password change are current; forgotten passwords go to the Admin. Supabase Auth/JWT admission, provider creation/reset/deletion, reconciliation and runtime Auth configuration are removed. Legacy-only accounts cannot log in; retained identity columns and the existing legacy deletion confirmation are historical compatibility until #114, not an authentication path. New users are created atomically by immutable username. No account conversion, destructive cutover, deployment or production configuration change is performed. Cutover #114 remains APPROVED TARGET. Authority: final 17 October 2026 AUT/USM decisions; 27 October #110/#112 decisions; issues #110–#113 and #128 (BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-022/030/033/036/043). Internal-auth acceptance replaces the retired provider gate with real session-revocation and Principal-isolation proof; the removed recovery UI has no recovery gate (BR-AUT-012). No deployment is implied.
+CURRENT in #113: authentication uses only internal username/password and opaque bearer sessions. The browser persists only the session token in localStorage; passwords remain in memory and no auth cookies are used. Initial-password change and Profile password change are current; forgotten passwords go to the Admin. Supabase Auth/JWT admission, provider creation/reset/deletion, reconciliation and runtime Auth configuration are removed. Legacy-only accounts cannot log in; retained identity columns and the existing legacy deletion confirmation are historical compatibility, not an authentication path; #114 clears them only on selected legacy-user tombstones. New users are created atomically by immutable username. The 28 October 2026 Product Owner decision supersedes the earlier all-test-account deletion/Admin recreation target. CURRENT repository migration #114 selects only `role='user' AND password_hash IS NULL AND status <> 'deleted'`, purges their private data and retains scrubbed tombstones. The Admin and every internal-credential account retain all data; already-deleted Principals and every Food row/attribution ID remain unchanged. Production execution remains an APPROVED TARGET requiring the release procedure in V2 06/07; repository implementation does not prove deployment or authorize further actions. Authority: final 17 October 2026 AUT/USM decisions; 27 October #110/#112 decisions; issues #110–#113 and #128 (BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-022/030/033/036/043). Internal-auth acceptance replaces the retired provider gate with real session-revocation and Principal-isolation proof; the removed recovery UI has no recovery gate (BR-AUT-012). No deployment is implied.
 
-The future #114 release must delete current test accounts/private data while keeping Foods and scrubbed attribution tombstones, then create the single Admin through the internal create/reset command implemented in #110. Its reviewed cutover/recovery procedure remains pending #114. Current migration and release safeguards remain in force; this is not production authorization. (17/27 October 2026 AUT/USM/FOD decisions; BR-USM-027/043, BR-FOD-021; #110.)
+The 28 October 2026 Product Owner decision supersedes the earlier all-test-account deletion/Admin recreation target. CURRENT repository migration #114 selects only `role='user' AND password_hash IS NULL AND status <> 'deleted'`, purges their private data and retains scrubbed tombstones. The Admin and every internal-credential account retain all data; already-deleted Principals and every Food row/attribution ID remain unchanged. Production execution remains an APPROVED TARGET requiring the release procedure in V2 06/07; repository implementation does not prove deployment or authorize further actions. (17/27 October 2026 AUT/USM/FOD decisions; BR-USM-027/043, BR-FOD-021; #110.)
 
 
 Status: Operational authority. This document does not authorize a deployment or
@@ -16,7 +16,8 @@ Before release, verify exactly one Admin, the partial unique Admin-role index,
 private ownership integrity and unchanged Food attribution to Principals. Verify
 that the intended Admin already has internal credentials, or separately authorize
 the existing attach command before removing legacy admission. Legacy-only accounts
-cannot log in; this release does not convert accounts or execute #114 cutover.
+cannot log in. #114 executes only the selective purge described below when its
+release is explicitly authorized.
 
 In an explicitly disposable loopback environment, exercise atomic/idempotent user
 creation, session expiry, password-change revocation of other sessions, Admin reset
@@ -44,12 +45,81 @@ Use the exact approved Arabic account-management copy in the BA field dictionary
 
 ## Release identity
 
-The current migration head is `a1d9b7f23645`, parent `f0c8a6e12534` (issue #113, Product Owner approval of 28 October 2026). Apply it before running this backend; Render applies migrations at start. Upgrade changes only the Target Plan guard function: DELETE is allowed only while the owning Principal is `deleting`, and every UPDATE remains forbidden. Downgrade restores the unconditional UPDATE/DELETE rejection and therefore blocks account purges with saved plans again; it restores no deleted data. No columns or data are changed by either direction. Production migration requires separate explicit release authorization. Confirm the application commit, generated contract, single head and approved environment before rollout.
+The current repository migration head is `b2e0c8f34756`, parent `a1d9b7f23645`.
+The 28 October 2026 decision selects only non-deleted normal users without an
+internal password hash. V2 06 defines exact purge, preservation and guard rules.
+No production deployment or migration has been performed by this change.
+
+## #114 backup-first release and recovery
+
+1. Before authorizing merge, identify the exact revision and environment, take a
+   pre-cutover database backup, and verify restoration into an explicitly
+   disposable isolated database. Record backup identity and restore evidence
+   without credentials or private data. A backup without verified recovery is
+   insufficient.
+2. Confirm the single active Admin has internal credentials and login readiness.
+   Preserve that Admin and every internal account with all their data. If needed,
+   separately authorize attach/reset before release using the commands below;
+   do not delete or recreate the existing Admin. Login itself changes session
+   state, so any production login check needs explicit authorization.
+3. Review aggregate eligibility/private-table counts and Food counts/attribution
+   integrity, confirm complete required CI, and approve the exact merge/release
+   only after backup and Admin readiness. A merge to the configured Render branch
+   triggers deployment; startup runs `alembic upgrade head`, executing the purge.
+   Merge is therefore the execution boundary, not a harmless preparation step.
+4. After authorized execution, verify the actual Render running revision and
+   Alembic head, aggregate notices, zero remaining eligible users, unchanged
+   Admin/internal-account data and unchanged Foods/attribution. Use safe
+   non-mutating checks; do not log identities, hashes, tokens or connection URLs.
+5. On failure, stop and inspect the rollback outcome. Do not bypass the Admin
+   guard. Repeating the SQL after success selects zero with a valid Admin.
+   `downgrade` is a no-op and restores no data; recovery requires the verified
+   pre-cutover database backup plus compatible application, or an approved
+   corrective release, each separately authorized.
+
+Optional manual removal of obsolete Supabase Auth users in the Dashboard may
+occur after release only with separate authorization. It is not a migration step
+or application dependency. Keep Supabase PostgreSQL and database configuration.
+These instructions imply no further authorization for merge, deployment, restart,
+configuration changes, production migration or production data mutation.
+
+## Fresh disposable database bootstrap and Admin password recovery
+
+An empty database deliberately fails the head guard. From `backend`, with the
+exact target confirmed as disposable loopback PostgreSQL and its `DATABASE_URL`
+kept local, use the existing command in this order (documentation only; not
+executed by this change):
+
+```console
+python -m alembic upgrade a1d9b7f23645
+python -m app.ops.internal_admin create --username <admin_username>
+python -m alembic upgrade head
+```
+
+If the parent database already has an active legacy Admin, replace `create` with
+`python -m app.ops.internal_admin attach --username <admin_username>`; this attaches
+to the same Principal and preserves its data. If internal credentials already
+exist, use neither create nor attach. Never create a replacement Admin to bypass
+the guard. Production bootstrap/attach requires separate exact authorization.
+
+For a forgotten Admin password, use the existing command:
+
+```console
+python -m app.ops.internal_admin reset --username <admin_username>
+```
+
+Enter the password at the hidden prompt. Automation may append `--password-stdin`
+and supply it through protected stdin; never put a password in command arguments,
+examples, logs or shell history. Reset requires the active Admin's matching
+username, clears its lock and revokes sessions. Authorize production reset
+separately; this runbook does not execute it.
 
 ## Required pre-release validation
 
 - Backend Ruff/static checks and the complete pytest suite pass.
-- A disposable PostgreSQL database upgrades cleanly from base to head.
+- A disposable PostgreSQL database upgrades to the parent, bootstraps the internal
+  Admin as above, then upgrades to head; a direct empty-database upgrade fails
+  the guard and rolls back as designed.
 - `alembic heads`, `alembic check`, and offline upgrade SQL pass.
 - Migration preflights reject orphan Diary rows, ambiguous measurements, and
   populated retired-feature tables without partial schema changes.
@@ -75,7 +145,8 @@ The current migration head is `a1d9b7f23645`, parent `f0c8a6e12534` (issue #113,
   17 October 2026, reconfirmed on 25 October 2026. Existing entries retain their
   update/delete rules. Diary writes require no `If-Match` and do not read or
   write Day Logging Status state or history.
-- Target Plan and unrelated idempotency rows survive the selective cleanup.
+- Earlier retired-feature cleanup preserves Target Plan and unrelated idempotency
+  rows; #114 deliberately purges all six private tables for selected users only.
 - Retired endpoints, navigation, schema fields, tables, flags, and generated
   contracts are absent.
 - Historical Alembic revision hashes remain unchanged.
