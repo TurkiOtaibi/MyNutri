@@ -49,6 +49,24 @@ test("Admin list debounces search and preserves search filter page through detai
   await expect(page.locator(".account-self-row")).toBeVisible();
 });
 
+for (const status of ["active", "disabled"] as const) {
+  test(`BR-USM-018 ${status} row opens monitored details with its arrow`, async ({ page }) => {
+    await detail(page);
+    await page.route(`${API}/admin/accounts?*`, route => route.fulfill({ json: {
+      items: [{ ...account, status }], total: 1, page_size: 20, page: 1, counts,
+    } }));
+    await page.goto("/admin/users");
+    const row = page.locator(".account-row").filter({ hasText: account.email });
+    const link = row.getByRole("link");
+    await expect(link).toContainText(status === "active" ? "نشط" : "معطّل");
+    await expect(link.locator(".account-open-arrow")).toBeVisible();
+    await link.click();
+    await expect(page).toHaveURL(new RegExp(`/admin/users/${id}$`));
+    await expect(page.getByRole("heading", { name: "تفاصيل المستخدم", exact: true })).toBeVisible();
+    await expect(page.locator("#admin-section-account")).toContainText(account.display_name);
+  });
+}
+
 test("cancel clears all add fields and disable requires confirmation with date fallback", async ({ page }) => {
   let disabled = false, writes = 0;
   await page.route(`${API}/admin/accounts?*`, route => route.fulfill({ json: { items: [{ ...account, status: disabled ? "disabled" : "active", disabled_at: disabled ? "2026-10-17T12:00:00Z" : null }, { ...account, principal_id: `${id}-legacy`, email: "legacy@example.test", status: "disabled" }], total: 2, page_size: 20, page: 1, counts } }));

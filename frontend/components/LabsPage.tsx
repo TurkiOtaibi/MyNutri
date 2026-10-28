@@ -53,7 +53,9 @@ export function LabsPage() {
   }, [catalog.data, category, overview.data, search, sort, view]);
 
   if (catalog.isPending || overview.isPending) return <div className={styles.loading}>جارٍ تحميل التحاليل...</div>;
-  if (!catalog.data || !overview.data) return <div className={styles.loading} role="alert">تعذر تحميل التحاليل. حاول مرة أخرى.</div>;
+  if (!catalog.data || !overview.data) return <div className={styles.loading} role="alert">تعذر تحميل التحاليل الحالية. حاول مرة أخرى.
+    <button className="btn" type="button" onClick={() => { void catalog.refetch(); void overview.refetch(); }}>إعادة تحميل التحاليل</button>
+  </div>;
   const props = {
     catalog: catalog.data,
     rows,
@@ -85,7 +87,7 @@ export function LabsPage() {
     <div id="labs-panel-all" role="tabpanel" aria-labelledby="labs-tab-all" tabIndex={view === "all" ? 0 : -1} hidden={view !== "all"}>
       {view === "all" ? <LabCatalogView {...props} /> : null}
     </div>
-    <LabBatchDialog phase={batch.phase} catalog={batch.catalog} returnFocusRef={batchOpener}
+    <LabBatchDialog phase={batch.phase} catalog={batch.catalog} serverToday={batch.serverToday} returnFocusRef={batchOpener}
       onDate={(date) => batch.dispatch({ type: "EDIT_DATE", date })}
       onNote={(note) => batch.dispatch({ type: "EDIT_NOTE", note })}
       onPanel={(key, selected) => { if (batch.catalog) batch.dispatch({ type: "PANEL", key, selected, catalog: batch.catalog }); }}

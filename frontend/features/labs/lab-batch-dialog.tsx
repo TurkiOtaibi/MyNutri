@@ -11,6 +11,7 @@ import styles from "./labs.module.css";
 type LabBatchDialogProps = {
   phase: BatchPhase | null;
   catalog: LabCatalogResponse | undefined;
+  serverToday: string | undefined;
   returnFocusRef?: RefObject<HTMLElement | null>;
   onDate: (value: string) => void;
   onNote: (value: string) => void;
@@ -59,7 +60,7 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
         <Dialog.Description>التاريخ، ثم اختيار التحاليل، ثم إدخال القيم.</Dialog.Description>
         {draft && catalog ? <>
           <ol className={styles.batchSteps} aria-label="خطوات إضافة النتائج">
-            {([ ["date", "التاريخ"], ["selection", "الاختيار"], ["values", "القيم"] ] as const).map(([key, label]) => <li key={key} aria-current={draft.step === key ? "step" : undefined}>{label}</li>)}
+            {([ ["date", "التاريخ"], ["selection", "اختيار التحاليل"], ["values", "القيم"] ] as const).map(([key, label]) => <li key={key} aria-current={draft.step === key ? "step" : undefined}>{label}</li>)}
           </ol>
           {phase?.kind === "validation_error" ? <div id="lab-batch-errors" role="alert" tabIndex={-1} className={styles.batchError}>
             {phase.errors.map((error, index) => <p key={index}>{labErrorMessage(error)}</p>)}
@@ -72,6 +73,7 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
               {draft.date ? <time dateTime={draft.date}>{formatGregorianArabicDate(draft.date)}</time> : null}
               {errors.test_date ? <span id="lab-date-error" className={styles.batchError}>{errors.test_date}</span> : null}
             </label> : null}
+            {draft.step === "date" && props.serverToday ? <p>تاريخ اليوم: <time dateTime={props.serverToday}>{formatGregorianArabicDate(props.serverToday)}</time></p> : null}
             {draft.step === "date" ? <div className={styles.batchNote}>
               <label htmlFor="lab-batch-note">ملاحظة</label>
               <textarea id="lab-batch-note" value={draft.note} aria-invalid={Boolean(errors.note)} aria-describedby={errors.note ? "lab-note-error" : undefined} onChange={(event) => props.onNote(event.target.value)} />

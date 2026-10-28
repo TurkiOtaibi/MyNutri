@@ -1,4 +1,5 @@
 "use client";
+import { rememberFoodDeletion } from "@/features/foods/food-notices";
 
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
@@ -147,6 +148,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     onDeleted: () => {
       if (!sessionSignal.aborted) {
         setInitialForm(JSON.stringify(form));
+        if (account) rememberFoodDeletion(queryClient, account.principal_id);
         completeAndNavigate("/foods");
       }
     },

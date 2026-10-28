@@ -147,3 +147,24 @@ test("profile-required overview presents the Profile completion action", async (
   await page.getByRole("link", { name: "إكمال الملف" }).click();
   await expect(page.getByRole("link", { name: "بياناتي", exact: true })).toHaveAttribute("aria-current", "page");
 });
+
+
+test("initial overview failure offers the governed retry and reloads current results", async ({ labsPage: page }) => {
+  let fail = true;
+  let reads = 0;
+  await page.route(`${API_URL}/labs`, async route => {
+    reads += 1;
+    if (fail) return route.fulfill({ status: 503, json: { detail: "unavailable" } });
+    return route.continue();
+  });
+  await page.goto("/labs");
+  const alert = page.getByRole("alert").filter({ hasText: "تعذر تحميل التحاليل الحالية. حاول مرة أخرى." });
+  await expect(alert).toBeVisible();
+  const beforeRetry = reads;
+  fail = false;
+  await alert.getByRole("button", { name: "إعادة تحميل التحاليل", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "تحاليلك", exact: true })).toBeVisible();
+  await expect(alert).toHaveCount(0);
+  expect(reads).toBeGreaterThan(beforeRetry);
+  await expect(page.getByText("لم تسجل أي نتائج بعد.", { exact: true })).toBeVisible();
+});

@@ -1,6 +1,20 @@
 import { test, expect } from "./helpers";
 
 test.describe("Food permanent delete @foods", () => {
+  for (const surface of ["details", "edit"] as const) {
+    test(`BR-FOD-036 ${surface} deletion announces success after returning to the catalog`, async ({ page, foodsApi }) => {
+      const food = await foodsApi.create({ name: `E2E-Delete-Notice-${surface}-${Date.now()}` });
+      await page.goto(`/foods/${food.id}${surface === "edit" ? "/edit" : ""}`);
+      await page.getByRole("button", { name: "حذف", exact: true }).click();
+      await page.getByRole("dialog", { name: "حذف الطعام؟" }).getByRole("button", { name: "حذف نهائي", exact: true }).click();
+      await expect(page).toHaveURL(/\/foods$/);
+      await expect(page.getByRole("status").filter({ hasText: "تم حذف الطعام نهائيًا." })).toBeVisible();
+      expect((await foodsApi.list()).some((item) => item.id === food.id)).toBe(false);
+      await page.reload();
+      await expect(page.getByText("تم حذف الطعام نهائيًا.", { exact: true })).toHaveCount(0);
+    });
+  }
+
   test("[FOOD-TC-118] @p0 confirmation dialog uses the approved global permanent-delete warning", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: `E2E-Delete-Dialog-${Date.now()}` });
     await page.goto("/foods");

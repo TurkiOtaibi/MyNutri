@@ -29,6 +29,7 @@ implementation authority.
 - [Field dictionary](ba/04_FIELD_DICTIONARY.md)
 - [User stories and acceptance](ba/07_USER_STORIES.md)
 - [Traceability matrix](ba/10_TRACEABILITY_MATRIX.md)
+- [BR requirement implementation and test evidence](ba/12_REQUIREMENTS_TRACEABILITY.md)
 - [System business requirements (BRD)](ba/%D9%88%D8%AB%D9%8A%D9%82%D8%A9%20%D9%85%D8%AA%D8%B7%D9%84%D8%A8%D8%A7%D8%AA%20%D8%A7%D9%84%D9%86%D8%B8%D8%A7%D9%85%20%28BRD%29.md), with a [PDF copy](ba/%D9%88%D8%AB%D9%8A%D9%82%D8%A9%20%D9%85%D8%AA%D8%B7%D9%84%D8%A8%D8%A7%D8%AA%20%D8%A7%D9%84%D9%86%D8%B8%D8%A7%D9%85%20%28BRD%29.pdf)
 - [System user stories](ba/%D9%82%D8%B5%D8%B5%20%D9%85%D8%B3%D8%AA%D8%AE%D8%AF%D9%85%20%D8%A7%D9%84%D9%86%D8%B8%D8%A7%D9%85%20%28User%20Stories%29.md), with a [PDF copy](ba/%D9%82%D8%B5%D8%B5%20%D9%85%D8%B3%D8%AA%D8%AE%D8%AF%D9%85%20%D8%A7%D9%84%D9%86%D8%B8%D8%A7%D9%85%20%28User%20Stories%29.pdf)
 
@@ -55,6 +56,6 @@ through Git history only and must not be treated as current behavior.
 
 ## Governance rule
 
-Only the 19 Markdown files listed by `docs/tools/validate_authoritative_docs.py`
+Only the 20 Markdown files listed by `docs/tools/validate_authoritative_docs.py`
 belong in the current documentation estate. Run that validator after any documentation,
 route, entity, contract, or migration-head change.

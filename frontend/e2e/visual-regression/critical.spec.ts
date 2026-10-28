@@ -194,7 +194,7 @@ test.describe("critical visual regression", () => {
       fulfillBlockedPreview
     );
     await page.goto("/profile?visual=blocked-safety");
-    await page.getByLabel("الوزن").fill(String(profile.weight_kg + 1));
+    await page.getByLabel("الوزن", { exact: true }).fill(String(profile.weight_kg + 1));
     const preview = page.getByRole("region", { name: "الأهداف المتوقعة بعد الحفظ" });
     await expect(preview).toContainText("799");
     await stableRendering(page);

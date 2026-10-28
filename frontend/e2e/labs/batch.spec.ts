@@ -41,7 +41,10 @@ test("a new session refreshes yesterday's cached server date and catalog action 
   const opener = page.locator('[data-testid="lab-row"][data-test-key="hba1c"]').getByRole("button", { name: "إضافة نتيجة" });
   await opener.click();
   await expect(page.locator("#lab-batch-date")).toHaveValue(today);
-  await expect(dialog(page).locator(`time[datetime="${today}"]`)).toContainText(formatGregorianArabicDate(today));
+  const selectedDate = dialog(page).locator("label").filter({ has: page.locator("#lab-batch-date") }).locator("time");
+  await expect(selectedDate).toHaveAttribute("datetime", today);
+  await expect(selectedDate).toHaveText(formatGregorianArabicDate(today));
+  await expect(dialog(page).getByText(`تاريخ اليوم: ${formatGregorianArabicDate(today)}`, { exact: true })).toBeVisible();
   expect(reads).toBeGreaterThanOrEqual(2);
   await next(page);
   await expect(page.locator('[data-individual-key="hba1c"]')).toBeChecked();

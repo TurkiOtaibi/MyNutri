@@ -56,7 +56,8 @@ for (const [code, message] of [
   ["ACCOUNT_DISABLED", "حسابك موقوف. تواصل مع المشرف."],
 ] as const) {
   test(`@issue111 ${code} clears a restored session and preserves the requested page`, async ({ page }) => {
-    await signIn(page, actor());
+    const email = actor();
+    await signIn(page, email);
     await expect(page).toHaveURL(/\/diary$/);
     await page.route(`${API_URL}/account/me`, route => route.fulfill({ status: 401, json: { detail: { code } } }));
     await page.goto("/profile");
@@ -64,8 +65,44 @@ for (const [code, message] of [
     await expect(page.getByRole("status")).toHaveText(message);
     expect(new URL(page.url()).searchParams.get("next")).toBe("/profile");
     expect(await page.evaluate(key => localStorage.getItem(key), SESSION_TOKEN_KEY)).toBeNull();
+    await page.unroute(`${API_URL}/account/me`);
+    await page.getByLabel("اسم المستخدم", { exact: true }).fill(fixtureUsername(email));
+    await page.getByLabel("كلمة المرور", { exact: true }).fill(PASSWORD);
+    await page.getByRole("button", { name: "دخول", exact: true }).click();
+    await expect(page).toHaveURL(/\/profile$/);
+    await expect(page.getByRole("heading", { name: "بياناتك وأهدافك", exact: true })).toBeVisible();
   });
 }
+
+test("BR-AUT-014 real disable and re-enable restores the requested page after login", async ({ page, request }) => {
+  const email = actor();
+  await signIn(page, email, PASSWORD, "/profile");
+  await expect(page).toHaveURL(/\/profile$/);
+  const token = await storedToken(page);
+  const account = await request.get(`${API_URL}/account/me`, { headers: headers(token) });
+  expect(account.status()).toBe(200);
+  const principalId = (await account.json()).principal_id as string;
+  const admin = await internalLogin(ADMIN_EMAIL, ADMIN_PASSWORD);
+  const changeStatus = async (enabled: boolean) => {
+    const response = await request.put(`${API_URL}/admin/accounts/${principalId}/status`, {
+      headers: headers(admin.access_token), data: { enabled },
+    });
+    expect(response.status()).toBe(200);
+  };
+  await changeStatus(false);
+  await page.reload();
+  await expect(page).toHaveURL(/\/auth\/login\?/);
+  await expect(page.getByRole("status")).toHaveText("حسابك موقوف. تواصل مع المشرف.");
+  expect(new URL(page.url()).searchParams.get("next")).toBe("/profile");
+  expect(await page.evaluate(key => localStorage.getItem(key), SESSION_TOKEN_KEY)).toBeNull();
+  await changeStatus(true);
+  expect((await request.get(`${API_URL}/account/me`, { headers: headers(token) })).status()).toBe(401);
+  await page.getByLabel("اسم المستخدم", { exact: true }).fill(fixtureUsername(email));
+  await page.getByLabel("كلمة المرور", { exact: true }).fill(PASSWORD);
+  await page.getByRole("button", { name: "دخول", exact: true }).click();
+  await expect(page).toHaveURL(/\/profile$/);
+  await expect(page.getByRole("heading", { name: "بياناتك وأهدافك", exact: true })).toBeVisible();
+});
 
 test("@issue111 an already signed-in login visit goes to Diary after consuming return-to", async ({ page }) => {
   const email = actor();
@@ -80,6 +117,17 @@ test("@issue111 login offers Admin help without recovery and is mobile accessibl
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/auth/login");
   await expect(page.getByText("ليس لديك حساب أو نسيت كلمة المرور؟ تواصل مع المشرف.")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "التنقل الرئيسي" })).toHaveCount(0);
+  await expect(page.locator(".top-nav")).toHaveCount(0);
+  const password = page.getByLabel("كلمة المرور", { exact: true });
+  await password.fill(PASSWORD);
+  await expect(password).toHaveAttribute("type", "password");
+  await page.getByRole("button", { name: "إظهار كلمة المرور", exact: true }).click();
+  await expect(password).toHaveAttribute("type", "text");
+  await expect(password).toHaveValue(PASSWORD);
+  await page.getByRole("button", { name: "إخفاء كلمة المرور", exact: true }).click();
+  await expect(password).toHaveAttribute("type", "password");
+  await expect(page.getByRole("button", { name: "إظهار كلمة المرور", exact: true })).toBeVisible();
   await expect(page.locator('input[type="email"]')).toHaveCount(0);
   await expect(page.locator('a[href*="forgot-password"], a[href*="reset-password"]')).toHaveCount(0);
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");

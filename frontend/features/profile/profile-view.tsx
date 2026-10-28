@@ -6,6 +6,7 @@ import { AdditionalTargetsCard, CalculationExplanation, ExpectedTargetsCard, Reg
 import { ProfileConfirm, ProfileSheet } from "./profile-dialogs";
 import { PROFILE_LIMITS, activityDescriptions, activityDisplayLabels, activityLabels, goalDescriptions, goalDisplayLabels, goalLabels, sexLabels, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type SheetKind, type TargetPlanWritePhase } from "./profile-model";
 import "./profile.module.css";
+import { formatGregorianArabicDate } from "@/lib/dates";
 
 const PROFILE_WRITE_ERROR = "تعذر حفظ التغييرات";
 
@@ -272,7 +273,7 @@ export function ProfileView({
           <h2 id="target-effective-date-title">تاريخ سريان الأهداف</h2>
           <label className={`profile-setting-row profile-date-row ${errors.effective_from ? "has-error" : ""}`}>
             <CalendarDays size={19} aria-hidden="true" />
-            <span className="profile-setting-copy"><strong>تاريخ السريان</strong><bdi dir="ltr">{effectiveFrom || "غير محدد"}</bdi></span>
+            <span className="profile-setting-copy"><strong>تاريخ السريان</strong><bdi>{effectiveFrom ? formatGregorianArabicDate(effectiveFrom) : "غير محدد"}</bdi></span>
             <ChevronLeft size={18} aria-hidden="true" />
             <input
               ref={effectiveFromRef}
@@ -391,7 +392,7 @@ export function ProfileView({
       {(writePhase.kind === "confirming" || writePhase.kind === "submitting") ? (
         <ProfileConfirm
           title="تأكيد الأهداف الجديدة؟"
-          description={`المعاينة وحدها لا تحفظ الأهداف. تاريخ السريان ${writePhase.submission.effectiveFrom}.`}
+          description={`المعاينة وحدها لا تحفظ الأهداف. تاريخ السريان ${formatGregorianArabicDate(writePhase.submission.effectiveFrom)}.`}
           safeLabel="متابعة المراجعة"
           confirmLabel="حفظ الخطة"
           restoreFocusRef={restoreWriteFocusRef}

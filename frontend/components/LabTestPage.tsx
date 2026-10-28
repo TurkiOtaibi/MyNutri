@@ -246,7 +246,7 @@ export function LabTestPage({ testKey }: { testKey: string }) {
         batchOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         void batch.open([testKey]);
       }}>إضافة نتيجة</button>} /> : null}
-    <LabBatchDialog phase={batch.phase} catalog={batch.catalog} returnFocusRef={batchOpener}
+    <LabBatchDialog phase={batch.phase} catalog={batch.catalog} serverToday={batch.serverToday} returnFocusRef={batchOpener}
       onDate={(date) => batch.dispatch({ type: "EDIT_DATE", date })}
       onNote={(note) => batch.dispatch({ type: "EDIT_NOTE", note })}
       onPanel={(key, selected) => { if (batch.catalog) batch.dispatch({ type: "PANEL", key, selected, catalog: batch.catalog }); }}
