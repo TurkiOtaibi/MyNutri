@@ -34,6 +34,7 @@ import type {
   AdminAccountSummary,
   AdminProfileSexCorrection,
   AdminUserDetail,
+  Admin,
   CalendarAuthorityResponse
 } from "./generated/openapi";
 import type { LoginRequest, LoginResponse, PasswordChangeRequest, PasswordChangeResponse } from "./generated/openapi";
@@ -253,8 +254,11 @@ export function deleteFood(foodId: string, accessToken: string | null | undefine
   return apiFetch<void>(`/foods/${foodId}`, authorizedInit(accessToken, signal, { method: "DELETE" }));
 }
 
-export function getAdminUser(principalId: string, auth?: LabsAuth): Promise<AdminUserDetail> {
-  return apiFetch<AdminUserDetail>(`/admin/users/${principalId}`, auth ? authorizedInit(auth.accessToken, auth.signal) : undefined);
+export function getAdminUser(principalId: string, auth?: LabsAuth, history?: Admin.UserDetailAdminUsersPrincipalIdGet.RequestQuery): Promise<AdminUserDetail> {
+  const params = new URLSearchParams();
+  if (history?.plan_cursor) params.set("plan_cursor", history.plan_cursor);
+  if (history?.plan_limit != null) params.set("plan_limit", String(history.plan_limit));
+  return apiFetch<AdminUserDetail>(`/admin/users/${principalId}${params.size ? `?${params}` : ""}`, auth ? authorizedInit(auth.accessToken, auth.signal) : undefined);
 }
 
 export function listAdminAccounts(

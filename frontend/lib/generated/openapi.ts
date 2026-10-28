@@ -1690,7 +1690,17 @@ export namespace Admin {
        */
       principalId: string;
     };
-    export type RequestQuery = {};
+    export type RequestQuery = {
+      /** Plan Cursor */
+      plan_cursor?: string | null;
+      /**
+       * Plan Limit
+       * @min 1
+       * @max 100
+       * @default 20
+       */
+      plan_limit?: number;
+    };
     export type RequestBody = never;
     export type RequestHeaders = {};
     export type ResponseBody = AdminUserDetail;
