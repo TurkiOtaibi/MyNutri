@@ -11,9 +11,9 @@ concurrency:
 
 env:
   EXPECTED_FUNCTIONAL_PLAYWRIGHT_TESTS: "483"
-  EXPECTED_BACKEND_TESTS: "1857"
-  EXPECTED_BACKEND_UNIT_TESTS: "1507"
-  EXPECTED_BACKEND_POSTGRES_TESTS: "350"
+  EXPECTED_BACKEND_TESTS: "1737"
+  EXPECTED_BACKEND_UNIT_TESTS: "1385"
+  EXPECTED_BACKEND_POSTGRES_TESTS: "352"
 
 jobs:
   backend-static:
@@ -109,15 +109,18 @@ jobs:
         working-directory: backend
         env:
           ENVIRONMENT: production
-          SUPABASE_URL: https://ci-fixture.supabase.co
           PGPASSWORD: postgres
         run: |
           alembic upgrade head
-          psql -h 127.0.0.1 -U postgres -d mynutri_test_static_ci -v ON_ERROR_STOP=1 -c \
-            "INSERT INTO principal (id,auth_user_id,email,display_name,role,status,created_at,updated_at)
-             VALUES ('00000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001',
-             'admin.ci@example.test','CI Admin','admin','active',now(),now()) ON CONFLICT (id) DO UPDATE SET
-             auth_user_id=EXCLUDED.auth_user_id,email=EXCLUDED.email,role='admin',status='active',updated_at=now();"
+          python - <<'PY'
+          import secrets
+          from datetime import datetime, timezone
+          from sqlmodel import Session
+          from app.db.session import engine
+          from app.ops.internal_admin import manage_admin
+          with Session(engine) as session:
+              manage_admin(session, "create", "CIAdmin", secrets.token_urlsafe(24), datetime.now(timezone.utc))
+          PY
           python -m app.db.preflight
       - name: Check migration SQL
         working-directory: backend
@@ -216,8 +219,6 @@ jobs:
             --publish 127.0.0.1:18000:8000 \
             --env ENVIRONMENT=ci \
             --env DATABASE_URL=postgresql+psycopg://fixture:fixture@127.0.0.1:1/fixture \
-            --env SUPABASE_URL=https://ci-fixture.supabase.co \
-            --env SUPABASE_JWT_AUDIENCE=authenticated \
             --env CALENDAR_TIMEZONE=Asia/Riyadh \
             "$image" >/tmp/plan026-container-id; then
             fail_smoke "the container did not start."
@@ -597,16 +598,11 @@ jobs:
     env:
       PLAYWRIGHT_DISPOSABLE_DATABASE: mynutri_e2e_ci_${{ matrix.shard }}
       DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/mynutri_e2e_ci_${{ matrix.shard }}
-      SUPABASE_URL: http://127.0.0.1:8765
-      SUPABASE_JWT_AUDIENCE: authenticated
       CALENDAR_TIMEZONE: Asia/Riyadh
+      NEXT_PUBLIC_E2E_INSPECTION: "true"
       NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
-      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:8765
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: e2e-public-key
-      SUPABASE_SERVICE_ROLE_KEY: e2e-disposable-service-key
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
       PLAYWRIGHT_API_URL: http://127.0.0.1:8000
-      PLAYWRIGHT_SUPABASE_URL: http://127.0.0.1:8765
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -685,7 +681,6 @@ jobs:
           'مشرف الاختبار','admin','active',now(),now());"
       - name: Start application services
         run: |
-          python backend/scripts/e2e_supabase_auth.py > /tmp/mynutri-auth.log 2>&1 &
           cd backend
           python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/mynutri-api.log 2>&1 &
           cd ../frontend
@@ -693,7 +688,6 @@ jobs:
           setsid npm run start -- --hostname 127.0.0.1 --port 3000 > /tmp/mynutri-web.log 2>&1 &
           echo "$!" > /tmp/mynutri-web.pgid
           for attempt in {1..60}; do
-            curl --fail --silent http://127.0.0.1:8765/health >/dev/null &&
             curl --fail --silent http://127.0.0.1:8000/health >/dev/null &&
             curl --fail --silent http://127.0.0.1:3000/profile >/dev/null && exit 0
             sleep 2
@@ -863,175 +857,54 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  plan020-provider-acceptance:
-    name: Plan 020 provider acceptance
+  internal-auth-acceptance:
+    name: Internal auth acceptance
     runs-on: ubuntu-latest
     env:
-      PLAN020_PROJECT_ID: mynutri-plan020-provider-ci
+      ENVIRONMENT: ci
+      INTERNAL_AUTH_ACCEPTANCE_DISPOSABLE: mynutri_test_internal_auth_ci
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:55432/mynutri_test_internal_auth_ci
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/requirements.lock
-      - name: Set up pinned Supabase CLI
-        uses: supabase/setup-cli@v2
-        with:
-          version: 2.111.0
-      - name: Install provider acceptance dependencies
+      - name: Install internal acceptance dependencies
         run: |
           pip install --require-hashes -r backend/requirements.lock
           pip install --no-deps --no-build-isolation -e ./backend
-      - name: Start isolated local Supabase Auth and Mailpit
-        shell: bash
+      - name: Start disposable loopback PostgreSQL
         run: |
-          set -euo pipefail
-          umask 077
-          network_name="plan020-loopback-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          docker network create \
-            -o com.docker.network.bridge.host_binding_ipv4=127.0.0.1 \
-            "$network_name" >/dev/null
-          touch /tmp/plan020-network-created
-          echo "PLAN020_DOCKER_NETWORK=$network_name" >> "$GITHUB_ENV"
-
-          touch /tmp/plan020-stack-attempted
-          if ! supabase start --network-id "$network_name" > /tmp/plan020-supabase-start.log 2>&1; then
-            echo "The isolated local Supabase stack failed to start."
-            docker ps -a --format '{{.Names}} {{.Status}}' | grep '^supabase_' | sed -E 's/[[:space:]]+/ /g'
-            exit 1
-          fi
-          supabase status -o env > /tmp/plan020-supabase.env
-          chmod 600 /tmp/plan020-supabase.env
-          source /tmp/plan020-supabase.env
-
-          public_key="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
-          admin_key="${SECRET_KEY:-${SERVICE_ROLE_KEY:-}}"
-          mailpit_url="${MAILPIT_URL:-http://127.0.0.1:54324}"
-          provider_url="${API_URL:-}"
-          database_url_raw="${DB_URL:-}"
-          if [[ -z "${API_URL:-}" || -z "${DB_URL:-}" || -z "$public_key" || -z "$admin_key" ]]; then
-            echo "The isolated stack did not expose every required local runtime value."
-            exit 1
-          fi
-
-          echo "::add-mask::$public_key"
-          echo "::add-mask::$admin_key"
-          if [[ -n "${ANON_KEY:-}" ]]; then echo "::add-mask::$ANON_KEY"; fi
-          if [[ -n "${SERVICE_ROLE_KEY:-}" ]]; then echo "::add-mask::$SERVICE_ROLE_KEY"; fi
-          if [[ -n "${JWT_SECRET:-}" ]]; then echo "::add-mask::$JWT_SECRET"; fi
-          echo "::add-mask::$DB_URL"
-
-          database_url="${DB_URL/postgresql:\/\//postgresql+psycopg:\/\/}"
-          echo "::add-mask::$database_url"
-          unset SECRET_KEY SERVICE_ROLE_KEY DB_URL DATABASE_URL JWT_SECRET ANON_KEY PUBLISHABLE_KEY API_URL MAILPIT_URL
-
-          auth_ready=0
+          docker run --detach --name internal-auth-acceptance-postgres \
+            --publish 127.0.0.1:55432:5432 \
+            --env POSTGRES_PASSWORD=postgres \
+            --env POSTGRES_DB=mynutri_test_internal_auth_ci \
+            --health-cmd 'pg_isready -U postgres -d mynutri_test_internal_auth_ci' \
+            --health-interval 5s --health-timeout 5s --health-retries 10 postgres:16
           for attempt in {1..60}; do
-            if curl --fail --silent --max-time 2 "$provider_url/auth/v1/health" >/dev/null &&
-               pg_isready -d "$database_url_raw" >/dev/null 2>&1 &&
-               curl --fail --silent --max-time 2 "$mailpit_url/api/v1/info" >/dev/null; then
-              auth_ready=1
-              break
+            if [[ "$(docker inspect --format '{{.State.Health.Status}}' internal-auth-acceptance-postgres)" == healthy ]]; then
+              exit 0
             fi
-            sleep 2
+            sleep 1
           done
-          if [[ "$auth_ready" -ne 1 ]]; then
-            echo "Auth, Postgres, or Mailpit did not reach a healthy local state."
-            docker ps -a --format '{{.Names}} {{.Status}}' | grep '^supabase_' | sed -E 's/[[:space:]]+/ /g'
+          echo "Disposable PostgreSQL did not become healthy."
+          exit 1
+      - name: Migrate disposable database and verify real internal authentication
+        working-directory: backend
+        run: |
+          alembic upgrade head
+          python -m scripts.internal_auth_acceptance
+      - name: Mandatory disposable acceptance cleanup
+        if: always()
+        run: |
+          docker rm --force --volumes internal-auth-acceptance-postgres
+          if docker inspect internal-auth-acceptance-postgres >/dev/null 2>&1; then
+            echo "Disposable acceptance container survived cleanup."
             exit 1
           fi
-      - name: Apply application migrations to disposable local Postgres
-        working-directory: backend
-        shell: bash
-        run: |
-          set -euo pipefail
-          source /tmp/plan020-supabase.env
-          database_url="${DB_URL/postgresql:\/\//postgresql+psycopg:\/\/}"
-          unset SECRET_KEY SERVICE_ROLE_KEY DB_URL DATABASE_URL JWT_SECRET ANON_KEY PUBLISHABLE_KEY API_URL MAILPIT_URL
-          DATABASE_URL="$database_url" alembic upgrade head
-      - name: Verify reset session cutoff against real loopback Auth
-        working-directory: backend
-        shell: bash
-        run: |
-          set -euo pipefail
-          source /tmp/plan020-supabase.env
-          database_url="${DB_URL/postgresql:\/\//postgresql+psycopg:\/\/}"
-          provider_url="$API_URL"
-          provider_public_key="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
-          provider_admin_key="${SECRET_KEY:-${SERVICE_ROLE_KEY:-}}"
-          provider_jwt_secret="${JWT_SECRET:-}"
-          unset SECRET_KEY SERVICE_ROLE_KEY DB_URL JWT_SECRET ANON_KEY PUBLISHABLE_KEY API_URL MAILPIT_URL
-          DATABASE_URL="$database_url" SUPABASE_URL="$provider_url" \
-            SUPABASE_SERVICE_ROLE_KEY="$provider_admin_key" \
-            PROVIDER_ACCEPTANCE_PUBLIC_KEY="$provider_public_key" \
-            PROVIDER_ACCEPTANCE_JWT_SECRET="$provider_jwt_secret" \
-            PROVIDER_ACCEPTANCE_DISPOSABLE="$PLAN020_PROJECT_ID" \
-            python scripts/provider_session_cutoff_acceptance.py
-      - name: Clean up isolated provider resources
-        if: always()
-        shell: bash
-        run: |
-          set -uo pipefail
-          cleanup_failed=0
 
-          if [[ -s /tmp/plan020-web.pgid ]]; then
-            web_pgid="$(cat /tmp/plan020-web.pgid)"
-            if [[ "$web_pgid" =~ ^[0-9]+$ ]]; then
-              kill -TERM -- "-${web_pgid}" 2>/dev/null
-              for attempt in {1..15}; do
-                if ! kill -0 -- "-${web_pgid}" 2>/dev/null; then
-                  break
-                fi
-                sleep 1
-              done
-              if kill -0 -- "-${web_pgid}" 2>/dev/null; then
-                kill -KILL -- "-${web_pgid}" 2>/dev/null
-              fi
-              if kill -0 -- "-${web_pgid}" 2>/dev/null; then
-                echo "The loopback application process group survived cleanup."
-                cleanup_failed=1
-              fi
-            else
-              echo "The loopback application process marker was invalid."
-              cleanup_failed=1
-            fi
-          fi
-
-          if [[ -f /tmp/plan020-stack-attempted ]]; then
-            supabase stop --no-backup >/dev/null 2>&1
-            remaining_containers="$(docker ps -aq --filter "label=com.supabase.cli.project=$PLAN020_PROJECT_ID")"
-            remaining_volumes="$(docker volume ls -q --filter "label=com.supabase.cli.project=$PLAN020_PROJECT_ID")"
-            if [[ -n "$remaining_containers" || -n "$remaining_volumes" ]]; then
-              echo "Disposable Supabase containers or volumes survived cleanup."
-              cleanup_failed=1
-            fi
-          fi
-
-          if [[ -f /tmp/plan020-network-created && -n "${PLAN020_DOCKER_NETWORK:-}" ]]; then
-            docker network rm "$PLAN020_DOCKER_NETWORK" >/dev/null 2>&1
-            if docker network inspect "$PLAN020_DOCKER_NETWORK" >/dev/null 2>&1; then
-              echo "The disposable loopback Docker network survived cleanup."
-              cleanup_failed=1
-            fi
-          fi
-          rm -f /tmp/plan020-supabase.env /tmp/plan020-supabase-start.log
-          rm -f /tmp/plan020-web-build.log /tmp/plan020-web.log /tmp/plan020-web.pgid
-          rm -f /tmp/plan020-network-created /tmp/plan020-stack-attempted
-          rm -rf supabase/.temp supabase/.branches
-          rm -rf frontend/test-results frontend/playwright-report frontend/e2e/.auth
-          if [[ -e /tmp/plan020-supabase.env || -e /tmp/plan020-supabase-start.log ||
-                -e /tmp/plan020-web-build.log || -e /tmp/plan020-web.log ||
-                -e /tmp/plan020-web.pgid || -e /tmp/plan020-network-created ||
-                -e /tmp/plan020-stack-attempted || -e supabase/.temp ||
-                -e supabase/.branches || -e frontend/test-results ||
-                -e frontend/playwright-report || -e frontend/e2e/.auth ]]; then
-            echo "A temporary provider, web, Playwright, marker, or CLI path survived cleanup."
-            cleanup_failed=1
-          fi
-          exit "$cleanup_failed"
 
   ci-summary:
     name: CI required summary
@@ -1040,7 +913,7 @@ jobs:
       - backend-summary
       - frontend
       - e2e
-      - plan020-provider-acceptance
+      - internal-auth-acceptance
     runs-on: ubuntu-latest
     steps:
       - name: Download functional shard evidence
@@ -1056,7 +929,7 @@ jobs:
           BACKEND_RESULT: ${{ needs['backend-summary'].result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           E2E_RESULT: ${{ needs.e2e.result }}
-          PROVIDER_RESULT: ${{ needs['plan020-provider-acceptance'].result }}
+          INTERNAL_AUTH_RESULT: ${{ needs['internal-auth-acceptance'].result }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -1075,7 +948,7 @@ jobs:
               ("backend-summary", os.environ["BACKEND_RESULT"]),
               ("frontend", os.environ["FRONTEND_RESULT"]),
               ("e2e", os.environ["E2E_RESULT"]),
-              ("plan020-provider-acceptance", os.environ["PROVIDER_RESULT"]),
+              ("internal-auth-acceptance", os.environ["INTERNAL_AUTH_RESULT"]),
           ):
               if result != "success":
                   errors.append(f"Required job {job_name} finished with {result}.")

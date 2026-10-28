@@ -50,7 +50,7 @@ Match the gates in [CI](.github/workflows/ci.yml) for the affected scope. At min
 
 - backend Ruff, pytest, lock reproducibility, dependency audit, migration-head/model-drift, preflight, offline SQL, and container-runtime checks;
 - frontend clean install, full and production audits, generated-contract drift, ESLint, Vitest/architecture tests, TypeScript, and production build;
-- applicable Playwright, Linux visual, PWA static-shell, StrictMode, provider acceptance, and mandatory cleanup gates;
+- applicable Playwright, Linux visual, PWA static-shell, StrictMode, internal-auth acceptance, and mandatory cleanup gates;
 - `git diff --check` and an exact changed-file scope review.
 
 Tests must use synthetic fixtures and disposable services. Do not add hidden retries, ignored failures, arbitrary sleeps, broad lint exclusions, or test-only behavior that makes a gate pass without proving its objective.

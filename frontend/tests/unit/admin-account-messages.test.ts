@@ -12,7 +12,7 @@ describe("Admin account action messages", () => {
     expect(accountActionErrorMessage(new ApiError("تعذر إكمال إنشاء المستخدم. أعد المحاولة.", 409, undefined, "CREATION_INCOMPLETE"), action)).toBe(expected);
   });
 
-  it.each(["create", "edit", "status", "password", "delete", "retry-create", "retry-delete"] as const)("shows approved network copy for %s", action => {
+  it.each(["create", "edit", "status", "password", "delete"] as const)("shows approved network copy for %s", action => {
     expect(accountActionErrorMessage(new TypeError("Failed to fetch"), action)).toBe("تعذر الاتصال بالخادم. حاول مرة أخرى.");
   });
 

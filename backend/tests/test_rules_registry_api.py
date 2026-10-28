@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.db.session import get_session
-from app.core.auth import PrincipalContext, get_principal_context, get_token_verifier
+from app.core.auth import PrincipalContext, get_principal_context
 from app.core.calendar import current_diary_date
 from app.main import app
 from app.models import Principal
@@ -86,12 +86,10 @@ def test_registry_exposes_authoritative_content_and_integrity_hash(
 
 def test_registry_requires_authenticated_principal(client: TestClient) -> None:
     override = app.dependency_overrides.pop(get_principal_context)
-    app.dependency_overrides[get_token_verifier] = lambda: object()
     try:
         response = client.get("/nutrition/registry", headers={"Authorization": ""})
         assert response.status_code == 401
     finally:
-        app.dependency_overrides.pop(get_token_verifier)
         app.dependency_overrides[get_principal_context] = override
 
 

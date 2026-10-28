@@ -2,15 +2,15 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Eye, EyeOff, MoreVertical } from "lucide-react";
 import { createContext, useContext, FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
-import { type AdminAccount, correctAdminProfileSex, deleteAdminAccount, editAdminAccount, resetAdminAccountPassword, retryAdminAccountCreation, retryAdminAccountDeletion, setAdminAccountEnabled } from "@/lib/api";
+import { type AdminAccount, correctAdminProfileSex, deleteAdminAccount, editAdminAccount, resetAdminAccountPassword, setAdminAccountEnabled } from "@/lib/api";
 import { accountActionErrorMessage, accountActionSuccessMessage, deletionConfirmationMessage, passwordValidationMessage, type AccountAction } from "@/lib/admin-account-messages";
 import { useAuth } from "./AuthProvider";
 import { AdminSexCorrectionDialog } from "./AdminSexCorrectionDialog";
 type ActionAccount = Pick<AdminAccount, "principal_id" | "username" | "email" | "display_name" | "status" | "profile_complete">;
-type EditorMode = "edit" | "password" | "retry-create";
+type EditorMode = "edit" | "password";
 
 const editorTitles: Record<EditorMode, string> = {
-  edit: "تعديل المستخدم", password: "إعادة تعيين كلمة المرور", "retry-create": "إعادة محاولة الإنشاء"
+  edit: "تعديل المستخدم", password: "إعادة تعيين كلمة المرور"
 };
 
 function DeleteDialog({ account, onClose, onDelete }: {
@@ -187,23 +187,16 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
     }
     const id = selected.principal_id;
     const succeeded = mode === "edit" ? await execute(() => editAdminAccount(id, { display_name: displayName }), "edit", setEditorError)
-      : mode === "password" ? await execute(() => resetAdminAccountPassword(id, password), "password", setEditorError)
-        : await execute(() => retryAdminAccountCreation(id, password), "retry-create", setEditorError);
+      : await execute(() => resetAdminAccountPassword(id, password), "password", setEditorError);
     if (succeeded) closeEditor();
   }
   function rowActions(account: ActionAccount): { primary: ReactNode; menu: MenuItem[] } {
     const remove: MenuItem = { label: "حذف المستخدم نهائيًا", danger: true, onSelect: () => { onActionStart?.(); setNotice(""); setDeleteTarget(account); } };
-    if (account.status === "deleting" && !account.username) {
-      return { primary: <button className="btn" disabled={busy} onClick={() => execute(() => retryAdminAccountDeletion(account.principal_id), "retry-delete")}>إعادة محاولة الحذف</button>, menu: [] };
-    }
-    if (account.status === "provisioning" && !account.username) {
-      return { primary: <button className="btn" onClick={() => select(account, "retry-create")}>إعادة محاولة الإنشاء</button>, menu: [remove] };
-    }
     if (account.status === "active" || account.status === "disabled") {
       return {
         primary: <button className="btn" onClick={() => select(account, "edit")}>تعديل المستخدم</button>,
         menu: [
-          { label: "إعادة تعيين كلمة المرور", onSelect: () => select(account, "password") },
+          ...(account.username ? [{ label: "إعادة تعيين كلمة المرور", onSelect: () => select(account, "password") }] : []),
           { label: "تصحيح الجنس", disabled: busy || !account.profile_complete, onSelect: () => { onActionStart?.(); setNotice(""); setSexError(""); setSexTarget(account); } },
           { label: account.status === "active" ? "تعطيل المستخدم" : "تفعيل المستخدم", disabled: busy, onSelect: () => account.status === "active" ? setDisableTarget(account) : void execute(() => setAdminAccountEnabled(account.principal_id, true), "status") },
           remove
@@ -236,10 +229,10 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
     {selected && mode && <FormDialog busy={busy} title={editorTitles[mode]} className="account-editor" onClose={closeEditor}>
       <form className="account-form" onSubmit={submitEditor}>
         {mode === "edit" ? <div className="account-field"><label>الاسم المعروض<input required maxLength={120} aria-describedby="edit-name-note" value={displayName} onChange={event => setDisplayName(event.target.value)} /></label><small id="edit-name-note" className="account-field-hint">120 حرفًا كحد أقصى</small></div>
-          : <PasswordInput label={mode === "password" ? "كلمة المرور الجديدة" : "كلمة المرور الأولية"} value={password} onChange={setPassword} />}
+          : <PasswordInput label="كلمة المرور الجديدة" value={password} onChange={setPassword} />}
         {mode === "password" && <p>سيخرج المستخدم من كل أجهزته.</p>}
         {editorError && <p role="alert" className="account-dialog-error">{editorError}</p>}
-        <div className="actions"><button type="button" className="btn" disabled={busy} onClick={closeEditor}>إلغاء</button><button type="submit" className="btn primary" disabled={busy}>{mode === "edit" ? "حفظ التغييرات" : mode === "password" ? "إعادة تعيين كلمة المرور" : "إعادة محاولة الإنشاء"}</button></div>
+        <div className="actions"><button type="button" className="btn" disabled={busy} onClick={closeEditor}>إلغاء</button><button type="submit" className="btn primary" disabled={busy}>{mode === "edit" ? "حفظ التغييرات" : "إعادة تعيين كلمة المرور"}</button></div>
       </form>
     </FormDialog>}
     {deleteTarget && <DeleteDialog account={deleteTarget} onClose={() => setDeleteTarget(null)} onDelete={async confirmation => {

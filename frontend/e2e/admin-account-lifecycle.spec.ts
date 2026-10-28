@@ -5,14 +5,14 @@ import type { APIRequestContext, Locator, Page } from "@playwright/test";
 
 
 const API = process.env.PLAYWRIGHT_API_URL ?? "http://127.0.0.1:8000";
-async function createLegacy(page: Page, request: APIRequestContext, email: string, displayName: string, incomplete = false) {
+async function createInternal(page: Page, request: APIRequestContext, username: string, displayName: string) {
   const token = await page.evaluate(key => localStorage.getItem(key), SESSION_TOKEN_KEY);
   const response = await request.post(`${API}/admin/accounts`, {
     headers: { Authorization: `Bearer ${token}`, "Idempotency-Key": crypto.randomUUID() },
-    data: { email, display_name: displayName, initial_password: "Initial-password-2026!" },
+    data: { username, display_name: displayName, initial_password: "Initial-password-2026!" },
   });
-  expect(response.status()).toBe(incomplete ? 503 : 201);
-  if (incomplete) expect((await response.json()).error.code).toBe("CREATION_INCOMPLETE");
+  expect(response.status()).toBe(201);
+  return await response.json() as { principal_id: string };
 }
 
 async function openCreateDialog(page: Page): Promise<Locator> {
@@ -111,40 +111,12 @@ test("Admin account page is RTL, keyboard reachable, and accessible on mobile", 
   await expect(dialog).toHaveCount(0);
 });
 
-test("legacy incomplete creation and deletion have retry actions", async ({ page, request }) => {
-  await page.goto("/admin/users");
-  const createEmail = `incomplete-create-${Date.now()}@example.test`;
-  await createLegacy(page, request, createEmail, "اختبار الإنشاء", true);
-  await page.reload();
-  const createRow = page.locator(".account-row").filter({ hasText: createEmail });
-  await expect(createRow).toContainText("قيد الإنشاء");
-  await createRow.getByRole("button", { name: "إعادة محاولة الإنشاء" }).click();
-  await page.locator(".account-editor").getByLabel("كلمة المرور الأولية").fill("Initial-password-2026!");
-  await page.locator(".account-editor").getByRole("button", { name: "إعادة محاولة الإنشاء" }).click();
-  await expect(createRow).toContainText("نشط");
-
-  const deleteEmail = `incomplete-delete-${Date.now()}@example.test`;
-  await createLegacy(page, request, deleteEmail, "اختبار الحذف");
-  await page.reload();
-  const deleteRow = page.locator(".account-row").filter({ hasText: deleteEmail });
-  await expect(deleteRow).toContainText("نشط");
-  await chooseRowAction(page, deleteRow, "حذف المستخدم نهائيًا");
-  const dialog = page.getByRole("dialog", { name: "حذف المستخدم نهائيًا؟" });
-  await dialog.getByLabel("اكتب البريد الإلكتروني للمستخدم لتأكيد الحذف النهائي.").fill(deleteEmail);
-  await dialog.getByRole("button", { name: "حذف المستخدم نهائيًا" }).click();
-  await expect(dialog.getByRole("alert")).toContainText("تعذر إكمال حذف المستخدم. لا يستطيع الدخول الآن، ويمكنك إعادة المحاولة.");
-  await dialog.getByRole("button", { name: "إلغاء" }).click();
-  await expect(deleteRow).toContainText("حذف غير مكتمل");
-  await deleteRow.getByRole("button", { name: "إعادة محاولة الحذف" }).click();
-  await expect(deleteRow).toHaveCount(0);
-});
-
 test("changing create identity rotates the idempotency key", async ({ page }) => {
   const keys: string[] = [];
   await page.route("**/admin/accounts", async route => {
     if (route.request().method() !== "POST") return route.continue();
     keys.push(route.request().headers()["idempotency-key"]);
-    await route.fulfill({ status: 503, json: { error: { code: "CREATION_INCOMPLETE", message_ar: "تعذر إكمال إنشاء المستخدم. أعد المحاولة." } } });
+    await route.fulfill({ status: 503, json: { error: { code: "SERVICE_UNAVAILABLE", message_ar: "تعذر إكمال إنشاء المستخدم. أعد المحاولة." } } });
   });
   await page.goto("/admin/users");
   const form = await openCreateDialog(page);
@@ -164,8 +136,8 @@ test("changing create identity rotates the idempotency key", async ({ page }) =>
 
 test("merged Users list redirects, searches, filters by status and marks the Admin's own row", async ({ page, request }) => {
   const suffix = Date.now();
-  const activeEmail = `merged-active-${suffix}@example.test`;
-  const pendingEmail = `incomplete-create-merged-${suffix}@example.test`;
+  const activeUsername = `merged-active-${suffix}`;
+  const disabledUsername = `merged-disabled-${suffix}`;
   await page.goto("/admin/accounts");
   await page.waitForURL(/\/admin\/users$/);
   await expect(page.getByRole("heading", { name: "إدارة المستخدمين" })).toBeVisible();
@@ -176,25 +148,29 @@ test("merged Users list redirects, searches, filters by status and marks the Adm
   await expect(self.getByRole("button")).toHaveCount(0);
   await expect(self.getByRole("link")).toHaveCount(0);
 
-  await createLegacy(page, request, activeEmail, "بحث مدمج");
-  await createLegacy(page, request, pendingEmail, "بحث مدمج معلق", true);
+  await createInternal(page, request, activeUsername, "بحث مدمج");
+  const disabled = await createInternal(page, request, disabledUsername, "بحث مدمج معلق");
+  const token = await page.evaluate(key => localStorage.getItem(key), SESSION_TOKEN_KEY);
+  const response = await request.put(`${API}/admin/accounts/${disabled.principal_id}/status`, {
+    headers: { Authorization: `Bearer ${token}` }, data: { enabled: false },
+  });
+  expect(response.status()).toBe(200);
   await page.reload();
 
   await page.getByPlaceholder("ابحث بالاسم أو اسم المستخدم...").fill(`merged-active-${suffix}`);
 
   await expect(page.locator(".account-row")).toHaveCount(1);
-  const activeRow = page.locator(".account-row").filter({ hasText: activeEmail });
+  const activeRow = page.locator(".account-row").filter({ hasText: activeUsername });
   await expect(activeRow).toContainText("تاريخ التسجيل");
   await expect(self).toHaveCount(0);
 
   await page.getByPlaceholder("ابحث بالاسم أو اسم المستخدم...").fill(String(suffix));
 
   await expect(page.locator(".account-row")).toHaveCount(2);
-  await page.getByLabel("حالة الحساب").selectOption("provisioning");
+  await page.getByLabel("حالة الحساب").selectOption("disabled");
   await expect(page.locator(".account-row")).toHaveCount(1);
-  const pendingRow = page.locator(".account-row").filter({ hasText: pendingEmail });
-  await expect(pendingRow).toContainText("قيد الإنشاء");
-  await expect(pendingRow.getByRole("link")).toHaveCount(0);
+  const disabledRow = page.locator(".account-row").filter({ hasText: disabledUsername });
+  await expect(disabledRow).toContainText("معطّل");
 
   await page.getByLabel("حالة الحساب").selectOption("active");
   await activeRow.getByRole("link").click();
@@ -207,12 +183,11 @@ test("merged Users list redirects, searches, filters by status and marks the Adm
   await expect(page.getByRole("heading", { name: "اليوميات", exact: true })).toBeInViewport();
 });
 
-test("Admin home redirects directly to Users with attention counts", async ({ page, request }) => {
+test("Admin home redirects directly to Users with account counts", async ({ page, request }) => {
   await page.goto("/admin/users");
-  await createLegacy(page, request, `incomplete-create-home-${Date.now()}@example.test`, "حساب قيد الإنشاء", true);
+  await createInternal(page, request, `home-${Date.now()}`, "اختبار القائمة");
   await page.goto("/admin");
   await expect(page).toHaveURL(/\/admin\/users$/);
   await expect(page.getByRole("heading", { name: "إدارة المستخدمين" })).toBeVisible();
-  await expect(page.locator(".admin-account-counts")).toContainText("قيد الإنشاء:");
-  await expect(page.locator(".admin-account-counts")).toContainText("تنتظر إعادة المحاولة");
+  await expect(page.locator(".admin-account-counts")).toContainText("نشط:");
 });

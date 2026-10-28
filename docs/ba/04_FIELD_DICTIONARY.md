@@ -7,10 +7,10 @@ Status: supporting requirements. Backend schemas and database constraints are ex
 | Field | Required | Rule |
 |---|---:|---|
 | `id` | Yes | Durable UUID ownership key |
-| `auth_user_id` | No | Unique Supabase subject when linked; cleared only after confirmed Auth deletion |
-| `retired_auth_user_id` | Legacy provider-linked deleted tombstone | Permanent unique former Auth subject; never used for admission or relinked to a Principal |
-| `identity_requested_at` | Provisioning after create request | Starts the bounded creation lease; refreshed before every provider create attempt |
-| `sessions_valid_after` | After password reset or status change | A token is rejected when its latest valid Supabase `amr[].timestamp` authentication time is before this rounded-up cutoff, including after access-token refresh; missing or malformed AMR is always rejected |
+| `auth_user_id` | Historical compatibility | Historical identity link only; no admission authority; scrubbed by local deletion |
+| `retired_auth_user_id` | Historical compatibility | Historical unique retired identity; never admitted or relinked |
+| `identity_requested_at` | Historical compatibility | Historical provisioning metadata; no current external creation lease |
+| `sessions_valid_after` | Historical compatibility | Historical JWT cutoff column; current admission uses internal session revocation/expiry |
 | `username` / `normalized_username` | New internal accounts | Immutable 3–32 ASCII letters/digits/`.`/`_`/`-`; lowercase normalized uniqueness; scrubbed on deletion so a new Principal may reuse it (BR-USM-022/023/025/036/043; #112 and 27 October PO decision) |
 | `last_login_at` | No | Actual successful internal login time; nullable for never-login/legacy accounts; shown as «آخر دخول» (BR-USM-013; #112) |
 | `is_locked` (Admin response) | Yes | Derived normal-user internal lock flag, not lifecycle status; false for Admin; «مقفل» badge/filter (BR-USM-006/014; #112) |
@@ -18,31 +18,30 @@ Status: supporting requirements. Backend schemas and database constraints are ex
 | `display_name` | No | Maximum 120; erased on deleted tombstone |
 | `role` | Yes | `user` or `admin`; never accepted from browser metadata or account-management input; partial unique index permits at most one Admin |
 | `status` | Yes | CURRENT lifecycle: `provisioning`, `active`, `disabled`, `deleting`, `deleted`; internal lock behavior is separate, stored as `failed_login_count` and `locked_at` in #110 (27 October 2026) (17 October 2026; BR-AUT-011, BR-USM-006/014) |
-| creation idempotency key | For Admin creation | Internal creation stores it atomically with the active Principal; a matching replay returns that account. Legacy `provisioning` retries resume the original account (BR-USM-025/049; #112) |
+| creation idempotency key | For Admin creation | Internal creation stores it atomically with the active Principal; a matching replay returns that account. Legacy provisioning creates no new identity and cannot resume provider creation (BR-USM-025/049; #112) |
 
 These account-lifecycle fields are implemented in the forward lifecycle revision;
 Production activation remains a separate release action.
 Admin creates a normal user with immutable username, display name, and an initial password (#112; BR-USM-022/023/025/036).
-Admin may edit display name, reset password while revoking the user's internal sessions when an internal hash exists, otherwise existing Supabase sessions through FastAPI, and enable/disable; username, legacy email and role
+Admin may edit display name, reset internal passwords while revoking every session, and enable/disable. Legacy-only reset is refused; username, legacy email and role
 cannot be changed through the product. Raw passwords are input-only and never stored,
 logged, or returned; internal accounts store only a scrypt hash (#110; 27 October 2026; BR-AUT-001/017, BR-USM-030/033). Unknown and non-active legacy identities receive the
 existing `401 INVALID_CREDENTIAL`. `deleting` remains locked out and Admin-visible
 as incomplete until a retry reaches the scrubbed `deleted` tombstone. A
-`provisioning` account may be deleted through the same saga; an absent Supabase
-identity counts as success. Global
+`provisioning` account may be deleted through the same local purge and tombstone operation. Global
 Foods retain creator/updater Principal IDs; their attribution is not displayed to any role, including a deleted-user label. (17 October 2026 FOD decision, BR-FOD-021; already implemented, unchanged by issue #100.)
 The irreversible-delete confirmation requires the Admin to type the target
 user's username; only a legacy account without username uses the retained email confirmation. A mismatch prevents submission (#112; BR-USM-038/042).
 
 ## CURRENT fields versus APPROVED TARGET
 
-CURRENT in #111: the browser uses internal username/password login, opaque bearer sessions, forced initial-password change, and own-password change in Profile. Only the session token is persisted in localStorage; passwords stay in memory and no auth cookies are used. Reload during an initial-password change requires re-authentication. Forgotten/reset-password browser flows are absent; forgotten passwords go to the Admin. The backend retains legacy Supabase JWT admission for accounts without internal credentials until #113; an internal password hash takes precedence and rejects JWT admission with `INTERNAL_LOGIN_REQUIRED`. Internal password changes/resets never update Supabase. Admin username-based creation and management UI is CURRENT in #112: new users have internal credentials only, with no email or provider call. Legacy backend email/provider lifecycle support and clearly marked email fallback for existing accounts remain until #113/#114; provider/email removal (#113) and destructive cutover (#114) remain APPROVED TARGET. No existing account migration or cutover is performed. This describes repository implementation, not deployment. (Product Owner decisions of 17 and 27 October 2026; issues #110/#111/#112; BR-USM-005/006/012/013/014/022/023/025/030/036/038/042/043/049/054; BR-AUT-001/003/004/005/007/008/010/011/012/017, BR-PRF-024–026, BR-USM-030/033.)
+CURRENT in #113: authentication uses only internal username/password and opaque bearer sessions. The browser persists only the session token in localStorage; passwords remain in memory and no auth cookies are used. Initial-password change and Profile password change are current; forgotten passwords go to the Admin. Supabase Auth/JWT admission, provider creation/reset/deletion, reconciliation and runtime Auth configuration are removed. Legacy-only accounts cannot log in; retained identity columns and the existing legacy deletion confirmation are historical compatibility until #114, not an authentication path. New users are created atomically by immutable username. No account conversion, destructive cutover, deployment or production configuration change is performed. Cutover #114 remains APPROVED TARGET. Authority: final 17 October 2026 AUT/USM decisions; 27 October #110/#112 decisions; issues #110–#113 and #128 (BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-022/030/033/036/043).
 
-In the APPROVED TARGET there is no Supabase Auth, email anywhere, MFA or self-service recovery. Only initial Admin-set passwords require a forced change; reset passwords allow immediate login. Five consecutive failures lock an account, successful login resets the counter, Admin reset alone unlocks a user and signs out every device, and the single Admin unlocks automatically after 30 minutes. Own-password change requires the correct current password and signs out other devices. Backend minimum length is 8. (17 October 2026 final AUT/USM decisions; BR-AUT-004/007–012, BR-PRF-024–026, BR-USM-023/030/033.)
+CURRENT #113 removes Supabase Auth; internal login has no email, MFA or self-service recovery. Legacy stored email/display and deletion confirmation remain until #114. Only initial Admin-set passwords require a forced change; reset passwords allow immediate login. Five consecutive failures lock an account, successful login resets the counter, Admin reset alone unlocks a user and signs out every device, and the single Admin unlocks automatically after 30 minutes. Own-password change requires the correct current password and signs out other devices. Backend minimum length is 8. (17 October 2026 final AUT/USM decisions; BR-AUT-004/007–012, BR-PRF-024–026, BR-USM-023/030/033.)
 
 ## CURRENT login/Profile and Admin username copy
 
-Strings below follow the final BRD requirements approved **17 October 2026** and the [27 October deletion-copy decision](https://github.com/TurkiOtaibi/MyNutri/issues/112#issuecomment-6437936388). Login/session/Profile strings are CURRENT in #111 and Admin username-management strings in #112. Legacy accounts without usernames retain clearly marked email display/confirmation fallback until #113/#114. Older «فتح القفل», «تم فتح قفل الحساب.» and «نسيت كلمة المرور؟ تواصل مع المشرف.» remain superseded (BR-AUT-003/011, BR-USM-030).
+Strings below follow the final BRD requirements approved **17 October 2026** and the [27 October deletion-copy decision](https://github.com/TurkiOtaibi/MyNutri/issues/112#issuecomment-6437936388). Login/session/Profile strings are CURRENT in #111 and Admin username-management strings in #112. Legacy accounts without usernames retain clearly marked email display/confirmation fallback until #114. Older «فتح القفل», «تم فتح قفل الحساب.» and «نسيت كلمة المرور؟ تواصل مع المشرف.» remain superseded (BR-AUT-003/011, BR-USM-030).
 
 | Context | CURRENT | APPROVED TARGET exact copy | BRD authority (17 October 2026) |
 |---|---|---|---|

@@ -37,6 +37,11 @@ remains in the V2 documents above.
 
 ## Retired architecture
 
+Supabase Auth/JWT admission, provider lifecycle sagas, reconciliation and Auth
+configuration are removed in #113. Supabase PostgreSQL hosting and `DATABASE_URL`
+remain. Retained identity columns and existing legacy deletion confirmation are
+historical compatibility; destructive account cutover remains pending #114.
+
 Day Logging Status, the Target Plan lifecycle, semantic Nutrition versions, legacy
 Target snapshots/Profile fallback, Food Archive/Restore, a separate Admin Food UI,
 the Sync shell, `Food*V3` public names, dual-shape `GET /foods`, uncategorized

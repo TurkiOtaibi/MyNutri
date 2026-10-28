@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
-from app.core.auth import PrincipalContext, get_principal_context, get_token_verifier
+from app.core.auth import PrincipalContext, get_principal_context
 from app.core.calendar import diary_calendar_authority, following_diary_date
 from app.main import app
 from app.models import Principal
@@ -85,7 +85,6 @@ def test_authenticated_calendar_endpoint_has_stable_shape(monkeypatch) -> None:
 
 
 def test_calendar_endpoint_requires_authentication() -> None:
-    app.dependency_overrides[get_token_verifier] = lambda: object()
     try:
         with TestClient(app) as client:
             response = client.get("/account/calendar")

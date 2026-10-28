@@ -118,11 +118,11 @@ def test_writer_revocation_is_visible_on_next_admission(labs_postgresql_database
             _, current = auth.admit_session(writer, other.token, NOW)
             auth.change_password(writer, owner_id, current.id, PASSWORD, "changed-password", NOW)
         elif action == "reset":
-            reset_account_password(writer, admin.id, owner_id, "changed-password", None, NOW)
+            reset_account_password(writer, admin.id, owner_id, "changed-password", NOW)
         elif action == "disable":
             set_account_enabled(writer, admin.id, owner_id, False, NOW)
         elif action == "delete":
-            delete_account(writer, admin.id, owner_id, None, NOW, 10)
+            delete_account(writer, admin.id, owner_id, NOW)
         else:
             auth.logout(writer, owner_id, session_id, NOW)
         with pytest.raises(auth.AuthError):

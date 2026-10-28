@@ -110,7 +110,7 @@ export function AdminUsersPage() {
     </div>
     {query.data?.counts && <div className="admin-account-counts" aria-live="polite">
       {countStatuses.map(status => ["active", "disabled"].includes(status) || (query.data!.counts[status] ?? 0) > 0 ? <span key={status} className={`account-status-badge account-status-${status}`}>
-        {accountStatusLabels[status]}: <bdi dir="ltr">{query.data!.counts[status]}</bdi>{["provisioning", "deleting"].includes(status) ? " · تنتظر إعادة المحاولة" : ""}
+        {accountStatusLabels[status]}: <bdi dir="ltr">{query.data!.counts[status]}</bdi>
       </span> : null)}
     </div>}
     <section className="section-panel" aria-label="إدارة المستخدمين">
@@ -143,7 +143,6 @@ export function AdminUsersPage() {
           <span className="account-name-line"><strong>{account.display_name}</strong><AdminStatusBadge status={account.status} />{account.is_locked && <span className="account-status-badge">مقفل</span>}</span>
           <span className="account-email">اسم المستخدم: <bdi dir="ltr">{account.username ?? account.email}</bdi>{!account.username && <span> · حساب قديم</span>}</span>
           {account.status === "disabled" && account.disabled_at && <span>معطّل منذ <time dateTime={account.disabled_at}>{formatAdminDate(account.disabled_at)}</time></span>}
-          {!account.username && ["provisioning", "deleting"].includes(account.status) && <span className="account-meta">أعد المحاولة، أو احذف الحساب وأنشئه من جديد</span>}
           <span className="account-meta">تاريخ التسجيل: <time dateTime={account.created_at}>{formatAdminDate(account.created_at)}</time></span>
           <span className="account-meta">آخر دخول: {account.last_login_at ? <time dateTime={account.last_login_at}>{formatAdminDateTime(account.last_login_at)}</time> : "لم يسجل الدخول بعد."}</span>
         </>;

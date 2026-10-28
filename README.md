@@ -1,6 +1,6 @@
 # myNutri
 
-myNutri is an Arabic-first, RTL, online nutrition application. The current system uses a Next.js frontend, a FastAPI backend, PostgreSQL, internal username/password browser authentication with transitional backend Supabase JWT admission, Principal-scoped private data, role-aware administration, and a shared Food catalog.
+myNutri is an Arabic-first, RTL, online nutrition application. The current system uses a Next.js frontend, a FastAPI backend, PostgreSQL, internal username/password authentication and opaque bearer sessions, Principal-scoped private data, role-aware administration, and a shared Food catalog.
 
 Start with the [documentation authority map](docs/README.md). Git history, migrations, tests, PRs, and CI retain historical evidence; the tracked documentation set describes the current system only.
 
@@ -32,30 +32,18 @@ All command blocks below use PowerShell. On a POSIX shell, activate the environm
 
 Copy [`.env.example`](.env.example) to an ignored local environment file and provide values appropriate to the local environment. The repository example contains placeholders and development defaults only. Never commit credentials or paste production values into documentation, logs, test fixtures, or frontend variables.
 
+Supabase PostgreSQL hosting remains supported through `DATABASE_URL`; #113 removes only Auth integration. See the release runbook for obsolete Auth variable removal after a separately authorized release.
+
 Backend variable names:
 
 - `DATABASE_URL`
 - `ENVIRONMENT`
-- `SUPABASE_URL`
-- `SUPABASE_JWT_AUDIENCE`
-- `SUPABASE_JWKS_TIMEOUT_SECONDS`
-- `SUPABASE_JWKS_CACHE_LIFESPAN_SECONDS`
-- `SUPABASE_JWKS_REFRESH_COOLDOWN_SECONDS`
-- `SUPABASE_JWKS_NEGATIVE_CACHE_TTL_SECONDS`
-- `SUPABASE_JWKS_NEGATIVE_CACHE_MAX_ENTRIES`
-- `SUPABASE_JWKS_MAX_KEYS`
-- `SUPABASE_JWT_KID_MAX_LENGTH`
-- `SUPABASE_SERVICE_ROLE_KEY` for Admin bootstrap and, after the approved
-  account-lifecycle implementation, only FastAPI Admin account creation,
-  password reset, and Auth identity deletion; never other runtime paths
 - `ALLOWED_ORIGINS`
 - `CALENDAR_TIMEZONE`
 
 Frontend public variable names:
 
 - `NEXT_PUBLIC_API_URL`
-- `NEXT_PUBLIC_SUPABASE_URL` (retained legacy configuration until #113; unused by internal login)
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (retained legacy configuration until #113; unused by internal login)
 
 Never expose a service-role key or database credential through a `NEXT_PUBLIC_` variable. Do not configure the removed shared-token path.
 
@@ -96,7 +84,7 @@ Set-Location frontend
 npm run dev
 ```
 
-The frontend uses internal username/password authentication, persists only the opaque session token in localStorage, and uses no auth cookies. Initial-password and Profile-password values remain in memory; reloading an initial-change screen requires login again. Admin email-based creation remains until #112, and the backend legacy JWT/provider paths remain until #113. Requests are authorized by the backend from the bearer token's Principal and role; a branch name, local database row, or frontend route guard is not an authorization boundary. See the [auth and role model](docs/product/v2/02_AUTH_AND_ROLE_MODEL.md) and [authorization matrix](docs/product/v2/03_AUTHORIZATION_MATRIX.md).
+The frontend uses internal username/password authentication, persists only the opaque session token in localStorage, and uses no auth cookies. Initial-password and Profile-password values remain in memory; reloading an initial-change screen requires login again. Admin creation is username-only. All legacy JWT/provider paths are removed in #113; legacy-only accounts cannot log in. Existing identity columns and deletion confirmation remain until separately authorized #114 cutover. Requests are authorized by the backend from the bearer token's Principal and role; a branch name, local database row, or frontend route guard is not an authorization boundary. See the [auth and role model](docs/product/v2/02_AUTH_AND_ROLE_MODEL.md) and [authorization matrix](docs/product/v2/03_AUTHORIZATION_MATRIX.md).
 
 ## Database and migrations
 
@@ -113,7 +101,7 @@ python -m alembic upgrade head --sql
 
 `upgrade head` mutates its target. Before running it, verify that `DATABASE_URL` names the isolated loopback database intended for that local task. The normal Compose database is persistent local state; CI and E2E databases are the short-lived disposable databases. Never use a shared developer, staging, hosted Supabase, or production URL for routine development or CI parity. Do not use `alembic stamp`, edit the migration ledger, or run a production migration without explicit deployment authorization.
 
-CI and E2E use short-lived PostgreSQL databases populated only with synthetic fixtures. Tests must not point at a shared developer, staging, or production database. Provider acceptance uses an isolated local Supabase stack and removes its containers, volumes, network, logs, and browser state afterward.
+CI and E2E use short-lived PostgreSQL databases populated only with synthetic fixtures. Tests must not point at a shared developer, staging, or production database. Internal-auth acceptance uses isolated loopback PostgreSQL and removes its disposable resources, logs and browser state afterward.
 
 ## Quality gates
 
@@ -149,7 +137,7 @@ npm audit --omit=dev
 npm run build
 ```
 
-CI additionally runs the complete Playwright suite, critical Linux visual regression, static-shell PWA isolation, development StrictMode smoke, real internal-auth browser acceptance and retained real-provider backend session-cutoff acceptance with mandatory cleanup, backend image build/runtime checks, and migration/preflight checks. The workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) is the exact gate definition.
+CI additionally runs the complete Playwright suite, critical Linux visual regression, static-shell PWA isolation, development StrictMode smoke, real internal-auth browser and backend session-revocation/Principal-isolation acceptance with mandatory cleanup, backend image build/runtime checks, and migration/preflight checks. The workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) is the exact gate definition.
 
 The principal browser gates are:
 
@@ -160,7 +148,7 @@ npm run test:visual
 npx playwright test e2e/pwa-shell.spec.ts --project=pwa-chromium
 ```
 
-Run them only with the disposable E2E services and synthetic Principal fixtures described by CI. The provider-acceptance job retains backend `provider_session_cutoff_acceptance.py` admission/revocation checks against isolated loopback Supabase with complete cleanup; use the workflow verbatim instead of pointing it at any hosted provider. The seven obsolete browser recovery cases were removed with the recovery UI (BR-AUT-012); ten real internal-auth browser cases replace the ten mocked recovery cases. This does not weaken the retained backend provider boundary.
+Run them only with the disposable E2E services and synthetic Principal fixtures described by CI. The internal-auth acceptance job proves real opaque-session admission, revocation, expiry and Principal isolation against disposable loopback PostgreSQL with complete cleanup. Browser acceptance covers login, forced change, password changes, lock/status and session behavior; removed recovery routes remain absent (BR-AUT-012).
 
 ## Online-only and PWA boundary
 

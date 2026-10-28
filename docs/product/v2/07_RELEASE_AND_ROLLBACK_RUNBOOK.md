@@ -1,8 +1,8 @@
 # V2 Release and Rollback Runbook
 
-## CURRENT provider gates versus APPROVED TARGET release
+## CURRENT internal-auth gates versus APPROVED TARGET release
 
-CURRENT in #111: the browser uses internal username/password login, opaque bearer sessions, forced initial-password change, and own-password change in Profile. Only the session token is persisted in localStorage; passwords stay in memory and no auth cookies are used. Reload during an initial-password change requires re-authentication. Forgotten/reset-password browser flows are absent; forgotten passwords go to the Admin. The backend retains legacy Supabase JWT admission for accounts without internal credentials until #113; an internal password hash takes precedence and rejects JWT admission with `INTERNAL_LOGIN_REQUIRED`. Internal password changes/resets never update Supabase. Admin username-based creation and management UI is CURRENT in #112: new users have internal credentials only, with no email or provider call. Legacy backend email/provider lifecycle support and clearly marked email fallback for existing accounts remain until #113/#114; provider/email removal (#113) and destructive cutover (#114) remain APPROVED TARGET. No existing account migration or cutover is performed. This describes repository implementation, not deployment. (Product Owner decisions of 17 and 27 October 2026; issues #110/#111/#112; BR-USM-005/006/012/013/014/022/023/025/030/036/038/042/043/049/054; BR-AUT-001/003/004/005/007/008/010/011/012/017, BR-PRF-024–026, BR-USM-030/033.) Existing backend provider-acceptance and configuration gates remain required until #113; the removed recovery UI has no browser recovery gate (BR-AUT-012). No deployment is implied.
+CURRENT in #113: authentication uses only internal username/password and opaque bearer sessions. The browser persists only the session token in localStorage; passwords remain in memory and no auth cookies are used. Initial-password change and Profile password change are current; forgotten passwords go to the Admin. Supabase Auth/JWT admission, provider creation/reset/deletion, reconciliation and runtime Auth configuration are removed. Legacy-only accounts cannot log in; retained identity columns and the existing legacy deletion confirmation are historical compatibility until #114, not an authentication path. New users are created atomically by immutable username. No account conversion, destructive cutover, deployment or production configuration change is performed. Cutover #114 remains APPROVED TARGET. Authority: final 17 October 2026 AUT/USM decisions; 27 October #110/#112 decisions; issues #110–#113 and #128 (BR-AUT-001/004/005/007/008/010/011/017, BR-PRF-024–026, BR-USM-022/030/033/036/043). Internal-auth acceptance replaces the retired provider gate with real session-revocation and Principal-isolation proof; the removed recovery UI has no recovery gate (BR-AUT-012). No deployment is implied.
 
 The future #114 release must delete current test accounts/private data while keeping Foods and scrubbed attribution tombstones, then create the single Admin through the internal create/reset command implemented in #110. Its reviewed cutover/recovery procedure remains pending #114. Current migration and release safeguards remain in force; this is not production authorization. (17/27 October 2026 AUT/USM/FOD decisions; BR-USM-027/043, BR-FOD-021; #110.)
 
@@ -12,59 +12,35 @@ production mutation.
 
 ## Admin-managed account lifecycle release gates
 
-The approved account lifecycle requires a separate release review and does not
-change the current deployed revision by this documentation update. Before
-cutover, verify exactly one bootstrap Admin, the partial unique Admin-role
-index, existing Principal/Auth-link integrity, full private-FK inventory, and
-Food attribution to Principals. A count above one Admin, unresolved ownership,
-or an unsafe migration stops rollout. Establish the single Admin before making
-Admin-created accounts the only admission path.
+Before release, verify exactly one Admin, the partial unique Admin-role index,
+private ownership integrity and unchanged Food attribution to Principals. Verify
+that the intended Admin already has internal credentials, or separately authorize
+the existing attach command before removing legacy admission. Legacy-only accounts
+cannot log in; this release does not convert accounts or execute #114 cutover.
 
-Release backend admission and all Principal-owned writer status/lock checks
-together with the lifecycle schema. Configure backend-only
-`SUPABASE_SERVICE_ROLE_KEY` for FastAPI Admin create/reset/delete and bootstrap,
-and bound `SUPABASE_ADMIN_HTTP_TIMEOUT_SECONDS`; neither variable is a browser
-setting. Verify credentials are absent from frontend/public variables,
-responses, and logs. Disable public Supabase signup and remove the sign-up UI
-in the coordinated cutover. Direct signup, unknown
-Auth identities, and all non-active statuses must fail application admission.
-Keep the current Admin's ability to read selected Profile/Diary/Labs without
-write access to those resources.
+In an explicitly disposable loopback environment, exercise atomic/idempotent user
+creation, session expiry, password-change revocation of other sessions, Admin reset
+revocation of all sessions, disable/delete invalidation, and Principal isolation.
+Prove failed local deletion remains locked out and retryable, locked purge removes
+all private dependents, and scrubbed tombstones preserve Food attribution IDs.
+No external Auth creation/deletion/absence-check/reconciliation step remains.
 
-In an explicitly authorized disposable environment, verify interrupted create
-resumes with the same idempotency key; interrupted deletion remains `deleting`,
-rejects even pre-existing access tokens, is visible to Admin as incomplete,
-and resumes to a scrubbed `deleted` tombstone. Verify the locked purge removes
-all private dependents while global Foods and their attribution survive. A
-missing Supabase identity counts as a successful deletion retry only after
-verified absence. Verify pre-assigned UUID creation and the
-`identity_requested_at` lease of `max(5 minutes, 10 x bounded Admin HTTP
-timeout)`: deletion of `provisioning` within the lease returns 409 with the
-approved creation-incomplete copy, while deletion after it follows the same
-saga, including when Auth creation never happened. Verify that a late identity
-is denied admission by permanent `retired_auth_user_id` and deleted by
-reconciliation. Exercise all four triggers: completed/retried deletion, a
-bounded non-blocking Admin-list batch for tombstones from the last 30 days,
-the idempotent full-sweep ops command, and create with an email held by a
-retired ID. Confirm a non-retired duplicate is rejected, reconciliation errors
-are sanitized and counted by type only, and no tombstone or private data is
-revived. Verify that Admin password reset through
-FastAPI revokes the user's existing Supabase sessions (sign-out everywhere).
-For provider acceptance, sign in, reset via the Admin API, attempt refresh,
-and confirm that the old session cannot access myNutri: refresh may be rejected
-by Supabase, and any token refreshed from the old session must receive 401
-`INVALID_CREDENTIAL` from FastAPI based on its unchanged `amr` authentication
-time. A fresh sign-in after the rounded-up cutoff must work.
-Validate concurrent writers cannot insert private data after the purge and that no API
-can create or disable/delete the single Admin.
+After a separately authorized deployment of the approved #113 revision, obsolete
+Render Auth variables may be removed with separate authorization for that exact
+configuration change: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
+`SUPABASE_ADMIN_HTTP_TIMEOUT_SECONDS`, `SUPABASE_JWT_AUDIENCE`,
+`SUPABASE_JWKS_URL`, `SUPABASE_JWKS_TIMEOUT_SECONDS`, `SUPABASE_JWKS_CACHE_LIFESPAN_SECONDS`,
+`SUPABASE_JWKS_REFRESH_COOLDOWN_SECONDS`, `SUPABASE_JWKS_NEGATIVE_CACHE_TTL_SECONDS`,
+`SUPABASE_JWKS_NEGATIVE_CACHE_MAX_ENTRIES`, `SUPABASE_JWKS_MAX_KEYS`,
+`SUPABASE_JWT_KID_MAX_LENGTH`, `NEXT_PUBLIC_SUPABASE_URL`, and
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. These names are removal notes only;
+no values belong in documentation or logs. Supabase PostgreSQL hosting and the
+existing `DATABASE_URL` and database configuration stay unchanged. This repository
+change performs no deployment, environment edit, restart or production mutation.
 
-Do not treat a partially completed saga as a successful deletion or re-enable
-an account in `deleting`. Rollback across irreversible Auth/private-data
-deletion cannot reconstruct those records from code or a reverse migration;
-pause new lifecycle operations and use an explicitly authorized matching
-database/Auth recovery procedure or roll forward to complete the saga.
-Use the Product Owner-approved exact Admin account-management Arabic UI/error
-copy in the BA field dictionary when implementing the lifecycle.
+Rollback after private-data deletion requires a separately authorized matching
+backup/application recovery or an approved roll-forward; code cannot restore data.
+Use the exact approved Arabic account-management copy in the BA field dictionary.
 
 ## Release identity
 
@@ -110,7 +86,7 @@ The current migration head is internal authentication revision `f0c8a6e12534`, p
   pass, together with generated-contract drift and complete UI/session/PWA gates.
 - Preserve locked dependency reproduction and both backend/frontend audits; execute
   every backend partition, all four functional shards and aggregate collectors,
-  Linux visual, PWA, development StrictMode, real internal-auth browser cases and retained backend `provider_session_cutoff_acceptance.py` admission/revocation checks against isolated loopback Supabase, plus complete cleanup. The seven obsolete browser recovery cases were removed with that UI (BR-AUT-012); ten real internal-auth browser cases replace the ten mocked recovery cases without weakening the retained backend provider boundary.
+  Linux visual, PWA, development StrictMode, real internal-auth browser and backend acceptance against disposable loopback PostgreSQL, including Principal isolation, session revocation, expiry and complete cleanup. The seven obsolete browser recovery cases remain removed with that UI (BR-AUT-012).
   An unavailable or failing gate remains a blocker, not inferred success.
 
 ## Production preflight
@@ -218,4 +194,4 @@ with its compatible application release.
 Rollback is not permission to delete production data, rewrite historical
 migrations, revive retired features, or deploy without a separate authorization.
 
-Issue #111 adds `python -m app.ops.internal_admin attach --username <username>` for the existing active legacy Admin only. It refuses any existing internal username/normalized username/hash, attaches internal credentials to the same Principal with `must_change_password=false`, and preserves legacy identity/email, role/status, private data and Food attribution. It does not call Supabase or revoke sessions; internal credential precedence rejects subsequent legacy JWT admission. Password input is hidden or supplied through `--password-stdin`, never an argument or log. This is a user-run release step requiring authorization for the exact production action and revision; it has not been executed by this change. Admin creation/reset, provider removal and destructive cutover retain their separate boundaries. (Product Owner #111 authorization, 27 October 2026; BR-AUT-017, BR-USM-027.)
+Issue #111 adds `python -m app.ops.internal_admin attach --username <username>` for the existing active legacy Admin only. It refuses any existing internal username/normalized username/hash, attaches internal credentials to the same Principal with `must_change_password=false`, and preserves legacy identity/email, role/status, private data and Food attribution. It makes no external call or session revocation; #113 rejects all legacy JWT admission. Password input is hidden or supplied through `--password-stdin`, never an argument or log. This is a user-run release step requiring authorization for the exact production action and revision; it has not been executed by this change. Admin creation/reset and destructive cutover retain their separate authorization boundaries. (Product Owner #111 authorization, 27 October 2026; BR-AUT-017, BR-USM-027.)

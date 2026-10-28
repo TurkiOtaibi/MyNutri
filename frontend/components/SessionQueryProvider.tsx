@@ -32,7 +32,7 @@ type E2eInspectionWindow = Window & {
 function e2eInspectionAllowed() {
   return (
     (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost") &&
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY === "e2e-public-key"
+    process.env.NEXT_PUBLIC_E2E_INSPECTION === "true"
   );
 }
 

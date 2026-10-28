@@ -1,30 +1,25 @@
 import { ApiError } from "./api";
 
-export type AccountAction = "create" | "retry-create" | "edit" | "password" | "status" | "delete" | "retry-delete";
+export type AccountAction = "create" | "edit" | "password" | "status" | "delete";
 
 const failures: Record<AccountAction, string> = {
   create: "تعذر إكمال إنشاء المستخدم. أعد المحاولة.",
-  "retry-create": "تعذر إكمال إنشاء المستخدم. أعد المحاولة.",
   edit: "تعذر حفظ تغييرات المستخدم. حاول مرة أخرى.",
   password: "تعذر إعادة تعيين كلمة المرور. حاول مرة أخرى.",
   status: "تعذر تحديث حالة المستخدم. حاول مرة أخرى.",
   delete: "تعذر إكمال حذف المستخدم. لا يستطيع الدخول الآن، ويمكنك إعادة المحاولة.",
-  "retry-delete": "تعذر إكمال حذف المستخدم. لا يستطيع الدخول الآن، ويمكنك إعادة المحاولة.",
 };
 
 const successes: Record<AccountAction, string> = {
   create: "تم إنشاء المستخدم.",
-  "retry-create": "تم إنشاء المستخدم.",
   edit: "تم حفظ تغييرات المستخدم.",
   password: "تمت إعادة تعيين كلمة المرور.",
   status: "تم تحديث حالة المستخدم.",
   delete: "تم حذف المستخدم نهائيًا.",
-  "retry-delete": "تم حذف المستخدم نهائيًا.",
 };
 
 export function accountActionErrorMessage(error: unknown, action: AccountAction): string {
   if (error instanceof ApiError && error.code === "DELETION_INCOMPLETE") return failures.delete;
-  if (error instanceof ApiError && error.code === "CREATION_IN_PROGRESS") return "لا يمكن حذف المستخدم الآن لأن إنشاءه ما زال جاريًا. حاول بعد 5 دقائق.";
   if (error instanceof TypeError || (error instanceof ApiError && error.status === 0)) {
     return "تعذر الاتصال بالخادم. حاول مرة أخرى.";
   }

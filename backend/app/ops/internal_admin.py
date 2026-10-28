@@ -3,7 +3,7 @@
 import argparse
 import getpass
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
@@ -58,7 +58,6 @@ def manage_admin(
         row.must_change_password = False
         row.failed_login_count = 0
         row.locked_at = None
-        row.sessions_valid_after = now.replace(microsecond=0) + timedelta(seconds=1)
         revoke_sessions(session, row.id, now)
     else:
         raise ValueError("Unknown Admin operation.")

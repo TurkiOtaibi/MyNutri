@@ -1,27 +1,25 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 from uuid import UUID, uuid4
 
-import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
-from jwt.exceptions import PyJWKClientConnectionError, PyJWKClientError
 from sqlalchemy import Delete, Insert, Select, Update, event, text
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.core.auth import AuthClaims, PrincipalContext, SupabaseTokenVerifier, get_token_verifier
+from app.core.auth import PrincipalContext
 from app.core.config import Settings, validate_runtime_configuration
-from app.services.admin_auth import AdminIdentity, get_admin_auth_gateway
+from app.services.internal_auth import token_digest
 from app.core.calendar import current_diary_date
 from app.db.session import get_session
 from app.main import app
 from app.models import (
+    AuthSession,
     DiaryEntry,
     Principal,
     PrincipalRole,
@@ -40,24 +38,6 @@ PRINCIPAL_B = UUID("00000000-0000-0000-0000-00000000000b")
 AUTH_A = UUID("10000000-0000-0000-0000-00000000000a")
 AUTH_B = UUID("10000000-0000-0000-0000-00000000000b")
 AUTH_NEW = UUID("10000000-0000-0000-0000-00000000000c")
-
-
-class FakeVerifier:
-    def verify(self, token: str) -> AuthClaims:
-        mapping = {
-            "admin-a": AuthClaims(AUTH_A, "admin@example.com", "Admin", 1_780_000_002),
-            "rotated-admin-a": AuthClaims(AUTH_A, "admin@example.com", "Admin", 1_780_000_002),
-            "user-b": AuthClaims(AUTH_B, "user@example.com", "User B", 1_780_000_002),
-            "missing-amr-user": AuthClaims(AUTH_B, "user@example.com", "User B"),
-            "new-user": AuthClaims(AUTH_NEW, "new@example.com", "New User", 1_780_000_002),
-            "old-user": AuthClaims(AUTH_B, "user@example.com", "User B", 1_780_000_000),
-            "same-second-user": AuthClaims(AUTH_B, "user@example.com", "User B", 1_780_000_001),
-            "refreshed-old-user": AuthClaims(AUTH_B, "user@example.com", "User B", 1_780_000_000),
-            "fresh-user": AuthClaims(AUTH_B, "user@example.com", "User B", 1_780_000_002),
-        }
-        if token not in mapping:
-            raise ValueError("invalid token")
-        return mapping[token]
 
 
 def profile_payload(weight: float = 80) -> dict:
@@ -120,11 +100,18 @@ def security_context():
     )
     session.commit()
 
+    now = datetime.now(timezone.utc)
+    for label, owner in (("admin-a", PRINCIPAL_A), ("rotated-admin-a", PRINCIPAL_A),
+                         ("user-b", PRINCIPAL_B), ("fresh-user", PRINCIPAL_B)):
+        session.add(AuthSession(principal_id=owner, token_hash=token_digest(_token(label)),
+                                created_at=now, last_used_at=now,
+                                expires_at=now + timedelta(days=30)))
+    session.commit()
+
     def override_session():
         yield session
 
     app.dependency_overrides[get_session] = override_session
-    app.dependency_overrides[get_token_verifier] = FakeVerifier
     client = TestClient(app)
     try:
         yield client, session
@@ -134,28 +121,19 @@ def security_context():
         session.close()
 
 
+def _token(label: str) -> str:
+    return "mn1_" + base64.urlsafe_b64encode(hashlib.sha256(label.encode()).digest()).decode().rstrip("=")
+
+
 def headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": f"Bearer {_token(token)}"}
 
 
 def test_admin_account_create_is_backend_only_and_normal_user_forbidden(security_context) -> None:
     client, session = security_context
 
-    class FakeAdminAuth:
-        def create_user(self, auth_id, email, password):
-            self.user = AdminIdentity(auth_id, email)
-            return self.user
-
-        def get_user_by_id(self, auth_id):
-            return getattr(self, "user", None)
-
-        def find_user_by_email(self, email):
-            return None
-
-    fake = FakeAdminAuth()
-    app.dependency_overrides[get_admin_auth_gateway] = lambda: fake
     payload = {
-        "email": "created@example.com",
+        "username": "created",
         "display_name": "Created User",
         "initial_password": "synthetic-password",
     }
@@ -173,7 +151,7 @@ def test_admin_account_create_is_backend_only_and_normal_user_forbidden(security
     assert created.status_code == 201, created.text
     assert created.json()["status"] == "active"
     assert "password" not in created.text
-    assert session.exec(select(Principal).where(Principal.email == "created@example.com")).one().auth_user_id == fake.user.id
+    assert session.exec(select(Principal).where(Principal.username == "created")).one().auth_user_id is None
 
 
 def test_private_writers_recheck_active_status_after_authentication(security_context) -> None:
@@ -208,13 +186,11 @@ def test_private_writers_recheck_active_status_after_authentication(security_con
     ("method", "path", "payload"),
     [
         ("get", "/admin/accounts", None),
-        ("post", "/admin/accounts", {"email": "x@example.com", "display_name": "X", "initial_password": "password"}),
+        ("post", "/admin/accounts", {"username": "example", "display_name": "X", "initial_password": "password"}),
         ("patch", f"/admin/accounts/{PRINCIPAL_A}", {"display_name": "Changed"}),
         ("put", f"/admin/accounts/{PRINCIPAL_A}/password", {"new_password": "password"}),
         ("put", f"/admin/accounts/{PRINCIPAL_A}/status", {"enabled": False}),
         ("delete", f"/admin/accounts/{PRINCIPAL_A}", {"confirm_email": "admin@example.com"}),
-        ("post", f"/admin/accounts/{PRINCIPAL_A}/retry-create", {"initial_password": "password"}),
-        ("post", f"/admin/accounts/{PRINCIPAL_A}/retry-delete", None),
     ],
 )
 def test_account_management_authorization_matrix(security_context, method, path, payload) -> None:
@@ -228,11 +204,10 @@ def test_account_management_authorization_matrix(security_context, method, path,
 
 def test_admin_create_rejects_role_and_sanitizes_password_validation(security_context) -> None:
     client, _ = security_context
-    app.dependency_overrides[get_admin_auth_gateway] = lambda: object()
     password = "synthetic-private-password"
     response = client.post(
         "/admin/accounts",
-        json={"email": "new@example.com", "display_name": "New", "initial_password": password, "role": "admin"},
+        json={"username": "newuser", "display_name": "New", "initial_password": password, "role": "admin"},
         headers={**headers("admin-a"), "Idempotency-Key": "extra-field"},
     )
     assert response.status_code == 422
@@ -240,7 +215,7 @@ def test_admin_create_rejects_role_and_sanitizes_password_validation(security_co
     assert response.json()["error"]["code"] == "INVALID_REQUEST"
 
 
-def test_late_retired_supabase_identity_is_never_admitted(security_context) -> None:
+def test_late_retired_provider_identity_is_never_admitted(security_context) -> None:
     client, session = security_context
     session.add(Principal(status=PrincipalStatus.deleted, retired_auth_user_id=AUTH_NEW))
     session.commit()
@@ -249,37 +224,13 @@ def test_late_retired_supabase_identity_is_never_admitted(security_context) -> N
     assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
 
 
-def test_admin_account_crud_and_typed_email_confirmation(security_context) -> None:
+def test_admin_account_crud_and_typed_username_confirmation(security_context) -> None:
     client, session = security_context
 
-    class FakeGateway:
-        def __init__(self):
-            self.users = {}
-            self.password_resets = 0
-
-        def create_user(self, auth_id, email, password):
-            self.users[auth_id] = email
-            return AdminIdentity(auth_id, email)
-
-        def get_user_by_id(self, auth_id):
-            email = self.users.get(auth_id)
-            return AdminIdentity(auth_id, email) if email else None
-
-        def find_user_by_email(self, email):
-            return next((AdminIdentity(id_, value) for id_, value in self.users.items() if value == email), None)
-
-        def reset_password(self, auth_id, password):
-            self.password_resets += 1
-
-        def delete_user(self, auth_id):
-            self.users.pop(auth_id, None)
-
-    gateway = FakeGateway()
-    app.dependency_overrides[get_admin_auth_gateway] = lambda: gateway
     admin = headers("admin-a")
     created = client.post(
         "/admin/accounts",
-        json={"email": "lifecycle@example.com", "display_name": "First", "initial_password": "password"},
+        json={"username": "lifecycle", "display_name": "First", "initial_password": "password"},
         headers={**admin, "Idempotency-Key": "full-crud"},
     )
     assert created.status_code == 201
@@ -287,19 +238,19 @@ def test_admin_account_crud_and_typed_email_confirmation(security_context) -> No
     edited = client.patch(f"/admin/accounts/{principal_id}", json={"display_name": "Second"}, headers=admin)
     assert edited.status_code == 200 and edited.json()["display_name"] == "Second"
     reset = client.put(f"/admin/accounts/{principal_id}/password", json={"new_password": "new-password"}, headers=admin)
-    assert reset.status_code == 204 and gateway.password_resets == 1
+    assert reset.status_code == 204
     disabled = client.put(f"/admin/accounts/{principal_id}/status", json={"enabled": False}, headers=admin)
     assert disabled.status_code == 200 and disabled.json()["status"] == "disabled"
     enabled = client.put(f"/admin/accounts/{principal_id}/status", json={"enabled": True}, headers=admin)
     assert enabled.status_code == 200 and enabled.json()["status"] == "active"
-    mismatch = client.request("DELETE", f"/admin/accounts/{principal_id}", json={"confirm_email": "wrong@example.com"}, headers=admin)
+    mismatch = client.request("DELETE", f"/admin/accounts/{principal_id}", json={"confirm_username": "wrong"}, headers=admin)
     assert mismatch.status_code == 422
-    assert mismatch.json()["error"]["message_ar"] == "البريد الإلكتروني المدخل لا يطابق بريد المستخدم."
-    deleted = client.request("DELETE", f"/admin/accounts/{principal_id}", json={"confirm_email": "lifecycle@example.com"}, headers=admin)
+    assert mismatch.json()["error"]["message_ar"] == "اسم المستخدم المدخل لا يطابق هذا الحساب."
+    deleted = client.request("DELETE", f"/admin/accounts/{principal_id}", json={"confirm_username": "lifecycle"}, headers=admin)
     assert deleted.status_code == 200, deleted.text
     assert deleted.json()["status"] == "deleted"
     assert deleted.json()["email"] is None
-    assert session.get(Principal, UUID(principal_id)).retired_auth_user_id is not None
+    assert session.get(Principal, UUID(principal_id)).username is None
     listing = client.get("/admin/accounts", headers=admin)
     assert listing.status_code == 200
     assert all(item["principal_id"] != principal_id for item in listing.json()["items"])
@@ -479,42 +430,24 @@ def test_non_active_principal_is_rejected(security_context, status: str) -> None
     session.commit()
     response = client.get("/account/me", headers=headers("user-b"))
     assert response.status_code == 401
-    assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
+    assert response.json()["detail"]["code"] == ("ACCOUNT_DISABLED" if status == "disabled" else "INVALID_CREDENTIAL")
 
 
-def test_session_cutoff_rejects_old_and_same_second_but_allows_next_second(security_context) -> None:
+def test_revoked_sessions_rejected_while_other_session_remains_active(security_context) -> None:
     client, session = security_context
-    principal = session.get(Principal, PRINCIPAL_B)
-    assert principal
-    principal.sessions_valid_after = datetime.fromtimestamp(1_780_000_002, tz=timezone.utc)
-    session.add(principal)
+    current = session.exec(select(AuthSession).where(AuthSession.token_hash == token_digest(_token("user-b")))).one()
+    current.revoked_at = datetime.now(timezone.utc)
+    session.add(current)
     session.commit()
-    for token in ("old-user", "same-second-user", "refreshed-old-user", "missing-amr-user"):
-        response = client.get("/account/me", headers=headers(token))
-        assert response.status_code == 401
-        assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
+    assert client.get("/account/me", headers=headers("user-b")).status_code == 401
     assert client.get("/account/me", headers=headers("fresh-user")).status_code == 200
 
 
-def test_missing_amr_is_rejected_even_without_a_cutoff(security_context) -> None:
+def test_unknown_session_is_rejected_even_without_revocation(security_context) -> None:
     client, _ = security_context
-    response = client.get("/account/me", headers=headers("missing-amr-user"))
+    response = client.get("/account/me", headers=headers("unknown-session"))
     assert response.status_code == 401
     assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
-
-
-def test_list_reconciliation_throttle_skips_concurrent_and_recent_loads() -> None:
-    from app.api.routes.admin_accounts import _RecentReconciliationThrottle
-
-    throttle = _RecentReconciliationThrottle()
-    now = datetime(2026, 9, 28, 12, tzinfo=timezone.utc)
-    assert throttle.begin(now)
-    assert not throttle.begin(now)
-    throttle.finish(now, succeeded=True)
-    assert not throttle.begin(now + timedelta(minutes=4, seconds=59))
-    assert throttle.begin(now + timedelta(minutes=5))
-    throttle.finish(now + timedelta(minutes=5), succeeded=False)
-    assert throttle.begin(now + timedelta(minutes=5))
 
 
 def test_disabled_principal_is_rejected(security_context) -> None:
@@ -852,150 +785,24 @@ def test_openapi_declares_http_bearer_security() -> None:
     assert schema["paths"]["/foods"]["get"]["security"] == [{"BearerAuth": []}]
 
 
-def _jwt(verifier: SupabaseTokenVerifier, private_key, **overrides) -> str:
-    now = datetime.now(timezone.utc)
-    payload = {
-        "sub": str(AUTH_A),
-        "email": "admin@example.com",
-        "iss": verifier.issuer,
-        "aud": verifier.audience,
-        "iat": now,
-        "exp": now + timedelta(minutes=5),
-        "amr": [{"method": "password", "timestamp": int(now.timestamp())}],
-    }
-    payload.update(overrides)
-    return jwt.encode(payload, private_key, algorithm="RS256", headers={"kid": "test"})
-
-
-def test_supabase_verifier_validates_signature_expiry_issuer_and_audience(monkeypatch) -> None:
-    settings = Settings(environment="test", supabase_url="https://project.supabase.co")
-    verifier = SupabaseTokenVerifier(settings)
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    monkeypatch.setattr(
-        verifier.jwks,
-        "get_signing_key_from_jwt",
-        lambda _token: SimpleNamespace(key=private_key.public_key()),
-    )
-    assert verifier.verify(_jwt(verifier, private_key)).auth_user_id == AUTH_A
-    bad_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    with pytest.raises(jwt.InvalidSignatureError):
-        verifier.verify(_jwt(verifier, bad_key))
-    with pytest.raises(jwt.ExpiredSignatureError):
-        verifier.verify(
-            _jwt(verifier, private_key, exp=datetime.now(timezone.utc) - timedelta(seconds=1))
-        )
-    with pytest.raises(jwt.InvalidIssuerError):
-        verifier.verify(_jwt(verifier, private_key, iss="https://wrong.example/auth/v1"))
-    with pytest.raises(jwt.InvalidAudienceError):
-        verifier.verify(_jwt(verifier, private_key, aud="wrong"))
-
-
-@pytest.mark.parametrize(
-    ("amr", "expected"),
-    [
-        ([{"method": "password", "timestamp": 100}, {"method": "mfa", "timestamp": 101}], 101),
-        (None, None),
-        ([], None),
-        ([{"method": "password", "timestamp": "100"}], None),
-        ([{"method": "password", "timestamp": True}], None),
-        ([{"method": "password", "timestamp": 100}, {}], None),
-        ([{"timestamp": 100}], None),
-        ([{"method": "password", "timestamp": -1}], None),
-        ([{"method": "password", "timestamp": 10**100}], None),
-        ("password", None),
-    ],
-)
-def test_supabase_verifier_extracts_latest_valid_authentication_time(monkeypatch, amr, expected) -> None:
-    verifier = SupabaseTokenVerifier(Settings(environment="test", supabase_url="https://project.supabase.co"))
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    monkeypatch.setattr(verifier.jwks, "get_signing_key_from_jwt", lambda _token: SimpleNamespace(key=private_key.public_key()))
-    token = _jwt(verifier, private_key, amr=amr)
-    if expected is None:
-        with pytest.raises(ValueError, match="authentication-method"):
-            verifier.verify(token)
-    else:
-        assert verifier.verify(token).authenticated_at == expected
-
-
-def test_refreshed_token_uses_old_authentication_time_despite_new_iat(monkeypatch) -> None:
-    verifier = SupabaseTokenVerifier(Settings(environment="test", supabase_url="https://project.supabase.co"))
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    monkeypatch.setattr(verifier.jwks, "get_signing_key_from_jwt", lambda _token: SimpleNamespace(key=private_key.public_key()))
-    old_auth_time = 1_780_000_000
-    token = _jwt(verifier, private_key, amr=[{"method": "password", "timestamp": old_auth_time}])
-    assert jwt.decode(token, options={"verify_signature": False})["iat"] > old_auth_time
-    assert verifier.verify(token).authenticated_at == old_auth_time
-
-
-def test_supabase_verifier_rejects_signed_non_uuid_subject(monkeypatch) -> None:
-    settings = Settings(environment="test", supabase_url="https://project.supabase.co")
-    verifier = SupabaseTokenVerifier(settings)
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    monkeypatch.setattr(
-        verifier.jwks,
-        "get_signing_key_from_jwt",
-        lambda _token: SimpleNamespace(key=private_key.public_key()),
-    )
-
-    with pytest.raises(ValueError):
-        verifier.verify(_jwt(verifier, private_key, sub="not-a-uuid"))
-
-
-@pytest.mark.parametrize(
-    "resolver_error",
-    [
-        PyJWKClientConnectionError("internal provider response detail"),
-        PyJWKClientError("internal key algorithm mismatch detail"),
-    ],
-)
-def test_jwks_resolver_failure_keeps_uniform_public_credential_error(
-    security_context, resolver_error
-) -> None:
-    client, _ = security_context
-
-    class FailingVerifier:
-        def verify(self, _token: str) -> AuthClaims:
-            raise resolver_error
-
-    app.dependency_overrides[get_token_verifier] = FailingVerifier
-    response = client.get("/foods", headers=headers("unresolvable-jwks"))
-    assert response.status_code == 401
-    assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
-    assert "provider" not in response.text
-
-
-def test_malformed_algorithm_header_returns_generic_401_before_fetch(
+def test_malformed_legacy_token_returns_generic_401(
     security_context,
 ) -> None:
     client, _ = security_context
-    verifier = SupabaseTokenVerifier(
-        Settings(environment="test", supabase_url="https://project.supabase.co")
-    )
-    fetch_calls = 0
-
-    def unexpected_fetch():
-        nonlocal fetch_calls
-        fetch_calls += 1
-        raise AssertionError("malformed alg must be rejected before JWKS fetch")
-
-    verifier.jwks._fetcher = unexpected_fetch
-    app.dependency_overrides[get_token_verifier] = lambda: verifier
     encoded_header = base64.urlsafe_b64encode(
         json.dumps({"alg": [], "kid": "test"}).encode()
     ).rstrip(b"=")
     malformed_token = f"{encoded_header.decode()}.e30.c2ln"
 
-    response = client.get("/foods", headers=headers(malformed_token))
+    response = client.get("/foods", headers={"Authorization": "Bearer " + malformed_token})
 
     assert response.status_code == 401
     assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
     assert response.json()["detail"].keys() == {"code", "message_ar"}
-    assert fetch_calls == 0
 
 
 def test_production_auth_and_cors_configuration_fail_closed() -> None:
-    with pytest.raises(RuntimeError, match="SUPABASE_URL"):
-        validate_runtime_configuration(Settings(environment="production"))
+    validate_runtime_configuration(Settings(environment="production"))
     with pytest.raises(ValueError, match="Wildcard"):
         Settings(allowed_origins=["*"])
 
@@ -1022,3 +829,20 @@ def test_labs_admin_monitoring_rejects_normal_users(security_context, suffix):
     response = client.get(f"/admin/users/{PRINCIPAL_A}/labs{suffix}", headers=headers("user-b"))
     assert response.status_code == 403
     assert response.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize("invalid_state", ["expired", "tampered"])
+def test_expired_or_tampered_session_is_rejected(security_context, invalid_state):
+    client, session = security_context
+    token = _token("user-b")
+    if invalid_state == "expired":
+        row = session.exec(select(AuthSession).where(AuthSession.token_hash == token_digest(token))).one()
+        row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        session.add(row)
+        session.commit()
+    else:
+        token = token[:-1] + ("A" if token[-1] != "A" else "B")
+    response = client.get("/profile", headers={"Authorization": "Bearer " + token})
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "INVALID_CREDENTIAL"
+    assert token not in response.text

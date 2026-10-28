@@ -1,71 +1,14 @@
 from functools import lru_cache
-from typing import Self
-from urllib.parse import urlsplit, urlunsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-LOOPBACK_AUTH_EMULATOR_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
-
-
-def validate_supabase_base_url(value: str, *, allow_loopback_http: bool = False) -> str:
-    """Return a normalized Supabase base URL that is safe for credential requests."""
-    candidate = value.strip()
-    if any(
-        character.isspace() or ord(character) < 32 or ord(character) == 127 or character == "\\"
-        for character in candidate
-    ):
-        raise ValueError("SUPABASE_URL must be a valid absolute URL.")
-    try:
-        parsed = urlsplit(candidate)
-        hostname = parsed.hostname
-        _ = parsed.port
-        has_credentials = parsed.username is not None or parsed.password is not None
-    except ValueError as error:
-        raise ValueError("SUPABASE_URL must be a valid absolute URL.") from error
-
-    if not parsed.scheme or not parsed.netloc or hostname is None:
-        raise ValueError("SUPABASE_URL must be a valid absolute URL.")
-    if has_credentials:
-        raise ValueError("SUPABASE_URL must not include credentials.")
-    if parsed.query or parsed.fragment:
-        raise ValueError("SUPABASE_URL must not include a query or fragment.")
-
-    scheme = parsed.scheme.lower()
-    if scheme != "https":
-        is_allowed_emulator = (
-            allow_loopback_http
-            and scheme == "http"
-            and hostname.lower() in LOOPBACK_AUTH_EMULATOR_HOSTS
-        )
-        if not is_allowed_emulator:
-            raise ValueError(
-                "SUPABASE_URL must use HTTPS unless the loopback auth emulator "
-                "is explicitly enabled."
-            )
-
-    normalized_path = parsed.path.rstrip("/")
-    return urlunsplit((scheme, parsed.netloc, normalized_path, "", ""))
-
 
 class Settings(BaseSettings):
     app_name: str = "myNutri API"
     environment: str = "dev"
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/mynutri"
     allowed_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
-    supabase_url: str = ""
-    supabase_service_role_key: SecretStr | None = None
-    supabase_admin_http_timeout_seconds: int = Field(default=10, ge=1, le=60)
-    supabase_jwks_url: str = ""
-    supabase_jwt_audience: str = "authenticated"
-    supabase_jwks_timeout_seconds: int = Field(default=5, ge=1, le=30)
-    supabase_jwks_cache_lifespan_seconds: int = Field(default=600, ge=60, le=86_400)
-    supabase_jwks_refresh_cooldown_seconds: int = Field(default=30, ge=1, le=300)
-    supabase_jwks_negative_cache_ttl_seconds: int = Field(default=30, ge=1, le=300)
-    supabase_jwks_negative_cache_max_entries: int = Field(default=256, ge=1, le=4_096)
-    supabase_jwks_max_keys: int = Field(default=32, ge=1, le=128)
-    supabase_jwt_kid_max_length: int = Field(default=256, ge=1, le=1_024)
     calendar_timezone: str = "Asia/Riyadh"
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")
@@ -78,34 +21,6 @@ class Settings(BaseSettings):
             raise ValueError("Wildcard CORS origins are prohibited.")
         return list(dict.fromkeys(normalized))
 
-    @model_validator(mode="after")
-    def validate_jwks_cache_policy(self) -> Self:
-        if self.supabase_jwks_cache_lifespan_seconds < (
-            self.supabase_jwks_refresh_cooldown_seconds
-        ):
-            raise ValueError("JWKS cache lifespan must be greater than or equal to cooldown.")
-        if self.supabase_jwks_cache_lifespan_seconds < (
-            self.supabase_jwks_negative_cache_ttl_seconds
-        ):
-            raise ValueError(
-                "JWKS cache lifespan must be greater than or equal to negative cache TTL."
-            )
-        return self
-
-    @property
-    def normalized_supabase_url(self) -> str:
-        return self.supabase_url.strip().rstrip("/")
-
-    @property
-    def expected_supabase_issuer(self) -> str:
-        return f"{self.normalized_supabase_url}/auth/v1"
-
-    @property
-    def effective_supabase_jwks_url(self) -> str:
-        configured = self.supabase_jwks_url.strip()
-        if configured:
-            return configured
-        return f"{self.expected_supabase_issuer}/.well-known/jwks.json"
 
 
 def validate_runtime_configuration(settings: Settings) -> None:
@@ -118,17 +33,6 @@ def validate_runtime_configuration(settings: Settings) -> None:
     if settings.calendar_timezone != "Asia/Riyadh":
         raise RuntimeError("Wave 1 requires CALENDAR_TIMEZONE=Asia/Riyadh.")
 
-    if settings.environment != "production":
-        return
-
-    try:
-        validate_supabase_base_url(settings.normalized_supabase_url)
-    except ValueError as error:
-        raise RuntimeError("SUPABASE_URL must be a valid HTTPS URL in production.") from error
-    if not settings.supabase_jwt_audience.strip():
-        raise RuntimeError("SUPABASE_JWT_AUDIENCE is required in production.")
-    if not settings.effective_supabase_jwks_url.startswith("https://"):
-        raise RuntimeError("SUPABASE_JWKS_URL must be HTTPS in production.")
 
 
 @lru_cache

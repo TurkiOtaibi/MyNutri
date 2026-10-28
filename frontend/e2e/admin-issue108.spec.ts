@@ -79,21 +79,34 @@ test("cancel clears all add fields and disable requires confirmation with date f
   expect(writes).toBe(1);
 });
 
-test("stuck accounts show counts guidance and the exact early-deletion error", async ({ page }) => {
-  await page.route(`${API}/admin/accounts?*`, route => route.fulfill({ json: { items: [{ ...account, status: "provisioning" }], total: 1, page_size: 20, page: 1, counts: { ...counts, provisioning: 1, deleting: 2 } } }));
-  await page.route(`${API}/admin/accounts/${id}`, route => route.fulfill({ status: 409, json: { error: { code: "CREATION_IN_PROGRESS" } } }));
-  await page.goto("/admin/users");
-  await expect(page.locator(".admin-account-counts .account-status-provisioning")).toContainText("قيد الإنشاء: 1 · تنتظر إعادة المحاولة");
-  await expect(page.locator(".admin-account-counts .account-status-deleting")).toContainText("حذف غير مكتمل: 2 · تنتظر إعادة المحاولة");
-  const row = page.locator(".account-row").filter({ hasText: account.email });
-  await expect(row).toContainText("أعد المحاولة، أو احذف الحساب وأنشئه من جديد");
-  await row.getByRole("button", { name: /^إجراءات/ }).click();
-  await page.getByRole("menuitem", { name: "حذف المستخدم نهائيًا" }).click();
-  const dialog = page.getByRole("dialog", { name: "حذف المستخدم نهائيًا؟" });
-  await dialog.getByLabel("اكتب البريد الإلكتروني للمستخدم لتأكيد الحذف النهائي.").fill(account.email);
-  await dialog.getByRole("button", { name: "حذف المستخدم نهائيًا" }).click();
-  await expect(dialog.getByRole("alert")).toHaveText("لا يمكن حذف المستخدم الآن لأن إنشاءه ما زال جاريًا. حاول بعد 5 دقائق.");
-});
+for (const status of ["provisioning", "deleting"]) {
+  test(`legacy ${status} accounts retain local deletion without provider retry actions`, async ({ page }) => {
+    let removed = false;
+    await page.route(`${API}/admin/accounts?*`, route => route.fulfill({ json: { items: removed ? [] : [{ ...account, status }], total: removed ? 0 : 1, page_size: 20, page: 1, counts: { ...counts, provisioning: removed ? 0 : 1, deleting: 2 } } }));
+    await page.route(`${API}/admin/accounts/${id}`, route => {
+      expect(route.request().method()).toBe("DELETE");
+      expect(route.request().postDataJSON()).toEqual({ confirm_email: account.email });
+      removed = true;
+      return route.fulfill({ json: { ...account, status: "deleted" } });
+    });
+    await page.goto("/admin/users");
+    await expect(page.locator(".admin-account-counts .account-status-provisioning")).toHaveText("قيد الإنشاء: 1");
+    await expect(page.locator(".admin-account-counts .account-status-deleting")).toHaveText("حذف غير مكتمل: 2");
+    const row = page.locator(".account-row").filter({ hasText: account.email });
+    await expect(row).toContainText("حساب قديم");
+    await expect(row.getByRole("link")).toHaveCount(0);
+    await expect(row.getByRole("button", { name: /إعادة محاولة/ })).toHaveCount(0);
+    await row.getByRole("button", { name: /^إجراءات/ }).click();
+    await expect(page.getByRole("menuitem")).toHaveText(["حذف المستخدم نهائيًا"]);
+    await page.getByRole("menuitem", { name: "حذف المستخدم نهائيًا" }).click();
+    const dialog = page.getByRole("dialog", { name: "حذف المستخدم نهائيًا؟" });
+    await dialog.getByLabel("اكتب البريد الإلكتروني للمستخدم لتأكيد الحذف النهائي.").fill(account.email);
+    await dialog.getByRole("button", { name: "حذف المستخدم نهائيًا" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(row).toHaveCount(0);
+    await expect(page.getByRole("status")).toHaveText("تم حذف المستخدم نهائيًا.");
+  });
+}
 
 test("details display demographics targets dated totals and units without nutrition writes", async ({ page }) => {
   await detail(page);
@@ -110,7 +123,8 @@ test("details display demographics targets dated totals and units without nutrit
   await expect(day).toContainText("120 / 2000 سعرة");
   await expect(page.locator(".admin-detail-section").getByRole("button", { name: /حفظ|تعديل|حذف/ })).toHaveCount(0);
   await page.getByRole("button", { name: /^إجراءات/ }).click();
-  await expect(page.getByRole("menuitem")).toHaveText(["إعادة تعيين كلمة المرور", "تصحيح الجنس", "تعطيل المستخدم", "حذف المستخدم نهائيًا"]);
+  await expect(page.getByRole("menuitem", { name: "إعادة تعيين كلمة المرور" })).toHaveCount(0);
+  await expect(page.getByRole("menuitem")).toHaveText(["تصحيح الجنس", "تعطيل المستخدم", "حذف المستخدم نهائيًا"]);
   await page.keyboard.press("Escape");
   await page.getByLabel("التاريخ", { exact: true }).fill("2026-10-18");
   await expect(day.locator("time")).toHaveAttribute("datetime", "2026-10-18");
@@ -143,7 +157,7 @@ test("Escape keeps pending creation open and its failure visible", async ({ page
   const held = new Promise<void>(resolve => { release = resolve; });
   let started!: () => void;
   const pending = new Promise<void>(resolve => { started = resolve; });
-  await page.route(`${API}/admin/accounts`, async route => { started(); await held; await route.fulfill({ status: 503, json: { error: { code: "CREATION_INCOMPLETE" } } }); });
+  await page.route(`${API}/admin/accounts`, async route => { started(); await held; await route.fulfill({ status: 503, json: { error: { code: "SERVICE_UNAVAILABLE" } } }); });
   await page.goto("/admin/users");
   await page.getByRole("button", { name: "إضافة مستخدم" }).click();
   const dialog = page.getByRole("dialog", { name: "إضافة مستخدم" });
