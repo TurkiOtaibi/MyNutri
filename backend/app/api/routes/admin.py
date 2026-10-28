@@ -28,7 +28,7 @@ from app.services.aggregation import admin_day_summaries
 from app.services.diary import AdminDiaryCursorError, admin_diary_page
 from app.services.errors import resource_not_found
 from app.services.profile import to_profile_response
-from app.services.target_plans import plan_history, resolve_targets
+from app.services.target_plans import TargetPlanError, plan_history, resolve_targets
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -147,12 +147,20 @@ def user_detail(
     principal_id: UUID,
     _admin: PrincipalContext = Depends(require_admin),
     session: Session = Depends(get_session),
+    plan_cursor: str | None = Query(default=None),
+    plan_limit: int = Query(default=20, ge=1, le=100),
 ) -> AdminUserDetail:
     principal = _get_principal(session, principal_id)
     selected = _selected_context(principal)
     profile = session.exec(select(Profile).where(Profile.principal_id == principal.id)).first()
     today = current_diary_date()
     target = resolve_targets(session, selected, today)
+    try:
+        history = plan_history(session, selected, plan_limit, plan_cursor)
+    except TargetPlanError as error:
+        raise HTTPException(status_code=error.status_code, detail={
+            "code": error.code, "message_ar": error.message_ar,
+        }) from error
     return AdminUserDetail(
         age=age_on(profile.birth_date, today=today) if profile else None,
         account=_summary(session, principal),
@@ -162,7 +170,7 @@ def user_detail(
             else None
         ),
         current_target=target,
-        plan_history=plan_history(session, selected, 100, None),
+        plan_history=history,
     )
 
 
