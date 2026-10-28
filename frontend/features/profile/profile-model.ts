@@ -33,9 +33,9 @@ export const activityLabels: Record<ActivityLevel, string> = {
 };
 
 export const goalLabels: Record<Goal, string> = {
-  cut: "تنشيف",
-  maintain: "ثبات",
-  bulk: "زيادة"
+  cut: "خفض الوزن",
+  maintain: "المحافظة على الوزن",
+  bulk: "زيادة الوزن"
 };
 
 export const activityDescriptions: Record<ActivityLevel, string> = {
@@ -47,11 +47,11 @@ export const activityDescriptions: Record<ActivityLevel, string> = {
 };
 
 export const activityDisplayLabels: Record<ActivityLevel, string> = {
-  sedentary: "خامل · مستوى منخفض",
+  sedentary: "خامل",
   light: "نشاط خفيف",
   moderate: "نشاط متوسط",
-  active: "نشاط مرتفع",
-  very_active: "نشاط مرتفع جدًا"
+  active: "نشط",
+  very_active: "نشط جدًا"
 };
 
 export const goalDescriptions: Record<Goal, string> = {
@@ -61,8 +61,8 @@ export const goalDescriptions: Record<Goal, string> = {
 };
 
 export const goalDisplayLabels: Record<Goal, string> = {
-  cut: "تنشيف",
-  maintain: "المحافظة",
+  cut: "خفض الوزن",
+  maintain: "المحافظة على الوزن",
   bulk: "زيادة الوزن"
 };
 

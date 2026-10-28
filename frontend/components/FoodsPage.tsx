@@ -3,7 +3,8 @@
 import { Plus, RotateCcw, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { clearFoodDeletionNotice, readFoodDeletionNotice } from "@/features/foods/food-notices";
 
 import {
   DesktopPagination,
@@ -32,6 +33,7 @@ const sortLabels: Record<FoodSort, string> = {
 
 export function FoodsPage() {
   const { account } = useAuth();
+  const queryClient = useQueryClient();
   const isAdmin = account?.role === "admin";
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -42,7 +44,11 @@ export function FoodsPage() {
   const [knownCategories, setKnownCategories] = useState<string[]>([]);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FoodResponse | null>(null);
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(() => readFoodDeletionNotice(queryClient, account?.principal_id));
+
+  useEffect(() => {
+    clearFoodDeletionNotice(queryClient, account?.principal_id);
+  }, [queryClient, account?.principal_id]);
 
   const resetCollection = useCallback((next: {
     search?: string;
@@ -149,7 +155,7 @@ export function FoodsPage() {
             <input
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="ابحث عن طعام..."
+              placeholder="ابحث باسم الطعام أو العلامة التجارية..."
               aria-label="بحث باسم الطعام"
             />
             {searchInput ? (

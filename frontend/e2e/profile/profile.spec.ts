@@ -255,11 +255,11 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(activity).toContainText("خامل");
     await expect(activity).toContainText("نشاط خفيف");
     await expect(activity).toContainText("نشاط متوسط");
-    await expect(activity).toContainText("نشاط مرتفع جدًا");
+    await expect(activity).toContainText("نشط جدًا");
     await activity.getByRole("radio", { name: /نشاط خفيف/ }).click();
     await page.getByRole("button", { name: /تغيير الهدف/ }).click();
     const goal = page.getByRole("dialog", { name: "اختر هدفك" });
-    for (const label of ["تنشيف", "المحافظة", "زيادة الوزن"]) await expect(goal.getByRole("radio", { name: new RegExp(label) })).toBeVisible();
+    for (const label of ["خفض الوزن", "المحافظة على الوزن", "زيادة الوزن"]) await expect(goal.getByRole("radio", { name: new RegExp(label) })).toBeVisible();
     await goal.getByRole("radio", { name: /المحافظة/ }).click();
     const persisted = await readProfile(request);
     expect(persisted.activity_level).toBe(originalProfile.activity_level);
@@ -959,7 +959,7 @@ test.describe("@profile Profile and targets redesign", () => {
       expect(previewPayloads.at(-1)?.selected_cut_intensity).toBe(0.15);
 
       await page.getByRole("button", { name: /تغيير الهدف/ }).click();
-      await page.getByRole("dialog", { name: "اختر هدفك" }).getByRole("radio", { name: /تنشيف/ }).click();
+      await page.getByRole("dialog", { name: "اختر هدفك" }).getByRole("radio", { name: /خفض الوزن/ }).click();
       await expect(page.getByRole("radiogroup", { name: "شدة خفض الوزن" }).getByRole("radio", { name: /خفيف.*15%/ }))
         .toBeChecked();
 

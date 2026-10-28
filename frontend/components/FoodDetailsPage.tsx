@@ -36,6 +36,7 @@ import { definitionsFromRegistry } from "@/lib/nutrients";
 import { FoodDeleteDialog } from "./FoodDeleteDialog";
 import { useFoodDelete } from "./useFoodDelete";
 import { useAuth } from "./AuthProvider";
+import { rememberFoodDeletion } from "@/features/foods/food-notices";
 
 const FOOD_READ_ERROR = "تعذر تحميل تفاصيل الطعام. تحقق من الاتصال وحاول مرة أخرى.";
 
@@ -83,7 +84,10 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
   });
 
   const deleteMutation = useFoodDelete({
-    onDeleted: () => router.push("/foods"),
+    onDeleted: () => {
+      if (account) rememberFoodDeletion(queryClient, account.principal_id);
+      router.push("/foods");
+    },
     onError: (message) => setNote(message)
   });
 

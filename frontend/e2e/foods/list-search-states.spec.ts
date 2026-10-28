@@ -245,6 +245,7 @@ test.describe("Foods list, search, and states @foods", () => {
       await establishInitialPublicCatalog(page, [match, other]);
       const searchedResponse = waitForPublicFoodsResponse(page, { search: item.term });
       const search = page.getByLabel("بحث باسم الطعام");
+      await expect(search).toHaveAttribute("placeholder", "ابحث باسم الطعام أو العلامة التجارية...");
       await search.fill(item.term);
       const searchedFoods = await foodsFromResponse(await searchedResponse);
       expectFoodIncluded(searchedFoods, match);

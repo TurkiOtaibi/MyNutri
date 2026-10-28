@@ -31,6 +31,7 @@ APPROVED_MARKDOWN = frozenset(
         "docs/ba/04_FIELD_DICTIONARY.md",
         "docs/ba/07_USER_STORIES.md",
         "docs/ba/10_TRACEABILITY_MATRIX.md",
+        "docs/ba/12_REQUIREMENTS_TRACEABILITY.md",
         "docs/ba/وثيقة متطلبات النظام (BRD).md",
         "docs/ba/قصص مستخدم النظام (User Stories).md",
     }
@@ -394,6 +395,29 @@ def _runtime_checks(root: Path, issues: list[str]) -> None:
             )
 
 
+def _traceability_checks(brd: str, stories: str, matrix: str) -> list[str]:
+    """Check inventory integrity, not whether cited tests prove a requirement."""
+    expected = set(re.findall(r"\*\*(BR-[A-Z]+-\d{3}):", brd))
+    story_codes = {
+        code.replace("US-", "BR-", 1)
+        for code in re.findall(r"\*\*(US-[A-Z]+-\d{3}):", stories)
+    }
+    rows = [line.split("|")[1:-1] for line in matrix.splitlines()
+            if re.match(r"^\| BR-[A-Z]+-\d{3} \|", line)]
+    actual = [row[0].strip() for row in rows]
+    issues = []
+    if len(expected) != 259 or expected != story_codes:
+        issues.append("traceability: BRD/story inventory must contain the same 259 codes")
+    if len(actual) != 259 or len(set(actual)) != len(actual) or set(actual) != expected:
+        issues.append("traceability: matrix must contain each BR code exactly once")
+    for row in rows:
+        if len(row) != 6 or row[2].strip() not in {"✅", "🟡", "❌", "⚪"}:
+            issues.append(f"traceability: malformed row {row[0].strip()}")
+        elif not all(cell.strip() for cell in row):
+            issues.append(f"traceability: empty evidence/notes cell {row[0].strip()}")
+    return issues
+
+
 def _validate_documentation_estate(
     root: Path, *, runtime_checks: bool = True
 ) -> Results:
@@ -404,6 +428,13 @@ def _validate_documentation_estate(
     if runtime_checks:
         _alembic_checks(root, issues)
         _runtime_checks(root, issues)
+        sources = [root / "docs/ba" / name for name in (
+            "وثيقة متطلبات النظام (BRD).md",
+            "قصص مستخدم النظام (User Stories).md",
+            "12_REQUIREMENTS_TRACEABILITY.md",
+        )]
+        if all(source.is_file() for source in sources):
+            issues.extend(_traceability_checks(*(source.read_text(encoding="utf-8") for source in sources)))
     return Results(tuple(issues))
 
 
@@ -419,6 +450,13 @@ def _write_fixture(root: Path) -> None:
         path = root / relative_name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("# Current\n", encoding="utf-8")
+    codes = [f"AUT-{number:03}" for number in range(1, 260)]
+    for filename, prefix in (("وثيقة متطلبات النظام (BRD).md", "BR"),
+                             ("قصص مستخدم النظام (User Stories).md", "US")):
+        (root / "docs/ba" / filename).write_text(
+            "\n".join(f"**{prefix}-{code}:** fixture" for code in codes), encoding="utf-8")
+    (root / "docs/ba/12_REQUIREMENTS_TRACEABILITY.md").write_text(
+        "\n".join(f"| BR-{code} | Story | 🟡 | Code | Test | Gap |" for code in codes), encoding="utf-8")
     (root / "docs/product/v2/04_SHARED_FOOD_CATALOG.md").write_text(
         "# Food\n\nGET /foods\n\n`/admin/foods` does not exist\n\n"
         + FOOD_DELETE_MESSAGE,
@@ -443,6 +481,18 @@ def _self_test() -> int:
         root = Path(temporary)
         _write_fixture(root)
         assert _validate_documentation_estate(root, runtime_checks=False).ok
+        brd = (root / "docs/ba/وثيقة متطلبات النظام (BRD).md").read_text(encoding="utf-8")
+        stories = (root / "docs/ba/قصص مستخدم النظام (User Stories).md").read_text(encoding="utf-8")
+        matrix = (root / "docs/ba/12_REQUIREMENTS_TRACEABILITY.md").read_text(encoding="utf-8")
+        assert not _traceability_checks(brd, stories, matrix)
+        for changed in ("\n".join(matrix.splitlines()[1:]),
+                        matrix + "\n" + matrix.splitlines()[0],
+                        matrix.replace("BR-AUT-001", "BR-OTHER-001"),
+                        matrix.replace("🟡", "unknown", 1),
+                        matrix.replace("| Code |", "| |", 1)):
+            assert _traceability_checks(brd, stories, changed)
+        assert _traceability_checks(brd, stories.replace("US-AUT-001", "US-OTHER-001"), matrix)
+        print("self-test: missing/duplicate/unknown BR, invalid status, empty evidence and story drift rejected")
 
         extra = root / "docs/extra.md"
         extra.write_text("# Extra\n", encoding="utf-8")
