@@ -220,15 +220,31 @@ def delete_account(
                 "DELETE_EMAIL_MISMATCH",
                 "البريد الإلكتروني المدخل لا يطابق بريد المستخدم.",
             )
-    # Mark the purge under the lock without committing; failures roll it back
-    # together with every private deletion and the final scrubbed tombstone.
+    # Persist the admission barrier before destructive work. A failed purge must
+    # never roll back the account's lockout or restore its sessions (BR-USM-044).
     row.status = PrincipalStatus.deleting
-    session.add(row)
-    session.flush()
-    _purge_private_rows(session, principal_id)
     row.deletion_started_at = row.deletion_started_at or now
-    _scrub_deleted_account(row, row.auth_user_id or row.retired_auth_user_id, now)
+    row.updated_at = now
+    revoke_sessions(session, principal_id, now)
     session.add(row)
     session.commit()
+
+    # Reacquire locks in the existing Admin -> target order in transaction two.
+    # Another delete may have completed between transactions; that is a success.
+    _admin(session, admin_id)
+    row = _target(session, admin_id, principal_id)
+    if row.status == PrincipalStatus.deleted:
+        return row
+    try:
+        _purge_private_rows(session, principal_id)
+        _scrub_deleted_account(row, row.auth_user_id or row.retired_auth_user_id, now)
+        session.add(row)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise LifecycleError(
+            503, "DELETION_INCOMPLETE",
+            "تعذر إكمال حذف المستخدم. لا يستطيع الدخول الآن، ويمكنك إعادة المحاولة.",
+        ) from None
     session.refresh(row)
     return row
