@@ -217,7 +217,7 @@ same-subject overview/detail navigation preserves current queries and cache.
 
 ## Migration and recovery
 
-The sole Alembic head is `f0c8a6e12534` (internal credentials and hashed sessions), following `e9b7f5d01423` (Principal disable timestamp), authorized by issue #110 and the 27 October 2026 decision (BR-AUT-001/011/017, BR-PRF-024–026). Historical migrations remain immutable and
+The sole Alembic head is `a1d9b7f23645`, following `f0c8a6e12534` (internal credentials and hashed sessions). Issue #113's Product Owner approval of 28 October 2026 permits Target Plan DELETE only while its owner is `deleting`; every UPDATE remains forbidden. Historical migrations remain immutable and
 reconstruct the schema. Destructive cutovers are forward-only: real rollback after
 removed schema or data requires a matching pre-cutover database restore and compatible
 application revision, not a synthesized downgrade.

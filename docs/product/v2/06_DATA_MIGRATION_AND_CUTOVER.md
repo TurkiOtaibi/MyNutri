@@ -226,7 +226,7 @@ Before any release authorization:
 16. Confirm `d9f64a1c3e58` removed Food archive columns, installed the Diary Food
     `ON DELETE CASCADE`, preserved existing Food/Diary rows during migration, and
     revoked direct Food mutation from `PUBLIC`, `anon`, and `authenticated`.
-17. Confirm `f0c8a6e12534` is the sole head and agrees with all eight models (#110; 27 October 2026; BR-AUT-001/017);
+17. Confirm `a1d9b7f23645` is the sole head and agrees with all eight models (#113; Product Owner approval, 28 October 2026); the trigger-only change adds no model fields;
     clean and populated-base upgrades preserve existing facts, grants and replay.
 18. Prove packaged Labs catalog availability, private privileges, finite/unscaled
     numeric storage, unique owner/test/date, and operation-specific receipt expiry.
@@ -275,3 +275,7 @@ Issue #108 authorizes revision `e9b7f5d01423`, parent `d8a6e4c90312`, for BR-USM
 ## Internal authentication transition
 
 Issue #110 authorizes revision `f0c8a6e12534`, parent `e9b7f5d01423` (27 October 2026; BR-AUT-001/007/008/011/017, BR-PRF-024–026, BR-USM-030/033). Upgrade adds nullable username/normalized username/password hash/lock/last-login fields, defaulted initial-change and failure-count fields, and `auth_session` with token hashes and timestamps. Existing identities/emails remain unchanged. Direct PUBLIC/anon/authenticated access to credentials and sessions is revoked; the new session table has default-deny RLS. Downgrade drops the internal session table and new credential fields, losing internal credentials/sessions but retaining Principals and domain data; it does not restore direct Data API grants. This is not a safe authentication rollback after internal-only accounts are in use without an explicitly reviewed recovery plan. Apply before the backend built from this revision runs; Render applies migrations at start. Production execution requires separate release authorization.
+
+## Target Plan purge guard (#113)
+
+Product Owner approval of 28 October 2026 authorizes revision `a1d9b7f23645`, parent `f0c8a6e12534`. It replaces only the guard function: Target Plan DELETE requires an owning Principal in `deleting`; every UPDATE and all other DELETEs remain rejected. The existing account transaction sets that status before purging private rows and scrubbing the tombstone, preserving Food attribution. Downgrade restores unconditional rejection and cannot restore purged rows. Neither direction changes columns or existing data. Test upgrade/downgrade only on disposable loopback PostgreSQL; production execution requires separate release authorization.

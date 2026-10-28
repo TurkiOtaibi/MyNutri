@@ -44,7 +44,7 @@ Use the exact approved Arabic account-management copy in the BA field dictionary
 
 ## Release identity
 
-The current migration head is internal authentication revision `f0c8a6e12534`, parent `e9b7f5d01423`. Apply it before running the backend built from this revision; Render applies migrations at start. Upgrade preserves legacy identities/emails and adds nullable/defaulted credentials plus hashed sessions. Downgrade removes internal credentials/sessions, so internal-only accounts require an explicitly reviewed recovery plan before rollback; Principal/domain data survive and direct Data API grants remain revoked. Production migration requires separate explicit release authorization. Confirm the application commit, generated contract, single head and approved environment before rollout. (Issue #110, 27 October 2026; BR-AUT-001/011/017, BR-PRF-024–026.)
+The current migration head is `a1d9b7f23645`, parent `f0c8a6e12534` (issue #113, Product Owner approval of 28 October 2026). Apply it before running this backend; Render applies migrations at start. Upgrade changes only the Target Plan guard function: DELETE is allowed only while the owning Principal is `deleting`, and every UPDATE remains forbidden. Downgrade restores the unconditional UPDATE/DELETE rejection and therefore blocks account purges with saved plans again; it restores no deleted data. No columns or data are changed by either direction. Production migration requires separate explicit release authorization. Confirm the application commit, generated contract, single head and approved environment before rollout.
 
 ## Required pre-release validation
 

@@ -13,7 +13,10 @@ One or more future effective points may exist. Each
 `(principal_id, effective_from)` has immutable revisions numbered from 1; the
 greatest revision is canonical for that effective point. A same-date change
 inserts revision N+1 and preserves every older revision. Target Plan rows cannot
-be updated or deleted by normal application behavior.
+be updated or deleted by normal application behavior. The sole deletion exception
+is the private-data purge while the owning Principal is `deleting`; every UPDATE
+remains forbidden, including during that purge (issue #113, Product Owner approval
+of 28 October 2026). Account deletion still preserves Food attribution tombstones.
 
 Writes are accepted only when `effective_from` is the database-derived current
 Riyadh Diary date or later. The Backend captures that date after locking the
