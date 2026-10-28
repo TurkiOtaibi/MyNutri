@@ -167,7 +167,7 @@ def test_deletion_purges_every_private_dependent_and_preserves_global_food(lifec
 
 
 @pytest.mark.parametrize("status", [PrincipalStatus.active, PrincipalStatus.disabled, PrincipalStatus.provisioning, PrincipalStatus.deleting])
-def test_legacy_deletion_is_local_atomic_and_idempotent(lifecycle_session, status):
+def test_legacy_deletion_is_local_and_idempotent(lifecycle_session, status):
     session, admin_id = lifecycle_session
     now = datetime.now(timezone.utc)
     auth_id = uuid4()
@@ -231,12 +231,12 @@ def test_purge_failure_rolls_back_private_data_and_tombstone(lifecycle_session, 
         raise RuntimeError("synthetic purge failure")
 
     monkeypatch.setattr(admin_lifecycle, "_purge_private_rows", fail_after_purge)
-    with pytest.raises(RuntimeError, match="synthetic purge failure"):
+    with pytest.raises(LifecycleError, match="DELETION_INCOMPLETE"):
         delete_account(session, admin_id, user.id, now)
     session.rollback()
     session.refresh(user)
-    assert user.status == PrincipalStatus.active and user.display_name == "Rollback"
-    assert session.get(AuthSession, token.id) is not None
+    assert user.status == PrincipalStatus.deleting and user.display_name == "Rollback"
+    assert session.get(AuthSession, token.id).revoked_at is not None
 
 
 def test_deleted_creation_key_cannot_restore_private_identity(lifecycle_session):

@@ -25,7 +25,7 @@ CURRENT in #113: authentication uses only internal username/password and opaque 
 | Create/update/permanently delete Food | No | Yes |
 | Read aggregate Food usage counts (Diary entries and distinct users only) | No | Yes |
 | List users | No | Yes |
-| Read another user's monitored data | No | Yes, read-only |
+| Read another user's monitored data | No | Yes, read-only, only while the selected account is active or disabled (BR-USM-021; issue #137) |
 | Correct another user's «الجنس» | No | Yes, only a saved Profile of another active/disabled user, with «تصحيح الجنس يغيّر حساب الأهداف وتقييم نتائج التحاليل.» (17 October 2026; BR-PRF-006, BR-USM-032/061; #109) |
 | Mutate any other field in another user's Profile, or their Diary/Plans | No | No |
 | Assign roles | No | No through product APIs |
@@ -39,7 +39,7 @@ CURRENT in #113: authentication uses only internal username/password and opaque 
 | Read authenticated Labs catalog | Yes | Yes |
 | Read own Labs overview/detail/history | Yes | Yes, read-only |
 | Create/edit/delete own LabResult | Yes | No, including admin's own results |
-| Read another user's Labs overview/detail/history | No | Yes, selected-user read-only |
+| Read another user's Labs overview/detail/history | No | Yes, selected-user read-only, only while the selected account is active or disabled (BR-USM-021; issue #137) |
 | Mutate another user's Labs | No | No |
 
 ## Enforcement

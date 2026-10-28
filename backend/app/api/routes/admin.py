@@ -44,8 +44,10 @@ def _selected_context(principal: Principal) -> PrincipalContext:
 
 
 def _get_principal(session: Session, principal_id: UUID) -> Principal:
-    principal = session.get(Principal, principal_id)
-    if principal is None:
+    principal = session.get(Principal, principal_id, populate_existing=True)
+    if principal is None or principal.status not in {
+        PrincipalStatus.active, PrincipalStatus.disabled,
+    }:
         raise resource_not_found()
     return principal
 

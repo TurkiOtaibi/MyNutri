@@ -183,21 +183,25 @@ def test_search_legacy_email_only_without_username(admin_api, labs_postgresql_se
     assert admin_api.get("/admin/accounts?search=%25").json()["total"] == 0
 
 
-def test_internal_delete_failure_rolls_back_status_and_identity(admin_api, labs_postgresql_session, monkeypatch):
-    from app.services.admin_lifecycle import delete_account
+def test_internal_delete_failure_keeps_lockout_and_identity_for_retry(admin_api, labs_postgresql_session, monkeypatch):
 
     created = create(admin_api)
     assert created.status_code == 201
     row = labs_postgresql_session.get(Principal, UUID(created.json()["principal_id"]))
-    admin = labs_postgresql_session.exec(select(Principal).where(Principal.role == "admin")).one()
     def fail_purge(*args):
         raise RuntimeError("synthetic purge failure")
     monkeypatch.setattr("app.services.admin_lifecycle._purge_private_rows", fail_purge)
-    with pytest.raises(RuntimeError, match="synthetic purge failure"):
-        delete_account(labs_postgresql_session, admin.id, row.id, datetime.now(timezone.utc), confirmation_username="Test_User")
+    response = admin_api.request("DELETE", f"/admin/accounts/{row.id}", json={"confirm_username": "Test_User"})
+    assert response.status_code == 503
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.json()["error"] == {
+        "code": "DELETION_INCOMPLETE",
+        "message_ar": "تعذر إكمال حذف المستخدم. لا يستطيع الدخول الآن، ويمكنك إعادة المحاولة.",
+    }
     labs_postgresql_session.rollback()
     labs_postgresql_session.refresh(row)
-    assert row.status == "active" and row.username == "Test_User" and row.password_hash is not None
+    assert row.status == "deleting" and row.username == "Test_User" and row.password_hash is not None
+    assert row.deletion_started_at is not None
 
 
 def test_monitoring_search_uses_literal_username(admin_api):
@@ -209,9 +213,15 @@ def test_monitoring_search_uses_literal_username(admin_api):
 
 
 @pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("purge_failure", [False, True])
 def test_delete_purges_api_created_target_plan_with_immutable_trigger(
     labs_client, labs_postgresql_session, lab_owner, lab_admin, as_actor, legacy,
+    purge_failure, monkeypatch, labs_postgresql_database,
 ):
+    from datetime import timedelta
+    from sqlmodel import Session
+    from app.services import admin_lifecycle, internal_auth
+    from app.models import Food, NutritionBasis, DefaultUnitType, UnitBasis, NutritionDataSource
     from app.core.calendar import current_diary_date
     from app.core.credentials import hash_password
     from app.models import AuthSession, DiaryEntry, IdempotencyRecord, LabResult, Profile, TargetPlan
@@ -232,11 +242,67 @@ def test_delete_purges_api_created_target_plan_with_immutable_trigger(
     })
     assert result.status_code == 201, result.text
     assert labs_postgresql_session.exec(select(TargetPlan).where(TargetPlan.principal_id == owner.id)).first() is not None
+    food = Food(
+        principal_id=owner.id, name="Preserved Food", normalized_name="preserved food",
+        nutrition_basis=NutritionBasis.per_100g, default_unit_type=DefaultUnitType.g,
+        unit_amount=1, unit_basis=UnitBasis.g, calories=100, protein_g=1,
+        carb_g=2, fat_g=3, nutrition_data_source=NutritionDataSource.estimated,
+    )
+    labs_postgresql_session.add(food)
+    now = datetime.now(timezone.utc)
+    tokens = ["mn1_" + letter * 43 for letter in ("a", "b")]
+    for token in tokens:
+        labs_postgresql_session.add(AuthSession(
+            principal_id=owner.id, token_hash=internal_auth.token_digest(token),
+            created_at=now, last_used_at=now, expires_at=now + timedelta(days=1),
+        ))
+    labs_postgresql_session.commit()
+    labs_postgresql_session.refresh(food)
+    food_before = {column.name: getattr(food, column.name) for column in Food.__table__.columns}
     as_actor(lab_admin)
     confirmation = {"confirm_email": owner.email} if legacy else {"confirm_username": owner.username}
+    if purge_failure:
+        original_purge = admin_lifecycle._purge_private_rows
+        observed_before_purge = []
+
+        def fail_after_purge(session, principal_id):
+            # An independent connection proves step 1 is committed before any purge.
+            with Session(labs_postgresql_database.engine) as observer:
+                sessions = observer.exec(select(AuthSession).where(AuthSession.principal_id == principal_id)).all()
+                observed_before_purge.append((
+                    observer.get(Principal, principal_id).status,
+                    len(sessions), sum(item.revoked_at is not None for item in sessions),
+                ))
+            original_purge(session, principal_id)
+            raise RuntimeError("synthetic purge failure")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(admin_lifecycle, "_purge_private_rows", fail_after_purge)
+            failed = labs_client.request("DELETE", f"/admin/accounts/{owner.id}", json=confirmation)
+        assert failed.status_code == 503
+        # Outside the injected failure: production error sanitization must not
+        # turn a failed security assertion into the expected error response.
+        assert observed_before_purge == [("deleting", 2, 2)]
+        with Session(labs_postgresql_database.engine) as observer:
+            stopped = observer.get(Principal, owner.id)
+            assert stopped.status == "deleting" and stopped.deletion_started_at is not None
+            started_at = stopped.deletion_started_at
+            assert observer.exec(select(TargetPlan).where(TargetPlan.principal_id == owner.id)).first() is not None
+            for token in tokens:
+                with pytest.raises(internal_auth.AuthError, match="INVALID_CREDENTIAL"):
+                    internal_auth.admit_session(observer, token, datetime.now(timezone.utc))
+            if not legacy:
+                with pytest.raises(internal_auth.AuthError, match="LOGIN_FAILED"):
+                    internal_auth.login(observer, "purge-user", "Initial-123", datetime.now(timezone.utc))
     response = labs_client.request("DELETE", f"/admin/accounts/{owner.id}", json=confirmation)
     assert response.status_code == 200, response.text
     labs_postgresql_session.refresh(owner)
     assert owner.status == "deleted"
+    if purge_failure:
+        assert owner.deletion_started_at == started_at
+    assert all(getattr(owner, field) is None for field in ("auth_user_id", "username", "normalized_username", "password_hash", "email", "display_name"))
+    labs_postgresql_session.refresh(food)
+    assert {column.name: getattr(food, column.name) for column in Food.__table__.columns} == food_before
     for model in (AuthSession, DiaryEntry, IdempotencyRecord, LabResult, Profile, TargetPlan):
         assert labs_postgresql_session.exec(select(model).where(model.principal_id == owner.id)).first() is None
+    assert labs_client.request("DELETE", f"/admin/accounts/{owner.id}", json=confirmation).status_code == 200
