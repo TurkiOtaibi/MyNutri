@@ -61,6 +61,7 @@ CURRENT in #111: the browser uses internal username/password login, opaque beare
   rechecks `active` before writing, including receipt replay paths. The sex-only
   Admin correction also permits a `disabled` target (BR-USM-032; issue #109). No write
   can follow the locked purge of a `deleting` Principal.
+Session-admission metadata is the narrow exception: #128 permits a conditional refresh of an existing unrevoked, unexpired session after five minutes without a Principal lock; it cannot insert or revive sessions. Revocation writers retain their existing lock order and every admission rechecks status (BR-AUT-017; approved 30-day sliding lifetime, 27 October 2026).
 - Admin monitoring has dedicated `/admin/users/...` read routes.
 - Admin-selected IDs never replace the caller's `PrincipalContext`.
 - Shared Food reads are global; no archive state exists.

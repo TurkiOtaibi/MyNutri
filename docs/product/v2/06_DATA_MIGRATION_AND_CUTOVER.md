@@ -49,6 +49,7 @@ Revision `c7f5d3b89201` follows `b6e4c2a78190` and implements the Product Owner 
   `active` before insertion/update, including writes concurrent with deletion.
   No private row can appear after the locked purge. The lifecycle cutover is
   blocked until this holds for all writers, not only new account endpoints.
+Session-admission metadata is the narrow exception: #128 permits a conditional refresh of an existing unrevoked, unexpired session after five minutes without a Principal lock; it cannot insert or revive sessions. Revocation writers retain their existing lock order and every admission rechecks status (BR-AUT-017; approved 30-day sliding lifetime, 27 October 2026).
 - Cross-system work is resumable, not a single database transaction. Creation
   commits `provisioning`, key, and backend-generated Auth UUID, records
   `identity_requested_at` for every call, creates with that UUID, then activates.

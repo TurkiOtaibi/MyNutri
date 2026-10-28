@@ -1,4 +1,4 @@
-"""Principal-serialized internal authentication and opaque bearer sessions."""
+"""Principal-serialized auth writers and read-first opaque session admission."""
 
 import hashlib
 import re
@@ -19,6 +19,7 @@ from app.core.credentials import (
 from app.models import AuthSession, Principal, PrincipalRole, PrincipalStatus
 
 SESSION_LIFETIME = timedelta(days=30)
+SESSION_REFRESH_INTERVAL = timedelta(minutes=5)
 TOKEN_PREFIX = "mn1_"
 LOGIN_MESSAGE = "تعذر إكمال الطلب. تحقق من البيانات وحاول مرة أخرى."
 DISABLED_MESSAGE = "حسابك موقوف. تواصل مع المشرف."
@@ -147,14 +148,38 @@ def login(session: Session, username: str, password: str, now: datetime) -> Logi
 def admit_session(session: Session, token: str, now: datetime) -> tuple[Principal, AuthSession]:
     if re.fullmatch(r"mn1_[A-Za-z0-9_-]{43}", token) is None:
         raise AuthError("INVALID_CREDENTIAL", EXPIRED_MESSAGE)
-    # Discover ownership without taking a session lock: all writers lock Principal first.
-    owner = session.exec(
-        select(AuthSession.principal_id).where(AuthSession.token_hash == token_digest(token))
+    principal, current = _read_session(session, token, now)
+    if utc(current.last_used_at) < now - SESSION_REFRESH_INTERVAL:
+        # Recheck on the UPDATE itself: another refresh/revocation may have committed
+        # since the read. Never write Principal or acquire locks in reverse writer order.
+        session.execute(
+            update(AuthSession)
+            .where(
+                AuthSession.id == current.id,
+                AuthSession.revoked_at.is_(None),
+                AuthSession.expires_at > now,
+                AuthSession.last_used_at < now - SESSION_REFRESH_INTERVAL,
+            )
+            .values(last_used_at=now, expires_at=now + SESSION_LIFETIME)
+            .execution_options(synchronize_session=False)
+        )
+        session.commit()
+        # A competing refresh is harmless; a competing revocation/deletion is not.
+        principal, current = _read_session(session, token, now)
+    return principal, current
+
+
+def _read_session(session: Session, token: str, now: datetime) -> tuple[Principal, AuthSession]:
+    pair = session.exec(
+        select(Principal, AuthSession)
+        .join(AuthSession, AuthSession.principal_id == Principal.id)
+        .where(AuthSession.token_hash == token_digest(token))
+        .execution_options(populate_existing=True)
     ).one_or_none()
-    principal = lock_principal(session, owner) if owner else None
-    if principal is None:
+    if pair is None:
         session.rollback()
         raise AuthError("INVALID_CREDENTIAL", EXPIRED_MESSAGE)
+    principal, current = pair
     if principal.status != PrincipalStatus.active:
         disabled = principal.status == PrincipalStatus.disabled
         revoke_sessions(session, principal.id, now)
@@ -163,19 +188,9 @@ def admit_session(session: Session, token: str, now: datetime) -> tuple[Principa
             "ACCOUNT_DISABLED" if disabled else "INVALID_CREDENTIAL",
             DISABLED_MESSAGE if disabled else EXPIRED_MESSAGE,
         )
-    current = session.exec(
-        select(AuthSession)
-        .where(AuthSession.token_hash == token_digest(token))
-        .with_for_update()
-        .execution_options(populate_existing=True)
-    ).one_or_none()
-    if current is None or current.revoked_at is not None or utc(current.expires_at) <= now:
+    if current.revoked_at is not None or utc(current.expires_at) <= now:
         session.rollback()
         raise AuthError("INVALID_CREDENTIAL", EXPIRED_MESSAGE)
-    current.last_used_at = now
-    current.expires_at = now + SESSION_LIFETIME
-    session.add(current)
-    session.commit()
     return principal, current
 
 

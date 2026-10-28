@@ -107,6 +107,7 @@ Every writer of Principal-owned data must lock
 the Principal first and recheck `active` (the sex-only Admin correction permits
 active/disabled targets, BR-USM-032, #109); this serializes writes with purge so
 no private row can be inserted after it.
+Session-admission metadata is the narrow exception: #128 permits a conditional refresh of an existing unrevoked, unexpired session after five minutes without a Principal lock; it cannot insert or revive sessions. Revocation writers retain their existing lock order and every admission rechecks status (BR-AUT-017; approved 30-day sliding lifetime, 27 October 2026).
 
 Admin account mutation routes are distinct from selected-user monitoring.
 Selected Profile, Diary, Target Plan, and Labs data remain read-only to Admin
