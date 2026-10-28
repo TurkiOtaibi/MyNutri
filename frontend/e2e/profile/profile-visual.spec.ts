@@ -75,7 +75,7 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
     await page.getByRole("button", { name: "فتح الخيارات المتقدمة" }).click();
     await page.locator(".profile-advanced").screenshot({ path: resolve(output, "07-advanced-open-390.png") });
 
-    await page.getByLabel("الوزن").fill(String(original.weight_kg + 1));
+    await page.getByLabel("الوزن", { exact: true }).fill(String(original.weight_kg + 1));
     await expect(page.locator(".profile-save-bar")).toBeVisible();
     await page.screenshot({ path: resolve(output, "08-dirty-save-bar-390.png") });
     await expect(page.getByRole("region", { name: "الأهداف المتوقعة بعد الحفظ" })).toBeVisible();
@@ -100,7 +100,7 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
     await page.screenshot({ path: resolve(output, "12-successful-saved-state-390.png") });
     await page.unroute(targetPlanApiPattern);
 
-    await page.getByLabel("الوزن").fill(String(original.weight_kg + 2));
+    await page.getByLabel("الوزن", { exact: true }).fill(String(original.weight_kg + 2));
     await page.route(targetPlanApiPattern, (route) => route.request().method() === "POST" ? route.abort("failed") : route.continue());
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "حفظ الخطة" }).click();
@@ -140,7 +140,7 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
     await loadingPage.goto("/profile");
     await expect(loadingPage.locator(".profile-card-skeleton").first()).toBeVisible();
     await loadingPage.screenshot({ path: resolve(output, "16-initial-loading-390.png"), fullPage: true });
-    await expect(loadingPage.getByLabel("الوزن")).toBeVisible();
+    await expect(loadingPage.getByLabel("الوزن", { exact: true })).toBeVisible();
     await loadingPage.close();
 
     const errorPage = await page.context().newPage();
@@ -159,7 +159,7 @@ test("@profile @visual capture production Profile and Targets states", async ({ 
     await expect(errorAlert).toHaveCount(1);
     await expect(errorAlert).toContainText("تحقق من الاتصال ثم أعد المحاولة");
     expect(failedProfileRequests).toBe(2);
-    await expect(errorPage.getByLabel("الوزن")).toHaveCount(0);
+    await expect(errorPage.getByLabel("الوزن", { exact: true })).toHaveCount(0);
     await errorPage.screenshot({ path: resolve(output, "17-initial-load-error-390.png"), fullPage: true });
     await errorPage.close();
   } finally {

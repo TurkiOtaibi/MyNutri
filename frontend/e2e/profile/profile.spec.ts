@@ -63,7 +63,7 @@ if (!["127.0.0.1", "localhost"].includes(new URL(AUTH_URL).hostname)) {
 
 async function changedWeight(page: Page, originalProfile: ProfileResponse, offset = 1): Promise<string> {
   const nextWeight = String(originalProfile.weight_kg + offset);
-  await page.getByLabel("الوزن").fill(nextWeight);
+  await page.getByLabel("الوزن", { exact: true }).fill(nextWeight);
   return nextWeight;
 }
 
@@ -238,7 +238,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(body).toContainText(/\d{1,2} [\u0600-\u06FF]+ \d{4}/);
     await expect(body).not.toContainText(/[٠-٩]/);
     const height = page.getByLabel("الطول");
-    const weight = page.getByLabel("الوزن");
+    const weight = page.getByLabel("الوزن", { exact: true });
     await expect(height).toHaveAttribute("inputmode", "decimal");
     await expect(weight).toHaveAttribute("inputmode", "decimal");
     await expect(height).toHaveValue(String(originalProfile.height_cm));
@@ -316,7 +316,7 @@ test.describe("@profile Profile and targets redesign", () => {
       calendar_timezone: expect.any(String),
       next_rollover_at: expect.any(String)
     }));
-    const weight = page.getByLabel("الوزن");
+    const weight = page.getByLabel("الوزن", { exact: true });
     await expect(page.locator(".profile-card-skeleton")).toHaveCount(0);
     await expect(weight).toHaveValue(String(originalProfile.weight_kg));
     const original = await weight.inputValue();
@@ -561,7 +561,7 @@ test.describe("@profile Profile and targets redesign", () => {
     });
     await page.goto("/profile?plan008-numeric-bounds=1");
     const height = page.getByLabel("الطول");
-    const weight = page.getByLabel("الوزن");
+    const weight = page.getByLabel("الوزن", { exact: true });
     await expect(height).toHaveAttribute("min", "100");
     await expect(height).toHaveAttribute("max", "250");
     await expect(weight).toHaveAttribute("min", "20");
@@ -619,7 +619,7 @@ test.describe("@profile Profile and targets redesign", () => {
     let activationRequests = 0;
     await page.route("**/profile/preview", async (route) => { previewRequests += 1; await route.continue(); });
     await page.route(targetPlanWritePath, async (route) => { if (route.request().method() === "POST") activationRequests += 1; await route.continue(); });
-    await page.getByLabel("الوزن").fill(String(nextWeight));
+    await page.getByLabel("الوزن", { exact: true }).fill(String(nextWeight));
     const preview = page.getByRole("region", { name: "الأهداف المتوقعة بعد الحفظ" });
     await expect(preview).toBeVisible();
     await expect(preview.getByText("معاينة", { exact: true })).toBeVisible();
@@ -694,14 +694,14 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.context().setOffline(false);
     await refetched;
     expect(profileRefetches).toBe(1);
-    await expect(page.getByLabel("الوزن")).toHaveValue(heldDraft);
+    await expect(page.getByLabel("الوزن", { exact: true })).toHaveValue(heldDraft);
     await expect(page.getByText("توجد نسخة أحدث من بيانات الملف على الخادم. احتفظنا بتعديلاتك الحالية.")).toBeVisible();
     await page.getByRole("link", { name: "اليوميات" }).dispatchEvent("click");
     const unsaved = page.getByRole("dialog", { name: "تغييرات غير محفوظة" });
     await expect(unsaved).toBeVisible();
     await unsaved.getByRole("button", { name: "متابعة التعديل" }).click();
     await expect(page).toHaveURL(/\/profile\?plan011-pending=1$/);
-    await expect(page.getByLabel("الوزن")).toHaveValue(heldDraft);
+    await expect(page.getByLabel("الوزن", { exact: true })).toHaveValue(heldDraft);
     await page.keyboard.press("Escape");
     await page.locator(".profile-sheet-backdrop").dispatchEvent("mousedown");
     await expect(dialog).toBeVisible();
@@ -766,8 +766,8 @@ test.describe("@profile Profile and targets redesign", () => {
       const recovery = page.getByRole("status").filter({ hasText: "تعذر تحديث البيانات المعروضة" });
       await expect(recovery).toBeVisible();
       await expect(recovery.getByRole("button", { name: "إعادة تحديث البيانات" })).toBeEnabled();
-      await expect(page.getByLabel("الوزن")).toHaveValue(acceptedWeight);
-      await expect(page.getByLabel("الوزن")).toBeEnabled();
+      await expect(page.getByLabel("الوزن", { exact: true })).toHaveValue(acceptedWeight);
+      await expect(page.getByLabel("الوزن", { exact: true })).toBeEnabled();
       await expect(page.getByRole("region", { name: "الأهداف اليومية" })).toContainText("1777");
       await expect(page.locator(".profile-save-bar")).toHaveCount(0);
       expect(activationRequests).toBe(1);
@@ -819,12 +819,12 @@ test.describe("@profile Profile and targets redesign", () => {
     await sexSheet.getByRole("radio", { name: "أنثى" }).click();
     await page.getByLabel("تاريخ الميلاد").fill("1990-01-01");
     await page.getByLabel("الطول").fill("170");
-    await page.getByLabel("الوزن").fill("70");
+    await page.getByLabel("الوزن", { exact: true }).fill("70");
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "حفظ الخطة" }).click();
 
     await expect(page.getByRole("status").filter({ hasText: "تعذر تحديث البيانات المعروضة" })).toBeVisible();
-    await expect(page.getByLabel("الوزن")).toHaveValue("70");
+    await expect(page.getByLabel("الوزن", { exact: true })).toHaveValue("70");
     await expect(page.getByRole("region", { name: "الأهداف اليومية" })).toContainText("1777");
     expect(previewPayloads.at(-1)?.sex).toBe("female");
     expect(acceptedPayloads.at(-1)?.sex).toBe("female");
@@ -934,7 +934,7 @@ test.describe("@profile Profile and targets redesign", () => {
       await expect(recommended).toBeChecked();
       await page.getByLabel("تاريخ الميلاد").fill("1990-01-01");
       await page.getByLabel("الطول").fill("170");
-      await page.getByLabel("الوزن").fill("70");
+      await page.getByLabel("الوزن", { exact: true }).fill("70");
       const light = cutGroup.getByRole("radio", { name: /خفيف.*15%/ });
       await recommended.focus();
       await page.keyboard.press("ArrowUp");
@@ -1081,7 +1081,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(explanation).toBeFocused();
     await expect(explanation.getByText(safetyCopy.non_positive_carbohydrate_allocation.alternative, { exact: true })).toBeVisible();
     await expect(page.getByText(BLOCKED_PREVIEW_DESCRIPTION, { exact: true })).toBeVisible();
-    await expect(page.getByLabel("الوزن")).toHaveValue(retainedWeight);
+    await expect(page.getByLabel("الوزن", { exact: true })).toHaveValue(retainedWeight);
     await expect(page.getByRole("dialog")).toHaveCount(0);
     expect(writes).toBe(0);
     reject = false;
@@ -1212,7 +1212,7 @@ test.describe("@profile Profile and targets redesign", () => {
       await expect(recovery.getByText(copy.reason, { exact: true })).toBeVisible();
       await expect(recovery.getByText(copy.alternative, { exact: true })).toBeVisible();
       await expect(recovery).toBeFocused();
-      await expect(page.getByLabel("الوزن")).toHaveValue(retainedWeight);
+      await expect(page.getByLabel("الوزن", { exact: true })).toHaveValue(retainedWeight);
       await expect(page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" })).toHaveCount(0);
       await page.getByRole("button", { name: "تحديث المعاينة" }).click();
       await expect.poll(() => previewRequests).toBeGreaterThan(previewsBeforeActivation);
@@ -1274,7 +1274,7 @@ test.describe("@profile Profile and targets redesign", () => {
 
   test("@p0 @plan016 navigation guard preserves or discards dirty draft", async ({ page, originalProfile }) => {
     await page.goto("/profile");
-    await page.getByLabel("الوزن").fill(String(originalProfile.weight_kg + 1));
+    await page.getByLabel("الوزن", { exact: true }).fill(String(originalProfile.weight_kg + 1));
     const opener = page.getByRole("link", { name: "اليوميات" });
     await opener.focus();
     await opener.click();
@@ -1293,7 +1293,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await opener.click();
     await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
     await expect(page).toHaveURL(/\/profile$/);
-    await expect(page.getByLabel("الوزن")).toHaveValue(String(originalProfile.weight_kg + 1));
+    await expect(page.getByLabel("الوزن", { exact: true })).toHaveValue(String(originalProfile.weight_kg + 1));
     await page.getByRole("link", { name: "اليوميات" }).click();
     await page.getByRole("dialog", { name: "تغييرات غير محفوظة" }).getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
     await expect(page).toHaveURL(/\/diary$/);
@@ -1321,7 +1321,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.getByRole("link", { name: "بياناتي" }).click();
     await initialRead;
     await expect(page).toHaveURL(/\/profile$/);
-    const input = page.getByLabel("الوزن");
+    const input = page.getByLabel("الوزن", { exact: true });
     const draft = String(originalProfile.weight_kg + 1);
     expect(reads).toEqual({ initial: 1, refetch: 0 });
     await input.fill(draft);
@@ -1351,7 +1351,7 @@ test.describe("@profile Profile and targets redesign", () => {
   test("@plan016 browser Back cancel preserves the Profile draft and discard traverses once", async ({ page, originalProfile }) => {
     await page.goto("/diary");
     await page.getByRole("link", { name: "بياناتي" }).click();
-    const input = page.getByLabel("الوزن");
+    const input = page.getByLabel("الوزن", { exact: true });
     const draft = String(originalProfile.weight_kg + 2);
     await input.fill(draft);
     const dialog = page.getByRole("dialog", { name: "تغييرات غير محفوظة" });
@@ -1385,7 +1385,7 @@ test.describe("@profile Profile and targets redesign", () => {
       await route.fulfill({ status: 500, contentType: "application/json", json: { message: "forced remote revocation failure" } });
     });
     await page.goto("/profile");
-    const weight = page.getByLabel("الوزن");
+    const weight = page.getByLabel("الوزن", { exact: true });
     const draft = String(originalProfile.weight_kg + 3);
     await weight.fill(draft);
     await page.locator(".nav-signout").click();
@@ -1410,7 +1410,7 @@ test.describe("@profile Profile and targets redesign", () => {
     const signOutFailure = page.getByRole("alert").filter({ hasText: "تعذر تسجيل الخروج. حاول مرة أخرى." });
     await expect(signOutFailure).toBeVisible();
     await expect(page.locator(".profile-form")).toHaveCount(0);
-    await expect(page.getByLabel("الوزن")).toHaveCount(0);
+    await expect(page.getByLabel("الوزن", { exact: true })).toHaveCount(0);
     await expect(page.locator(".nav-signout")).toHaveCount(0);
     await expect(dialog).toHaveCount(0);
 
@@ -1419,8 +1419,8 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.locator('button[type="submit"]').click();
     await page.waitForURL(/\/(diary|profile)$/);
     await page.goto("/profile");
-    await expect(page.getByLabel("الوزن")).toHaveValue(String(originalProfile.weight_kg));
-    await expect(page.getByLabel("الوزن")).not.toHaveValue(draft);
+    await expect(page.getByLabel("الوزن", { exact: true })).toHaveValue(String(originalProfile.weight_kg));
+    await expect(page.getByLabel("الوزن", { exact: true })).not.toHaveValue(draft);
     await expect(signOutFailure).toHaveCount(0);
     await expect(dialog).toHaveCount(0);
   });
@@ -1485,7 +1485,7 @@ test.describe("@profile Profile and targets redesign", () => {
     releaseProfileResponse();
     await firstProfileFulfilled;
     await navigation;
-    await expect(page.getByLabel("الوزن")).toBeVisible();
+    await expect(page.getByLabel("الوزن", { exact: true })).toBeVisible();
     const errorPage = await page.context().newPage();
     await errorPage.goto("/diary");
     await expect(errorPage.getByRole("link", { name: "الإدارة" })).toBeVisible();
@@ -1504,10 +1504,10 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(errorAlert).toHaveCount(1);
     await expect(errorAlert).toContainText("تحقق من الاتصال ثم أعد المحاولة");
     expect(errorProfileRequests).toBe(2);
-    await expect(errorPage.getByLabel("الوزن")).toHaveCount(0);
+    await expect(errorPage.getByLabel("الوزن", { exact: true })).toHaveCount(0);
     failProfileRequests = false;
     await errorPage.getByRole("button", { name: "إعادة المحاولة" }).click();
-    await expect(errorPage.getByLabel("الوزن")).toBeVisible();
+    await expect(errorPage.getByLabel("الوزن", { exact: true })).toBeVisible();
     await expect(errorAlert).toHaveCount(0);
     expect(errorProfileRequests).toBe(3);
     await errorPage.close();
@@ -1517,7 +1517,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.route("**/nutrition/registry", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "unavailable" }) }));
     await page.goto("/profile?registry-unavailable=1");
     await expect(page.getByRole("alert").filter({ hasText: "تعذر تحميل البيانات الغذائية" })).toBeVisible();
-    await page.getByLabel("الوزن").fill(String(originalProfile.weight_kg + 1));
+    await page.getByLabel("الوزن", { exact: true }).fill(String(originalProfile.weight_kg + 1));
     await expect(page.getByRole("button", { name: "مراجعة وتأكيد" })).toBeDisabled();
 
     await page.unroute("**/nutrition/registry");
@@ -1529,7 +1529,7 @@ test.describe("@profile Profile and targets redesign", () => {
     });
     await page.goto("/profile?registry-invalid=1");
     await expect(page.getByRole("alert").filter({ hasText: "تعذر تحميل البيانات الغذائية" })).toBeVisible();
-    await page.getByLabel("الوزن").fill(String(originalProfile.weight_kg + 1));
+    await page.getByLabel("الوزن", { exact: true }).fill(String(originalProfile.weight_kg + 1));
     await expect(page.getByRole("button", { name: "مراجعة وتأكيد" })).toBeDisabled();
   });
 
@@ -1580,11 +1580,11 @@ test.describe("@profile Profile and targets redesign", () => {
     });
     await page.goto("/profile?stale-preview=1");
     const nextWeight = originalProfile.weight_kg + 1;
-    await page.getByLabel("الوزن").fill(String(nextWeight));
+    await page.getByLabel("الوزن", { exact: true }).fill(String(nextWeight));
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "حفظ الخطة" }).click();
     await expect(page.getByText("تغيّرت المعاينة. راجع الأهداف المحدثة ثم أكد مجددًا")).toBeVisible();
-    await expect(page.getByLabel("الوزن")).toHaveValue(String(nextWeight));
+    await expect(page.getByLabel("الوزن", { exact: true })).toHaveValue(String(nextWeight));
     await expect(page.getByRole("button", { name: "مراجعة المعاينة" })).toBeEnabled();
   });
 
