@@ -263,13 +263,16 @@ def test_delete_purges_api_created_target_plan_with_immutable_trigger(
     confirmation = {"confirm_email": owner.email} if legacy else {"confirm_username": owner.username}
     if purge_failure:
         original_purge = admin_lifecycle._purge_private_rows
+        observed_before_purge = []
 
         def fail_after_purge(session, principal_id):
             # An independent connection proves step 1 is committed before any purge.
             with Session(labs_postgresql_database.engine) as observer:
-                assert observer.get(Principal, principal_id).status == "deleting"
                 sessions = observer.exec(select(AuthSession).where(AuthSession.principal_id == principal_id)).all()
-                assert len(sessions) == 2 and all(item.revoked_at is not None for item in sessions)
+                observed_before_purge.append((
+                    observer.get(Principal, principal_id).status,
+                    len(sessions), sum(item.revoked_at is not None for item in sessions),
+                ))
             original_purge(session, principal_id)
             raise RuntimeError("synthetic purge failure")
 
@@ -277,6 +280,9 @@ def test_delete_purges_api_created_target_plan_with_immutable_trigger(
             patch.setattr(admin_lifecycle, "_purge_private_rows", fail_after_purge)
             failed = labs_client.request("DELETE", f"/admin/accounts/{owner.id}", json=confirmation)
         assert failed.status_code == 503
+        # Outside the injected failure: production error sanitization must not
+        # turn a failed security assertion into the expected error response.
+        assert observed_before_purge == [("deleting", 2, 2)]
         with Session(labs_postgresql_database.engine) as observer:
             stopped = observer.get(Principal, owner.id)
             assert stopped.status == "deleting" and stopped.deletion_started_at is not None
