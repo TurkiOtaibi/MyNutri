@@ -159,7 +159,9 @@ test.describe("@diary @meals Gregorian meal sections", () => {
     await page.getByRole("menuitem", { name: "حذف", exact: true }).click();
     await page.getByRole("dialog", { name: "حذف الطعام؟" }).getByRole("button", { name: "حذف", exact: true }).click();
     await page.getByRole("button", { name: "تراجع", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("تعذر استعادة الطعام غير المصنف. أضفه مجددًا واختر وجبة.");
+    const notice = page.locator(".diary-undo-notice");
+    await expect(notice).toHaveAttribute("role", "alert");
+    await expect(notice).toHaveText("تعذر استعادة الطعام غير المصنف. أضفه مجددًا واختر وجبة.");
     expect((await foodsApi.listDiary(localDate())).some((row) => row.id === entry.id)).toBe(false);
     expect((await foodsApi.listDiary(localDate())).some((row) => row.food.id === food.id)).toBe(false);
   });
