@@ -2333,6 +2333,7 @@ def test_concurrent_plan_and_future_diary_creation_finish_with_canonical_binding
                 session,
                 PrincipalContext(principal_id=DEPLOYMENT_PRINCIPAL),
                 DiaryEntryCreate(
+                    meal_type="breakfast",
                     entry_date=effective_from,
                     food_id=food_id,
                     quantity=1,
@@ -2377,6 +2378,7 @@ def test_food_delete_serializes_with_diary_mutations_and_keeps_responses_atomic(
                 session,
                 principal,
                 DiaryEntryCreate(
+                    meal_type="breakfast",
                     entry_date=current_diary_date(),
                     food_id=food_id,
                     quantity=1,
@@ -2406,6 +2408,7 @@ def test_food_delete_serializes_with_diary_mutations_and_keeps_responses_atomic(
                     mutation_session,
                     principal,
                     DiaryEntryCreate(
+                        meal_type="breakfast",
                         entry_date=current_diary_date(),
                         food_id=food_id,
                         quantity=1,
@@ -2481,6 +2484,7 @@ def test_food_delete_rolls_back_food_and_diary_cascade_when_database_rejects_del
             session,
             principal,
             DiaryEntryCreate(
+                meal_type="breakfast",
                 entry_date=current_diary_date(),
                 food_id=food_id,
                 quantity=1,
@@ -2560,7 +2564,7 @@ def test_food_delete_serializes_with_food_update_and_target_rebind_without_delet
         create_entry(
             session,
             principal,
-            DiaryEntryCreate(entry_date=future_date, food_id=rebound_food_id, quantity=1),
+            DiaryEntryCreate(meal_type="breakfast", entry_date=future_date, food_id=rebound_food_id, quantity=1),
         )
     barrier = Barrier(2)
 

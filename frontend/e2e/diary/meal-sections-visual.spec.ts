@@ -44,7 +44,8 @@ test.describe("@diary @visual final meal sections", () => {
     await foodsApi.createDiary(lunch.id, localDate(), 1, "lunch");
     await foodsApi.createDiary(dinner.id, localDate(), 1, "dinner");
     await foodsApi.createDiary(snack.id, localDate(), 1, "snack");
-    await foodsApi.createDiary(snack.id, localDate(), 0.5, "unspecified");
+    const legacy = await foodsApi.createDiary(snack.id, localDate(), 0.5, "snack");
+    await foodsApi.updateDiary(legacy.id, 0.5, "unspecified");
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/diary");

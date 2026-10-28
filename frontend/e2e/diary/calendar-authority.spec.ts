@@ -71,7 +71,8 @@ test.describe("@diary @calendar-authority authoritative Diary date", () => {
     const response = await foodsApi.createDiaryRaw({
       food_id: food.id,
       entry_date: offsetIsoDate(actualAuthority.current_diary_date, 1),
-      quantity: 1
+      quantity: 1,
+      meal_type: "breakfast"
     });
     expect(response.status()).toBe(201);
     await context.close();

@@ -854,7 +854,7 @@ class DiaryEntryCreate(BaseModel):
     entry_date: date
     food_id: UUID
     quantity: float = Field(gt=0, le=50)
-    meal_type: MealType = MealType.unspecified
+    meal_type: Literal["breakfast", "lunch", "dinner", "snack"]
 
 
 class DiaryEntryUpdate(BaseModel):

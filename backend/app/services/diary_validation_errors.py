@@ -22,8 +22,12 @@ def validate_diary_payload(schema: type[ModelT], payload: dict[str, Any]) -> Mod
                     message = "هذا الحقل يحدده الخادم ولا يقبله من العميل."
                     code = "NON_AUTHORITATIVE_FIELD"
             elif field == "meal_type":
-                message = "اختر قسم وجبة صحيحًا."
-                code = "invalid_meal_type"
+                if schema.__name__ == "DiaryEntryCreate":
+                    message = "اختر وجبة لإضافة الطعام: فطور أو غداء أو عشاء أو سناك."
+                    code = "DIARY_MEAL_REQUIRED"
+                else:
+                    message = "اختر قسم وجبة صحيحًا."
+                    code = "invalid_meal_type"
             elif field == "quantity":
                 message = "أدخل كمية صحيحة بين 0.01 و50."
                 code = "invalid_quantity"

@@ -1890,8 +1890,8 @@ export namespace Diary {
       food_id: string;
       /** Id */
       id?: string | null;
-      /** @default "unspecified" */
-      meal_type?: MealType;
+      /** Meal Type */
+      meal_type: "breakfast" | "lunch" | "dinner" | "snack";
       /**
        * Quantity
        * @exclusiveMin 0

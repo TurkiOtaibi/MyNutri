@@ -121,7 +121,7 @@ export function AddEntrySheet({ selectedDate, initialMeal, initialFood = null, o
   }
 
   function saveCurrent() {
-    if (submitLockRef.current || mutation.isPending || saveSucceeded || !selectedFood || !mealType || amount == null || quantityError) return;
+    if (submitLockRef.current || mutation.isPending || saveSucceeded || !selectedFood || !mealType || mealType === "unspecified" || amount == null || quantityError) return;
     submitLockRef.current = true;
     setError("");
     mutation.mutate({ entry_date: selectedDate, food_id: selectedFood.id, quantity: amount, meal_type: mealType });

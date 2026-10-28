@@ -41,7 +41,8 @@ test.describe("@diary daily-use redesign", () => {
     const createResponse = await foodsApi.createDiaryRaw({
       food_id: food.id,
       entry_date: localDate(1),
-      quantity: 1
+      quantity: 1,
+      meal_type: "breakfast"
     });
     expect(createResponse.status()).toBe(201);
     const created = await createResponse.json() as { id: string; quantity: number; meal_type: string };
