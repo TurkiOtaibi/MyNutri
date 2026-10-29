@@ -290,6 +290,16 @@ a {
   padding: 0;
 }
 
+/* A destructive action that must stay available without competing with the primary one. */
+.btn.danger.quiet {
+  border-color: transparent;
+  background: transparent;
+}
+
+.btn.danger.quiet:not(:disabled):hover {
+  background: var(--danger-soft);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .btn,
   .input,
@@ -1084,10 +1094,11 @@ a {
 .serving-summary,
 .nutrition-details-surface,
 .food-metadata {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: white;
+  border: 1px solid transparent;
+  border-radius: var(--radius-card);
+  background: var(--surface);
   padding: 18px;
+  box-shadow: var(--shadow-sm);
 }
 
 .serving-summary,
@@ -1711,6 +1722,14 @@ a {
   }
 
   .food-detail-actions .btn {
+    flex: 1;
+  }
+
+  .food-detail-actions .btn.quiet {
+    flex: 0 0 auto;
+  }
+
+  .food-detail-primary-action .btn.primary {
     flex: 1;
   }
 

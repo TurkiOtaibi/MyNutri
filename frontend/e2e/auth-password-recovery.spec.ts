@@ -74,6 +74,26 @@ for (const [code, message] of [
   });
 }
 
+test("@issue147 session restore waits for a waking server instead of failing", async ({ page }) => {
+  const email = actor();
+  await signIn(page, email);
+  await expect(page).toHaveURL(/\/diary$/);
+  let attempts = 0;
+  await page.route(`${API_URL}/account/me`, route => {
+    attempts += 1;
+    if (attempts === 1) return route.abort("failed");
+    if (attempts === 2) return route.fulfill({ status: 503, body: "" });
+    return route.continue();
+  });
+  await page.goto("/profile");
+  await expect(page.getByRole("status").filter({ hasText: "نجهّز بياناتك…" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "بياناتك وأهدافك", exact: true })).toBeVisible({ timeout: 20_000 });
+  expect(attempts).toBe(3);
+  await expect(page.getByText("نجهّز بياناتك…", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("تعذر الاتصال بالخادم. حاول مرة أخرى.", { exact: true })).toHaveCount(0);
+  expect(await storedToken(page)).toBeTruthy();
+});
+
 test("BR-AUT-014 real disable and re-enable restores the requested page after login", async ({ page, request }) => {
   const email = actor();
   await signIn(page, email, PASSWORD, "/profile");

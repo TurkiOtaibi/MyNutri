@@ -144,11 +144,11 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
           <span className="serving-badge detail-serving-badge">{defaultServingText(food)}</span>
         </div>
         {account?.role === "admin" ? <div className="food-detail-actions">
-          <Link className="btn primary" href={`/foods/${food.id}/edit`}>
+          <Link className="btn" href={`/foods/${food.id}/edit`}>
             <Pencil size={18} aria-hidden="true" />
             تعديل
           </Link>
-          <button className="btn danger" type="button" onClick={() => setDeleteTarget(food)}>
+          <button className="btn danger quiet" type="button" onClick={() => setDeleteTarget(food)}>
             <Trash2 size={18} aria-hidden="true" />
             حذف
           </button>
@@ -156,7 +156,7 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
       </header>
 
       {note ? <div className="catalog-notice" role="alert">{note}</div> : null}
-      <div className="actions">
+      <div className="actions food-detail-primary-action">
         <button className="btn primary" type="button" onClick={openDiary} aria-disabled={openingAdd} aria-busy={openingAdd}>إضافة إلى اليوميات</button>
       </div>
       {addDate ? <AddEntrySheet key={`${session?.user.id}:${food.id}:${addDate}`} selectedDate={addDate} initialMeal={null} initialFood={food}

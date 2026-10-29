@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useReducer, useRef } from "react";
+import { createContext, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
 import { usePathname, useRouter, useSelectedLayoutSegment } from "next/navigation";
 import { ApiError, changeAccountPassword, getCurrentAccount, loginAccount, logoutAccount, type CurrentAccount } from "@/lib/api";
 import { normalizePostLoginPath } from "@/lib/auth-return-path";
@@ -28,6 +28,13 @@ type AuthContextState = {
 };
 const AuthContext = createContext<AuthContextState | null>(null);
 
+// A sleeping free-tier API can drop or reject the first requests while it starts.
+// Session restore retries those transient failures before showing the connection error.
+const RESTORE_RETRY_DELAYS_MS = [2_000, 4_000, 8_000, 15_000, 15_000, 15_000];
+const SLOW_RESTORE_NOTICE_MS = 1_500;
+const isTransientRestoreError = (error: unknown) => error instanceof ApiError ? [502, 503, 504].includes(error.status) : error instanceof TypeError;
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initial);
   const router = useRouter();
@@ -48,9 +55,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     activeToken.current = token;
     dispatch({ type: token ? "restore" : "clear" });
     if (!token) return;
+    const current = () => mounted.current && sequence === generation.current && token === readSessionToken();
     try {
-      const account = await getCurrentAccount({ accessToken: token });
-      if (mounted.current && sequence === generation.current && token === readSessionToken()) dispatch({ type: "accept", token, account });
+      let account: CurrentAccount | null = null;
+      for (let attempt = 0; account === null; attempt += 1) {
+        try {
+          account = await getCurrentAccount({ accessToken: token });
+        } catch (error) {
+          if (attempt >= RESTORE_RETRY_DELAYS_MS.length || !isTransientRestoreError(error)) throw error;
+          await wait(RESTORE_RETRY_DELAYS_MS[attempt]);
+          if (!current()) return;
+        }
+      }
+      if (current()) dispatch({ type: "accept", token, account });
     } catch (error) {
       if (!mounted.current || sequence !== generation.current) return;
       if (error instanceof ApiError && error.code === "PASSWORD_CHANGE_REQUIRED") {
@@ -147,12 +164,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const offlineShell = useSelectedLayoutSegment() === "offline";
-  const { content, permitted, signOutFailed } = useAuth();
+  const { content, permitted, signOutFailed, loading } = useAuth();
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!loading) return;
+    const timer = setTimeout(() => setSlow(true), SLOW_RESTORE_NOTICE_MS);
+    return () => { clearTimeout(timer); setSlow(false); };
+  }, [loading]);
   // The cached /offline document keeps its route tree even at a deep fallback URL.
   // It contains only the generic static shell, never account or domain data.
   if (offlineShell) return children;
   return <>
     {signOutFailed ? <p role="alert" className="state-note" dir="rtl">تعذر تسجيل الخروج. حاول مرة أخرى.</p> : null}
+    {loading && slow ? <p role="status" className="state-note" dir="rtl">نجهّز بياناتك…</p> : null}
     {content ?? (permitted ? children : null)}
   </>;
 }
