@@ -1642,7 +1642,9 @@
 }
 
 :global(.macro-progress-track):global(.has-progress) > span {
-  width: max(var(--macro-min-progress), var(--macro-progress));
+  /* width + min-width instead of max(): iOS Safari resolved the percentage inside max() as zero, hiding bars without a pixel minimum. */
+  width: var(--macro-progress);
+  min-width: var(--macro-min-progress);
 }
 
 :global(.diary-page) :global(.macro-progress-list) {
