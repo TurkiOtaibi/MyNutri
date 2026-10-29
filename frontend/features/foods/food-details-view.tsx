@@ -110,6 +110,9 @@ export function FoodDetailsLoading() {
   );
 }
 
+// Food timestamps are shown on the Riyadh calendar day in the approved Gregorian format.
 export function formatFoodDate(value: string): string {
-  return new Intl.DateTimeFormat("ar-SA-u-nu-latn", { dateStyle: "medium" }).format(new Date(value));
+  return new Intl.DateTimeFormat("ar-SA-u-ca-gregory-nu-latn", {
+    day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Riyadh"
+  }).format(new Date(value));
 }
