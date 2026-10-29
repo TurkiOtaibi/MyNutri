@@ -160,6 +160,8 @@ test.describe("Foods serving-first catalog and details @foods", () => {
     await page.getByRole("button", { name: "عرض المزيد" }).click();
     await expect(page.locator(".food-card")).toHaveCount(25);
     await expect(page.getByText("عرض 25 من 25 طعامًا", { exact: true })).toBeVisible();
+    // The count appears once, at the top of the list, not again below it.
+    await expect(page.getByText(/^عرض .* من 25 طعامًا$/).filter({ visible: true })).toHaveCount(1);
   });
 
   test("[SERVING-007] @p0 @mobile card opens details and menu exposes secondary actions", async ({ page, foodsApi }) => {

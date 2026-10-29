@@ -222,7 +222,7 @@ export function MealSections({
         const isOpen = expanded.has(meal);
         const Icon = meal === "breakfast" ? Sunrise : meal === "lunch" ? Sun : meal === "dinner" ? Moon : Cookie;
         return (
-          <section id={`meal-section-${meal}`} className={`meal-section ${isOpen ? "open" : ""}`} data-meal={meal} key={meal}>
+          <section id={`meal-section-${meal}`} className={`meal-section ${isOpen ? "open" : ""}`} data-meal={meal} data-empty={items.length === 0 ? "" : undefined} key={meal}>
             <div className="meal-section-header">
               <button className="meal-toggle" type="button" aria-expanded={isOpen} aria-controls={`meal-${meal}`} aria-label={`${isOpen ? "إغلاق" : "فتح"} قسم ${mealLabels[meal]}`} onClick={() => onToggleMeal(meal)}>
                 <Icon size={21} aria-hidden="true" />

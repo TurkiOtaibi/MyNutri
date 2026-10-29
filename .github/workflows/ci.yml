@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  EXPECTED_FUNCTIONAL_PLAYWRIGHT_TESTS: "509"
+  EXPECTED_FUNCTIONAL_PLAYWRIGHT_TESTS: "510"
   EXPECTED_BACKEND_TESTS: "1802"
   EXPECTED_BACKEND_UNIT_TESTS: "1385"
   EXPECTED_BACKEND_POSTGRES_TESTS: "417"
@@ -712,6 +712,10 @@ jobs:
         continue-on-error: true
         working-directory: frontend
         run: npm run test:visual
+      - name: TEMP print actual visual PNGs
+        if: matrix.shard == 4 && steps.critical_visual.outcome == 'failure'
+        working-directory: frontend
+        run: find test-results/visual-regression -name '*-actual.png' | sort | while read -r file; do echo "PIXPNG $(basename "$file" -actual.png) $(base64 -w0 "$file")"; done
       - name: Retain critical visual failure evidence
         if: matrix.shard == 4 && steps.critical_visual.outcome == 'failure'
         uses: actions/upload-artifact@v4

@@ -42,4 +42,26 @@ test.describe("@diary @polish-oct29 Diary summary and week polish", () => {
       expect(copy.x + copy.width).toBeLessThanOrEqual(icon.x + 0.5);
     }
   });
+
+  test("@p1 empty meals are slimmer, hide the chevron, and keep the add button apart from it", async ({ page, foodsApi }) => {
+    const food = await foodsApi.create({ name: uniqueName("Spacing"), calories: 50 });
+    const date = localDate(-302);
+    await foodsApi.createDiary(food.id, date, 1, "breakfast");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/diary");
+    await selectDate(page, date);
+
+    const lunch = page.locator("#meal-section-lunch");
+    await expect(lunch).toHaveAttribute("data-empty", "");
+    await expect(lunch.locator(".meal-chevron")).toBeHidden();
+    expect((await lunch.locator(".meal-section-header").boundingBox())!.height).toBeLessThanOrEqual(56);
+    await expect(page.getByRole("button", { name: "إضافة طعام إلى غداء" })).toBeVisible();
+
+    const breakfast = page.locator("#meal-section-breakfast");
+    await expect(breakfast).not.toHaveAttribute("data-empty", /.*/);
+    const chevron = (await breakfast.locator(".meal-chevron").boundingBox())!;
+    const add = (await page.getByRole("button", { name: "إضافة طعام إلى فطور" }).boundingBox())!;
+    // RTL: the add button sits left of the chevron with a visible gap between them.
+    expect(chevron.x - (add.x + add.width)).toBeGreaterThanOrEqual(12);
+  });
 });
