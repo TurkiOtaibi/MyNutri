@@ -133,24 +133,20 @@ export function AdminUsersPage() {
       {showSelf && self && <article className="account-row account-self-row" key={self.principal_id}>
         <div className="account-identity">
           <span className="account-name-line"><strong>{self.display_name}</strong><span className="account-self-marker">(أنت)</span><AdminStatusBadge status={self.status} /></span>
-          <span className="account-email">اسم المستخدم: <bdi dir="ltr">{self.username ?? self.email}</bdi>{!self.username && <span> · حساب قديم</span>}</span>
-          {query.data?.self && <span className="account-meta">تاريخ التسجيل: <time dateTime={query.data.self.created_at}>{formatAdminDate(query.data.self.created_at)}</time></span>}
-          <span className="account-meta">آخر دخول: {query.data?.self?.last_login_at ? <time dateTime={query.data.self.last_login_at}>{formatAdminDateTime(query.data.self.last_login_at)}</time> : "لم يسجل الدخول بعد."}</span>
+          <span className="account-meta">آخر دخول: {query.data?.self?.last_login_at ? <time dateTime={query.data.self.last_login_at}>{formatAdminDateTime(query.data.self.last_login_at)}</time> : "لم يسجل الدخول بعد."} · <bdi dir="ltr">{self.username ?? self.email}</bdi>{!self.username && <span> · حساب قديم</span>}</span>
         </div>
       </article>}
       {query.data?.items.map(account => {
         const identity = <>
           <span className="account-name-line"><strong>{account.display_name}</strong><AdminStatusBadge status={account.status} />{account.is_locked && <span className="account-status-badge">مقفل</span>}</span>
-          <span className="account-email">اسم المستخدم: <bdi dir="ltr">{account.username ?? account.email}</bdi>{!account.username && <span> · حساب قديم</span>}</span>
-          {account.status === "disabled" && account.disabled_at && <span>معطّل منذ <time dateTime={account.disabled_at}>{formatAdminDate(account.disabled_at)}</time></span>}
-          <span className="account-meta">تاريخ التسجيل: <time dateTime={account.created_at}>{formatAdminDate(account.created_at)}</time></span>
-          <span className="account-meta">آخر دخول: {account.last_login_at ? <time dateTime={account.last_login_at}>{formatAdminDateTime(account.last_login_at)}</time> : "لم يسجل الدخول بعد."}</span>
+          <span className="account-meta">آخر دخول: {account.last_login_at ? <time dateTime={account.last_login_at}>{formatAdminDateTime(account.last_login_at)}</time> : "لم يسجل الدخول بعد."} · <bdi dir="ltr">{account.username ?? account.email}</bdi>{!account.username && <span> · حساب قديم</span>}</span>
+          {account.status === "disabled" && account.disabled_at && <span className="account-meta">معطّل منذ <time dateTime={account.disabled_at}>{formatAdminDate(account.disabled_at)}</time></span>}
         </>;
         return <article className="account-row" key={account.principal_id}>
           {monitoredStatuses.includes(account.status)
             ? <Link className="account-identity" href={`/admin/users/${account.principal_id}${returnQuery ? `?${returnQuery}` : ""}`}>{identity}<ChevronLeft className="account-open-arrow" size={20} aria-hidden="true" /></Link>
             : <div className="account-identity">{identity}</div>}
-          <AdminAccountActions account={account} />
+          <AdminAccountActions account={account} placement="list" />
         </article>;
       })}
       {query.data && query.data.total > query.data.page_size && <div className="actions">
