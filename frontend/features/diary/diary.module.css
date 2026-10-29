@@ -498,6 +498,42 @@
   background: var(--accent-soft);
 }
 
+:global(.entry-sheet) :global(.diary-recent-food-row) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 68%, transparent);
+}
+
+:global(.entry-sheet) :global(.diary-recent-food-row):last-child {
+  border-bottom: 0;
+}
+
+:global(.entry-sheet) :global(.diary-recent-food-row) :global(.diary-food-option) {
+  border-bottom: 0;
+}
+
+:global(.diary-quick-add) {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  min-height: 44px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+:global(.diary-quick-add):active {
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface-strong));
+}
+
 :global(.entry-sheet) :global(.diary-food-option-copy) {
   display: grid;
   gap: 2px;

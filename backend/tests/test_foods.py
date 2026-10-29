@@ -228,12 +228,13 @@ def create_plan014_entry(
     *,
     principal_id: UUID = TEST_PRINCIPAL_ID,
     created_at: datetime,
+    quantity: float = 1,
 ) -> DiaryEntry:
     entry = DiaryEntry(
         principal_id=principal_id,
         entry_date=created_at.date(),
         food_id=food.id,
-        quantity=1,
+        quantity=quantity,
         recorded_unit_type=food.default_unit_type,
         recorded_unit_amount=food.unit_amount,
         recorded_unit_basis=food.unit_basis,
@@ -347,9 +348,13 @@ def test_plan014_picker_recents_are_latest_unique_owner_scoped_and_deleted_food_
         deleted = create_plan014_food(session, "Deleted recent")
         other_owner = create_plan014_food(session, "Other owner recent")
         base = datetime(2026, 7, 30, tzinfo=timezone.utc)
-        create_plan014_entry(session, older, created_at=base)
-        create_plan014_entry(session, newest, created_at=base + timedelta(minutes=1))
-        create_plan014_entry(session, older, created_at=base + timedelta(minutes=2))
+        create_plan014_entry(session, older, created_at=base, quantity=3)
+        create_plan014_entry(
+            session, newest, created_at=base + timedelta(minutes=1), quantity=0.5
+        )
+        create_plan014_entry(
+            session, older, created_at=base + timedelta(minutes=2), quantity=1.25
+        )
         create_plan014_entry(
             session,
             other_owner,
@@ -361,6 +366,7 @@ def test_plan014_picker_recents_are_latest_unique_owner_scoped_and_deleted_food_
         result = list_food_picker(session, TEST_PRINCIPAL)
 
         assert [item.id for item in result.recent_items] == [older.id, newest.id]
+        assert [item.last_quantity for item in result.recent_items] == [1.25, 0.5]
         assert len(result.items) <= 30
         assert len(result.recent_items) <= 5
 

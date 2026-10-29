@@ -237,7 +237,7 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     const dialog = await openGeneral(page);
     await expect(dialog.getByRole("heading", { name: "إضافة طعام" })).toBeVisible();
     await expect(dialog.getByText("المستخدمة مؤخرًا", { exact: true })).toBeVisible();
-    await expect(dialog.getByRole("button", { name: new RegExp(recent.name) })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: new RegExp(`^${recent.name}`) })).toBeVisible();
     await expect(dialog.getByRole("heading", { name: "قسم الوجبة" })).toHaveCount(0);
     await expect(dialog.getByRole("button", { name: "إضافة الطعام", exact: true })).toHaveCount(0);
   });
@@ -253,7 +253,7 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     expect(deletedResponse.status()).toBe(204);
 
     const dialog = await openGeneral(page);
-    await expect(dialog.getByRole("button", { name: new RegExp(repeated.name) })).toHaveCount(1);
+    await expect(dialog.getByRole("button", { name: new RegExp(`^${repeated.name}`) })).toHaveCount(1);
     const search = dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية");
     await search.fill(deleted.name);
     await expect(dialog.getByRole("button", { name: new RegExp(deleted.name) })).toHaveCount(0);

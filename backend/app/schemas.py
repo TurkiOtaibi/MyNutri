@@ -652,11 +652,15 @@ class FoodPickerItem(BaseModel):
     fat_g: float
 
 
+class RecentFoodPickerItem(FoodPickerItem):
+    last_quantity: float
+
+
 class FoodPickerResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: list[FoodPickerItem]
-    recent_items: list[FoodPickerItem]
+    recent_items: list[RecentFoodPickerItem]
     next_cursor: str | None
 
 
