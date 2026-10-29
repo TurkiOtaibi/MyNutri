@@ -52,9 +52,11 @@
 
 :global(.details-block) {
   margin-top: 14px;
-  border: 1px dashed var(--line);
-  border-radius: var(--radius);
-  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
 }
 
 :global(.details-block) summary {
