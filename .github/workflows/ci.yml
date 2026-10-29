@@ -723,14 +723,6 @@ jobs:
             frontend/e2e/visual-regression/**/*.png
           if-no-files-found: ignore
           retention-days: 7
-      # TEMPORARY (issue #151): print CI-rendered screenshots so reviewed baselines can be adopted. Remove before merge.
-      - name: TEMPORARY print critical visual actual screenshots
-        if: matrix.shard == 4 && steps.critical_visual.outcome == 'failure'
-        working-directory: frontend
-        run: |
-          find test-results/visual-regression -name '*-actual.png' | sort | while read -r file; do
-            echo "PIXPNG $(basename "$file" -actual.png) $(base64 -w0 "$file")"
-          done
       - name: Verify static-shell PWA isolation
         if: matrix.shard == 4
         id: pwa
