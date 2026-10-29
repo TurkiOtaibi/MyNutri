@@ -723,35 +723,14 @@ jobs:
             frontend/e2e/visual-regression/**/*.png
           if-no-files-found: ignore
           retention-days: 7
-      # TEMPORARY (issue #151): print CI-rendered pixel differences so reviewed baselines can be adopted. Remove before merge.
-      - name: TEMPORARY print critical visual pixel differences
+      # TEMPORARY (issue #151): print CI-rendered screenshots so reviewed baselines can be adopted. Remove before merge.
+      - name: TEMPORARY print critical visual actual screenshots
         if: matrix.shard == 4 && steps.critical_visual.outcome == 'failure'
         working-directory: frontend
         run: |
-          node - test-results/visual-regression e2e/visual-regression/critical.spec.ts-snapshots <<'NODE'
-            const fs = require("node:fs");
-            const path = require("node:path");
-            const { PNG } = require("playwright-core/lib/utilsBundle");
-            const walk = (dir) => fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => entry.isDirectory() ? walk(path.join(dir, entry.name)) : [path.join(dir, entry.name)]) : [];
-            for (const actualPath of walk(process.argv[2]).filter((file) => file.endsWith("-actual.png"))) {
-              const name = path.basename(actualPath).replace(/-actual\.png$/, "");
-              const expectedPath = path.join(process.argv[3], `${name}-visual-regression-linux.png`);
-              const actual = PNG.sync.read(fs.readFileSync(actualPath));
-              const expected = PNG.sync.read(fs.readFileSync(expectedPath));
-              console.log(`PIXDIFF-BEGIN ${name} actual=${actual.width}x${actual.height} expected=${expected.width}x${expected.height}`);
-              if (actual.width !== expected.width || actual.height !== expected.height) {
-                console.log(`PIXDIFF-BASE64 ${fs.readFileSync(actualPath).toString("base64")}`);
-              } else {
-                for (let index = 0; index < actual.data.length; index += 4) {
-                  if (actual.data.readUInt32BE(index) !== expected.data.readUInt32BE(index)) {
-                    const pixel = index / 4;
-                    console.log(`PIXDIFF ${name} ${pixel % actual.width},${Math.floor(pixel / actual.width)} ${actual.data.readUInt32BE(index).toString(16).padStart(8, "0")}`);
-                  }
-                }
-              }
-              console.log(`PIXDIFF-END ${name}`);
-            }
-          NODE
+          find test-results/visual-regression -name '*-actual.png' | sort | while read -r file; do
+            echo "PIXPNG $(basename "$file" -actual.png) $(base64 -w0 "$file")"
+          done
       - name: Verify static-shell PWA isolation
         if: matrix.shard == 4
         id: pwa
