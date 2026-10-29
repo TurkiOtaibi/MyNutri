@@ -94,6 +94,18 @@ test("@issue147 session restore waits for a waking server instead of failing", a
   expect(await storedToken(page)).toBeTruthy();
 });
 
+test("@issue149 BR-PRF-031 phone sign-out from «الحساب» revokes the session", async ({ page, request }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page, actor(), PASSWORD, "/profile");
+  await expect(page).toHaveURL(/\/profile$/);
+  const token = await storedToken(page);
+  await page.getByRole("tab", { name: "الحساب", exact: true }).click();
+  await page.getByRole("button", { name: "تسجيل الخروج", exact: true }).click();
+  await expect(page).toHaveURL(/\/auth\/login(?:\?.*)?$/);
+  expect(await page.evaluate(key => localStorage.getItem(key), SESSION_TOKEN_KEY)).toBeNull();
+  expect((await request.get(`${API_URL}/account/me`, { headers: headers(token) })).status()).toBe(401);
+});
+
 test("BR-AUT-014 real disable and re-enable restores the requested page after login", async ({ page, request }) => {
   const email = actor();
   await signIn(page, email, PASSWORD, "/profile");
@@ -271,6 +283,7 @@ test("@issue111 Profile change requires current password and revokes only other 
   await signIn(page, email, PASSWORD, "/profile");
   await expect(page).toHaveURL(/\/profile$/);
   const current = await storedToken(page);
+  await page.getByRole("tab", { name: "الحساب", exact: true }).click();
   await page.getByLabel("كلمة المرور الحالية", { exact: true }).fill("Wrong-password-2026!");
   await page.getByLabel("كلمة المرور الجديدة", { exact: true }).fill(NEW_PASSWORD);
   await page.getByRole("button", { name: "تغيير كلمة المرور", exact: true }).click();

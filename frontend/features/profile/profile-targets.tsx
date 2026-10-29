@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, Info } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Info } from "lucide-react";
 import type { RefObject } from "react";
 import { formatShortDate } from "@/lib/dates";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels } from "@/lib/nutrients";
@@ -37,7 +37,7 @@ export function CalculationExplanation() {
   );
 }
 
-export function AdditionalTargetsCard({ targets, registry }: { targets: TargetResponse | null; registry: NutritionRegistryResponse }) {
+export function AdditionalTargetsCard({ targets, registry, open, onToggle }: { targets: TargetResponse | null; registry: NutritionRegistryResponse; open: boolean; onToggle: () => void }) {
   if (!targets) return null;
   const resolvedTargets = new Map((targets.additional_targets ?? []).map((target) => [target.key, target]));
   const definitions = definitionsFromRegistry(registry)
@@ -45,8 +45,14 @@ export function AdditionalTargetsCard({ targets, registry }: { targets: TargetRe
     .map((definition) => ({ ...definition, targetValue: resolvedTargets.get(definition.key)?.target_value ?? null }));
   return (
     <section className="profile-additional-targets" aria-labelledby="additional-targets-title">
-      <h2 id="additional-targets-title">أهداف غذائية إضافية</h2>
-      <div>
+      <h2>
+        <button id="additional-targets-title" className="profile-additional-toggle" type="button" aria-expanded={open} aria-controls="additional-targets-content" onClick={onToggle}>
+          <span>أهداف غذائية إضافية</span>
+          <bdi dir="ltr" aria-hidden="true">{definitions.length}</bdi>
+          <ChevronDown className="profile-additional-chevron" size={18} aria-hidden="true" />
+        </button>
+      </h2>
+      <div id="additional-targets-content" hidden={!open}>
         {definitions.map((item) => (
           <div className="profile-additional-target-row" key={item.key}>
             <strong>{item.label}</strong>

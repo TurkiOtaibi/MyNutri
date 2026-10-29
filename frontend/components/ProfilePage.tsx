@@ -18,12 +18,12 @@ import { ProfilePasswordSection, useProfilePassword } from "./ProfilePasswordSec
 import { useSessionAbortSignal } from "./SessionQueryProvider";
 import { useUnsavedChanges } from "./UnsavedChangesProvider";
 import { ProfileLoadError, ProfileSkeleton } from "@/features/profile/profile-dialogs";
-import { ProfileView } from "@/features/profile/profile-view";
+import { ProfileView, type ProfileTab } from "@/features/profile/profile-view";
 import { labsQueryKeys } from "@/features/labs/lab-query-keys";
 import { FAT_DEFAULTS, PROTEIN_DEFAULT, blankDraft, didConfirmedBirthDateChange, formatArabicGregorianDate, isPreviewActivatable, mapProfileApiErrors, mappedProfileErrorFocusField, normalizeDraft, normalizeNumber, profileMatchesAcceptedPlan, safetyOutcomeFromError, targetPlanSubmissionMatches, toDraft, validateDraft, withUpdatedSex, withoutProfileFieldError, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type ProfileField, type SheetKind, type TargetPlanSubmission, type TargetPlanWritePhase } from "@/features/profile/profile-model";
 
 export function ProfilePage() {
-  const { session } = useAuth();
+  const { session, account, signOut } = useAuth();
   const subjectId = session?.user.id ?? null;
   const accessToken = session?.access_token;
   const password = useProfilePassword(subjectId, accessToken);
@@ -41,6 +41,8 @@ export function ProfilePage() {
   const [previewFailed, setPreviewFailed] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [tab, setTab] = useState<ProfileTab>(readProfileTab);
+  const [additionalTargetsOpen, setAdditionalTargetsOpen] = useState(false);
   const [activeSheet, setActiveSheet] = useState<SheetKind>(null);
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [writePhase, setWritePhase] = useState<TargetPlanWritePhase>({ kind: "idle" });
@@ -477,6 +479,7 @@ export function ProfilePage() {
 
   return (
     <ProfileView
+      layout={{ tab, additionalTargetsOpen, username: account?.username ?? null }}
       profile={{
         dirty,
         hasSavedProfile,
@@ -525,6 +528,9 @@ export function ProfilePage() {
         restoreWriteFocusRef,
       }}
       intents={{
+        changeTab: (next) => { setTab(next); writeProfileTab(next); },
+        toggleAdditionalTargets: () => setAdditionalTargetsOpen((current) => !current),
+        signOut: () => void signOut(),
         keepLocalProfile: () => setPendingServerProfile(undefined),
         acceptServerProfile,
         updateField: update,
@@ -551,4 +557,21 @@ export function ProfilePage() {
       <ProfilePasswordSection password={password} />
     </ProfileView>
   );
+}
+
+const PROFILE_TAB_PARAM = "tab";
+const linkedProfileTabs: ReadonlyArray<ProfileTab> = ["history", "account"];
+
+// The selected section lives in the URL so back, refresh and shared links reopen it.
+function readProfileTab(): ProfileTab {
+  if (typeof window === "undefined") return "goals";
+  const value = new URLSearchParams(window.location.search).get(PROFILE_TAB_PARAM);
+  return linkedProfileTabs.find((item) => item === value) ?? "goals";
+}
+
+function writeProfileTab(tab: ProfileTab) {
+  const url = new URL(window.location.href);
+  if (tab === "goals") url.searchParams.delete(PROFILE_TAB_PARAM);
+  else url.searchParams.set(PROFILE_TAB_PARAM, tab);
+  window.history.replaceState(window.history.state, "", url);
 }

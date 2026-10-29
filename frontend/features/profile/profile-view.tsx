@@ -1,5 +1,5 @@
-import { Activity, CalendarDays, Check, ChevronDown, ChevronLeft, Info, LoaderCircle, RotateCcw, Ruler, Scale, SlidersHorizontal, Target, UserRound } from "lucide-react";
-import type { FormEvent, ReactNode, RefObject } from "react";
+import { Activity, CalendarDays, Check, ChevronDown, ChevronLeft, Info, LoaderCircle, LogOut, RotateCcw, Ruler, Scale, SlidersHorizontal, Target, UserRound } from "lucide-react";
+import type { FormEvent, KeyboardEvent, ReactNode, RefObject } from "react";
 import type { ActivityLevel, Goal, NutritionRegistryResponse, Sex, TargetPlanHistoryResponse, TargetResponse } from "@/lib/types";
 import { NumericSettingsRow, OptionList, SelectionCard, SettingsButton, CutIntensitySelector } from "./profile-controls";
 import { AdditionalTargetsCard, CalculationExplanation, ExpectedTargetsCard, RegistryState, TargetPlanHistory, TargetsCard } from "./profile-targets";
@@ -9,6 +9,15 @@ import "./profile.module.css";
 import { formatGregorianArabicDate } from "@/lib/dates";
 
 const PROFILE_WRITE_ERROR = "تعذر حفظ التغييرات";
+
+export type ProfileTab = "goals" | "history" | "account";
+
+// Approved section names (Product Owner decision, 29 Oct 2026).
+const PROFILE_TABS: ReadonlyArray<{ key: ProfileTab; label: string }> = [
+  { key: "goals", label: "أهدافي" },
+  { key: "history", label: "سجل الخطط" },
+  { key: "account", label: "الحساب" },
+];
 
 type ProfileViewState = {
   dirty: boolean;
@@ -64,7 +73,16 @@ type ProfileWriteViewState = {
   restoreWriteFocusRef: RefObject<boolean>;
 };
 
+type ProfileLayoutViewState = {
+  tab: ProfileTab;
+  additionalTargetsOpen: boolean;
+  username: string | null;
+};
+
 type ProfileViewIntents = {
+  changeTab: (tab: ProfileTab) => void;
+  toggleAdditionalTargets: () => void;
+  signOut: () => void;
   keepLocalProfile: () => void;
   acceptServerProfile: () => void;
   updateField: <K extends keyof DraftProfile>(key: K, value: DraftProfile[K]) => void;
@@ -90,6 +108,7 @@ type ProfileViewIntents = {
 
 type ProfileViewProps = {
   children?: ReactNode;
+  layout: ProfileLayoutViewState;
   profile: ProfileViewState;
   targets: ProfileTargetsViewState;
   write: ProfileWriteViewState;
@@ -98,6 +117,7 @@ type ProfileViewProps = {
 
 export function ProfileView({
   children,
+  layout,
   profile,
   targets,
   write,
@@ -117,180 +137,202 @@ export function ProfileView({
         <p>حدّث بياناتك لنحسب احتياجك اليومي.</p>
       </header>
 
-      <form className="profile-form" onSubmit={intents.submit} noValidate>
-        {hasPendingServerProfile ? (
-          <div className="unsaved-conflict" role="status">
-            <p>توجد نسخة أحدث من بيانات الملف على الخادم. احتفظنا بتعديلاتك الحالية.</p>
-            <div className="actions">
-              <button className="btn" type="button" onClick={intents.keepLocalProfile}>الاحتفاظ بتعديلاتي</button>
-              <button className="btn danger" type="button" onClick={intents.acceptServerProfile}>تحميل نسخة الخادم</button>
+      <ProfileTabs active={layout.tab} onChange={intents.changeTab} />
+
+      <div className="profile-tab-panel" role="tabpanel" id="profile-panel-goals" aria-labelledby="profile-tab-goals" hidden={layout.tab !== "goals"}>
+        <form className="profile-form" onSubmit={intents.submit} noValidate>
+          {hasPendingServerProfile ? (
+            <div className="unsaved-conflict" role="status">
+              <p>توجد نسخة أحدث من بيانات الملف على الخادم. احتفظنا بتعديلاتك الحالية.</p>
+              <div className="actions">
+                <button className="btn" type="button" onClick={intents.keepLocalProfile}>الاحتفاظ بتعديلاتي</button>
+                <button className="btn danger" type="button" onClick={intents.acceptServerProfile}>تحميل نسخة الخادم</button>
+              </div>
             </div>
-          </div>
-        ) : null}
-        <section className="profile-settings-card body-data-card" aria-labelledby="body-data-title">
-          <h2 id="body-data-title">بيانات الجسم</h2>
-          {hasSavedProfile ? (
-            <div
-              ref={sexRef}
-              className={`profile-setting-row ${errors.sex ? "has-error" : ""}`}
-              tabIndex={-1}
-              aria-invalid={Boolean(errors.sex)}
-              aria-describedby="profile-sex-message"
-            >
-              <UserRound size={19} aria-hidden="true" />
-              <span className="profile-setting-copy">
-                <strong>الجنس</strong>
-                <bdi>{sexLabels[draft.sex]}</bdi>
-                <small id="profile-sex-message" className={errors.sex ? "profile-field-error" : undefined}>
-                  {errors.sex ?? "لا يمكن تعديل الجنس بعد حفظ الملف الشخصي."}
-                </small>
-              </span>
-            </div>
-          ) : (
-            <SettingsButton
-              icon={<UserRound size={19} />}
-              label="الجنس"
-              value={sexLabels[draft.sex]}
-              onClick={() => intents.openSheet("sex")}
-              ariaLabel={`تغيير الجنس، القيمة الحالية ${sexLabels[draft.sex]}`}
-            />
-          )}
-          <label className={`profile-setting-row profile-date-row ${errors.birth_date ? "has-error" : ""}`}>
-            <CalendarDays size={19} aria-hidden="true" />
-            <span className="profile-setting-copy"><strong>تاريخ الميلاد</strong><bdi>{displayBirthDate}</bdi></span>
-            <ChevronLeft size={18} aria-hidden="true" />
-            <input
-              ref={birthRef}
-              type="date"
-              value={draft.birth_date}
-              max={authoritativeDate ?? undefined}
-              onChange={(event) => intents.updateField("birth_date", event.target.value)}
-              aria-label="تاريخ الميلاد"
-              aria-invalid={Boolean(errors.birth_date)}
-              aria-describedby={errors.birth_date ? "birth-date-error" : undefined}
-            />
-            {errors.birth_date ? <small id="birth-date-error" className="profile-field-error">{errors.birth_date}</small> : null}
-          </label>
-          <NumericSettingsRow
-            ref={heightRef}
-            icon={<Ruler size={19} />}
-            label="الطول"
-            value={draft.height_cm}
-            unit="سم"
-            step="0.1"
-            min={PROFILE_LIMITS.heightMin}
-            max={PROFILE_LIMITS.heightMax}
-            error={errors.height_cm}
-            onChange={(value) => intents.updateField("height_cm", value)}
-          />
-          <NumericSettingsRow
-            ref={weightRef}
-            icon={<Scale size={19} />}
-            label="الوزن"
-            value={draft.weight_kg}
-            unit="كجم"
-            step="0.1"
-            min={PROFILE_LIMITS.weightMin}
-            max={PROFILE_LIMITS.weightMax}
-            error={errors.weight_kg}
-            onChange={(value) => intents.updateField("weight_kg", value)}
-          />
-        </section>
-
-        <SelectionCard
-          icon={<Activity size={20} />}
-          title="مستوى النشاط"
-          value={activityDisplayLabels[draft.activity_level]}
-          description={activityDescriptions[draft.activity_level]}
-          onClick={() => intents.openSheet("activity")}
-          ariaLabel={`تغيير مستوى النشاط، القيمة الحالية ${activityLabels[draft.activity_level]}`}
-        />
-
-        <SelectionCard
-          icon={<Target size={20} />}
-          title="الهدف"
-          value={goalDisplayLabels[draft.goal]}
-          description={goalDescriptions[draft.goal]}
-          onClick={() => intents.openSheet("goal")}
-          ariaLabel={`تغيير الهدف، القيمة الحالية ${goalLabels[draft.goal]}`}
-        />
-
-        {draft.goal === "cut" ? (
-          <CutIntensitySelector
-            value={draft.selected_cut_intensity}
-            onChange={(value) => intents.updateField("selected_cut_intensity", value)}
-          />
-        ) : null}
-
-        <section className={`profile-advanced ${advancedOpen ? "open" : ""}`}>
-          <button
-            className="profile-advanced-toggle"
-            type="button"
-            aria-expanded={advancedOpen}
-            aria-controls="advanced-profile-fields"
-            aria-label={`${advancedOpen ? "إغلاق" : "فتح"} الخيارات المتقدمة`}
-            onClick={intents.toggleAdvanced}
-          >
-            <SlidersHorizontal size={20} aria-hidden="true" />
-            <span><strong>الخيارات المتقدمة</strong><small>لمن يرغب بتخصيص توزيع البروتين والدهون</small></span>
-            <ChevronDown className="profile-advanced-chevron" size={19} aria-hidden="true" />
-          </button>
-          <div id="advanced-profile-fields" className="profile-advanced-content" hidden={!advancedOpen}>
+          ) : null}
+          <TargetsCard title="الأهداف اليومية" badge="محسوبة تلقائيًا" targets={savedTargets} />
+          <section className="profile-settings-card body-data-card" aria-labelledby="body-data-title">
+            <h2 id="body-data-title">بيانات الجسم</h2>
+            {hasSavedProfile ? (
+              <div
+                ref={sexRef}
+                className={`profile-setting-row ${errors.sex ? "has-error" : ""}`}
+                tabIndex={-1}
+                aria-invalid={Boolean(errors.sex)}
+                aria-describedby="profile-sex-message"
+              >
+                <UserRound size={19} aria-hidden="true" />
+                <span className="profile-setting-copy">
+                  <strong>الجنس</strong>
+                  <bdi>{sexLabels[draft.sex]}</bdi>
+                  <small id="profile-sex-message" className={errors.sex ? "profile-field-error" : undefined}>
+                    {errors.sex ?? "لا يمكن تعديل الجنس بعد حفظ الملف الشخصي."}
+                  </small>
+                </span>
+              </div>
+            ) : (
+              <SettingsButton
+                icon={<UserRound size={19} />}
+                label="الجنس"
+                value={sexLabels[draft.sex]}
+                onClick={() => intents.openSheet("sex")}
+                ariaLabel={`تغيير الجنس، القيمة الحالية ${sexLabels[draft.sex]}`}
+              />
+            )}
+            <label className={`profile-setting-row profile-date-row ${errors.birth_date ? "has-error" : ""}`}>
+              <CalendarDays size={19} aria-hidden="true" />
+              <span className="profile-setting-copy"><strong>تاريخ الميلاد</strong><bdi>{displayBirthDate}</bdi></span>
+              <ChevronLeft size={18} aria-hidden="true" />
+              <input
+                ref={birthRef}
+                type="date"
+                value={draft.birth_date}
+                max={authoritativeDate ?? undefined}
+                onChange={(event) => intents.updateField("birth_date", event.target.value)}
+                aria-label="تاريخ الميلاد"
+                aria-invalid={Boolean(errors.birth_date)}
+                aria-describedby={errors.birth_date ? "birth-date-error" : undefined}
+              />
+              {errors.birth_date ? <small id="birth-date-error" className="profile-field-error">{errors.birth_date}</small> : null}
+            </label>
             <NumericSettingsRow
-              ref={proteinRef}
-              label="البروتين لكل كجم"
-              value={draft.protein_per_kg}
-              unit="جم/كجم"
+              ref={heightRef}
+              icon={<Ruler size={19} />}
+              label="الطول"
+              value={draft.height_cm}
+              unit="سم"
               step="0.1"
-              min={PROFILE_LIMITS.proteinMin}
-              max={PROFILE_LIMITS.proteinMax}
-              error={errors.protein_per_kg}
-              help="يحدد هدف البروتين حسب وزنك."
-              onChange={(value) => intents.updateField("protein_per_kg", value)}
+              min={PROFILE_LIMITS.heightMin}
+              max={PROFILE_LIMITS.heightMax}
+              error={errors.height_cm}
+              onChange={(value) => intents.updateField("height_cm", value)}
             />
             <NumericSettingsRow
-              ref={fatRef}
-              label="نسبة الدهون"
-              value={draft.fat_percent}
-              unit="%"
-              step="1"
-              min={PROFILE_LIMITS.fatMinPercent}
-              max={PROFILE_LIMITS.fatMaxPercent}
-              error={errors.fat_percent}
-              help="تحدد نسبة السعرات اليومية القادمة من الدهون."
-              onChange={(value) => intents.updateField("fat_percent", value)}
+              ref={weightRef}
+              icon={<Scale size={19} />}
+              label="الوزن"
+              value={draft.weight_kg}
+              unit="كجم"
+              step="0.1"
+              min={PROFILE_LIMITS.weightMin}
+              max={PROFILE_LIMITS.weightMax}
+              error={errors.weight_kg}
+              onChange={(value) => intents.updateField("weight_kg", value)}
             />
-            <p className="profile-advanced-notice">تغيير هذه القيم سيؤثر في أهداف البروتين والدهون اليومية.</p>
+          </section>
+
+          <SelectionCard
+            icon={<Activity size={20} />}
+            title="مستوى النشاط"
+            value={activityDisplayLabels[draft.activity_level]}
+            description={activityDescriptions[draft.activity_level]}
+            onClick={() => intents.openSheet("activity")}
+            ariaLabel={`تغيير مستوى النشاط، القيمة الحالية ${activityLabels[draft.activity_level]}`}
+          />
+
+          <SelectionCard
+            icon={<Target size={20} />}
+            title="الهدف"
+            value={goalDisplayLabels[draft.goal]}
+            description={goalDescriptions[draft.goal]}
+            onClick={() => intents.openSheet("goal")}
+            ariaLabel={`تغيير الهدف، القيمة الحالية ${goalLabels[draft.goal]}`}
+          />
+
+          {draft.goal === "cut" ? (
+            <CutIntensitySelector
+              value={draft.selected_cut_intensity}
+              onChange={(value) => intents.updateField("selected_cut_intensity", value)}
+            />
+          ) : null}
+
+          <section className={`profile-advanced ${advancedOpen ? "open" : ""}`}>
             <button
-              className="profile-text-action"
+              className="profile-advanced-toggle"
               type="button"
-              onClick={intents.requestRestoreDefaults}
-            >استعادة القيم الافتراضية</button>
-          </div>
-        </section>
+              aria-expanded={advancedOpen}
+              aria-controls="advanced-profile-fields"
+              aria-label={`${advancedOpen ? "إغلاق" : "فتح"} الخيارات المتقدمة`}
+              onClick={intents.toggleAdvanced}
+            >
+              <SlidersHorizontal size={20} aria-hidden="true" />
+              <span><strong>الخيارات المتقدمة</strong><small>لمن يرغب بتخصيص توزيع البروتين والدهون</small></span>
+              <ChevronDown className="profile-advanced-chevron" size={19} aria-hidden="true" />
+            </button>
+            <div id="advanced-profile-fields" className="profile-advanced-content" hidden={!advancedOpen}>
+              <NumericSettingsRow
+                ref={proteinRef}
+                label="البروتين لكل كجم"
+                value={draft.protein_per_kg}
+                unit="جم/كجم"
+                step="0.1"
+                min={PROFILE_LIMITS.proteinMin}
+                max={PROFILE_LIMITS.proteinMax}
+                error={errors.protein_per_kg}
+                help="يحدد هدف البروتين حسب وزنك."
+                onChange={(value) => intents.updateField("protein_per_kg", value)}
+              />
+              <NumericSettingsRow
+                ref={fatRef}
+                label="نسبة الدهون"
+                value={draft.fat_percent}
+                unit="%"
+                step="1"
+                min={PROFILE_LIMITS.fatMinPercent}
+                max={PROFILE_LIMITS.fatMaxPercent}
+                error={errors.fat_percent}
+                help="تحدد نسبة السعرات اليومية القادمة من الدهون."
+                onChange={(value) => intents.updateField("fat_percent", value)}
+              />
+              <p className="profile-advanced-notice">تغيير هذه القيم سيؤثر في أهداف البروتين والدهون اليومية.</p>
+              <button
+                className="profile-text-action"
+                type="button"
+                onClick={intents.requestRestoreDefaults}
+              >استعادة القيم الافتراضية</button>
+            </div>
+          </section>
 
-        <section className="profile-settings-card" aria-labelledby="target-effective-date-title">
-          <h2 id="target-effective-date-title">تاريخ سريان الأهداف</h2>
-          <label className={`profile-setting-row profile-date-row ${errors.effective_from ? "has-error" : ""}`}>
-            <CalendarDays size={19} aria-hidden="true" />
-            <span className="profile-setting-copy"><strong>تاريخ السريان</strong><bdi>{effectiveFrom ? formatGregorianArabicDate(effectiveFrom) : "غير محدد"}</bdi></span>
-            <ChevronLeft size={18} aria-hidden="true" />
-            <input
-              ref={effectiveFromRef}
-              type="date"
-              value={effectiveFrom}
-              min={authoritativeDate ?? undefined}
-              onChange={(event) => intents.changeEffectiveFrom(event.target.value)}
-              aria-label="تاريخ سريان الأهداف"
-              aria-invalid={Boolean(errors.effective_from)}
-              aria-describedby={errors.effective_from ? "effective-from-error" : undefined}
+          <section className="profile-settings-card" aria-labelledby="target-effective-date-title">
+            <h2 id="target-effective-date-title">تاريخ سريان الأهداف</h2>
+            <label className={`profile-setting-row profile-date-row ${errors.effective_from ? "has-error" : ""}`}>
+              <CalendarDays size={19} aria-hidden="true" />
+              <span className="profile-setting-copy"><strong>تاريخ السريان</strong><bdi>{effectiveFrom ? formatGregorianArabicDate(effectiveFrom) : "غير محدد"}</bdi></span>
+              <ChevronLeft size={18} aria-hidden="true" />
+              <input
+                ref={effectiveFromRef}
+                type="date"
+                value={effectiveFrom}
+                min={authoritativeDate ?? undefined}
+                onChange={(event) => intents.changeEffectiveFrom(event.target.value)}
+                aria-label="تاريخ سريان الأهداف"
+                aria-invalid={Boolean(errors.effective_from)}
+                aria-describedby={errors.effective_from ? "effective-from-error" : undefined}
+              />
+              {errors.effective_from ? <small id="effective-from-error" className="profile-field-error">{errors.effective_from}</small> : null}
+            </label>
+          </section>
+
+          {registry.pending ? <RegistryState kind="loading" /> : registry.failed ? <RegistryState kind="unavailable" onRetry={intents.retryRegistry} /> : registryReady ? <AdditionalTargetsCard targets={savedTargets} registry={registry.data!} open={layout.additionalTargetsOpen} onToggle={intents.toggleAdditionalTargets} /> : null}
+          <button className="profile-explain-action" type="button" onClick={() => intents.openSheet("calculation")}><Info size={17} /> كيف حُسبت أهدافي؟</button>
+
+          {preview.visible ? (
+            <ExpectedTargetsCard
+              targets={preview.current}
+              goal={draft.goal}
+              pending={preview.pending}
+              failed={preview.failed}
+              recoveryOutcome={preview.safetyOutcome}
+              safetyAttemptSequence={preview.safetyAttemptSequence}
+              safetyRef={preview.safetyRef}
+              onRetry={intents.retryPreview}
             />
-            {errors.effective_from ? <small id="effective-from-error" className="profile-field-error">{errors.effective_from}</small> : null}
-          </label>
-        </section>
+          ) : null}
 
-        <TargetsCard title="الأهداف اليومية" badge="محسوبة تلقائيًا" targets={savedTargets} />
-        {registry.pending ? <RegistryState kind="loading" /> : registry.failed ? <RegistryState kind="unavailable" onRetry={intents.retryRegistry} /> : registryReady ? <AdditionalTargetsCard targets={savedTargets} registry={registry.data!} /> : null}
+        </form>
+      </div>
+
+      <div className="profile-tab-panel" role="tabpanel" id="profile-panel-history" aria-labelledby="profile-tab-history" hidden={layout.tab !== "history"}>
         <TargetPlanHistory
           plans={history.plans}
           pending={history.pending}
@@ -300,26 +342,26 @@ export function ProfileView({
           onRetry={intents.retryHistory}
           onLoadMore={intents.loadMoreHistory}
         />
-        <button className="profile-explain-action" type="button" onClick={() => intents.openSheet("calculation")}><Info size={17} /> كيف حُسبت أهدافي؟</button>
+      </div>
 
-        {preview.visible ? (
-          <ExpectedTargetsCard
-            targets={preview.current}
-            goal={draft.goal}
-            pending={preview.pending}
-            failed={preview.failed}
-            recoveryOutcome={preview.safetyOutcome}
-            safetyAttemptSequence={preview.safetyAttemptSequence}
-            safetyRef={preview.safetyRef}
-            onRetry={intents.retryPreview}
-          />
+      <div className="profile-tab-panel" role="tabpanel" id="profile-panel-account" aria-labelledby="profile-tab-account" hidden={layout.tab !== "account"}>
+        {layout.username ? (
+          <section className="profile-settings-card profile-account-card" aria-labelledby="profile-account-title">
+            <h2 id="profile-account-title">الحساب</h2>
+            <div className="profile-setting-row">
+              <UserRound size={19} aria-hidden="true" />
+              <span className="profile-setting-copy"><strong>اسم المستخدم</strong><bdi dir="ltr">{layout.username}</bdi></span>
+            </div>
+          </section>
         ) : null}
+        {children}
+        <button className="btn danger quiet profile-sign-out" type="button" onClick={intents.signOut}>
+          <LogOut size={18} aria-hidden="true" />
+          تسجيل الخروج
+        </button>
+      </div>
 
-      </form>
-
-      {children}
-
-      {dirty ? (
+      {dirty && layout.tab === "goals" ? (
         <div className="profile-save-bar" role="region" aria-label="حفظ تغييرات الملف الشخصي">
           <span>{Object.keys(errors).length > 0 ? "صحح الحقول المعلّمة للمتابعة" : preview.safetyOutcome ? "راجع قرار السلامة وحدّث المعاينة قبل المتابعة" : writeErrorCode ? "تغيّرت المعاينة. راجع الأهداف المحدثة ثم أكد مجددًا" : writePhase.kind === "failed" ? PROFILE_WRITE_ERROR : !registryReady ? "سجل التغذية غير جاهز" : "تغييرات غير محفوظة"}</span>
           {writePhase.kind === "failed" ? <small>تحقق من الاتصال ثم أعد المحاولة</small> : null}
@@ -404,5 +446,36 @@ export function ProfileView({
 
     </main>
 
+  );
+}
+
+function ProfileTabs({ active, onChange }: { active: ProfileTab; onChange: (tab: ProfileTab) => void }) {
+  const move = (event: KeyboardEvent<HTMLDivElement>) => {
+    const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+    if (!keys.includes(event.key)) return;
+    event.preventDefault();
+    const index = PROFILE_TABS.findIndex((tab) => tab.key === active);
+    const last = PROFILE_TABS.length - 1;
+    // In RTL the next tab is to the left.
+    const next = event.key === "Home" ? 0 : event.key === "End" ? last
+      : event.key === "ArrowLeft" ? (index === last ? 0 : index + 1) : (index === 0 ? last : index - 1);
+    onChange(PROFILE_TABS[next].key);
+    document.getElementById(`profile-tab-${PROFILE_TABS[next].key}`)?.focus();
+  };
+  return (
+    <div className="profile-tabs" role="tablist" aria-label="أقسام بياناتي" onKeyDown={move}>
+      {PROFILE_TABS.map((tab) => (
+        <button
+          key={tab.key}
+          id={`profile-tab-${tab.key}`}
+          type="button"
+          role="tab"
+          aria-selected={active === tab.key}
+          aria-controls={`profile-panel-${tab.key}`}
+          tabIndex={active === tab.key ? 0 : -1}
+          onClick={() => onChange(tab.key)}
+        >{tab.label}</button>
+      ))}
+    </div>
   );
 }

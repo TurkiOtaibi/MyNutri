@@ -19,6 +19,12 @@ test.describe("@nutrition-quality", () => {
   test("Profile exposes approved additional targets without fabricated limits", async ({ page }) => {
     await page.goto("/profile");
     const card = page.getByRole("region", { name: "أهداف غذائية إضافية" });
+    const toggle = card.getByRole("button", { name: "أهداف غذائية إضافية", exact: true });
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(card.locator(".profile-additional-target-row").first()).toBeHidden();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(card.locator(".profile-additional-target-row").first()).toBeVisible();
     await expect(card).toContainText("الألياف");
     await expect(card).toContainText("30 جم");
     await expect(card).toContainText("حد أدنى");
