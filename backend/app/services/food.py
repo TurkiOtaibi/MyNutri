@@ -31,6 +31,7 @@ from app.schemas import (
     FoodResponse,
     FoodSort,
     FoodUpdate,
+    RecentFoodPickerItem,
 )
 from app.services.food_validation_errors import (
     duplicate_food_detail,
@@ -165,13 +166,14 @@ def list_food_picker(
     page_rows = rows[:limit]
     items = [_picker_item(row[1:]) for row in page_rows]
 
-    recent_items: list[FoodPickerItem] = []
+    recent_items: list[RecentFoodPickerItem] = []
     if not normalized_search:
         ranked = (
             select(
                 DiaryEntry.food_id.label("food_id"),
                 DiaryEntry.created_at.label("created_at"),
                 DiaryEntry.id.label("entry_id"),
+                DiaryEntry.quantity.label("quantity"),
                 func.row_number()
                 .over(
                     partition_by=DiaryEntry.food_id,
@@ -186,13 +188,18 @@ def list_food_picker(
             .subquery()
         )
         recent_rows = session.exec(
-            select(*PICKER_COLUMNS)
+            select(*PICKER_COLUMNS, ranked.c.quantity)
             .join(ranked, ranked.c.food_id == Food.id)
             .where(ranked.c.recent_rank == 1)
             .order_by(ranked.c.created_at.desc(), ranked.c.entry_id.desc())
             .limit(5)
         ).all()
-        recent_items = [_picker_item(row) for row in recent_rows]
+        recent_items = [
+            RecentFoodPickerItem.model_validate(
+                dict(zip(RecentFoodPickerItem.model_fields, row, strict=True))
+            )
+            for row in recent_rows
+        ]
 
     return FoodPickerResponse(
         items=items,

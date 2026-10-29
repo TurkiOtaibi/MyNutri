@@ -1,11 +1,11 @@
-import { AlertCircle, Check, LoaderCircle, RotateCcw, Search, X } from "lucide-react";
+import { AlertCircle, Check, LoaderCircle, Plus, RotateCcw, Search, X } from "lucide-react";
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { ApiError, createDiaryEntry, listFoodPicker, updateDiaryEntry } from "@/lib/api";
 import { formatLongArabicDate } from "@/lib/dates";
 import { defaultServingText, defaultUnitLabels, formatServingMacro, unitBasisLabels } from "@/lib/food";
-import type { DiaryEntryInput, DiaryEntryResponse, FoodPickerItem, MealType } from "@/lib/types";
+import type { DiaryEntryInput, DiaryEntryResponse, FoodPickerItem, MealType, RecentFoodPickerItem } from "@/lib/types";
 import { useUnsavedChanges } from "@/components/UnsavedChangesProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { useSessionAbortSignal } from "@/components/SessionQueryProvider";
@@ -112,6 +112,16 @@ export function AddEntrySheet({ selectedDate, initialMeal, initialFood = null, o
     setError("");
   }
 
+  function quickAdd(food: RecentFoodPickerItem) {
+    if (submitLockRef.current || mutation.isPending || saveSucceeded || !mealType || mealType === "unspecified") return;
+    submitLockRef.current = true;
+    setSelectedFood(food);
+    setMeasured(false);
+    setQuantity(String(food.last_quantity));
+    setError("");
+    mutation.mutate({ entry_date: selectedDate, food_id: food.id, quantity: food.last_quantity, meal_type: mealType });
+  }
+
   function changeFood() {
     setSelectedFood(null);
     setMeasured(false);
@@ -178,7 +188,7 @@ export function AddEntrySheet({ selectedDate, initialMeal, initialFood = null, o
                 ) : null}
                 {!foodsQuery.isError && !debouncedSearch.trim() ? (
                   <>
-                    <FoodResultGroup title="المستخدمة مؤخرًا" foods={recentFoods} onChoose={chooseFood} emptyText="لا توجد أطعمة مستخدمة مؤخرًا." />
+                    <RecentFoodGroup foods={recentFoods} onChoose={chooseFood} onQuickAdd={mealType && mealType !== "unspecified" ? quickAdd : null} />
                     <FoodResultGroup title="جميع الأطعمة" foods={visibleFoods} onChoose={chooseFood} />
                   </>
                 ) : null}
@@ -274,6 +284,32 @@ function FoodResultGroup({ title, foods, onChoose, emptyText }: { title?: string
       {foods.length === 0 && emptyText ? <p className="recent-foods-empty">{emptyText}</p> : null}
       <div className="food-result-list">
         {foods.map((food) => <FoodResultRow key={food.id} food={food} onChoose={onChoose} />)}
+      </div>
+    </section>
+  );
+}
+
+function RecentFoodGroup({ foods, onChoose, onQuickAdd }: { foods: RecentFoodPickerItem[]; onChoose: (food: FoodPickerItem) => void; onQuickAdd: ((food: RecentFoodPickerItem) => void) | null }) {
+  if (!onQuickAdd) return <FoodResultGroup title="المستخدمة مؤخرًا" foods={foods} onChoose={onChoose} emptyText="لا توجد أطعمة مستخدمة مؤخرًا." />;
+  return (
+    <section className="food-result-group">
+      <h4>المستخدمة مؤخرًا</h4>
+      {foods.length === 0 ? <p className="recent-foods-empty">لا توجد أطعمة مستخدمة مؤخرًا.</p> : null}
+      <div className="food-result-list">
+        {foods.map((food) => (
+          <div className="diary-recent-food-row" key={food.id}>
+            <FoodResultRow food={food} onChoose={onChoose} />
+            <button
+              className="diary-quick-add"
+              type="button"
+              onClick={() => onQuickAdd(food)}
+              aria-label={`أضف مجددًا: ${food.name}، ${formatServingMacro(food.last_quantity)} ${defaultUnitLabels[food.default_unit_type]}`}
+            >
+              <Plus size={15} aria-hidden="true" />
+              <span>أضف مجددًا</span>
+            </button>
+          </div>
+        ))}
       </div>
     </section>
   );

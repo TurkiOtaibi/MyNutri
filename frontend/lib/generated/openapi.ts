@@ -507,7 +507,7 @@ export interface FoodPickerResponse {
   /** Next Cursor */
   next_cursor: string | null;
   /** Recent Items */
-  recent_items: FoodPickerItem[];
+  recent_items: RecentFoodPickerItem[];
 }
 
 /** FoodResponse */
@@ -1156,6 +1156,34 @@ export interface ProteinCalculationResponse {
   reference_weight_label_ar: string;
   /** Target G */
   target_g: number;
+}
+
+/** RecentFoodPickerItem */
+export interface RecentFoodPickerItem {
+  /** Brand */
+  brand: string | null;
+  /** Calories */
+  calories: number;
+  /** Carb G */
+  carb_g: number;
+  default_unit_type: DefaultUnitType;
+  /** Fat G */
+  fat_g: number;
+  /**
+   * Id
+   * @format uuid
+   */
+  id: string;
+  /** Last Quantity */
+  last_quantity: number;
+  /** Name */
+  name: string;
+  nutrition_basis: NutritionBasis;
+  /** Protein G */
+  protein_g: number;
+  /** Unit Amount */
+  unit_amount: number;
+  unit_basis: UnitBasis;
 }
 
 /** RegistryLabelDefinition */
