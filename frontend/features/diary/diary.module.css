@@ -2182,3 +2182,128 @@
 }
 
 :global(.diary-undo-notice):empty { padding: 0; border: 0; }
+
+/* Soft visual system: white cards separated by soft shadows, rounded corners and meal/macro colour cues. */
+:global(.diary-page) :global(.compact-week-nav),
+:global(.diary-page) :global(.diary-summary) {
+  border-color: transparent;
+  border-radius: var(--radius-hero);
+  box-shadow: var(--shadow);
+}
+
+:global(.diary-page) :global(.diary-summary) {
+  padding: 16px 18px;
+}
+
+:global(.calorie-summary-hero) {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 8px 0 10px;
+}
+
+:global(.diary-page) :global(.calorie-summary-hero) :global(.calorie-summary-primary) {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+:global(.calorie-ring) {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+}
+
+:global(.calorie-ring) circle {
+  fill: none;
+  stroke-width: 8;
+}
+
+:global(.calorie-ring-track) {
+  stroke: #e7eeec;
+}
+
+:global(.calorie-ring-fill) {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transition: stroke-dasharray 240ms ease;
+}
+
+:global(.calorie-ring)[data-state="over"] :global(.calorie-ring-fill) {
+  stroke: var(--danger);
+}
+
+:global(.diary-progress-track),
+:global(.macro-progress-track) {
+  background: #eef1f0;
+}
+
+:global(.macro-progress-row)[data-macro="protein"] :global(.macro-progress-track) > span {
+  background: var(--protein);
+}
+
+:global(.macro-progress-row)[data-macro="carbs"] :global(.macro-progress-track) > span {
+  background: var(--carbs);
+}
+
+:global(.macro-progress-row)[data-macro="fat"] :global(.macro-progress-track) > span {
+  background: var(--fat);
+}
+
+:global(.diary-page) :global(.meal-section) {
+  border-color: transparent;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-sm);
+}
+
+:global(.diary-page) :global(.meal-toggle) > svg:first-child {
+  box-sizing: content-box;
+  flex: 0 0 auto;
+  padding: 10px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+:global(.meal-section)[data-meal="breakfast"] :global(.meal-toggle) > svg:first-child {
+  background: var(--meal-breakfast-bg);
+  color: var(--meal-breakfast-ink);
+}
+
+:global(.meal-section)[data-meal="lunch"] :global(.meal-toggle) > svg:first-child {
+  background: var(--meal-lunch-bg);
+  color: var(--meal-lunch-ink);
+}
+
+:global(.meal-section)[data-meal="dinner"] :global(.meal-toggle) > svg:first-child {
+  background: var(--meal-dinner-bg);
+  color: var(--meal-dinner-ink);
+}
+
+:global(.meal-section)[data-meal="snack"] :global(.meal-toggle) > svg:first-child {
+  background: var(--meal-snack-bg);
+  color: var(--meal-snack-ink);
+}
+
+:global(.diary-page) :global(.meal-add) {
+  border-color: transparent;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+:global(.diary-page) :global(.diary-empty-note) {
+  border-radius: var(--radius-card);
+}
+
+@media (max-width: 640px) {
+  :global(.diary-undo-notice) {
+    bottom: calc(12px + env(safe-area-inset-bottom) + var(--bottom-nav-offset, 0px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.calorie-ring-fill) {
+    transition: none;
+  }
+}

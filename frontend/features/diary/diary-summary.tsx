@@ -103,37 +103,61 @@ export function DailyProgressSummary({ totals, targets, pending, failed, onOpenN
       <div className="diary-summary-heading">
         <h2>ملخص اليوم</h2>
       </div>
-      <div className="calorie-summary-primary">
-        <strong aria-label={`${Math.round(totals.calories)} من ${targets.target_calories} سعرة`}>
-          <bdi>{Math.round(totals.calories)}</bdi>
-          <span> من </span>
-          <bdi>{targets.target_calories}</bdi>
-          <small> سعرة</small>
-        </strong>
-        <p className={exceeded ? "over" : reached ? "reached" : ""}>
-          {exceeded ? `+${Math.round(totals.calories - targets.target_calories)} فوق الهدف` : reached ? "تم الوصول إلى الهدف" : `المتبقي ${Math.round(remaining)}`}
-        </p>
+      <div className="calorie-summary-hero">
+        <CalorieRing percent={caloriePercent} state={exceeded ? "over" : reached ? "reached" : "progress"} />
+        <div className="calorie-summary-primary">
+          <strong aria-label={`${Math.round(totals.calories)} من ${targets.target_calories} سعرة`}>
+            <bdi>{Math.round(totals.calories)}</bdi>
+            <span> من </span>
+            <bdi>{targets.target_calories}</bdi>
+            <small> سعرة</small>
+          </strong>
+          <p className={exceeded ? "over" : reached ? "reached" : ""}>
+            {exceeded ? `+${Math.round(totals.calories - targets.target_calories)} فوق الهدف` : reached ? "تم الوصول إلى الهدف" : `المتبقي ${Math.round(remaining)}`}
+          </p>
+        </div>
       </div>
       <div className={`diary-progress-track ${exceeded ? "over" : reached ? "reached" : ""}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(caloriePercent, 100)} aria-label={`${caloriePercent}% من هدف السعرات`}>
         <span style={{ width: `${Math.min(caloriePercent, 100)}%` }} />
       </div>
       <div className="macro-progress-list">
-        <MacroProgress label="البروتين" value={totals.protein_g} max={targets.protein_g} />
-        <MacroProgress label="الكربوهيدرات" value={totals.carb_g} max={targets.carb_g} />
-        <MacroProgress label="الدهون" value={totals.fat_g} max={targets.fat_g} />
+        <MacroProgress macro="protein" label="البروتين" value={totals.protein_g} max={targets.protein_g} />
+        <MacroProgress macro="carbs" label="الكربوهيدرات" value={totals.carb_g} max={targets.carb_g} />
+        <MacroProgress macro="fat" label="الدهون" value={totals.fat_g} max={targets.fat_g} />
       </div>
       <button className="diary-nutrition-details-action" type="button" onClick={onOpenNutrition}>عرض التفاصيل الغذائية</button>
     </section>
   );
 }
 
-function MacroProgress({ label, value, max }: { label: string; value: number; max: number }) {
+const CALORIE_RING_RADIUS = 30;
+const CALORIE_RING_CIRCUMFERENCE = 2 * Math.PI * CALORIE_RING_RADIUS;
+
+// Decorative companion to the accessible progress bar below it.
+function CalorieRing({ percent, state }: { percent: number; state: "progress" | "reached" | "over" }) {
+  const visualPercent = Math.min(Math.max(percent, 0), 100);
+  return (
+    <svg className="calorie-ring" data-state={state} viewBox="0 0 72 72" aria-hidden="true" focusable="false">
+      <circle className="calorie-ring-track" cx="36" cy="36" r={CALORIE_RING_RADIUS} />
+      {visualPercent > 0 ? <circle
+        className="calorie-ring-fill"
+        cx="36"
+        cy="36"
+        r={CALORIE_RING_RADIUS}
+        strokeDasharray={`${CALORIE_RING_CIRCUMFERENCE * visualPercent / 100} ${CALORIE_RING_CIRCUMFERENCE}`}
+        transform="rotate(-90 36 36)"
+      /> : null}
+    </svg>
+  );
+}
+
+function MacroProgress({ macro, label, value, max }: { macro: "protein" | "carbs" | "fat"; label: string; value: number; max: number }) {
   const percent = max > 0 ? Math.round((value / max) * 100) : 0;
   const over = percent > 100;
   const visualPercent = Math.min(percent, 100);
   const minimumVisualPixels = visualPercent === 0 ? 0 : visualPercent < 5 ? 4 : visualPercent < 15 ? 8 : visualPercent < 30 ? 14 : 0;
   return (
-    <div className={`macro-progress-row ${over ? "over" : ""}`} aria-label={`${label}: ${formatServingMacro(value)} من ${formatServingMacro(max)} جم، ${percent}%${over ? `، فوق الهدف بـ ${formatServingMacro(value - max)} جم` : ""}`}>
+    <div className={`macro-progress-row ${over ? "over" : ""}`} data-macro={macro} aria-label={`${label}: ${formatServingMacro(value)} من ${formatServingMacro(max)} جم، ${percent}%${over ? `، فوق الهدف بـ ${formatServingMacro(value - max)} جم` : ""}`}>
       <div>
         <strong>{label}</strong>
         <span className="macro-value-expression">
@@ -194,7 +218,7 @@ export function MealSections({
         const isOpen = expanded.has(meal);
         const Icon = meal === "breakfast" ? Sunrise : meal === "lunch" ? Sun : meal === "dinner" ? Moon : Cookie;
         return (
-          <section id={`meal-section-${meal}`} className={`meal-section ${isOpen ? "open" : ""}`} key={meal}>
+          <section id={`meal-section-${meal}`} className={`meal-section ${isOpen ? "open" : ""}`} data-meal={meal} key={meal}>
             <div className="meal-section-header">
               <button className="meal-toggle" type="button" aria-expanded={isOpen} aria-controls={`meal-${meal}`} aria-label={`${isOpen ? "إغلاق" : "فتح"} قسم ${mealLabels[meal]}`} onClick={() => onToggleMeal(meal)}>
                 <Icon size={21} aria-hidden="true" />

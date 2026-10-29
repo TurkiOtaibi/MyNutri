@@ -49,10 +49,10 @@
 :global(.profile-preview-card),
 :global(.profile-load-error) {
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
-  border-radius: 17px;
-  background: color-mix(in srgb, white 96%, var(--surface-strong));
-  box-shadow: 0 3px 14px rgba(15, 35, 31, 0.035);
+  border: 1px solid transparent;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 
 :global(.profile-settings-card) > h2,
@@ -219,9 +219,9 @@ button:global(.profile-setting-row):focus-visible,
   justify-content: end;
   gap: 6px;
   min-width: 108px;
-  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
-  border-radius: 12px;
-  background: var(--surface-strong);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--field-bg);
   padding: 3px 8px;
 }
 
