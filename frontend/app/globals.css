@@ -34,6 +34,66 @@
   --meal-dinner-ink: #3730a3;
   --meal-snack-bg: #fce7f3;
   --meal-snack-ink: #9d174d;
+  --on-accent: #ffffff;
+  --accent-ink: #17453e;
+  --accent-tint: #eff6f3;
+  --surface-subtle: #fbfcfa;
+  --line-subtle: #edf0eb;
+  --track: #e7eeec;
+  --skeleton-a: #edf1ec;
+  --skeleton-b: #f8faf7;
+  --warning-soft: #fff4d8;
+  --warning-line: #f1d78f;
+  --warning-ink: #7a5a00;
+  --danger-ink: #7a1b14;
+}
+
+/* Dark mode follows the device setting only (decision 29 Oct 2026); there is no manual toggle. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #0f1513;
+    --surface: #18201e;
+    --surface-strong: #212b28;
+    --ink: #e6ecea;
+    --muted: #a3b0ab;
+    --line: #2e3a37;
+    --accent: #2bb3a3;
+    --accent-strong: #6fd6c9;
+    --accent-soft: #143a35;
+    --warning: #e3a94f;
+    --danger: #f2877d;
+    --danger-soft: #3d1f1c;
+    --blue: #7aa7ff;
+    --shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.3);
+    --shadow-float: 0 6px 24px rgba(0, 0, 0, 0.5);
+    --shadow-accent: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --field-bg: #212b28;
+    --protein: #7aa7ff;
+    --carbs: #f0a53a;
+    --fat: #f472b6;
+    --meal-breakfast-bg: #3a2d10;
+    --meal-breakfast-ink: #fcd68a;
+    --meal-lunch-bg: #143322;
+    --meal-lunch-ink: #8ee8ab;
+    --meal-dinner-bg: #23284d;
+    --meal-dinner-ink: #c7d2fe;
+    --meal-snack-bg: #3d1831;
+    --meal-snack-ink: #f9a8d4;
+    --on-accent: #04201c;
+    --accent-ink: #a6e6dc;
+    --accent-tint: #15302c;
+    --surface-subtle: #1b2421;
+    --line-subtle: #263130;
+    --track: #2a3532;
+    --skeleton-a: #1e2724;
+    --skeleton-b: #2a3532;
+    --warning-soft: #3a2d10;
+    --warning-line: #7a5a1c;
+    --warning-ink: #f5cf7a;
+    --danger-ink: #ffb4ab;
+  }
 }
 
 * {
@@ -89,7 +149,7 @@ a {
   z-index: 20;
   padding-top: env(safe-area-inset-top);
   border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.94);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
   backdrop-filter: blur(12px);
 }
 
@@ -119,7 +179,7 @@ a {
   place-items: center;
   border-radius: 12px;
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .nav-links {
@@ -270,7 +330,7 @@ a {
 .btn.primary {
   border-color: var(--accent);
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   box-shadow: var(--shadow-accent);
 }
 
@@ -314,7 +374,7 @@ a {
 }
 
 :where(a, button, input, select, textarea, summary):focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--accent) 45%, white);
+  outline: 3px solid color-mix(in srgb, var(--accent) 45%, var(--surface));
   outline-offset: 2px;
 }
 
@@ -368,7 +428,7 @@ a {
   height: 10px;
   overflow: hidden;
   border-radius: 999px;
-  background: #e7eeec;
+  background: var(--track);
 }
 
 .progress-fill {
@@ -607,7 +667,7 @@ a {
 .detail-skeleton {
   display: block;
   border-radius: var(--radius);
-  background: linear-gradient(90deg, #edf1eb 25%, #f8faf7 45%, #edf1eb 65%);
+  background: linear-gradient(90deg, var(--skeleton-a) 25%, var(--skeleton-b) 45%, var(--skeleton-a) 65%);
   background-size: 220% 100%;
   animation: food-skeleton 1.2s ease-in-out infinite;
 }
@@ -647,7 +707,7 @@ a {
 }
 
 .serving-first-table tbody tr:hover {
-  background: #fbfcfa;
+  background: var(--surface-subtle);
 }
 
 .food-table-name {
@@ -766,7 +826,7 @@ a {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
-  border-top: 1px solid #edf0eb;
+  border-top: 1px solid var(--line-subtle);
   padding-top: 8px;
 }
 
@@ -804,7 +864,7 @@ a {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: white;
+  background: var(--surface);
   box-shadow: 0 14px 34px rgba(20, 32, 24, 0.16);
 }
 
@@ -819,7 +879,7 @@ a {
   gap: 8px;
   min-height: 44px;
   border: 0;
-  background: white;
+  background: var(--surface);
   color: var(--ink);
   padding: 9px 12px;
   text-align: start;
@@ -857,7 +917,7 @@ a {
   gap: 5px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: white;
+  background: var(--surface);
   color: var(--ink);
 }
 
@@ -868,7 +928,7 @@ a {
 .pagination-number.active {
   border-color: var(--accent);
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .load-more {
@@ -936,7 +996,7 @@ a {
 .password-field { position: relative; }
 .password-field button { position: absolute; inset-inline-end: 4px; top: 4px; width: 40px; height: 40px; border: 0; background: transparent; }
 .password-field input { padding-inline-end: 48px; }
-.auth-message { border-radius: var(--radius); padding: 12px 14px; background: var(--accent-soft); color: #17453e; }
+.auth-message { border-radius: var(--radius); padding: 12px 14px; background: var(--accent-soft); color: var(--accent-ink); }
 .auth-switch { color: var(--muted); }
 
 .admin-home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
@@ -949,7 +1009,7 @@ a {
 .admin-home-attention:empty { display: none; }
 .admin-list-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .admin-list-controls .admin-search { flex: 1 1 260px; }
-.admin-status-filter { min-height: 46px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius); background: white; color: var(--ink); font: inherit; }
+.admin-status-filter { min-height: 46px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); font: inherit; }
 .admin-search .btn { min-height: 44px; border: 0; border-inline-start: 1px solid var(--line); border-radius: 0; background: transparent; }
 .main-surface .admin-detail-head { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; align-items: flex-start; }
 .admin-detail-head > div:nth-child(2) { flex: 1; min-width: 0; }
@@ -958,8 +1018,8 @@ a {
 .admin-section-links a { display: inline-flex; align-items: center; min-height: 44px; padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); white-space: nowrap; text-decoration: none; }
 .admin-section-links a:hover { background: var(--surface-strong); }
 .admin-detail-section { scroll-margin-top: 96px; }
-.selected-user-banner { display: flex; justify-content: space-between; gap: 12px; background: #fff4d8; border: 1px solid #f1d78f; border-radius: var(--radius-card); padding: 14px 16px; margin-bottom: 14px; }
-.admin-data-view { white-space: pre-wrap; overflow-wrap: anywhere; direction: ltr; text-align: left; background: #f7f9f7; padding: 12px; border-radius: 7px; }
+.selected-user-banner { display: flex; justify-content: space-between; gap: 12px; background: var(--warning-soft); border: 1px solid var(--warning-line); border-radius: var(--radius-card); padding: 14px 16px; margin-bottom: 14px; }
+.admin-data-view { white-space: pre-wrap; overflow-wrap: anywhere; direction: ltr; text-align: left; background: var(--surface-subtle); padding: 12px; border-radius: 7px; }
 .admin-readonly-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 0; }
 .admin-readonly-grid > div { border-bottom: 1px solid var(--line); padding-block: 8px; }
 .admin-readonly-grid dt { color: var(--muted); font-size: .82rem; }
@@ -1021,7 +1081,7 @@ a {
   width: min(100%, 460px);
   padding: 22px;
   border-radius: var(--radius-hero);
-  background: var(--surface, #fff);
+  background: var(--surface);
   box-shadow: 0 22px 60px rgba(13, 31, 27, 0.24);
 }
 
@@ -1039,10 +1099,10 @@ a {
 
 .unsaved-conflict {
   padding: 14px;
-  border: 1px solid #d9a441;
+  border: 1px solid var(--warning-line);
   border-radius: 14px;
-  background: #fff8e8;
-  color: #493817;
+  background: var(--warning-soft);
+  color: var(--warning-ink);
 }
 
 .unsaved-conflict p {
@@ -1071,7 +1131,7 @@ a {
 
 .detail-back {
   border: 1px solid var(--line);
-  background: white;
+  background: var(--surface);
 }
 
 .food-detail-name {
@@ -1185,7 +1245,7 @@ a {
 }
 
 .nutrition-mode-control button.active {
-  background: white;
+  background: var(--surface);
   color: var(--accent-strong);
   box-shadow: 0 1px 5px rgba(20, 32, 24, 0.09);
 }
@@ -1198,7 +1258,7 @@ a {
 
 .nutrition-group {
   min-width: 0;
-  border-top: 1px solid #e7ebe5;
+  border-top: 1px solid var(--line-subtle);
   padding: 14px 0 8px;
 }
 
@@ -1219,7 +1279,7 @@ a {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 14px;
   align-items: start;
-  border-bottom: 1px solid #f0f2ee;
+  border-bottom: 1px solid var(--line-subtle);
   padding: 9px 0;
 }
 
@@ -1261,7 +1321,7 @@ a {
 .food-detail-error {
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: white;
+  background: var(--surface);
 }
 
 
@@ -1394,7 +1454,7 @@ a {
 .diary-summary-loading,
 .diary-entry-skeleton {
   overflow: hidden;
-  background: linear-gradient(90deg, #edf1ec 25%, #f8faf7 45%, #edf1ec 65%);
+  background: linear-gradient(90deg, var(--skeleton-a) 25%, var(--skeleton-b) 45%, var(--skeleton-a) 65%);
   background-size: 220% 100%;
   animation: diary-shimmer 1.2s linear infinite;
 }
@@ -1546,8 +1606,8 @@ a {
   max-width: min(24rem, calc(100vw - 32px));
   padding: 12px 16px;
   border-radius: 12px;
-  background: var(--surface, #fff);
-  color: var(--text, #172420);
+  background: var(--surface);
+  color: var(--ink);
 }
 
 @media (max-width: 920px) {
@@ -1591,7 +1651,7 @@ a {
     flex: 0 0 auto;
     border: 1px solid var(--line);
     border-radius: 999px;
-    background: white;
+    background: var(--surface);
     color: var(--muted);
     padding: 7px 14px;
     font-weight: 700;
@@ -1601,7 +1661,7 @@ a {
   .category-chip.active {
     border-color: var(--accent);
     background: var(--accent);
-    color: white;
+    color: var(--on-accent);
   }
 
   .foods-mobile-sort {
@@ -1638,7 +1698,7 @@ a {
     margin: 0;
     border: 0;
     border-radius: 24px;
-    background: rgba(255, 255, 255, 0.98);
+    background: color-mix(in srgb, var(--surface) 98%, transparent);
     box-shadow: var(--shadow-float);
     padding: 4px;
   }
@@ -1790,7 +1850,7 @@ a {
 .entry-sheet .add-food-configure-state .meal-type-selector button.selected {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   opacity: 1;
   box-shadow: 0 2px 7px rgba(15, 118, 110, 0.16);
 }
@@ -1830,7 +1890,7 @@ a {
 
 .entry-sheet .search-control .input:focus {
   border-color: var(--accent);
-  background: white;
+  background: var(--surface);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
@@ -1875,7 +1935,7 @@ a {
 
 .entry-sheet .meal-type-selector button.selected {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   box-shadow: 0 2px 7px rgba(15, 118, 110, 0.16);
 }
 
@@ -2242,25 +2302,25 @@ a {
 .diary-page .compact-week-day.selected {
   border: 0;
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   box-shadow: var(--shadow-accent);
 }
 
 .diary-page .compact-week-day.selected strong {
   border-color: transparent;
   background: transparent;
-  color: white;
+  color: var(--on-accent);
   box-shadow: none;
 }
 
 .diary-page .compact-week-day.selected span,
 .diary-page .compact-week-day.selected small {
-  color: white;
+  color: var(--on-accent);
 }
 
 .diary-page .compact-week-nav.is-loading .compact-week-day:not(.selected) {
   color: transparent;
-  background: linear-gradient(90deg, #edf1ec, #f8faf7, #edf1ec);
+  background: linear-gradient(90deg, var(--skeleton-a), var(--skeleton-b), var(--skeleton-a));
   background-size: 220% 100%;
   animation: diary-shimmer 1.2s linear infinite;
 }
@@ -2277,8 +2337,8 @@ a {
 
 
 .diary-page .calorie-summary-primary p.over {
-  background: #fff5df;
-  color: #9a6200;
+  background: var(--warning-soft);
+  color: var(--warning-ink);
 }
 
 
@@ -2289,7 +2349,7 @@ a {
 
 .diary-progress-track.over > span,
 .macro-progress-row.over .macro-progress-track > span {
-  background: #c48718;
+  background: var(--warning);
 }
 
 
@@ -2301,7 +2361,7 @@ a {
 
 .diary-page .macro-progress-row.over small,
 .diary-page .macro-progress-row.over .macro-value-expression {
-  color: #9a6200;
+  color: var(--warning-ink);
 }
 
 
@@ -2373,7 +2433,7 @@ a {
     inset-block: 0;
     inset-inline-end: 0;
     width: 22px;
-    background: linear-gradient(to left, rgba(255, 255, 255, 0.95), transparent);
+    background: linear-gradient(to left, color-mix(in srgb, var(--surface) 95%, transparent), transparent);
     content: "";
     pointer-events: none;
   }
@@ -2481,7 +2541,7 @@ a {
     border: 1px solid var(--accent);
     border-radius: var(--radius);
     background: var(--accent);
-    color: white;
+    color: var(--on-accent);
     font-weight: 800;
     box-shadow: 0 10px 28px rgba(12, 116, 101, 0.25);
   }
@@ -2799,8 +2859,8 @@ a {
 .profile-plan-history,
 .profile-registry-state,
 .food-completeness {
-  background: var(--surface, #fff);
-  border: 1px solid var(--border, #dfe6df);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 16px;
   padding: 16px;
 }
@@ -2812,27 +2872,27 @@ a {
 
 .food-completeness { margin-block: 14px; }
 .food-completeness header { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
-.food-completeness header strong { display: block; margin-top: 4px; color: var(--primary, #11877b); }
-.food-completeness header > span { color: var(--muted, #64726c); font-size: .82rem; }
-.food-completeness-bar { height: 7px; overflow: hidden; border-radius: 99px; background: #e7ece8; margin: 13px 0 9px; }
-.food-completeness-bar span { display: block; height: 100%; background: var(--primary, #11877b); border-radius: inherit; }
-.food-completeness-breakdown { display: flex; justify-content: space-between; gap: 10px; color: var(--muted, #64726c); font-size: .82rem; }
-.food-completeness-toggle { min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--primary, #11877b); display: inline-flex; align-items: center; gap: 5px; font: inherit; font-weight: 700; }
+.food-completeness header strong { display: block; margin-top: 4px; color: var(--accent); }
+.food-completeness header > span { color: var(--muted); font-size: .82rem; }
+.food-completeness-bar { height: 7px; overflow: hidden; border-radius: 99px; background: var(--track); margin: 13px 0 9px; }
+.food-completeness-bar span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+.food-completeness-breakdown { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .82rem; }
+.food-completeness-toggle { min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--accent); display: inline-flex; align-items: center; gap: 5px; font: inherit; font-weight: 700; }
 .food-completeness-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .food-completeness-missing { border-top: 1px solid rgba(31, 55, 48, .09); padding-top: 10px; }
 .food-completeness-missing h3 { margin: 0 0 6px; font-size: .9rem; }
 .food-completeness-missing ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.food-completeness-missing li { background: #f2f5f2; padding: 5px 8px; border-radius: 8px; font-size: .8rem; }
-.food-additional-nutrients { background: #fff; border: 1px solid var(--border, #dfe6df); border-radius: 16px; padding: 16px; margin-block: 14px; }
+.food-completeness-missing li { background: var(--surface-strong); padding: 5px 8px; border-radius: 8px; font-size: .8rem; }
+.food-additional-nutrients { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-block: 14px; }
 .food-additional-nutrients h2 { margin: 0 0 9px; font-size: 1rem; }
 .food-additional-nutrients dl { margin: 0; }
 .food-additional-nutrients dl > div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid rgba(31, 55, 48, .09); }
 .food-additional-nutrients dl > div:first-child { border-top: 0; }
 .food-additional-nutrients dd { margin: 0; text-align: end; }
-.food-additional-nutrients dd > span { color: var(--muted, #64726c); }
-.food-additional-nutrients dd small { display: block; color: var(--primary, #11877b); margin-top: 2px; }
+.food-additional-nutrients dd > span { color: var(--muted); }
+.food-additional-nutrients dd small { display: block; color: var(--accent); margin-top: 2px; }
 
-.daily-nutrient-row.over .daily-nutrient-progress span { background: #b67918; }
+.daily-nutrient-row.over .daily-nutrient-progress span { background: var(--warning); }
 
 @media (max-width: 360px) {
     .food-completeness header { display: block; }
@@ -2871,12 +2931,12 @@ a.account-identity:hover strong { text-decoration: underline; }
 .account-email { color: var(--muted); overflow-wrap: anywhere; }
 .account-actions { display: flex; align-items: center; gap: 4px; }
 .account-status-badge { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 2px 10px; border-radius: 999px; font-size: .8rem; font-weight: 700; background: var(--surface-strong); color: var(--muted); }
-.account-status-active { background: var(--accent-soft); color: #17453e; }
-.account-status-provisioning { background: #fff4d8; color: #7a5a00; }
+.account-status-active { background: var(--accent-soft); color: var(--accent-ink); }
+.account-status-provisioning { background: var(--warning-soft); color: var(--warning-ink); }
 .account-status-deleting { background: var(--danger-soft); color: var(--danger); }
 /* Last in the page so it sticks to the viewport bottom while the Admin is anywhere above it.
    It is informational only: it lets clicks through and stays below open row menus. */
-.account-notice { position: sticky; bottom: calc(12px + env(safe-area-inset-bottom) + var(--bottom-nav-offset, 0px)); z-index: 3; margin: 0; pointer-events: none; background: var(--surface, #fff); border: 1px solid transparent; border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow-float); }
+.account-notice { position: sticky; bottom: calc(12px + env(safe-area-inset-bottom) + var(--bottom-nav-offset, 0px)); z-index: 3; margin: 0; pointer-events: none; background: var(--surface); border: 1px solid transparent; border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow-float); }
 .account-delete-dialog { margin: auto; max-height: calc(100dvh - 32px); overflow-y: auto; width: min(92vw, 480px); border: 0; border-radius: var(--radius-hero); padding: 24px; color: inherit; box-shadow: var(--shadow-float); }
 .account-delete-dialog::backdrop { background: rgb(15 30 24 / 55%); }
 .account-delete-dialog form { display: grid; gap: 12px; }

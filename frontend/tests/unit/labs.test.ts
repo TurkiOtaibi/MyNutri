@@ -284,9 +284,14 @@ function contrastRatio(foreground: string, background: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-function mixWithWhite(value: string, percentage: number): string {
-  const mixed = hexChannels(value).map((channel) => Math.round(channel * percentage + 255 * (1 - percentage)));
+function mix(value: string, base: string, percentage: number): string {
+  const baseChannels = hexChannels(base);
+  const mixed = hexChannels(value).map((channel, index) => Math.round(channel * percentage + baseChannels[index] * (1 - percentage)));
   return `#${mixed.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function tokenValue(block: string, token: string): string | undefined {
+  return block.match(new RegExp(`${token}:\\s*(#[0-9a-f]{6})`, "i"))?.[1];
 }
 
 describe("Labs governed status presentation", () => {
@@ -329,22 +334,30 @@ describe("Labs governed status presentation", () => {
 
     const moduleCss = readFileSync(resolve(process.cwd(), "features/labs/labs.module.css"), "utf8");
     const globalsCss = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8");
+    const lightRoot = globalsCss.slice(globalsCss.indexOf(":root {"), globalsCss.indexOf("}", globalsCss.indexOf(":root {")));
+    const darkStart = globalsCss.indexOf("@media (prefers-color-scheme: dark)");
+    const darkRoot = globalsCss.slice(darkStart, globalsCss.indexOf("}", darkStart));
     const expectations = [
-      { tone: "caution", palette: "--warning", mix: 0.13 },
-      { tone: "outside", palette: "--danger", mix: 0.11 },
+      { tone: "caution", palette: "--warning", ink: "--warning-ink", mix: 0.13 },
+      { tone: "outside", palette: "--danger", ink: "--danger-ink", mix: 0.11 },
     ] as const;
 
     for (const expected of expectations) {
       const rule = moduleCss.match(new RegExp(`\\.status\\[data-tone="${expected.tone}"\\]\\s*\\{([^}]*)\\}`));
       expect(rule, `${expected.tone} must have an explicit governed-tone rule`).not.toBeNull();
       const declarations = rule?.[1] ?? "";
-      expect(declarations).toContain(`background: color-mix(in srgb, var(${expected.palette}) ${expected.mix * 100}%, white)`);
-      const foreground = declarations.match(/(?:^|;)\s*color:\s*(#[0-9a-f]{6})/i)?.[1];
-      const palette = globalsCss.match(new RegExp(`${expected.palette}:\\s*(#[0-9a-f]{6})`, "i"))?.[1];
-      expect(foreground).toBeDefined();
-      expect(palette).toBeDefined();
-      const background = mixWithWhite(palette!, expected.mix);
-      expect(contrastRatio(foreground!, background)).toBeGreaterThanOrEqual(4.5);
+      expect(declarations).toContain(`background: color-mix(in srgb, var(${expected.palette}) ${expected.mix * 100}%, var(--surface))`);
+      expect(declarations).toMatch(new RegExp(`(?:^|;)\\s*color:\\s*var\\(${expected.ink}\\)`));
+      // Both the light palette and the device-driven dark palette must keep the chip text readable.
+      for (const block of [lightRoot, darkRoot]) {
+        const palette = tokenValue(block, expected.palette);
+        const surface = tokenValue(block, "--surface");
+        const foreground = tokenValue(block, expected.ink);
+        expect(palette).toBeDefined();
+        expect(surface).toBeDefined();
+        expect(foreground).toBeDefined();
+        expect(contrastRatio(foreground!, mix(palette!, surface!, expected.mix))).toBeGreaterThanOrEqual(4.5);
+      }
     }
   });
 });

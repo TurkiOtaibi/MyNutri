@@ -69,7 +69,7 @@
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
   border-radius: 17px;
-  background: color-mix(in srgb, white 96%, var(--surface-strong));
+  background: color-mix(in srgb, var(--surface) 96%, var(--surface-strong));
   padding: 0;
   box-shadow: 0 3px 14px rgba(15, 35, 31, 0.035);
 }
@@ -136,7 +136,7 @@
 
 :global(.profile-cut-intensity-options) input:checked + span {
   border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
-  background: color-mix(in srgb, var(--diary-soft) 76%, white);
+  background: color-mix(in srgb, var(--diary-soft) 76%, var(--surface));
   color: var(--accent);
 }
 
@@ -471,7 +471,7 @@ button:global(.profile-setting-row):focus-visible,
 
 :global(.profile-preview-card) {
   border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
-  background: color-mix(in srgb, var(--diary-soft) 35%, white);
+  background: color-mix(in srgb, var(--diary-soft) 35%, var(--surface));
   animation: profile-fade-in 180ms ease;
 }
 
@@ -484,7 +484,7 @@ button:global(.profile-setting-row):focus-visible,
 
 :global(.profile-preview-values) > * {
   min-width: 0;
-  color: #33403a;
+  color: var(--ink);
   font-size: 11px;
   text-align: center;
   white-space: normal;
@@ -509,7 +509,7 @@ button:global(.profile-setting-row):focus-visible,
   gap: 3px;
   min-width: 0;
   border-radius: 10px;
-  background: color-mix(in srgb, white 78%, var(--surface-strong));
+  background: color-mix(in srgb, var(--surface) 78%, var(--surface-strong));
   padding: 8px;
 }
 
@@ -535,7 +535,7 @@ button:global(.profile-setting-row):focus-visible,
   gap: 9px;
   border: 1px solid color-mix(in srgb, var(--warning) 34%, var(--line));
   border-radius: 12px;
-  background: color-mix(in srgb, var(--warning) 9%, white);
+  background: color-mix(in srgb, var(--warning) 9%, var(--surface));
   color: var(--ink);
   padding: 10px;
   font-size: 12px;
@@ -579,7 +579,7 @@ button:global(.profile-setting-row):focus-visible,
   display: grid;
   gap: 3px;
   border-inline-start: 3px solid var(--warning);
-  background: color-mix(in srgb, var(--warning) 7%, white);
+  background: color-mix(in srgb, var(--warning) 7%, var(--surface));
   padding: 8px 10px;
   font-size: 12px;
 }
@@ -632,7 +632,7 @@ button:global(.profile-setting-row):focus-visible,
 
 :global(.profile-safety-decision):global(.is-available) {
   border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
-  background: color-mix(in srgb, var(--diary-soft) 65%, white);
+  background: color-mix(in srgb, var(--diary-soft) 65%, var(--surface));
 }
 
 :global(.profile-safety-decision):global(.is-available) svg {
@@ -643,7 +643,7 @@ button:global(.profile-setting-row):focus-visible,
 :global(.profile-card-skeleton),
 :global(.profile-loading) :global(.profile-page-head) span {
   border-radius: 12px;
-  background: linear-gradient(90deg, #edf1ec, #f8faf7, #edf1ec);
+  background: linear-gradient(90deg, var(--skeleton-a), var(--skeleton-b), var(--skeleton-a));
   background-size: 220% 100%;
   animation: diary-shimmer 1.2s linear infinite;
 }
@@ -680,7 +680,7 @@ button:global(.profile-setting-row):focus-visible,
   gap: 2px 12px;
   border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
   border-radius: 17px;
-  background: rgba(255, 255, 255, 0.97);
+  background: color-mix(in srgb, var(--surface) 97%, transparent);
   padding: 10px 11px;
   box-shadow: 0 10px 34px rgba(15, 35, 31, 0.13);
   backdrop-filter: blur(14px);
@@ -709,7 +709,7 @@ button:global(.profile-setting-row):focus-visible,
   gap: 7px;
   border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
   border-radius: 12px;
-  background: white;
+  background: var(--surface);
   color: var(--accent);
   padding: 10px 14px;
   box-shadow: var(--shadow);
@@ -729,7 +729,7 @@ button:global(.profile-setting-row):focus-visible,
   gap: 12px;
   border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--line));
   border-radius: 17px;
-  background: white;
+  background: var(--surface);
   padding: 11px;
   box-shadow: var(--shadow);
 }
@@ -767,7 +767,7 @@ button:global(.profile-setting-row):focus-visible,
   margin-inline: auto;
   overflow: hidden;
   border-radius: 24px 24px 0 0;
-  background: white;
+  background: var(--surface);
   padding-bottom: max(12px, env(safe-area-inset-bottom));
   box-shadow: 0 -18px 60px rgba(15, 35, 31, 0.18);
   animation: profile-sheet-in 200ms ease;
@@ -778,7 +778,7 @@ button:global(.profile-setting-row):focus-visible,
   height: 4px;
   margin: 9px auto 4px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--muted) 34%, white);
+  background: color-mix(in srgb, var(--muted) 34%, var(--surface));
 }
 
 :global(.profile-sheet) > header {
@@ -1062,14 +1062,14 @@ button:global(.profile-setting-row):focus-visible,
 
 :global(.profile-additional-target-row):first-child { border-top: 0; }
 
-:global(.profile-additional-target-row) span { color: var(--muted, #64726c); font-size: .84rem; text-align: end; }
+:global(.profile-additional-target-row) span { color: var(--muted); font-size: .84rem; text-align: end; }
 
-:global(.profile-additional-target-row) small { grid-column: 1 / -1; color: #0f766e; }
+:global(.profile-additional-target-row) small { grid-column: 1 / -1; color: var(--accent); }
 
 :global(.profile-registry-state) { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 72px; }
 
 :global(.profile-plan-history) > p,
-:global(.profile-history-loading) { color: var(--muted, #64726c); }
+:global(.profile-history-loading) { color: var(--muted); }
 
 :global(.profile-plan-history) ol { list-style: none; padding: 0; margin: 10px 0 0; }
 
@@ -1078,7 +1078,7 @@ button:global(.profile-setting-row):focus-visible,
 :global(.profile-plan-history) li > div { display: grid; gap: 3px; }
 
 :global(.profile-plan-history) li span,
-:global(.profile-plan-history) li > bdi { color: var(--muted, #64726c); font-size: .82rem; }
+:global(.profile-plan-history) li > bdi { color: var(--muted); font-size: .82rem; }
 
 :global(.profile-history-error) { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--danger, #a33b32); }
 
@@ -1091,7 +1091,7 @@ button:global(.profile-setting-row):focus-visible,
 }
 
 :global(.profile-history-macros) { display: flex; flex-wrap: wrap; gap: 12px 24px; flex-basis: 100%; margin: 0; }
-:global(.profile-history-macros) dt { color: var(--muted, #64726c); font-size: .82rem; }
+:global(.profile-history-macros) dt { color: var(--muted); font-size: .82rem; }
 :global(.profile-history-macros) dd { margin: 3px 0 0; font-weight: 700; }
 
 /* Sections: «أهدافي» keeps inputs next to the live preview; history and account are separate. */
@@ -1102,7 +1102,7 @@ button:global(.profile-setting-row):focus-visible,
   gap: 4px;
   width: min(100%, 520px);
   border-radius: 24px;
-  background: #eaeeec;
+  background: var(--track);
   padding: 4px;
 }
 
