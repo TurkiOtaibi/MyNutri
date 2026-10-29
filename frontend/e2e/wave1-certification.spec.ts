@@ -68,7 +68,7 @@ async function certifyDiaryLoadingState(page: Page, authoritativeDate: string) {
     await expect(page.locator(".meal-sections")).toHaveCount(0);
     await expect(page.locator(".diary-empty-note")).toHaveCount(0);
     await expect(page.locator(".diary-error-state")).toHaveCount(0);
-    await expect(page.locator(".diary-progress-track")).toHaveCount(0);
+    await expect(page.locator(".calorie-ring-progress")).toHaveCount(0);
     expect(entriesReleased).toBe(false);
     expect(summaryReleased).toBe(false);
 

@@ -258,7 +258,7 @@ test("@diary @visual capture final Diary polish states", async ({ page, request,
   await expect(page.locator("#meal-breakfast").getByRole("heading", { name: comparison.name, exact: true })).toHaveCount(0);
   const overSummary = page.locator(".diary-summary");
   await expect(overSummary.locator(".calorie-summary-primary p.over")).toContainText("فوق الهدف");
-  await expect(overSummary.locator('.diary-progress-track.over[role="progressbar"][aria-valuenow="100"]')).toBeVisible();
+  await expect(overSummary.locator('.calorie-ring-progress[data-state="over"][role="progressbar"][aria-valuenow="100"]')).toBeVisible();
   for (const label of ["البروتين", "الكربوهيدرات", "الدهون"]) {
     const progress = overSummary.getByLabel(new RegExp(`^${label}:.*فوق الهدف`));
     await expect(progress).toHaveCount(1);

@@ -180,8 +180,11 @@ test.describe("@diary @page-refinement compact Diary page", () => {
     await expect(summary.getByText(/المتبقي -/)).toHaveCount(0);
     await expect(summary.getByRole("progressbar", { name: /هدف السعرات/ })).toHaveAttribute("aria-valuenow", "100");
     await expect(summary.getByLabel(/البروتين:.*فوق الهدف/)).toBeVisible();
-    const width = await summary.locator(".diary-progress-track > span").evaluate((element) => getComputedStyle(element).width);
-    expect(Number.parseFloat(width)).toBeLessThanOrEqual((await summary.locator(".diary-progress-track").boundingBox())!.width + 0.5);
+    // The calorie ring is the progress indicator; over target it fills exactly one full turn.
+    const dash = await summary.locator(".calorie-ring-fill").getAttribute("stroke-dasharray");
+    const [filled, circumference] = (dash ?? "").split(" ").map(Number);
+    expect(filled).toBeCloseTo(circumference, 3);
+    await expect(summary.locator(".calorie-ring-progress")).toHaveAttribute("data-state", "over");
   });
 
   test("@p0 empty day is compact, all meals are closed, and plus does not toggle its meal", async ({ page }) => {
