@@ -101,8 +101,9 @@ test.describe("@diary @final-polish compact visual refinements", () => {
     expect(widths[1]).toBeGreaterThan(widths[0]);
     expect(widths[2]).toBeGreaterThan(widths[1]);
     // The fill must follow the percentage, not just the pixel floor (iOS Safari regression).
+    // Poll because the fill animates its width; the settled value must reach 22% of the track.
     const trackWidth = (await rows.nth(2).locator(".macro-progress-track").boundingBox())!.width;
-    expect(widths[2]).toBeGreaterThanOrEqual(Math.max(14, trackWidth * 0.22) - 0.5);
+    await expect.poll(async () => (await bars.nth(2).boundingBox())!.width).toBeGreaterThanOrEqual(Math.max(14, trackWidth * 0.22) - 0.5);
     await expect(rows.nth(0).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "1");
     await expect(rows.nth(1).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "9");
     await expect(rows.nth(2).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "22");
