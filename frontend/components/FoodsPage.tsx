@@ -215,10 +215,14 @@ export function FoodsPage() {
 
         <div className="foods-result-bar">
           {data && !foodsQuery.isError ? (
-            <span className="foods-result-count">
-              عرض {(data.page - 1) * data.page_size + 1}-
-              {Math.min(data.page * data.page_size, data.total)} من {data.total} طعامًا
-            </span>
+            <>
+              <span className="foods-result-count foods-result-count-range">
+                عرض {(data.page - 1) * data.page_size + 1}-
+                {Math.min(data.page * data.page_size, data.total)} من {data.total} طعامًا
+              </span>
+              {/* Mobile appends pages with «عرض المزيد», so it shows the running total once, at the top. */}
+              <span className="foods-result-count foods-result-count-loaded">عرض {shownMobileCount} من {data.total} طعامًا</span>
+            </>
           ) : (
             <span />
           )}
@@ -311,9 +315,6 @@ export function FoodsPage() {
                 <button className="btn load-more" type="button" onClick={() => setPage((current) => current + 1)}>
                   عرض المزيد
                 </button>
-              ) : null}
-              {data && mobileItems.length > 0 ? (
-                <p className="mobile-result-count">عرض {shownMobileCount} من {data.total} طعامًا</p>
               ) : null}
             </div>
 

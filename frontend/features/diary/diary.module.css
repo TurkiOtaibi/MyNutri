@@ -2410,3 +2410,27 @@
   grid-row: 2;
   margin-top: 0;
 }
+
+/* Space the add button away from the expand chevron so the two targets are not adjacent. */
+:global(.diary-page) :global(.meal-section-header) {
+  column-gap: 6px;
+  padding-inline-end: 6px;
+}
+
+/* Empty meals are slimmer and drop the chevron: there is nothing to expand (decision 29 Oct 2026). */
+:global(.diary-page) :global(.meal-section)[data-empty] :global(.meal-section-header),
+:global(.diary-page) :global(.meal-section)[data-empty] :global(.meal-toggle) {
+  min-height: 52px;
+}
+
+:global(.diary-page) :global(.meal-section)[data-empty] :global(.meal-toggle) {
+  padding-block: 3px;
+}
+
+:global(.diary-page) :global(.meal-section)[data-empty] :global(.meal-toggle) > svg:first-child {
+  padding: 6px;
+}
+
+:global(.diary-page) :global(.meal-section)[data-empty] :global(.meal-chevron) {
+  visibility: hidden;
+}
