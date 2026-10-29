@@ -2347,7 +2347,6 @@ a {
 
 
 
-.diary-progress-track.over > span,
 .macro-progress-row.over .macro-progress-track > span {
   background: var(--warning);
 }

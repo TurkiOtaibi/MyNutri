@@ -67,8 +67,8 @@ export function CompactWeekNavigator({
             >
               <span>{shortWeekdays[index]}</span>
               <strong>{formatDayNumber(day.date)}</strong>
-              <small>{Math.round(day.totals.calories)} سعرة</small>
-              {progress !== null ? <i style={{ "--day-progress": `${progress}%` } as CSSProperties} /> : null}
+              <small data-empty={Math.round(day.totals.calories) === 0 ? "" : undefined} aria-hidden={Math.round(day.totals.calories) === 0 ? true : undefined}>{Math.round(day.totals.calories)} سعرة</small>
+              {progress !== null && Math.round(day.totals.calories) > 0 ? <i style={{ "--day-progress": `${progress}%` } as CSSProperties} /> : null}
             </button>
           );
         })}
@@ -104,7 +104,7 @@ export function DailyProgressSummary({ totals, targets, pending, failed, onOpenN
         <h2>ملخص اليوم</h2>
       </div>
       <div className="calorie-summary-hero">
-        <CalorieRing percent={caloriePercent} state={exceeded ? "over" : reached ? "reached" : "progress"} />
+        <CalorieRing percent={caloriePercent} state={exceeded ? "over" : reached ? "reached" : "progress"} label={`${caloriePercent}% من هدف السعرات`} />
         <div className="calorie-summary-primary">
           <strong aria-label={`${Math.round(totals.calories)} من ${targets.target_calories} سعرة`}>
             <bdi>{Math.round(totals.calories)}</bdi>
@@ -116,9 +116,6 @@ export function DailyProgressSummary({ totals, targets, pending, failed, onOpenN
             {exceeded ? `+${Math.round(totals.calories - targets.target_calories)} فوق الهدف` : reached ? "تم الوصول إلى الهدف" : `المتبقي ${Math.round(remaining)}`}
           </p>
         </div>
-      </div>
-      <div className={`diary-progress-track ${exceeded ? "over" : reached ? "reached" : ""}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(caloriePercent, 100)} aria-label={`${caloriePercent}% من هدف السعرات`}>
-        <span style={{ width: `${Math.min(caloriePercent, 100)}%` }} />
       </div>
       <div className="macro-progress-list">
         <MacroProgress macro="protein" label="البروتين" value={totals.protein_g} max={targets.protein_g} />
@@ -133,21 +130,23 @@ export function DailyProgressSummary({ totals, targets, pending, failed, onOpenN
 const CALORIE_RING_RADIUS = 30;
 const CALORIE_RING_CIRCUMFERENCE = 2 * Math.PI * CALORIE_RING_RADIUS;
 
-// Decorative companion to the accessible progress bar below it.
-function CalorieRing({ percent, state }: { percent: number; state: "progress" | "reached" | "over" }) {
+// The calorie progress indicator (BR-DRY-036): the ring replaced the linear bar (decision 29 Oct 2026).
+function CalorieRing({ percent, state, label }: { percent: number; state: "progress" | "reached" | "over"; label: string }) {
   const visualPercent = Math.min(Math.max(percent, 0), 100);
   return (
-    <svg className="calorie-ring" data-state={state} viewBox="0 0 72 72" aria-hidden="true" focusable="false">
-      <circle className="calorie-ring-track" cx="36" cy="36" r={CALORIE_RING_RADIUS} />
-      {visualPercent > 0 ? <circle
-        className="calorie-ring-fill"
-        cx="36"
-        cy="36"
-        r={CALORIE_RING_RADIUS}
-        strokeDasharray={`${CALORIE_RING_CIRCUMFERENCE * visualPercent / 100} ${CALORIE_RING_CIRCUMFERENCE}`}
-        transform="rotate(-90 36 36)"
-      /> : null}
-    </svg>
+    <div className="calorie-ring-progress" data-state={state} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={visualPercent} aria-label={label}>
+      <svg className="calorie-ring" viewBox="0 0 72 72" aria-hidden="true" focusable="false">
+        <circle className="calorie-ring-track" cx="36" cy="36" r={CALORIE_RING_RADIUS} />
+        {visualPercent > 0 ? <circle
+          className="calorie-ring-fill"
+          cx="36"
+          cy="36"
+          r={CALORIE_RING_RADIUS}
+          strokeDasharray={`${CALORIE_RING_CIRCUMFERENCE * visualPercent / 100} ${CALORIE_RING_CIRCUMFERENCE}`}
+          transform="rotate(-90 36 36)"
+        /> : null}
+      </svg>
+    </div>
   );
 }
 
@@ -161,9 +160,9 @@ function MacroProgress({ macro, label, value, max }: { macro: "protein" | "carbs
       <div>
         <strong>{label}</strong>
         <span className="macro-value-expression">
-          <bdi dir="ltr">{formatServingMacro(value)}</bdi>
+          <bdi dir="ltr">{Math.round(value)}</bdi>
           <span> من </span>
-          <bdi dir="ltr">{formatServingMacro(max)}</bdi>
+          <bdi dir="ltr">{Math.round(max)}</bdi>
           <span> جم</span>
         </span>
       </div>
@@ -222,8 +221,9 @@ export function MealSections({
             <div className="meal-section-header">
               <button className="meal-toggle" type="button" aria-expanded={isOpen} aria-controls={`meal-${meal}`} aria-label={`${isOpen ? "إغلاق" : "فتح"} قسم ${mealLabels[meal]}`} onClick={() => onToggleMeal(meal)}>
                 <Icon size={21} aria-hidden="true" />
-                <span className="meal-title-copy"><strong>{mealLabels[meal]}</strong><small>{items.length === 0 ? mealItemCountLabel(0) : <>{mealItemCountLabel(items.length)} · <bdi dir="ltr">{calories}</bdi> سعرة</>}</small>{items.length > 0 ? <small className="meal-macro-totals"><bdi dir="ltr">بروتين {formatServingMacro(protein)} جم</bdi><span> · </span><bdi dir="ltr">كربوهيدرات {formatServingMacro(carbs)} جم</bdi><span> · </span><bdi dir="ltr">دهون {formatServingMacro(fat)} جم</bdi></small> : null}</span>
+                <span className="meal-title-copy"><strong>{mealLabels[meal]}</strong><small>{items.length === 0 ? mealItemCountLabel(0) : <>{mealItemCountLabel(items.length)} · <bdi dir="ltr">{calories}</bdi> سعرة</>}</small></span>
                 <ChevronDown className="meal-chevron" size={18} aria-hidden="true" />
+                {items.length > 0 ? <small className="meal-macro-totals"><bdi dir="ltr">بروتين {formatServingMacro(protein)} جم</bdi><span> · </span><bdi dir="ltr">كربوهيدرات {formatServingMacro(carbs)} جم</bdi><span> · </span><bdi dir="ltr">دهون {formatServingMacro(fat)} جم</bdi></small> : null}
               </button>
               {meal !== "unspecified" ? (
                 <button data-diary-add-trigger={`meal-${meal}`} className="btn icon meal-add" type="button" onClick={() => onAdd(meal)} aria-label={`إضافة طعام إلى ${mealLabels[meal]}`}><Plus size={18} /></button>
