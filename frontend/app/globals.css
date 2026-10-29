@@ -948,14 +948,14 @@ a {
 .admin-section-links a { display: inline-flex; align-items: center; min-height: 44px; padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); white-space: nowrap; text-decoration: none; }
 .admin-section-links a:hover { background: var(--surface-strong); }
 .admin-detail-section { scroll-margin-top: 96px; }
-.selected-user-banner { display: flex; justify-content: space-between; gap: 12px; background: #fff4d8; border: 1px solid #e6c66e; border-radius: 7px; padding: 12px; margin-bottom: 14px; }
+.selected-user-banner { display: flex; justify-content: space-between; gap: 12px; background: #fff4d8; border: 1px solid #f1d78f; border-radius: var(--radius-card); padding: 14px 16px; margin-bottom: 14px; }
 .admin-data-view { white-space: pre-wrap; overflow-wrap: anywhere; direction: ltr; text-align: left; background: #f7f9f7; padding: 12px; border-radius: 7px; }
 .admin-readonly-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 0; }
 .admin-readonly-grid > div { border-bottom: 1px solid var(--line); padding-block: 8px; }
 .admin-readonly-grid dt { color: var(--muted); font-size: .82rem; }
 .admin-readonly-grid dd { margin: 4px 0 0; font-weight: 700; overflow-wrap: anywhere; }
 .admin-readonly-list { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
-.admin-readonly-list > li { border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 4px; padding: 12px; }
+.admin-readonly-list > li { border: 1px solid transparent; border-radius: 18px; background: var(--surface-strong); display: grid; gap: 4px; padding: 12px 14px; }
 .nav-signout { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 8px 12px; border: 1px solid transparent; border-radius: var(--radius); background: transparent; color: var(--muted); white-space: nowrap; }
 .nav-signout:hover { background: var(--surface-strong); color: var(--ink); }
 
@@ -990,11 +990,11 @@ a {
 
 .dialog-panel {
   width: min(100%, 480px);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border: 1px solid transparent;
+  border-radius: var(--radius-hero);
   background: var(--surface);
-  padding: 18px;
-  box-shadow: var(--shadow);
+  padding: 22px;
+  box-shadow: var(--shadow-float);
 }
 
 .unsaved-dialog-backdrop {
@@ -1010,7 +1010,7 @@ a {
 .unsaved-dialog {
   width: min(100%, 460px);
   padding: 22px;
-  border-radius: 18px;
+  border-radius: var(--radius-hero);
   background: var(--surface, #fff);
   box-shadow: 0 22px 60px rgba(13, 31, 27, 0.24);
 }
@@ -1135,8 +1135,8 @@ a {
   align-items: baseline;
   justify-content: center;
   gap: 6px;
-  border: 1px solid #dbe8e1;
-  border-radius: var(--radius);
+  border: 1px solid transparent;
+  border-radius: 18px;
   background: var(--surface-strong);
   padding: 14px 10px;
 }
@@ -1151,8 +1151,8 @@ a {
 }
 
 .detail-serving-metric.prominent {
-  border-color: #b9ddd3;
-  background: #e7f5f1;
+  border-color: transparent;
+  background: var(--accent-soft);
 }
 
 .nutrition-mode-control {
@@ -1450,8 +1450,8 @@ a {
   gap: 12px;
   align-items: center;
   min-height: 150px;
-  border: 1px dashed color-mix(in srgb, var(--accent) 25%, var(--line));
-  border-radius: var(--radius);
+  border: 1px solid transparent;
+  border-radius: var(--radius-card);
   background: var(--diary-soft);
   padding: 18px;
 }
@@ -1601,7 +1601,7 @@ a {
 @media (max-width: 640px) {
   :root {
     /* Height of the fixed bottom tab bar, excluding the safe-area inset. */
-    --bottom-nav-offset: 76px;
+    --bottom-nav-offset: 68px;
   }
 
   .top-nav {
@@ -1618,7 +1618,7 @@ a {
   .nav-links {
     position: fixed;
     inset-inline: max(12px, env(safe-area-inset-left));
-    bottom: calc(10px + env(safe-area-inset-bottom));
+    bottom: calc(8px + env(safe-area-inset-bottom));
     z-index: 40;
     display: grid;
     grid-auto-columns: minmax(0, 1fr);
@@ -1626,15 +1626,15 @@ a {
     gap: 2px;
     margin: 0;
     border: 0;
-    border-radius: 26px;
+    border-radius: 24px;
     background: rgba(255, 255, 255, 0.98);
     box-shadow: var(--shadow-float);
-    padding: 6px;
+    padding: 4px;
   }
 
   .nav-link {
     min-width: 0;
-    min-height: 52px;
+    min-height: 50px;
     flex-direction: column;
     justify-content: center;
     gap: 3px;
@@ -2828,7 +2828,8 @@ a {
 .account-management > .page-head { margin-bottom: 0; }
 .account-form { display: grid; gap: 12px; }
 .account-form label { display: grid; gap: 6px; }
-.account-form input, .account-delete-dialog input { width: 100%; min-height: 44px; padding: 9px 12px; border: 1px solid var(--border, #dfe6df); border-radius: 9px; font: inherit; }
+.account-form input, .account-delete-dialog input { width: 100%; min-height: 46px; padding: 9px 14px; border: 1px solid transparent; border-radius: var(--radius); background: var(--field-bg); font: inherit; }
+.account-form input:focus, .account-delete-dialog input:focus { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); outline: none; }
 .account-form .password-field input { padding-inline-end: 48px; }
 .account-form .password-field button { display: grid; place-items: center; color: var(--muted); }
 .account-field { display: grid; gap: 6px; }
@@ -2850,8 +2851,8 @@ a.account-identity:hover strong { text-decoration: underline; }
 .account-status-deleting { background: var(--danger-soft); color: var(--danger); }
 /* Last in the page so it sticks to the viewport bottom while the Admin is anywhere above it.
    It is informational only: it lets clicks through and stays below open row menus. */
-.account-notice { position: sticky; bottom: calc(12px + env(safe-area-inset-bottom) + var(--bottom-nav-offset, 0px)); z-index: 3; margin: 0; pointer-events: none; background: var(--surface, #fff); border: 1px solid var(--line); border-radius: 9px; padding: 12px; box-shadow: 0 6px 18px rgb(15 30 24 / 12%); }
-.account-delete-dialog { margin: auto; max-height: calc(100dvh - 32px); overflow-y: auto; width: min(92vw, 480px); border: 1px solid var(--border, #dfe6df); border-radius: 16px; padding: 24px; color: inherit; }
+.account-notice { position: sticky; bottom: calc(12px + env(safe-area-inset-bottom) + var(--bottom-nav-offset, 0px)); z-index: 3; margin: 0; pointer-events: none; background: var(--surface, #fff); border: 1px solid transparent; border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow-float); }
+.account-delete-dialog { margin: auto; max-height: calc(100dvh - 32px); overflow-y: auto; width: min(92vw, 480px); border: 0; border-radius: var(--radius-hero); padding: 24px; color: inherit; box-shadow: var(--shadow-float); }
 .account-delete-dialog::backdrop { background: rgb(15 30 24 / 55%); }
 .account-delete-dialog form { display: grid; gap: 12px; }
 .account-delete-dialog h2 { margin: 0 0 12px; font-size: 1.2rem; }

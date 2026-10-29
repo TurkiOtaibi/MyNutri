@@ -61,7 +61,7 @@
 .referenceZones { display: grid; gap: 10px; padding: 0; list-style: none; }
 .referenceZones li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; min-width: 0; }
 .exactValue { min-width: 0; overflow-wrap: anywhere; }
-.historyRow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); padding-block: 12px; }
+.historyRow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-block-end: 10px; border-radius: var(--radius-card); background: var(--surface); padding: 12px 16px; box-shadow: var(--shadow-sm); }
 @media (max-width: 500px) { .historyRow { grid-template-columns: minmax(0, 1fr); justify-items: start; } }
 
 .batchBackdrop { position: fixed; inset: 0; z-index: 80; background: rgb(0 0 0 / 45%); }
