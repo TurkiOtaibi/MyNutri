@@ -562,6 +562,7 @@ test("same browser context isolates cached profile and diary data across A to B 
   });
   await signIn(page, emailA, PASSWORD, "/profile");
   await expect(page.locator('input[aria-label="الوزن"]')).toHaveValue("71");
+  await page.getByRole("tab", { name: "سجل الخطط", exact: true }).click();
   await expect(page.getByText(historyMarkerA, { exact: true })).toBeVisible();
   await page.goto("/diary");
   await expect(page.getByText(diaryNameA, { exact: true })).toBeVisible();

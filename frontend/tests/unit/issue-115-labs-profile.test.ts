@@ -29,6 +29,7 @@ it("BR-LAB-014 displays server today separately from a changed test date", () =>
 it("BR-PRF-027 formats effective date and confirmation while preserving the native ISO input", () => {
   const ref = { current: null };
   const props = {
+    layout: { tab: "goals", additionalTargetsOpen: false, username: "synthetic_user" },
     profile: { dirty: true, hasSavedProfile: true, hasPendingServerProfile: false,
       draft: { sex: "male", birth_date: "1990-01-01", height_cm: "170", weight_kg: "70", activity_level: "light", goal: "maintain", selected_cut_intensity: 0.2, protein_per_kg: "1.2", fat_percent: "25" },
       errors: {}, effectiveFrom: "2026-10-17", authoritativeDate: "2026-10-17", displayBirthDate: "1 يناير 1990", activeSheet: null, advancedOpen: false, restoreOpen: false,

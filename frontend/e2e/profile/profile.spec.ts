@@ -1548,7 +1548,8 @@ test.describe("@profile Profile and targets redesign", () => {
         next_cursor: null
       })
     }));
-    await page.goto("/profile?plan-history=1");
+    await page.goto("/profile?plan-history=1&tab=history");
+    await expect(page.getByRole("tab", { name: "سجل الخطط", exact: true })).toHaveAttribute("aria-selected", "true");
     const history = page.getByRole("region", { name: "سجل الخطط" });
     await expect(history).toContainText("النسخة 2");
     await expect(history).toContainText("تاريخ السريان 18 يوليو 2026");

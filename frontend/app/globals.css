@@ -1667,9 +1667,9 @@ a {
     font-weight: 700;
   }
 
+  /* On phones, sign-out lives in «بياناتي» › «الحساب» (Product Owner decision, 29 Oct 2026). */
   .nav-signout {
-    padding: 8px;
-    font-size: 13px;
+    display: none;
   }
 
   .main-surface {
