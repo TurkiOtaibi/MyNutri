@@ -10,4 +10,10 @@ describe("macro progress bar CSS", () => {
     expect(rule).toContain("min-width: var(--macro-min-progress);");
     expect(css).not.toMatch(/max\([^)]*--macro-(min-)?progress/);
   });
+
+  it("keeps the track a plain block so the label-layout '> div' grid/flex rules cannot size the fill by content", () => {
+    const css = readFileSync(resolve(process.cwd(), "features/diary/diary.module.css"), "utf8");
+    const rule = css.match(/:global\(\.macro-progress-row\) > div:global\(\.macro-progress-track\) \{([^}]*)\}/)?.[1] ?? "";
+    expect(rule).toContain("display: block;");
+  });
 });
