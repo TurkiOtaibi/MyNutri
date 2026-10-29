@@ -176,8 +176,10 @@ test.describe("@diary @page-refinement compact Diary page", () => {
     await foodsApi.createDiary(over.id, overDate, 1, "lunch");
     await page.reload();
     await selectDate(page, overDate);
-    await expect(summary.getByText(/\+\d+ فوق الهدف/)).toBeVisible();
-    await expect(summary.getByText(/المتبقي -/)).toHaveCount(0);
+    const ringCenter = summary.locator(".calorie-ring-center");
+    await expect(ringCenter.locator("strong")).toHaveText(/^\+\d+$/);
+    await expect(ringCenter.locator("small")).toHaveText("فوق الهدف");
+    await expect(summary.getByText(/المتبقي/)).toHaveCount(0);
     await expect(summary.getByRole("progressbar", { name: /هدف السعرات/ })).toHaveAttribute("aria-valuenow", "100");
     await expect(summary.getByLabel(/البروتين:.*فوق الهدف/)).toBeVisible();
     // The calorie ring is the progress indicator; over target it fills exactly one full turn.

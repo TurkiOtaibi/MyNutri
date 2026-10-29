@@ -89,6 +89,32 @@ const optionalNutritionFields = [
   "iodine_mcg"
 ] as const;
 
+type CountForms = { one: string; dual: string; dualGenitive: string; plural: string };
+
+// Arabic number agreement for count units (decision 29 Oct 2026); g/ml stay abbreviated.
+const unitCountForms: Partial<Record<DefaultUnitType, CountForms>> = {
+  cup: { one: "كوب", dual: "كوبان", dualGenitive: "كوبين", plural: "أكواب" },
+  slice: { one: "شريحة", dual: "شريحتان", dualGenitive: "شريحتين", plural: "شرائح" },
+  piece: { one: "قطعة", dual: "قطعتان", dualGenitive: "قطعتين", plural: "قطع" },
+  scoop: { one: "مكيال", dual: "مكيالان", dualGenitive: "مكيالين", plural: "مكاييل" },
+  serving: { one: "حصة", dual: "حصتان", dualGenitive: "حصتين", plural: "حصص" },
+  tablespoon: { one: "ملعقة كبيرة", dual: "ملعقتان كبيرتان", dualGenitive: "ملعقتين كبيرتين", plural: "ملاعق كبيرة" },
+  teaspoon: { one: "ملعقة صغيرة", dual: "ملعقتان صغيرتان", dualGenitive: "ملعقتين صغيرتين", plural: "ملاعق صغيرة" }
+};
+
+// "1 قطعة"، "قطعتان"، "3 قطع"، "11 قطعة"؛ fractions keep the singular ("1.5 قطعة").
+// Use genitive after a preposition, e.g. «المجموع لـ قطعتين».
+export function countedUnitText(quantity: number, unitType: DefaultUnitType, options: { genitive?: boolean } = {}): string {
+  const number = formatServingMacro(quantity);
+  const forms = unitCountForms[unitType];
+  if (!forms) return `${number} ${defaultUnitLabels[unitType]}`;
+  if (!Number.isInteger(quantity)) return `${number} ${forms.one}`;
+  if (quantity === 2) return options.genitive ? forms.dualGenitive : forms.dual;
+  const lastTwo = quantity % 100;
+  if (lastTwo >= 3 && lastTwo <= 10) return `${number} ${forms.plural}`;
+  return `${number} ${forms.one}`;
+}
+
 export function defaultUnitText(food: Pick<FoodInput, "default_unit_type" | "unit_amount" | "unit_basis">): string {
   return `1 ${defaultUnitLabels[food.default_unit_type]} = ${food.unit_amount} ${unitBasisLabels[food.unit_basis]}`;
 }

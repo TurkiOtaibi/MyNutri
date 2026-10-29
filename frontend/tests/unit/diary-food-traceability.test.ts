@@ -51,8 +51,8 @@ describe("Diary and Food clause traceability", () => {
   });
 
   it("BR-DRY-010 and BR-DRY-030 preserve recorded units and scale every edit preview macro", () => {
-    expect(entryQuantityLabel(entry)).toBe("2 كوب · 300 جم");
-    expect(entryQuantityLabel({ ...entry, recorded_unit_basis: "ml" })).toBe("2 كوب · 300 مل");
+    expect(entryQuantityLabel(entry)).toBe("كوبان · 300 جم");
+    expect(entryQuantityLabel({ ...entry, recorded_unit_basis: "ml" })).toBe("كوبان · 300 مل");
     expect(scaleEntryPreview(entry, 3)).toEqual({ calories: 450, protein_g: 18, carb_g: 60, fat_g: 12 });
   });
 
