@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { ApiError, createDiaryEntry, listFoodPicker, updateDiaryEntry } from "@/lib/api";
 import { formatLongArabicDate } from "@/lib/dates";
-import { defaultServingText, defaultUnitLabels, formatServingMacro, unitBasisLabels } from "@/lib/food";
+import { countedUnitText, defaultServingText, defaultUnitLabels, formatServingMacro, unitBasisLabels } from "@/lib/food";
 import type { DiaryEntryInput, DiaryEntryResponse, FoodPickerItem, MealType, RecentFoodPickerItem } from "@/lib/types";
 import { useUnsavedChanges } from "@/components/UnsavedChangesProvider";
 import { useAuth } from "@/components/AuthProvider";
@@ -230,7 +230,7 @@ export function AddEntrySheet({ selectedDate, initialMeal, initialFood = null, o
               </section>
             {preview ? (
               <div className="add-nutrition-preview" aria-label="معاينة القيم الغذائية" aria-live="polite">
-                <p>المجموع لـ <bdi dir="ltr">{formatServingMacro(amount ?? 0)}</bdi> {defaultUnitLabels[selectedFood.default_unit_type]}{equivalentAmount != null ? <> · <bdi dir="ltr">{formatServingMacro(equivalentAmount)}</bdi> {unitBasisLabels[selectedFood.unit_basis]}</> : null}</p>
+                <p>المجموع لـ <bdi>{countedUnitText(amount ?? 0, selectedFood.default_unit_type, { genitive: true })}</bdi>{equivalentAmount != null ? <> · <bdi dir="ltr">{formatServingMacro(equivalentAmount)}</bdi> {unitBasisLabels[selectedFood.unit_basis]}</> : null}</p>
                 <div className="add-calorie-total"><strong>{Math.round(preview.calories)}</strong><span>سعرة حرارية</span></div>
                 <div className="add-macro-row">
                   <span>بروتين <strong><bdi dir="ltr">{formatServingMacro(preview.protein_g)}</bdi> جم</strong></span>
@@ -303,7 +303,7 @@ function RecentFoodGroup({ foods, onChoose, onQuickAdd }: { foods: RecentFoodPic
               className="diary-quick-add"
               type="button"
               onClick={() => onQuickAdd(food)}
-              aria-label={`أضف مجددًا: ${food.name}، ${formatServingMacro(food.last_quantity)} ${defaultUnitLabels[food.default_unit_type]}`}
+              aria-label={`أضف مجددًا: ${food.name}، ${countedUnitText(food.last_quantity, food.default_unit_type)}`}
             >
               <Plus size={15} aria-hidden="true" />
               <span>أضف مجددًا</span>
@@ -400,7 +400,7 @@ export function EditEntryDialog({ entry, onClose, onSaved }: { entry: DiaryEntry
         {preview ? (
           <div className="entry-preview edit-entry-preview" aria-label="معاينة القيم الغذائية بعد التعديل" aria-live="polite">
             <p>
-              <bdi dir="ltr">{formatServingMacro(amount ?? 0)}</bdi> {unitLabel}
+              {entry.recorded_unit_label ? <><bdi dir="ltr">{formatServingMacro(amount ?? 0)}</bdi> {unitLabel}</> : <bdi>{countedUnitText(amount ?? 0, entry.recorded_unit_type)}</bdi>}
               {equivalentAmount != null ? <> · <bdi dir="ltr">{formatServingMacro(equivalentAmount)}</bdi> {unitBasisLabels[entry.recorded_unit_basis]}</> : null}
             </p>
             <div>

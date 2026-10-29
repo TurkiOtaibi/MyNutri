@@ -104,7 +104,12 @@ export function DailyProgressSummary({ totals, targets, pending, failed, onOpenN
         <h2>ملخص اليوم</h2>
       </div>
       <div className="calorie-summary-hero">
-        <CalorieRing percent={caloriePercent} state={exceeded ? "over" : reached ? "reached" : "progress"} label={`${caloriePercent}% من هدف السعرات`} />
+        <CalorieRing
+          percent={caloriePercent}
+          state={exceeded ? "over" : reached ? "reached" : "progress"}
+          label={`${caloriePercent}% من هدف السعرات`}
+          center={exceeded ? { value: `+${Math.round(totals.calories - targets.target_calories)}`, caption: "فوق الهدف" } : { value: String(Math.round(remaining)), caption: "المتبقي" }}
+        />
         <div className="calorie-summary-primary">
           <strong aria-label={`${Math.round(totals.calories)} من ${targets.target_calories} سعرة`}>
             <bdi>{Math.round(totals.calories)}</bdi>
@@ -112,9 +117,7 @@ export function DailyProgressSummary({ totals, targets, pending, failed, onOpenN
             <bdi>{targets.target_calories}</bdi>
             <small> سعرة</small>
           </strong>
-          <p className={exceeded ? "over" : reached ? "reached" : ""}>
-            {exceeded ? `+${Math.round(totals.calories - targets.target_calories)} فوق الهدف` : reached ? "تم الوصول إلى الهدف" : `المتبقي ${Math.round(remaining)}`}
-          </p>
+          {reached && !exceeded ? <p className="reached">تم الوصول إلى الهدف</p> : null}
         </div>
       </div>
       <div className="macro-progress-list">
@@ -131,10 +134,11 @@ const CALORIE_RING_RADIUS = 30;
 const CALORIE_RING_CIRCUMFERENCE = 2 * Math.PI * CALORIE_RING_RADIUS;
 
 // The calorie progress indicator (BR-DRY-036): the ring replaced the linear bar (decision 29 Oct 2026).
-function CalorieRing({ percent, state, label }: { percent: number; state: "progress" | "reached" | "over"; label: string }) {
+// «المتبقي» (or «فوق الهدف») sits inside the ring (decision 29 Oct 2026); progressbar children are presentational, so it is also the valuetext.
+function CalorieRing({ percent, state, label, center }: { percent: number; state: "progress" | "reached" | "over"; label: string; center: { value: string; caption: string } }) {
   const visualPercent = Math.min(Math.max(percent, 0), 100);
   return (
-    <div className="calorie-ring-progress" data-state={state} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={visualPercent} aria-label={label}>
+    <div className="calorie-ring-progress" data-state={state} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={visualPercent} aria-valuetext={`${center.caption} ${center.value}`} aria-label={label}>
       <svg className="calorie-ring" viewBox="0 0 72 72" aria-hidden="true" focusable="false">
         <circle className="calorie-ring-track" cx="36" cy="36" r={CALORIE_RING_RADIUS} />
         {visualPercent > 0 ? <circle
@@ -146,6 +150,7 @@ function CalorieRing({ percent, state, label }: { percent: number; state: "progr
           transform="rotate(-90 36 36)"
         /> : null}
       </svg>
+      <span className="calorie-ring-center"><strong><bdi dir="ltr">{center.value}</bdi></strong><small>{center.caption}</small></span>
     </div>
   );
 }

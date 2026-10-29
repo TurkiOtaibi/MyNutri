@@ -2251,19 +2251,46 @@
 }
 
 :global(.calorie-ring-progress) {
+  position: relative;
   flex: 0 0 auto;
   line-height: 0;
 }
 
 :global(.calorie-ring) {
   flex: 0 0 auto;
-  width: 64px;
-  height: 64px;
+  width: 96px;
+  height: 96px;
+}
+
+:global(.calorie-ring-center) {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 1px;
+  line-height: 1.1;
+  text-align: center;
+}
+
+:global(.calorie-ring-center) strong {
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+:global(.calorie-ring-center) small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+:global(.calorie-ring-progress)[data-state="over"] :global(.calorie-ring-center) strong {
+  color: var(--danger);
 }
 
 :global(.calorie-ring) circle {
   fill: none;
-  stroke-width: 8;
+  stroke-width: 6;
 }
 
 :global(.calorie-ring-track) {

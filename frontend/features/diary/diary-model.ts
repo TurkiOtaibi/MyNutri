@@ -1,5 +1,5 @@
 import { formatLongArabicDate } from "@/lib/dates";
-import { defaultUnitLabels, formatServingMacro, unitBasisLabels } from "@/lib/food";
+import { countedUnitText, formatServingMacro, unitBasisLabels } from "@/lib/food";
 import type { DiaryEntryResponse, FoodPickerItem, MealType, NutritionTotals } from "@/lib/types";
 
 export const mealLabels: Record<MealType, string> = {
@@ -109,7 +109,7 @@ export function convertDiaryQuantity(value: string, unitAmount: number): number 
 }
 
 export function entryQuantityLabel(entry: Pick<DiaryEntryResponse, "quantity" | "recorded_unit_label" | "recorded_unit_type" | "recorded_unit_amount" | "recorded_unit_basis">): string {
-  const unit = entry.recorded_unit_label ?? defaultUnitLabels[entry.recorded_unit_type];
   const amount = Number(entry.recorded_unit_amount) * entry.quantity;
-  return `${formatServingMacro(entry.quantity)} ${unit} · ${formatServingMacro(amount)} ${unitBasisLabels[entry.recorded_unit_basis]}`;
+  const quantity = entry.recorded_unit_label ? `${formatServingMacro(entry.quantity)} ${entry.recorded_unit_label}` : countedUnitText(entry.quantity, entry.recorded_unit_type);
+  return `${quantity} · ${formatServingMacro(amount)} ${unitBasisLabels[entry.recorded_unit_basis]}`;
 }

@@ -120,7 +120,11 @@ test.describe("@diary quantity and UX refinement", () => {
     const targetsBody = await targetsResponse.json() as { targets: { target_calories: number } | null };
     expect(targetsBody.targets).not.toBeNull();
     await expect(summary.getByLabel(new RegExp(`من ${targetsBody.targets!.target_calories} سعرة`))).toBeVisible();
-    await expect(summary.getByText(/المتبقي \d+/)).toBeVisible();
+    // «المتبقي» and its number sit inside the calorie ring.
+    const ringCenter = summary.locator(".calorie-ring-center");
+    await expect(ringCenter.locator("small")).toHaveText("المتبقي");
+    await expect(ringCenter.locator("strong")).toHaveText(/^\d+$/);
+    await expect(summary.getByRole("progressbar", { name: /هدف السعرات/ })).toHaveAttribute("aria-valuetext", /^المتبقي \d+$/);
     await expect(summary.getByLabel(/البروتين:/)).toBeVisible();
     await expect(summary.getByLabel(/الكربوهيدرات:/)).toBeVisible();
     await expect(summary.getByLabel(/الدهون:/)).toBeVisible();

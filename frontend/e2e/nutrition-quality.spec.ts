@@ -61,7 +61,7 @@ test.describe("@nutrition-quality", () => {
     await expect(breakfast).toContainText("بروتين 24 جم");
     await expect(breakfast).toContainText("كربوهيدرات 36 جم");
     await expect(breakfast).toContainText("دهون 12 جم");
-    await expect(breakfast).toContainText("2 حصة");
+    await expect(breakfast).toContainText("حصتان");
     await page.getByRole("button", { name: "عرض التفاصيل الغذائية" }).click();
     const sheet = page.getByRole("dialog", { name: "التفاصيل الغذائية لليوم" });
     const fiber = sheet.locator(".daily-nutrient-row").filter({ hasText: "الألياف" });
