@@ -1,4 +1,5 @@
 import { formatGregorianArabicDate } from "../../lib/dates";
+import type { Page } from "@playwright/test";
 import type { LabOverviewResponse } from "../../lib/types";
 import { API_URL, expect, navigateToOwnerLabs, offsetIsoDate, test } from "./helpers";
 
@@ -40,6 +41,14 @@ const CATEGORY_COUNTS: Record<(typeof CATEGORY_KEYS)[number], number> = {
 
 const SORTS = ["newest_updated", "oldest_updated", "name_asc", "name_desc", "category"] as const;
 
+
+// «التصنيف» and «الترتيب» sit behind one toggle beside the always-visible search (issue #151).
+async function openFilters(page: Page) {
+  const toggle = page.getByRole("button", { name: "التصنيف والترتيب", exact: true });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+}
+
 test("empty owner overview and the complete 51-test catalog remain distinct", async ({ labsPage: page }) => {
   await navigateToOwnerLabs(page);
   await expect(page.getByText("لم تسجل أي نتائج بعد.", { exact: true })).toBeVisible();
@@ -73,8 +82,9 @@ test("all 15 categories and five sorts control the rendered catalog order", asyn
   ]);
   await navigateToOwnerLabs(page);
   await page.getByRole("tab", { name: "كل التحاليل" }).click();
+  await openFilters(page);
   const category = page.locator("label").filter({ hasText: /^التصنيف/ }).locator("select");
-  const sort = page.getByLabel("الترتيب");
+  const sort = page.locator("label").filter({ hasText: /^الترتيب/ }).locator("select");
   const renderedKeys = () => page.getByTestId("lab-row").evaluateAll((rows) => (
     rows.map((row) => row.getAttribute("data-test-key"))
   ));
@@ -113,6 +123,7 @@ test("owned filters retain a clear empty-category state", async ({ labsPage: pag
     { test_key: "hba1c", entered_value: "5.20", entered_unit: "%" },
   ]);
   await navigateToOwnerLabs(page);
+  await openFilters(page);
   await page.locator("label").filter({ hasText: /^التصنيف/ }).locator("select").selectOption("iron");
   await expect(page.getByText("لا توجد نتائج ضمن هذا التصنيف.", { exact: true })).toBeVisible();
 });

@@ -21,11 +21,12 @@ export function AdminUserLabsPage({ principalId }: { principalId: string }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [sort, setSort] = useState<LabSort>("newest_updated");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const selectedScope = `${actorId ?? "anonymous"}:${principalId}`;
   const [filterScope, setFilterScope] = useState(selectedScope);
   if (filterScope !== selectedScope) {
     setFilterScope(selectedScope);
-    setSearch(""); setCategory(null); setSort("newest_updated");
+    setSearch(""); setCategory(null); setSort("newest_updated"); setFiltersOpen(false);
   }
   const queryClient = useQueryClient();
   const queryPolicy = { staleTime: 0, refetchOnMount: "always" as const, refetchOnWindowFocus: "always" as const };
@@ -70,6 +71,8 @@ export function AdminUserLabsPage({ principalId }: { principalId: string }) {
       onSearchChange={setSearch}
       onCategoryChange={setCategory}
       onSortChange={setSort}
+      filtersOpen={filtersOpen}
+      onToggleFilters={() => setFiltersOpen((current) => !current)}
     />
   </div>;
 }

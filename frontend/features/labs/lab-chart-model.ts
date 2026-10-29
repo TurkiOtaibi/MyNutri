@@ -1,5 +1,7 @@
 import type { LabChartZoneSegment, LabResultResponse } from "@/lib/types";
 
+type LabZone = LabResultResponse["reference_zones"][number];
+
 export type ChartGeometry = {
   points: { id: string; x: number; y: number }[];
   bands: { fromX: number; toX: number; lowY: number; highY: number; statusCode: string }[];
@@ -25,8 +27,11 @@ export function chartGeometry(results: LabResultResponse[], segments: LabChartZo
     if (zone.low !== null) include(zone.low);
     if (zone.high !== null) include(zone.high);
   }
+  const nonNegative = min >= 0;
   const padding = (max - min || Math.abs(max) || 1) * 0.1;
   min -= padding; max += padding;
+  // Lab values here are never negative; padding must not invent a negative axis.
+  if (nonNegative) min = Math.max(0, min);
   const y = (value: number) => bottom - (value - min) / (max - min) * (bottom - top);
   const bands = segments.flatMap(segment => {
     const start = date(segment.from_date), end = date(segment.to_date_exclusive);
@@ -45,4 +50,31 @@ export function chartGeometry(results: LabResultResponse[], segments: LabChartZo
   });
   for (const time of singleDate ? [first] : [first, last]) ticks.push({ axis: "x", position: x(time), label: new Date(time).toISOString().slice(0, 10) });
   return { points: ordered.map(result => ({ id: result.id, x: x(date(result.test_date)), y: y(Number(result.display_value)) })), bands, ticks };
+}
+
+export type RangeBarGeometry = {
+  segments: { from: number; to: number; tone: string }[];
+  marker: number | null;
+};
+
+// Equal-width segments keep narrow clinical zones readable; the marker is placed
+// proportionally inside its own zone. Open-ended zones extend by the widest closed span.
+export function rangeBarGeometry(zones: LabZone[], value: string | null): RangeBarGeometry | null {
+  if (!zones.length) return null;
+  const ordered = [...zones].sort((a, b) => (a.low === null ? -Infinity : Number(a.low)) - (b.low === null ? -Infinity : Number(b.low)));
+  const width = 100 / ordered.length;
+  const bounds = ordered.flatMap(zone => [zone.low, zone.high]).filter((bound): bound is string => bound !== null).map(Number);
+  const span = bounds.length > 1 ? Math.max(...bounds) - Math.min(...bounds) : Math.abs(bounds[0] ?? 1) || 1;
+  const segments = ordered.map((zone, index) => ({ from: index * width, to: (index + 1) * width, tone: zone.status.tone }));
+  if (value === null) return { segments, marker: null };
+  const number = Number(value);
+  if (!Number.isFinite(number)) return { segments, marker: null };
+  const index = ordered.findIndex(zone => (zone.low === null || number >= Number(zone.low)) && (zone.high === null || number <= Number(zone.high)));
+  if (index < 0) return { segments, marker: null };
+  const zone = ordered[index];
+  const low = zone.low === null ? Number(zone.high) - span : Number(zone.low);
+  const high = zone.high === null ? Number(zone.low) + span : Number(zone.high);
+  const fraction = high > low ? Math.min(1, Math.max(0, (number - low) / (high - low))) : 0.5;
+  // Keep the marker inside the bar so it never touches the rounded ends.
+  return { segments, marker: Math.min(97, Math.max(3, index * width + fraction * width)) };
 }

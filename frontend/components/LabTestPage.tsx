@@ -14,6 +14,7 @@ import { LabDeleteDialog, LabEditDialog } from "@/features/labs/lab-result-dialo
 import { freezeResultPatch, isChangedResultConflict, readbackResult, resultFieldErrors, type ResultReadback } from "@/features/labs/lab-result-model";
 import { labsQueryKeys } from "@/features/labs/lab-query-keys";
 import styles from "@/features/labs/labs.module.css";
+import { LabResultMenu } from "@/features/labs/lab-result-menu";
 import { ApiError, createLabResults, deleteLabResult, getLabCatalog, getLabTest, updateLabResult } from "@/lib/api";
 import type { LabCatalogTest, LabFieldError, LabResultPatch, LabResultResponse } from "@/lib/types";
 
@@ -237,10 +238,8 @@ export function LabTestPage({ testKey }: { testKey: string }) {
       }}>إعادة تحميل التحاليل</button>
     </div> : null}
     {detail.data ? <LabTestView detail={detail.data} selectedResultId={selectedResultId} onSelectResult={setSelectedResultId}
-      ownerResultActions={result => <div className={styles.batchActions}>
-        <button type="button" className="btn" disabled={resultPending || batchActive} aria-label={`تعديل نتيجة ${formatGregorianArabicDate(result.test_date)}`} onClick={event => { void openResult("edit", result, event.currentTarget); }}>تعديل</button>
-        <button type="button" className="btn" disabled={resultPending || batchActive} aria-label={`حذف نتيجة ${formatGregorianArabicDate(result.test_date)}`} onClick={event => { void openResult("delete", result, event.currentTarget); }}>حذف</button>
-      </div>}
+      ownerResultActions={result => <LabResultMenu dateLabel={formatGregorianArabicDate(result.test_date)} disabled={resultPending || batchActive}
+        onEdit={opener => { void openResult("edit", result, opener); }} onDelete={opener => { void openResult("delete", result, opener); }} />}
       ownerActions={<button id="lab-detail-add" className="btn primary" type="button" disabled={batch.opening || !catalog.data || resultPending} onClick={() => {
         if (busy.current || dialogRef.current || sessionSignal.aborted) return;
         batchOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;

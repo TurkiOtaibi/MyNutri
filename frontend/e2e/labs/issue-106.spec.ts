@@ -24,7 +24,8 @@ test("batch note appears in history and real delete undo restores the same facts
   expect(before.note).toBe("مختبر تجريبي");
   await page.goto("/labs/hba1c");
   await expect(page.locator(`[data-history-result="${before.id}"]`)).toContainText("مختبر تجريبي");
-  await page.getByRole("button", { name: /^حذف نتيجة/ }).click();
+  await page.getByRole("button", { name: /^خيارات نتيجة/ }).click();
+  await page.getByRole("menuitem", { name: /^حذف نتيجة/ }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "حذف النتيجة", exact: true }).click();
   await expect(page.getByText("تم حذف النتيجة", { exact: true })).toBeVisible();
   expect((await labsApi.detail("hba1c")).results).toHaveLength(0);
@@ -39,7 +40,8 @@ test("undo rejected by a new same-date result reports failure without replacing 
   await addNote(page);
   const before = (await labsApi.detail("hba1c")).results[0];
   await page.goto("/labs/hba1c");
-  await page.getByRole("button", { name: /^حذف نتيجة/ }).click();
+  await page.getByRole("button", { name: /^خيارات نتيجة/ }).click();
+  await page.getByRole("menuitem", { name: /^حذف نتيجة/ }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "حذف النتيجة", exact: true }).click();
   await expect(page.getByText("تم حذف النتيجة", { exact: true })).toBeVisible();
   const replacement = await labsApi.create(before.test_date, [{ test_key: "hba1c", entered_value: "6", entered_unit: "%" }]);
@@ -86,7 +88,8 @@ test("undo expires after eight seconds without restoring or leaving focus on a r
   await addNote(page);
   await page.goto("/labs/hba1c");
   await page.clock.install();
-  await page.getByRole("button", { name: /^حذف نتيجة/ }).click();
+  await page.getByRole("button", { name: /^خيارات نتيجة/ }).click();
+  await page.getByRole("menuitem", { name: /^حذف نتيجة/ }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "حذف النتيجة", exact: true }).click();
   const undo = page.getByRole("button", { name: "تراجع", exact: true });
   await expect(undo).toBeVisible();
@@ -101,7 +104,8 @@ test("lost undo response reports uncertainty and refreshes the actual restored r
   await addNote(page);
   const before = (await labsApi.detail("hba1c")).results[0];
   await page.goto("/labs/hba1c");
-  await page.getByRole("button", { name: /^حذف نتيجة/ }).click();
+  await page.getByRole("button", { name: /^خيارات نتيجة/ }).click();
+  await page.getByRole("menuitem", { name: /^حذف نتيجة/ }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "حذف النتيجة", exact: true }).click();
   await expect(page.getByText("تم حذف النتيجة", { exact: true })).toBeVisible();
   await page.route(`${API_URL}/labs/results`, async route => {
