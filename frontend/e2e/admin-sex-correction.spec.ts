@@ -50,7 +50,9 @@ test("no Profile disables correction; cancel makes no write", async ({ page }) =
   await page.getByRole("button", { name: "إجراءات مستخدم تجريبي" }).click();
   await expect(page.getByRole("menuitem", { name: "تصحيح الجنس" })).toBeDisabled();
   await expect(page.getByRole("menuitem", { name: "إعادة تعيين كلمة المرور" })).toHaveCount(0);
-  await expect(page.getByRole("menuitem", { name: "تعطيل المستخدم" })).toBeFocused();
+  // In the compact list «تعديل المستخدم» is the first enabled item, so the menu focuses it and skips disabled items.
+  await expect(page.getByRole("menuitem", { name: "تعديل المستخدم" })).toBeFocused();
+  await expect(page.getByRole("menuitem", { name: "تعطيل المستخدم" })).toBeEnabled();
   await page.keyboard.press("Escape");
   const opener = page.getByRole("button", { name: "إجراءات ملف محفوظ" });
   await opener.click();
