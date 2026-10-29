@@ -406,9 +406,9 @@ def _traceability_checks(brd: str, stories: str, matrix: str) -> list[str]:
             if re.match(r"^\| BR-[A-Z]+-\d{3} \|", line)]
     actual = [row[0].strip() for row in rows]
     issues = []
-    if len(expected) != 262 or expected != story_codes:
-        issues.append("traceability: BRD/story inventory must contain the same 262 codes")
-    if len(actual) != 262 or len(set(actual)) != len(actual) or set(actual) != expected:
+    if len(expected) != 263 or expected != story_codes:
+        issues.append("traceability: BRD/story inventory must contain the same 263 codes")
+    if len(actual) != 263 or len(set(actual)) != len(actual) or set(actual) != expected:
         issues.append("traceability: matrix must contain each BR code exactly once")
     for row in rows:
         if len(row) != 6 or row[2].strip() not in {"✅", "🟡", "❌", "⚪"}:

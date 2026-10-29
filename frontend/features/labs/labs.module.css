@@ -14,7 +14,7 @@
 .heading h1 { margin: 0; font-size: 28px; font-weight: 700; }
 .heading p { margin: 6px 0 0; color: var(--muted); }
 
-.tabs { display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; gap: 4px; width: min(100%, 420px); border-radius: 24px; background: #eaeeec; padding: 4px; }
+.tabs { display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; gap: 4px; width: min(100%, 420px); border-radius: 24px; background: var(--track); padding: 4px; }
 .tabs button { min-height: 44px; border: 0; border-radius: 20px; background: transparent; color: var(--muted); padding: 8px 14px; font-weight: 700; }
 .tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(20, 30, 28, .08); }
 
@@ -28,11 +28,11 @@
 .searchRow .searchField input { width: 100%; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-sm); }
 .filterToggle { position: relative; display: grid; place-items: center; flex: 0 0 auto; width: 48px; min-height: 46px; border: 0; border-radius: var(--radius); background: var(--field-bg); color: var(--ink); }
 .filterToggle[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent); }
-.filterCount { position: absolute; top: 4px; inset-inline-end: 4px; min-width: 18px; height: 18px; border-radius: 999px; background: var(--accent); color: white; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.filterCount { position: absolute; top: 4px; inset-inline-end: 4px; min-width: 18px; height: 18px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
 .filters { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .filters[hidden] { display: none; }
 .controls input, .controls select { min-width: 0; min-height: 46px; border: 1px solid transparent; border-radius: var(--radius); background: var(--field-bg); color: var(--ink); padding: 8px 14px; }
-.controls input:focus, .controls select:focus { border-color: var(--accent); background: var(--surface); outline: 3px solid color-mix(in srgb, var(--accent) 22%, white); }
+.controls input:focus, .controls select:focus { border-color: var(--accent); background: var(--surface); outline: 3px solid color-mix(in srgb, var(--accent) 22%, var(--surface)); }
 .resultBar { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .85rem; }
 .resultBar strong { color: var(--accent-strong); }
 .rows { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
@@ -41,9 +41,9 @@
 .identity bdi, .latest time, .noResult { color: var(--muted); font-size: .82rem; }
 .latest { justify-items: end; text-align: end; }
 .status { width: fit-content; border-radius: 999px; padding: 4px 10px; font-size: .78rem; font-weight: 700; }
-.status[data-tone="within"] { background: color-mix(in srgb, var(--accent) 12%, white); color: var(--accent-strong); }
-.status[data-tone="caution"] { background: color-mix(in srgb, var(--warning) 13%, white); color: #6b4300; }
-.status[data-tone="outside"] { background: color-mix(in srgb, var(--danger) 11%, white); color: #7a1b14; }
+.status[data-tone="within"] { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent-strong); }
+.status[data-tone="caution"] { background: color-mix(in srgb, var(--warning) 13%, var(--surface)); color: var(--warning-ink); }
+.status[data-tone="outside"] { background: color-mix(in srgb, var(--danger) 11%, var(--surface)); color: var(--danger-ink); }
 .empty { display: grid; justify-items: center; gap: 6px; min-height: 190px; align-content: center; border-radius: var(--radius-card); background: var(--surface); color: var(--muted); text-align: center; padding: 24px; box-shadow: var(--shadow-sm); }
 .empty strong { color: var(--ink); }
 .loading { min-height: 220px; display: grid; place-items: center; color: var(--muted); }
@@ -56,13 +56,13 @@
 .chartPlot svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .chartPlot text { fill: var(--ink); font-size: 10px; }
 .chartBand { fill: var(--surface-strong); }
-.chartBand[data-tone="within"] { fill: color-mix(in srgb, var(--accent) 14%, white); }
-.chartBand[data-tone="caution"] { fill: color-mix(in srgb, var(--warning) 16%, white); }
-.chartBand[data-tone="outside"] { fill: color-mix(in srgb, var(--danger) 12%, white); }
+.chartBand[data-tone="within"] { fill: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+.chartBand[data-tone="caution"] { fill: color-mix(in srgb, var(--warning) 16%, var(--surface)); }
+.chartBand[data-tone="outside"] { fill: color-mix(in srgb, var(--danger) 12%, var(--surface)); }
 .chartGrid { stroke: var(--line); stroke-width: .5; }
 .chartLine { fill: none; stroke: var(--accent-strong); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .chartPoint { position: absolute; transform: translate(-50%, -50%); width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
-.chartPoint span { width: 9px; height: 9px; border: 2px solid var(--accent-strong); border-radius: 50%; background: white; }
+.chartPoint span { width: 9px; height: 9px; border: 2px solid var(--accent-strong); border-radius: 50%; background: var(--surface); }
 .chartPoint[aria-pressed="true"] { z-index: 1; }
 .chartPoint[aria-pressed="true"] span { background: var(--accent-strong); }
 .chartPoint:focus-visible { z-index: 2; outline: 3px solid var(--accent-strong); outline-offset: -4px; }
@@ -85,12 +85,12 @@
 .batchFields { display: grid; gap: 12px; margin: 0; padding: 0; border: 0; min-width: 0; }
 .batchFields label { display: grid; gap: 6px; min-width: 0; }
 .batchFields input:not([type="checkbox"]), .batchFields select, .batchFields textarea { min-width: 0; width: 100%; min-height: 46px; background: var(--field-bg); color: var(--ink); border: 1px solid transparent; border-radius: var(--radius); padding: 8px 14px; }
-.batchFields input:focus, .batchFields select:focus, .batchFields textarea:focus { outline: 3px solid color-mix(in srgb, var(--accent) 22%, white); border-color: var(--accent); background: var(--surface); }
+.batchFields input:focus, .batchFields select:focus, .batchFields textarea:focus { outline: 3px solid color-mix(in srgb, var(--accent) 22%, var(--surface)); border-color: var(--accent); background: var(--surface); }
 .batchFields .batchChoice { display: flex; align-items: center; min-height: 44px; gap: 10px; }
 .batchChoice input { width: 20px; height: 20px; flex-shrink: 0; }
 .batchRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 150px); gap: 12px; min-width: 0; margin: 0; padding: 14px 0; border: 0; border-bottom: 1px solid var(--line); }
 .batchRow legend { grid-column: 1 / -1; max-width: 100%; padding: 0; overflow-wrap: anywhere; }
-.batchError { color: #7a1b14; }
+.batchError { color: var(--danger-ink); }
 .batchError p { margin: 6px 0; }
 .batchActions { display: flex; justify-content: end; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 
@@ -107,10 +107,10 @@
 .rangeBar { position: relative; height: 10px; margin: 6px 4px 8px; border-radius: 999px; background: var(--surface-strong); }
 .rangeSegment { position: absolute; top: 0; bottom: 0; background: var(--surface-strong); }
 .rangeTrack { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; }
-.rangeSegment[data-tone="within"] { background: color-mix(in srgb, var(--accent) 38%, white); }
-.rangeSegment[data-tone="caution"] { background: color-mix(in srgb, var(--warning) 40%, white); }
-.rangeSegment[data-tone="outside"] { background: color-mix(in srgb, var(--danger) 30%, white); }
-.rangeMarker { position: absolute; top: 50%; width: 20px; height: 20px; border: 3px solid white; border-radius: 50%; background: var(--ink); box-shadow: 0 1px 4px rgba(0, 0, 0, .25); transform: translate(-50%, -50%); }
+.rangeSegment[data-tone="within"] { background: color-mix(in srgb, var(--accent) 38%, var(--surface)); }
+.rangeSegment[data-tone="caution"] { background: color-mix(in srgb, var(--warning) 40%, var(--surface)); }
+.rangeSegment[data-tone="outside"] { background: color-mix(in srgb, var(--danger) 30%, var(--surface)); }
+.rangeMarker { position: absolute; top: 50%; width: 20px; height: 20px; border: 3px solid var(--surface); border-radius: 50%; background: var(--ink); box-shadow: 0 1px 4px rgba(0, 0, 0, .25); transform: translate(-50%, -50%); }
 .resultMenu { position: relative; }
 .resultMenuList { position: absolute; inset-inline-end: 0; top: calc(100% + 4px); z-index: 20; display: grid; min-width: 180px; overflow: hidden; border-radius: var(--radius); background: var(--surface); box-shadow: 0 14px 34px rgba(20, 32, 24, .16); }
 .resultMenuList button { display: flex; align-items: center; gap: 8px; min-height: 44px; border: 0; background: transparent; color: var(--ink); padding: 8px 14px; font: inherit; text-align: start; }

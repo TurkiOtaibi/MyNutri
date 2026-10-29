@@ -16,13 +16,13 @@ Partial rows remain yellow even when some cited tests pass. Static/renderer asse
 | Page | ✅ | 🟡 | ❌ | ⚪ | Total |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | AUT | 18 | 0 | 0 | 0 | 18 |
-| NAV | 13 | 7 | 0 | 0 | 20 |
+| NAV | 14 | 7 | 0 | 0 | 21 |
 | DRY | 36 | 9 | 0 | 0 | 45 |
 | FOD | 20 | 17 | 0 | 0 | 37 |
 | LAB | 29 | 8 | 0 | 0 | 37 |
 | PRF | 27 | 4 | 0 | 0 | 31 |
 | USM | 43 | 25 | 0 | 6 | 74 |
-| **Total** | 186 | 70 | 0 | 6 | **262** |
+| **Total** | 187 | 70 | 0 | 6 | **263** |
 
 ## Decision and audit boundaries
 
@@ -81,6 +81,7 @@ BRD and User Stories PDF copies are intentionally not regenerated; they will be 
 | BR-NAV-018 | US-NAV-018 — فتح النظام المثبّت على اليوميات | ✅ | [frontend/public/manifest.json](../../frontend/public/manifest.json) — `start_url` | [frontend/e2e/pwa-shell.spec.ts](../../frontend/e2e/pwa-shell.spec.ts) — `@plan017 worker activation awaits shell population and removes only obsolete app caches`<br>[frontend/tests/unit/issue-102-states.test.ts](../../frontend/tests/unit/issue-102-states.test.ts) — `BR-NAV-016 supplies an Arabic installation description` | Manifest start_url=/diary and standalone display are asserted; browser installation launch controlled by manifest, unauthenticated access still requires login. |
 | BR-NAV-019 | US-NAV-019 — معرفة انقطاع الاتصال | ✅ | [frontend/app/offline/page.tsx](../../frontend/app/offline/page.tsx) — `OfflinePage` | [frontend/e2e/pwa-shell.spec.ts](../../frontend/e2e/pwa-shell.spec.ts) — `@plan017 deep navigations return the exact generic offline document`<br>[frontend/tests/unit/issue-102-states.test.ts](../../frontend/tests/unit/issue-102-states.test.ts) — `BR-NAV-019 offers a native retry without a product version or personal data` | Generic offline heading/body explains connectivity/no local save, no version, native Retry; actual offline deep routes receive exact cached document. |
 | BR-NAV-020 | US-NAV-020 — منع حفظ التغييرات دون اتصال | 🟡 | [frontend/public/service-worker.js](../../frontend/public/service-worker.js) — `fetch` | [frontend/e2e/pwa-shell.spec.ts](../../frontend/e2e/pwa-shell.spec.ts) — `@plan017 bypasses API Auth RSC prefetch cross-origin and non-GET traffic`<br>[frontend/e2e/pwa-shell.spec.ts](../../frontend/e2e/pwa-shell.spec.ts) — `@plan017 CacheStorage contains only generic and immutable static resources`<br>[frontend/e2e/pwa-shell.spec.ts](../../frontend/e2e/pwa-shell.spec.ts) — `Labs private reads and successful writes never enter browser persistence or offline history` | Strong persistence/worker/queue exclusion proof; full literal ban on using already-loaded in-memory private data while offline not directly enforced/asserted across all screens. V2 allows only static-shell caching; no offline authority or mutations queue found. |
+| BR-NAV-021 | US-NAV-021 — الوضع الداكن حسب إعداد الجهاز | ✅ | [frontend/app/globals.css](../../frontend/app/globals.css) — `@media (prefers-color-scheme: dark)` | [frontend/e2e/issue-155-dark-mode.spec.ts](../../frontend/e2e/issue-155-dark-mode.spec.ts) — `@p1 switches the shell to dark tokens with readable text`<br>[frontend/e2e/issue-155-dark-mode.spec.ts](../../frontend/e2e/issue-155-dark-mode.spec.ts) — `@p1 keeps the approved light palette` | Dark tokens follow the device setting; light palette unchanged and covered by light visual baselines. |
 
 ## DRY
 
