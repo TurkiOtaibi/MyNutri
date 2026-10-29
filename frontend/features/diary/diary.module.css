@@ -1642,7 +1642,9 @@
 }
 
 :global(.macro-progress-track):global(.has-progress) > span {
-  width: max(var(--macro-min-progress), var(--macro-progress));
+  /* width + min-width instead of max(): iOS Safari resolved the percentage inside max() as zero, hiding bars without a pixel minimum. */
+  width: var(--macro-progress);
+  min-width: var(--macro-min-progress);
 }
 
 :global(.diary-page) :global(.macro-progress-list) {
@@ -2349,4 +2351,11 @@
     --diary-soft: #15302c;
     --diary-soft-strong: #1b3b36;
   }
+}
+
+/* The track is a <div> inside .macro-progress-row, so the "> div" label-layout rules (flex/grid) also matched it.
+   As a grid/flex container its fill became an item sized by content, so percentage widths collapsed to the pixel
+   floor (or to zero on iOS). Keep the track a plain block so the fill width follows its percentage. */
+:global(.macro-progress-row) > div:global(.macro-progress-track) {
+  display: block;
 }
