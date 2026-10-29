@@ -42,7 +42,8 @@ test("@p0 Admin manages a user and confirms permanent deletion by username", asy
   const row = page.locator(".account-row").filter({ hasText: email });
   await expect(row).toContainText("نشط");
 
-  await row.getByRole("button", { name: "تعديل المستخدم" }).click();
+  await row.getByRole("button", { name: /^إجراءات / }).click();
+  await row.getByRole("menuitem", { name: "تعديل المستخدم" }).click();
   const editor = page.locator(".account-editor");
   await expect(editor.getByLabel("الاسم المعروض")).toBeFocused();
   await editor.getByLabel("الاسم المعروض").fill("اسم جديد");
@@ -161,7 +162,8 @@ test("merged Users list redirects, searches, filters by status and marks the Adm
 
   await expect(page.locator(".account-row")).toHaveCount(1);
   const activeRow = page.locator(".account-row").filter({ hasText: activeUsername });
-  await expect(activeRow).toContainText("تاريخ التسجيل");
+  await expect(activeRow).toContainText("آخر دخول");
+  await expect(activeRow).not.toContainText("تاريخ التسجيل");
   await expect(self).toHaveCount(0);
 
   await page.getByPlaceholder("ابحث بالاسم أو اسم المستخدم...").fill(String(suffix));

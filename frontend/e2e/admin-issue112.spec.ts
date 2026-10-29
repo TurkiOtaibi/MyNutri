@@ -51,7 +51,8 @@ test("internal Admin creation requires initial change and records last login in 
     await page.reload();
     await expect(row).toContainText("آخر دخول");
     await expect(row).not.toContainText("لم يسجل الدخول بعد.");
-    await expect(row.locator("time")).toHaveCount(2);
+    // Compact row: only «آخر دخول» carries a time; «تاريخ التسجيل» moved to the details page.
+    await expect(row.locator("time")).toHaveCount(1);
   } finally { await context.close(); }
 });
 

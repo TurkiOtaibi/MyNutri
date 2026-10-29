@@ -29,20 +29,26 @@ test.describe("Food creation @foods", () => {
     });
   }
 
-  test("[FOOD-TC-038] @p1 form has the approved grouped sections", async ({ page }) => {
+  test("[FOOD-TC-038] @p1 form has the approved four grouped sections with full-width text fields", async ({ page }) => {
     await page.goto("/foods/new");
     for (const title of [
       "معلومات الطعام الأساسية",
-      "أساس القيم الغذائية",
-      "القيم الغذائية الأساسية",
-      "الوحدة الافتراضية",
-      "مصدر البيانات الغذائية",
-      "المكونات",
-      "ملاحظات"
+      "أساس القيم والوحدة الافتراضية",
+      "القيم الغذائية الأساسية"
     ]) {
       await expect(page.getByRole("heading", { name: title })).toBeVisible();
     }
     await expect(page.getByText("القيم الغذائية الإضافية", { exact: true })).toBeVisible();
+    await expect(page.locator("form.food-form-layout h2.panel-title")).toHaveCount(3);
+    const basics = page.locator(".food-form-section").filter({ has: page.getByRole("heading", { name: "معلومات الطعام الأساسية" }) });
+    for (const label of ["مصدر البيانات الغذائية", "المكونات", "ملاحظات"]) {
+      await expect(basics.getByLabel(label)).toBeVisible();
+    }
+    const grid = await basics.locator(".form-grid").boundingBox();
+    for (const label of ["المكونات", "ملاحظات"]) {
+      const field = await basics.locator("label.field").filter({ has: page.getByLabel(label) }).boundingBox();
+      expect(Math.abs((field?.width ?? 0) - (grid?.width ?? 0))).toBeLessThanOrEqual(1);
+    }
   });
 
   test("[FOOD-TC-039] @p1 optional nutrients are collapsed by default", async ({ page }) => {

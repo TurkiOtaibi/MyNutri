@@ -37,7 +37,7 @@ describe("username admin presentation", () => {
     }
     for (const valid of ["Ab_", "test.user-1", "a".repeat(32)]) expect(usernameValidationMessage(valid)).toBe("");
   });
-  it("renders username, legacy identity, lock status and dates on all rows including self", () => {
+  it("renders compact rows with username, legacy identity, lock status and last login including self", () => {
     state.search = "";
     const html = renderToStaticMarkup(createElement(AdminUsersPage));
     expect(html).toContain('placeholder="ابحث بالاسم أو اسم المستخدم..."');
@@ -46,7 +46,7 @@ describe("username admin presentation", () => {
     expect(html).toContain('<bdi dir="ltr">legacy@example.test</bdi>');
     expect(html).toContain("حساب قديم");
     expect(html).toContain('class="account-status-badge">مقفل</span>');
-    expect(html.match(/تاريخ التسجيل:/g)).toHaveLength(3);
+    expect(html).not.toContain("تاريخ التسجيل");
     expect(html.match(/آخر دخول:/g)).toHaveLength(3);
     expect(html).toContain("لم يسجل الدخول بعد.");
     expect(html).toContain("16 أغسطس 2026، 09:05");

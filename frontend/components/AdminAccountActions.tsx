@@ -135,14 +135,16 @@ function AccountActionsMenu({ name, items }: { name: string; items: MenuItem[] }
 }
 
 
-const ActionsContext = createContext<((account: ActionAccount) => ReactNode) | null>(null);
+type ActionsPlacement = "detail" | "list";
+const ActionsContext = createContext<((account: ActionAccount, placement: ActionsPlacement) => ReactNode) | null>(null);
 
-export function AdminAccountActions({ account }: { account: ActionAccount }) {
+// In the list every action lives in the row menu so rows stay compact; the details page keeps «تعديل المستخدم» visible.
+export function AdminAccountActions({ account, placement = "detail" }: { account: ActionAccount; placement?: ActionsPlacement }) {
   const renderActions = useContext(ActionsContext);
   const { account: self } = useAuth();
   if (account.principal_id === self?.principal_id) return null;
   if (!renderActions) throw new Error("AdminAccountActions requires its provider");
-  return renderActions(account);
+  return renderActions(account, placement);
 }
 
 export function AdminAccountActionsProvider({ children, onDeleted, externalNotice, onActionStart }: { children: ReactNode; onDeleted?: () => void; externalNotice?: string; onActionStart?: () => void }) {
@@ -206,9 +208,10 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
     return { primary: null, menu: [remove] };
   }
 
-  function renderActions(account: ActionAccount) {
+  function renderActions(account: ActionAccount, placement: ActionsPlacement) {
     const actions = rowActions(account);
-    return <div className="account-actions">{actions.primary}{actions.menu.length > 0 && <AccountActionsMenu name={account.display_name || account.username || account.email || ""} items={actions.menu} />}</div>;
+    const menu = placement === "list" && actions.primary ? [{ label: "تعديل المستخدم", onSelect: () => select(account, "edit") }, ...actions.menu] : actions.menu;
+    return <div className="account-actions">{placement === "detail" ? actions.primary : null}{menu.length > 0 && <AccountActionsMenu name={account.display_name || account.username || account.email || ""} items={menu} />}</div>;
   }
   return <ActionsContext.Provider value={renderActions}>
     {children}

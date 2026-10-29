@@ -37,12 +37,8 @@ test.describe("Foods navigation and standalone pages @foods", () => {
     await expect(page.getByRole("heading", { name: "تعديل الطعام" })).toBeVisible();
     for (const heading of [
       "معلومات الطعام الأساسية",
-      "أساس القيم الغذائية",
-      "القيم الغذائية الأساسية",
-      "الوحدة الافتراضية",
-      "مصدر البيانات الغذائية",
-      "المكونات",
-      "ملاحظات"
+      "أساس القيم والوحدة الافتراضية",
+      "القيم الغذائية الأساسية"
     ]) {
       await expect(page.getByRole("heading", { name: heading })).toBeVisible();
     }

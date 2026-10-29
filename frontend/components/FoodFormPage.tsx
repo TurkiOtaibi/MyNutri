@@ -343,9 +343,20 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
             onChange={(value) => update("subcategory", value)}
             options={(selectedCategory?.subcategories ?? []).map((item) => [item.key, item.label_ar])}
           />
+          <SelectField
+            field="nutrition_data_source"
+            label="مصدر البيانات الغذائية"
+            value={form.nutrition_data_source}
+            required
+            error={errors.nutrition_data_source}
+            onChange={(value) => update("nutrition_data_source", value as FoodFormValues["nutrition_data_source"])}
+            options={registry.nutrition_data_sources.map((item) => [item.key, item.label_ar])}
+          />
+          <TextAreaField field="ingredients" label="المكونات" value={form.ingredients ?? ""} error={errors.ingredients} onChange={(value) => update("ingredients", value)} />
+          <TextAreaField field="notes" label="ملاحظات" value={form.notes ?? ""} maxLength={foodTextMax.notes} error={errors.notes} onChange={(value) => update("notes", value)} />
         </FormSection>
 
-        <FormSection title="أساس القيم الغذائية">
+        <FormSection title="أساس القيم والوحدة الافتراضية">
           <SelectField
             field="nutrition_basis"
             label="أساس القيم"
@@ -355,16 +366,6 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
             onChange={(value) => updateNutritionBasis(value as FoodFormValues["nutrition_basis"])}
             options={Object.entries(nutritionBasisLabels)}
           />
-        </FormSection>
-
-        <FormSection title="القيم الغذائية الأساسية">
-          <NumberField field="calories" label="السعرات" value={form.calories} required error={errors.calories} onChange={(value) => update("calories", value)} />
-          <NumberField field="protein_g" label="البروتين (جم)" value={form.protein_g} required error={errors.protein_g} onChange={(value) => update("protein_g", value)} />
-          <NumberField field="carb_g" label="الكربوهيدرات (جم)" value={form.carb_g} required error={errors.carb_g} onChange={(value) => update("carb_g", value)} />
-          <NumberField field="fat_g" label="الدهون (جم)" value={form.fat_g} required error={errors.fat_g} onChange={(value) => update("fat_g", value)} />
-        </FormSection>
-
-        <FormSection title="الوحدة الافتراضية">
           <SelectField
             field="default_unit_type"
             label="الوحدة الافتراضية"
@@ -386,6 +387,13 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
           />
         </FormSection>
 
+        <FormSection title="القيم الغذائية الأساسية">
+          <NumberField field="calories" label="السعرات" value={form.calories} required error={errors.calories} onChange={(value) => update("calories", value)} />
+          <NumberField field="protein_g" label="البروتين (جم)" value={form.protein_g} required error={errors.protein_g} onChange={(value) => update("protein_g", value)} />
+          <NumberField field="carb_g" label="الكربوهيدرات (جم)" value={form.carb_g} required error={errors.carb_g} onChange={(value) => update("carb_g", value)} />
+          <NumberField field="fat_g" label="الدهون (جم)" value={form.fat_g} required error={errors.fat_g} onChange={(value) => update("fat_g", value)} />
+        </FormSection>
+
         <details className="details-block food-optional-section" open={optionalHasErrors ? true : undefined}>
           <summary>القيم الغذائية الإضافية</summary>
           <div className="form-grid" style={{ marginTop: 12 }}>
@@ -401,26 +409,6 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
             ))}
           </div>
         </details>
-
-        <FormSection title="مصدر البيانات الغذائية">
-          <SelectField
-            field="nutrition_data_source"
-            label="مصدر البيانات الغذائية"
-            value={form.nutrition_data_source}
-            required
-            error={errors.nutrition_data_source}
-            onChange={(value) => update("nutrition_data_source", value as FoodFormValues["nutrition_data_source"])}
-            options={registry.nutrition_data_sources.map((item) => [item.key, item.label_ar])}
-          />
-        </FormSection>
-
-        <FormSection title="المكونات">
-          <TextAreaField field="ingredients" label="المكونات" value={form.ingredients ?? ""} error={errors.ingredients} onChange={(value) => update("ingredients", value)} />
-        </FormSection>
-
-        <FormSection title="ملاحظات">
-          <TextAreaField field="notes" label="ملاحظات" value={form.notes ?? ""} maxLength={foodTextMax.notes} error={errors.notes} onChange={(value) => update("notes", value)} />
-        </FormSection>
 
         <FoodFormActions isEdit={isEdit} foodId={foodId} pending={saveMutation.isPending} checking={checkingWarnings} food={foodQuery.data ?? null} onDelete={setDeleteTarget} />
       </form>
