@@ -20,8 +20,17 @@
 
 .panel { display: grid; gap: 14px; }
 .notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-radius: var(--radius-card); background: var(--accent-soft); padding: 14px 16px; }
-.controls { display: grid; grid-template-columns: minmax(220px, 1fr) repeat(2, minmax(150px, auto)); gap: 12px; align-items: end; border-radius: var(--radius-card); background: var(--surface); padding: 16px; box-shadow: var(--shadow-sm); }
+.controls { display: grid; grid-template-columns: 1fr; gap: 12px; align-items: end; }
+.filters { border-radius: var(--radius-card); background: var(--surface); padding: 16px; box-shadow: var(--shadow-sm); }
 .controls label { display: grid; gap: 5px; color: var(--muted); font-size: .8rem; font-weight: 800; }
+.searchRow { grid-column: 1 / -1; display: flex; gap: 8px; align-items: stretch; }
+.searchRow .searchField { flex: 1; }
+.searchRow .searchField input { width: 100%; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-sm); }
+.filterToggle { position: relative; display: grid; place-items: center; flex: 0 0 auto; width: 48px; min-height: 46px; border: 0; border-radius: var(--radius); background: var(--field-bg); color: var(--ink); }
+.filterToggle[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent); }
+.filterCount { position: absolute; top: 4px; inset-inline-end: 4px; min-width: 18px; height: 18px; border-radius: 999px; background: var(--accent); color: white; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.filters { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.filters[hidden] { display: none; }
 .controls input, .controls select { min-width: 0; min-height: 46px; border: 1px solid transparent; border-radius: var(--radius); background: var(--field-bg); color: var(--ink); padding: 8px 14px; }
 .controls input:focus, .controls select:focus { border-color: var(--accent); background: var(--surface); outline: 3px solid color-mix(in srgb, var(--accent) 22%, white); }
 .resultBar { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .85rem; }
@@ -61,8 +70,12 @@
 .referenceZones { display: grid; gap: 10px; padding: 0; list-style: none; }
 .referenceZones li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; min-width: 0; }
 .exactValue { min-width: 0; overflow-wrap: anywhere; }
-.historyRow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-block-end: 10px; border-radius: var(--radius-card); background: var(--surface); padding: 12px 16px; box-shadow: var(--shadow-sm); }
-@media (max-width: 500px) { .historyRow { grid-template-columns: minmax(0, 1fr); justify-items: start; } }
+.historyRow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 12px; margin-block-end: 10px; border-radius: var(--radius-card); background: var(--surface); padding: 12px 16px; box-shadow: var(--shadow-sm); }
+@media (max-width: 500px) {
+  .historyRow { grid-template-columns: minmax(0, 1fr) auto; justify-items: start; }
+  .historyRow > * { grid-column: 1; }
+  .historyRow > .resultMenu { grid-column: 2; grid-row: 1; justify-self: end; }
+}
 
 .batchBackdrop { position: fixed; inset: 0; z-index: 80; background: rgb(0 0 0 / 45%); }
 .batchDialog { position: fixed; inset: 50% auto auto 50%; transform: translate(-50%, -50%); z-index: 81; width: min(680px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; border: 0; border-radius: var(--radius-hero); padding: 22px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-float); }
@@ -84,9 +97,22 @@
 @media (max-width: 700px) {
   .heading, .notice { align-items: stretch; flex-direction: column; }
   .controls { grid-template-columns: 1fr; }
+  .filters { grid-template-columns: 1fr; }
   .row { grid-template-columns: 1fr; }
   .latest { justify-items: start; text-align: start; }
 }
 
 .historyNote { grid-column: 1 / -1; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
 .batchNote { display: grid; gap: 6px; min-width: 0; }
+.rangeBar { position: relative; height: 10px; margin: 6px 4px 8px; border-radius: 999px; background: var(--surface-strong); }
+.rangeSegment { position: absolute; top: 0; bottom: 0; background: var(--surface-strong); }
+.rangeTrack { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; }
+.rangeSegment[data-tone="within"] { background: color-mix(in srgb, var(--accent) 38%, white); }
+.rangeSegment[data-tone="caution"] { background: color-mix(in srgb, var(--warning) 40%, white); }
+.rangeSegment[data-tone="outside"] { background: color-mix(in srgb, var(--danger) 30%, white); }
+.rangeMarker { position: absolute; top: 50%; width: 20px; height: 20px; border: 3px solid white; border-radius: 50%; background: var(--ink); box-shadow: 0 1px 4px rgba(0, 0, 0, .25); transform: translate(-50%, -50%); }
+.resultMenu { position: relative; }
+.resultMenuList { position: absolute; inset-inline-end: 0; top: calc(100% + 4px); z-index: 20; display: grid; min-width: 180px; overflow: hidden; border-radius: var(--radius); background: var(--surface); box-shadow: 0 14px 34px rgba(20, 32, 24, .16); }
+.resultMenuList button { display: flex; align-items: center; gap: 8px; min-height: 44px; border: 0; background: transparent; color: var(--ink); padding: 8px 14px; font: inherit; text-align: start; }
+.resultMenuList button:hover, .resultMenuList button:focus-visible { background: var(--surface-strong); }
+.resultMenuList .dangerItem { color: var(--danger); }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SlidersHorizontal } from "lucide-react";
 
 import type { LabCatalogResponse, LabOverviewResponse } from "@/lib/types";
 import { nextLabsView, type LabListItem, type LabSort, type LabsView } from "./lab-model";
@@ -42,10 +43,14 @@ type LabsViewProps = {
   adminSelected?: boolean;
   onAddTest?: (testKey: string) => void;
   detailHref?: (testKey: string) => string;
+  filtersOpen: boolean;
+  onToggleFilters: () => void;
   onSearchChange: (value: string) => void;
   onCategoryChange: (value: string | null) => void;
   onSortChange: (value: LabSort) => void;
 };
+
+const DEFAULT_SORT: LabSort = "newest_updated";
 
 function EligibilityNotice({ eligibility }: { eligibility: LabsViewProps["eligibility"] }) {
   if (eligibility.allowed) return null;
@@ -58,12 +63,21 @@ function EligibilityNotice({ eligibility }: { eligibility: LabsViewProps["eligib
   return null;
 }
 
-function Controls({ catalog, search, category, sort, onSearchChange, onCategoryChange, onSortChange }: LabsViewProps) {
+// Search stays visible; category and sort sit behind one toggle (Product Owner decision, 29 Oct 2026).
+function Controls({ catalog, search, category, sort, filtersOpen, onToggleFilters, onSearchChange, onCategoryChange, onSortChange }: LabsViewProps) {
+  const activeFilters = Number(category !== null) + Number(sort !== DEFAULT_SORT);
   return <div className={styles.controls}>
-    <label className={styles.searchField}>
-      <span>البحث في التحاليل</span>
-      <input type="search" value={search} onChange={(event) => onSearchChange(event.target.value)} />
-    </label>
+    <div className={styles.searchRow}>
+      <label className={styles.searchField}>
+        <span className="sr-only">البحث في التحاليل</span>
+        <input type="search" value={search} placeholder="البحث في التحاليل" onChange={(event) => onSearchChange(event.target.value)} />
+      </label>
+      <button type="button" className={styles.filterToggle} aria-label="التصنيف والترتيب" aria-expanded={filtersOpen} aria-controls="labs-filters" onClick={onToggleFilters}>
+        <SlidersHorizontal size={19} aria-hidden="true" />
+        {activeFilters ? <span className={styles.filterCount} aria-hidden="true">{activeFilters}</span> : null}
+      </button>
+    </div>
+    <div id="labs-filters" className={styles.filters} hidden={!filtersOpen}>
     <label>
       <span>التصنيف</span>
       <select value={category ?? ""} onChange={(event) => onCategoryChange(event.target.value || null)}>
@@ -81,6 +95,7 @@ function Controls({ catalog, search, category, sort, onSearchChange, onCategoryC
         <option value="category">التصنيف</option>
       </select>
     </label>
+    </div>
   </div>;
 }
 

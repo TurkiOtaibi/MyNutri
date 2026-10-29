@@ -313,6 +313,8 @@ describe("Labs governed status presentation", () => {
       catalog: catalogFixture,
       rows: toLabListItems(catalogFixture, response, "owned"),
       eligibility: response.eligibility,
+      filtersOpen: false,
+      onToggleFilters: () => undefined,
       search: "",
       category: null,
       sort: "newest_updated",

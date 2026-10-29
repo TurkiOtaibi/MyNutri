@@ -17,7 +17,9 @@ async function seed(api: LabsApi, offset = -2, value = "38.797950") {
   return { id, date };
 }
 async function open(page: Page, id: string, kind: "edit" | "delete" = "edit") {
-  await row(page, id).getByRole("button", { name: kind === "edit" ? /^تعديل نتيجة/ : /^حذف نتيجة/ }).click();
+  // «تعديل» and «حذف» live in the row's «⋯» menu (issue #151).
+  await row(page, id).getByRole("button", { name: /^خيارات نتيجة/ }).click();
+  await row(page, id).getByRole("menuitem", { name: kind === "edit" ? /^تعديل نتيجة/ : /^حذف نتيجة/ }).click();
   await expect(kind === "edit" ? edit(page) : deletion(page)).toBeVisible();
 }
 
@@ -47,7 +49,7 @@ test("edit uses full entered precision and supported units, immutable identity a
   await expect(lastEditControl).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(edit(page)).toHaveCount(0);
-  await expect(row(page, id).getByRole("button", { name: /^تعديل نتيجة/ })).toBeFocused();
+  await expect(row(page, id).getByRole("button", { name: /^خيارات نتيجة/ })).toBeFocused();
 });
 
 test("a second browser context cannot overwrite a result changed after its dialog opened", async ({ labsPage: first, labsApi, browser }) => {
@@ -243,7 +245,7 @@ test("delete cancellation identifies test/date, starts at cancel, restores opene
   await expect(deletion(page).getByRole("button", { name: "إلغاء", exact: true })).toBeFocused();
   await deletion(page).getByRole("button", { name: "إلغاء", exact: true }).click();
   await expect(deletion(page)).toHaveCount(0);
-  await expect(row(page, id).getByRole("button", { name: /^حذف نتيجة/ })).toBeFocused();
+  await expect(row(page, id).getByRole("button", { name: /^خيارات نتيجة/ })).toBeFocused();
   expect(deletes).toBe(0);
 });
 

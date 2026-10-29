@@ -35,6 +35,7 @@ describe("issue 102 missing UI states", () => {
   it("BR-LAB-011 distinguishes the Admin's own empty Labs from a monitored user's empty Labs", () => {
     const props = { catalog: catalogFixture, rows: [], eligibility: { allowed: false, reason: "read_only" as const },
       search: "", category: null, sort: "newest_updated" as const, readOnly: true,
+      filtersOpen: false, onToggleFilters: () => {},
       onSearchChange: () => {}, onCategoryChange: () => {}, onSortChange: () => {}, };
     const own = renderToStaticMarkup(createElement(OwnedLabsView, { ...props, adminOwn: true }));
     expect(own).toContain("تسجيل التحاليل غير متاح لحساب المشرف.");

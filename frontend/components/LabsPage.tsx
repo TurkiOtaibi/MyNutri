@@ -22,10 +22,11 @@ export function LabsPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [sort, setSort] = useState<LabSort>("newest_updated");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [viewOwner, setViewOwner] = useState(actorId);
   if (viewOwner !== actorId) {
     setViewOwner(actorId);
-    setView("owned"); setSearch(""); setCategory(null); setSort("newest_updated");
+    setView("owned"); setSearch(""); setCategory(null); setSort("newest_updated"); setFiltersOpen(false);
   }
   const batchOpener = useRef<HTMLElement | null>(null);
   const queryPolicy = { staleTime: 0, refetchOnMount: "always" as const, refetchOnWindowFocus: "always" as const };
@@ -67,6 +68,8 @@ export function LabsPage() {
     onSearchChange: setSearch,
     onCategoryChange: setCategory,
     onSortChange: setSort,
+    filtersOpen,
+    onToggleFilters: () => setFiltersOpen((current) => !current),
     onAddTest: (testKey: string) => openBatch([testKey]),
     detailHref: (testKey: string) => `/labs/${encodeURIComponent(testKey)}`,
   };
