@@ -71,14 +71,14 @@ export function FoodCard({
   categoryLabel,
 }: FoodItemProps) {
   const nutrition = calculateServingNutrition(food);
-  const secondary = [food.brand, categoryLabel].filter(Boolean).join(" · ");
   return (
     <article className="food-card">
       <Link className="food-card-overlay" href={`/foods/${food.id}`} aria-label={`عرض تفاصيل ${food.name}`} />
       <div className="food-card-heading">
         <div>
-          <h2 className="food-card-title" title={food.name} dir="auto">{food.name}</h2>
-          <p className="food-card-secondary" dir="auto">{secondary}</p>
+          {/* Lines stay right-aligned (RTL); only the names are isolated so Latin text keeps its own order. */}
+          <h2 className="food-card-title" title={food.name}><bdi dir="auto">{food.name}</bdi></h2>
+          <p className="food-card-secondary">{food.brand ? <><bdi dir="auto">{food.brand}</bdi>{categoryLabel ? " · " : null}</> : null}{categoryLabel}</p>
         </div>
         {isAdmin ? <FoodActionsMenu food={food} open={menuOpen} onOpenChange={onMenuChange} onDelete={onDelete} /> : null}
       </div>
