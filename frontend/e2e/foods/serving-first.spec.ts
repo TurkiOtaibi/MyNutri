@@ -189,7 +189,14 @@ test.describe("Foods serving-first catalog and details @foods", () => {
     await page.goto("/foods");
     const card = page.locator(".food-card", { hasText: food.name });
     await expect(card).toBeVisible();
-    expect(await card.locator(".food-card-title").getAttribute("dir")).toBe("auto");
+    // The name is isolated (dir=auto) but the line itself stays right-aligned like the rest of the RTL card.
+    expect(await card.locator(".food-card-title bdi").getAttribute("dir")).toBe("auto");
+    for (const line of [".food-card-title", ".food-card-secondary"]) {
+      expect(await card.locator(line).evaluate((element) => getComputedStyle(element).direction)).toBe("rtl");
+    }
+    // The Latin brand starts the secondary line, yet the line's text still hugs the right edge of the card.
+    const [brandBox, cardBox] = await Promise.all([card.locator(".food-card-secondary bdi").boundingBox(), card.boundingBox()]);
+    expect(brandBox!.x + brandBox!.width).toBeGreaterThan(cardBox!.x + cardBox!.width - 24);
     await expectNoHorizontalOverflow(page);
   });
 });

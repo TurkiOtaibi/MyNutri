@@ -777,11 +777,11 @@ a {
 .food-card {
   position: relative;
   display: grid;
-  gap: 8px;
+  gap: 6px;
   border: 1px solid transparent;
   border-radius: var(--radius-card);
   background: var(--surface);
-  padding: 14px 16px 12px;
+  padding: 10px 14px 8px;
   box-shadow: var(--shadow-sm);
 }
 
@@ -799,7 +799,8 @@ a {
 
 .food-card-heading {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px;
+  /* auto: the actions column only takes space when the Admin menu exists. */
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: start;
 }
@@ -807,11 +808,13 @@ a {
 .food-card-title {
   margin: 0;
   font-size: 15px;
-  line-height: 1.45;
+  line-height: 1.4;
+  text-align: start;
 }
 
 .food-card-secondary {
-  margin: 2px 0 0;
+  margin: 1px 0 0;
+  text-align: start;
   overflow: hidden;
   color: var(--muted);
   font-size: 12px;
@@ -830,7 +833,7 @@ a {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
   border-top: 1px solid var(--line-subtle);
-  padding-top: 8px;
+  padding-top: 6px;
 }
 
 .serving-metric {
