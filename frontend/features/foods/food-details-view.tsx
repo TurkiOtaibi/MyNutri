@@ -14,10 +14,10 @@ import type { FoodResponse } from "@/lib/types";
 
 export type NutritionMode = "serving" | "basis";
 
-export function DetailServingMetric({ value, label, prominent = false }: { value: string; label: string; prominent?: boolean }) {
+export function DetailServingMetric({ value, label, unit, prominent = false }: { value: string; label: string; unit?: string; prominent?: boolean }) {
   return (
     <div className={`detail-serving-metric ${prominent ? "prominent" : ""}`}>
-      <strong>{value}</strong>
+      <strong><bdi dir="ltr">{value}</bdi>{unit && <small> {unit}</small>}</strong>
       <span>{label}</span>
     </div>
   );
