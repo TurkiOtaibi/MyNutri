@@ -10,6 +10,7 @@ import { createFood, getFood, getNutritionRegistry, listFoodsPage, updateFood } 
 import { FoodUsageNotice, useFoodUsage } from "@/features/foods/food-usage";
 import { useDebouncedValue } from "@/features/diary/diary-hooks";
 import {
+  defaultServingText,
   defaultUnitLabels,
   nutritionBasisLabels,
   unitBasisLabels
@@ -280,6 +281,11 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
 
   const registry = registryQuery.data;
   const selectedCategory = registry.food_taxonomy.find((item) => item.key === form.primary_category);
+  const previewErrors = isEdit ? null : validateFoodForm(form);
+  const servingPreview = previewErrors && !previewErrors.unit_amount && !previewErrors.unit_basis
+    && !previewErrors.default_unit_type && form.unit_amount !== null
+    ? defaultServingText({ ...form, unit_amount: form.unit_amount })
+    : null;
 
   return (
     <>
@@ -296,7 +302,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
         </div>
       </div>
 
-      <form className="food-form-layout" onSubmit={submit} noValidate>
+      <form className={isEdit ? "food-form-layout" : "food-form-layout food-create-form"} onSubmit={submit} noValidate>
         {pendingServerFood ? (
           <div className="unsaved-conflict" role="status">
             <p>توجد نسخة أحدث من هذا الطعام على الخادم. احتفظنا بتعديلاتك الحالية.</p>
@@ -385,9 +391,11 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
             onChange={(value) => update("unit_basis", value as FoodFormValues["unit_basis"])}
             options={Object.entries(unitBasisLabels)}
           />
+          {servingPreview && <p className="food-create-serving">الحصة في اليوميات <strong>{servingPreview}</strong></p>}
         </FormSection>
 
         <FormSection title="القيم الغذائية الأساسية">
+          {!isEdit && <p className="food-create-basis">أدخل قيم الملصق الغذائي <strong>{nutritionBasisLabels[form.nutrition_basis]}</strong>.</p>}
           <NumberField field="calories" label="السعرات" value={form.calories} required error={errors.calories} onChange={(value) => update("calories", value)} />
           <NumberField field="protein_g" label="البروتين (جم)" value={form.protein_g} required error={errors.protein_g} onChange={(value) => update("protein_g", value)} />
           <NumberField field="carb_g" label="الكربوهيدرات (جم)" value={form.carb_g} required error={errors.carb_g} onChange={(value) => update("carb_g", value)} />
@@ -397,6 +405,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
         <details className="details-block food-optional-section" open={optionalHasErrors ? true : undefined}>
           <summary>القيم الغذائية الإضافية</summary>
           <div className="form-grid" style={{ marginTop: 12 }}>
+            {!isEdit && <p className="food-create-basis">أدخل قيم الملصق الغذائي <strong>{nutritionBasisLabels[form.nutrition_basis]}</strong>.</p>}
             {nutrientAdapter.editable.map(({ field, label, unit }) => (
               <NumberField
                 key={field}

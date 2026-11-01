@@ -18,6 +18,9 @@ test.describe("Food creation @foods", () => {
         carb_g: 20.25,
         fat_g: 3.75
       });
+      const unit = testCase.unit === "g" ? "جم" : "مل";
+      await expect(page.locator(".food-create-serving")).toContainText(`${testCase.amount} ${unit}`);
+      await expect(page.locator(".food-create-basis").first()).toContainText(`لكل 100 ${unit}`);
       await submitFoodForm(page);
       await expect(page).toHaveURL(/\/foods\/[0-9a-f-]+$/);
       const id = page.url().split("/").pop()!;
