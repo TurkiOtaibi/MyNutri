@@ -24,6 +24,19 @@
   box-shadow: none;
 }
 
+:global(.food-create-form) :global(.panel-title) { font-weight: 700; }
+:global(.food-create-basis), :global(.food-create-serving) {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--surface-strong);
+  color: var(--ink);
+}
+:global(.food-create-basis) strong, :global(.food-create-serving) strong { color: var(--accent-strong); }
+:global(.food-create-serving) { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; }
+:global(.food-create-form) :is(input, select, textarea) { scroll-margin-block: 6rem 10rem; }
+
 :global(.food-optional-section) {
   background: var(--surface);
 }
