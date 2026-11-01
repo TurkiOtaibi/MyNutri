@@ -4,6 +4,7 @@ import { formatGregorianArabicDate } from "@/lib/dates";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/components/AuthProvider";
 import { useSessionAbortSignal } from "@/components/SessionQueryProvider";
@@ -217,14 +218,14 @@ export function LabTestPage({ testKey }: { testKey: string }) {
     if (resultDialog?.opener?.isConnected) return resultDialog.opener;
     return document.getElementById("lab-detail-add");
   };
-  return <div className={styles.labsPage}>
-    <Link href="/labs">رجوع إلى التحاليل</Link>
-    {detail.isPending ? <p role="status">جارٍ تحميل التحاليل...</p> : null}
+  return <div className={`${styles.labsPage} ${styles.ownerDetail}`}>
+    <Link href="/labs" className={styles.detailBack}><ArrowRight size={18} aria-hidden="true" />رجوع إلى التحاليل</Link>
+    {detail.isPending ? <p className={styles.pageState} role="status">جارٍ تحميل التحاليل...</p> : null}
     {batch.opening ? <p role="status">جارٍ تحميل تاريخ التحاليل...</p> : null}
     {batch.openError ? <p role="alert">{batch.openError}</p> : null}
     {resultPending && !resultDialog ? <p role="status">جارٍ تحميل النتيجة الحالية...</p> : null}
     {resultOpenError ? <p role="alert">{resultOpenError}</p> : null}
-    <div ref={undoNotice} tabIndex={-1} role={undoFailed ? "alert" : "status"}>
+    <div className={styles.detailNotice} ref={undoNotice} tabIndex={-1} role={undoFailed ? "alert" : "status"}>
       {resultMessage ? <span>{resultMessage}</span> : null}
       {undoResult && !detail.data?.read_only ? <button type="button" className="btn" onClick={() => { void undoDelete(); }}>تراجع</button> : null}
     </div>
@@ -237,7 +238,7 @@ export function LabTestPage({ testKey }: { testKey: string }) {
         if (batch.refreshError) void batch.refresh(); else void refreshResults();
       }}>إعادة تحميل التحاليل</button>
     </div> : null}
-    {detail.data ? <LabTestView detail={detail.data} selectedResultId={selectedResultId} onSelectResult={setSelectedResultId}
+    {detail.data ? <LabTestView showReadingFirst detail={detail.data} selectedResultId={selectedResultId} onSelectResult={setSelectedResultId}
       ownerResultActions={result => <LabResultMenu dateLabel={formatGregorianArabicDate(result.test_date)} disabled={resultPending || batchActive}
         onEdit={opener => { void openResult("edit", result, opener); }} onDelete={opener => { void openResult("delete", result, opener); }} />}
       ownerActions={<button id="lab-detail-add" className="btn primary" type="button" disabled={batch.opening || !catalog.data || resultPending} onClick={() => {

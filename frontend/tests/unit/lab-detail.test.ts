@@ -22,6 +22,15 @@ const render = (data = detail, selectedResultId: string | null = null) => render
 }));
 
 describe("shared Lab detail presentation", () => {
+  it("puts the selected historical reading before the chart on the owner detail page", () => {
+    const html = renderToStaticMarkup(createElement(LabTestView, {
+      detail, selectedResultId: results[1].id, onSelectResult: () => undefined, showReadingFirst: true,
+    }));
+    const beforeChart = html.split("<figure")[0];
+    expect(beforeChart).toContain(`data-reference-date="${results[1].test_date}"`);
+    expect(beforeChart).toContain(results[1].display_value);
+    expect(beforeChart).not.toContain(results[0].display_value);
+  });
   it("shows the same escaped note to owner and read-only Admin without Admin mutation controls", () => {
     const data = { ...detail, results: [{ ...results[0], note: 'مختبر <script>alert(1)</script>' }] };
     for (const read_only of [false, true]) {

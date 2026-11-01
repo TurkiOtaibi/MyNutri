@@ -161,3 +161,30 @@
   .overview .latest { justify-items: end; text-align: end; padding-inline-start: 12px; }
   .overview .latest > strong { font-size: 1.15rem; }
 }
+
+.detailBack { gap: 8px; color: var(--accent-strong); font-weight: 700; }
+.detailNotice:empty { position: absolute; width: 1px; height: 1px; overflow: hidden; }
+.ownerDetail { min-width: 0; }
+.ownerDetail .labsPage { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.ownerDetail .heading { align-items: center; }
+.ownerDetail h2 { font-size: 1.1rem; font-weight: 700; }
+.ownerDetail .historyFigure, .ownerDetail .referencePanel { padding: clamp(16px, 2vw, 24px); }
+.selectedReading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-block: 12px 18px; }
+.selectedReading strong { min-width: 0; max-width: 100%; overflow-wrap: anywhere; font-size: 1.65rem; font-variant-numeric: tabular-nums; }
+.selectedReading time { flex-basis: 100%; color: var(--muted); }
+.readingLabel { flex-basis: 100%; font-weight: 700; }
+.ownerDetail .referenceZones { margin-block: 16px; }
+.ownerDetail .referenceZones li { padding-block: 6px; border-bottom: 1px solid var(--line-subtle); }
+.ownerDetail .chartPlot { width: min(100%, 500px); height: auto; aspect-ratio: 3 / 2; margin-inline: auto; }
+.ownerDetail .historyFigure:has(.empty) figcaption { display: none; }
+.ownerDetail .historyRow:has([aria-pressed="true"]) { box-shadow: inset -3px 0 var(--accent), var(--shadow-sm); }
+.ownerDetail .historyRow [aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-strong); border-color: var(--accent); }
+.ownerDetail .historyRow > .exactValue { font-weight: 700; font-variant-numeric: tabular-nums; }
+.ownerDetail > [role="alert"], .detailNotice:not(:empty) { padding: 12px 16px; border-radius: var(--radius); background: var(--surface); }
+@media (min-width: 800px) {
+  .ownerDetail .labsPage { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); align-items: start; }
+  .ownerDetail .heading, .ownerDetail .panel { grid-column: 1 / -1; }
+}
+@media (max-width: 700px) {
+  .ownerDetail .heading { align-items: stretch; }
+}
