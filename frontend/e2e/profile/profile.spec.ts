@@ -531,6 +531,7 @@ test.describe("@profile Profile and targets redesign", () => {
 
     await page.goto("/profile?date-effective=1");
     const effectiveDate = page.getByRole("textbox", { name: "تاريخ سريان الأهداف" });
+    await expect(effectiveDate).toHaveAccessibleDescription("اختر اليوم أو تاريخًا لاحقًا لبدء تطبيق الأهداف الجديدة.");
     await expect(effectiveDate).toHaveAttribute("min", today);
     await expect(effectiveDate).toHaveValue(today);
 
