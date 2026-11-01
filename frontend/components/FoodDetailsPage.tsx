@@ -137,9 +137,10 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
           <ArrowRight size={21} aria-hidden="true" />
         </Link>
         <div className="food-detail-identity">
-          <h1 className="food-detail-name" dir="auto">{food.name}</h1>
-          <p className="food-detail-secondary" dir="auto">
-            {[food.brand, categoryLabel || food.primary_category].filter(Boolean).join(" · ")}
+          <h1 className="food-detail-name"><bdi dir="auto">{food.name}</bdi></h1>
+          <p className="food-detail-secondary">
+            {food.brand && <><bdi dir="auto">{food.brand}</bdi>{" · "}</>}
+            <bdi dir="auto">{categoryLabel || food.primary_category}</bdi>
           </p>
           <span className="serving-badge detail-serving-badge">{defaultServingText(food)}</span>
         </div>
@@ -171,18 +172,18 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
             <p className="section-eyebrow">الحصة الافتراضية</p>
             <h2 id="serving-summary-title">{defaultServingText(food)}</h2>
           </div>
-          <span className="basis-reference">القيم محسوبة من بيانات {basisLabel}</span>
         </div>
         {servingNutrition ? (
           <div className="detail-serving-grid">
             <DetailServingMetric value={formatServingCalories(servingNutrition.calories)} label="سعرة" prominent />
-            <DetailServingMetric value={formatServingMacro(servingNutrition.protein_g)} label="بروتين" />
-            <DetailServingMetric value={formatServingMacro(servingNutrition.carb_g)} label="كربوهيدرات" />
-            <DetailServingMetric value={formatServingMacro(servingNutrition.fat_g)} label="دهون" />
+            <DetailServingMetric value={formatServingMacro(servingNutrition.protein_g)} label="بروتين" unit="جم" />
+            <DetailServingMetric value={formatServingMacro(servingNutrition.carb_g)} label="كربوهيدرات" unit="جم" />
+            <DetailServingMetric value={formatServingMacro(servingNutrition.fat_g)} label="دهون" unit="جم" />
           </div>
         ) : (
           <p className="nutrition-unavailable">تعذر حساب القيم الغذائية للحصة الافتراضية.</p>
         )}
+        <p className="basis-reference">القيم محسوبة من بيانات {basisLabel}</p>
       </section>
 
       {registryNutrients ? (
@@ -197,8 +198,8 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
       <section className="nutrition-details-surface" aria-labelledby="nutrition-details-title">
         <div className="nutrition-details-toolbar">
           <div>
-            <p className="section-eyebrow">البيانات الغذائية الكاملة</p>
             <h2 id="nutrition-details-title">تفاصيل القيم الغذائية</h2>
+            <p className="food-detail-mode-caption" role="status">القيم المعروضة: {mode === "serving" ? defaultServingText(food) : basisLabel}</p>
           </div>
           <div className="nutrition-mode-control" role="group" aria-label="طريقة عرض القيم الغذائية">
             <button type="button" className={mode === "serving" ? "active" : ""} aria-pressed={mode === "serving"} onClick={() => setMode("serving")}>

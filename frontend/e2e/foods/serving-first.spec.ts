@@ -48,6 +48,7 @@ test.describe("Foods serving-first catalog and details @foods", () => {
     await page.goto(`/foods/${food.id}`);
 
     await expect(page.locator(".serving-summary")).toContainText("69");
+    await expect(page.locator(".food-detail-mode-caption")).toContainText("قطعة واحدة · 14 جم");
     await expect(page.locator(".serving-summary")).toContainText("1.1");
     await expect(page.getByRole("button", { name: "الحصة الافتراضية" })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByText("إجمالي السكر", { exact: true })).toHaveCount(0);
@@ -56,6 +57,8 @@ test.describe("Foods serving-first catalog and details @foods", () => {
 
     await page.getByRole("button", { name: "لكل 100 جم" }).click();
     await expect(page.getByRole("button", { name: "لكل 100 جم" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".food-detail-mode-caption")).toContainText("لكل 100 جم");
+    await expect(page.locator(".serving-summary .prominent")).toContainText("69");
     await expect(page.locator(".nutrition-group", { hasText: "القيم الأساسية" })).toContainText("492.86");
     await expect(page.locator(".nutrition-group", { hasText: "القيم الأساسية" })).toContainText("7.86");
   });
