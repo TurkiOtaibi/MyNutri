@@ -2,7 +2,7 @@
 
 import { Plus, RotateCcw, Search, X } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { clearFoodDeletionNotice, readFoodDeletionNotice } from "@/features/foods/food-notices";
 
@@ -36,6 +36,7 @@ export function FoodsPage() {
   const queryClient = useQueryClient();
   const isAdmin = account?.role === "admin";
   const [searchInput, setSearchInput] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [sort, setSort] = useState<FoodSort>("name");
@@ -130,6 +131,7 @@ export function FoodsPage() {
   function clearFilters() {
     setSearchInput("");
     resetCollection({ search: "", category: "" });
+    searchRef.current?.focus();
   }
 
   return (
@@ -149,21 +151,25 @@ export function FoodsPage() {
 
       <section className="foods-catalog" aria-label="كتالوج الأطعمة">
         <div className="foods-search-row">
-          <label className="foods-search-field">
-            <span className="sr-only">بحث باسم الطعام</span>
+          <div className="foods-search-field">
             <Search size={19} aria-hidden="true" />
             <input
+              ref={searchRef}
+              dir={searchInput ? "auto" : "rtl"}
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
               placeholder="ابحث باسم الطعام أو العلامة التجارية..."
               aria-label="بحث باسم الطعام"
             />
             {searchInput ? (
-              <button type="button" className="search-clear" onClick={() => setSearchInput("")} aria-label="مسح البحث">
+              <button type="button" className="search-clear" onClick={() => {
+                setSearchInput("");
+                searchRef.current?.focus();
+              }} aria-label="مسح البحث">
                 <X size={17} aria-hidden="true" />
               </button>
             ) : null}
-          </label>
+          </div>
 
           <div className="foods-controls">
             <div className="foods-desktop-controls">
