@@ -35,12 +35,14 @@
     "@types/react-dom": "^19.2.0",
     "eslint": "9.39.5",
     "eslint-config-next": "16.4.3",
+    "minimatch": "11.0.3",
     "swagger-typescript-api": "13.12.6",
     "tailwindcss": "4.3.2",
     "typescript": "6.0.3",
     "vitest": "4.1.12"
   },
   "overrides": {
+    "minimatch": "$minimatch",
     "nanoid": "3.3.18",
     "postcss": "8.5.23",
     "sharp": "0.35.5",
