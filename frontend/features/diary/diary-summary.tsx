@@ -78,7 +78,7 @@ export function CompactWeekNavigator({
   );
 }
 
-export function DailyProgressSummary({ totals, targets, pending, failed, onOpenNutrition }: { totals: NutritionTotals; targets: TargetResponse | null; pending: boolean; failed: boolean; onOpenNutrition: () => void }) {
+export function DailyProgressSummary({ totals, targets, hasLoggedFood, pending, failed, onOpenNutrition }: { totals: NutritionTotals; targets: TargetResponse | null; hasLoggedFood?: boolean; pending: boolean; failed: boolean; onOpenNutrition: () => void }) {
   if (pending) return (
     <div className="diary-summary diary-summary-loading">
       <span className="sr-only" role="status">جارٍ تحميل ملخص اليوم</span>
@@ -86,10 +86,13 @@ export function DailyProgressSummary({ totals, targets, pending, failed, onOpenN
   );
   if (failed) return <section className="diary-summary diary-summary-unavailable" aria-label="ملخص اليوم غير متاح">تعذر تحميل ملخص هذا اليوم</section>;
   if (!targets) return (
-    <section className="diary-summary state-note" aria-label="ملخص اليوم دون مصدر هدف">
+    <section className="diary-summary state-note diary-without-target" aria-label="ملخص اليوم دون مصدر هدف">
       <h2>ملخص اليوم</h2>
-      <p>لم تحدد أهدافك بعد.</p>
-      <Link className="btn primary" href="/profile">تحديد أهدافي</Link>
+      {hasLoggedFood && <p className="diary-logged-total">إجمالي اليوم <strong><bdi dir="ltr">{Math.round(totals.calories)}</bdi> سعرة</strong></p>}
+      <div className="diary-target-prompt">
+        <p>لم تحدد أهدافك بعد.</p>
+        <Link className="btn primary" href="/profile">تحديد أهدافي</Link>
+      </div>
       <button className="diary-nutrition-details-action" type="button" onClick={onOpenNutrition}>عرض التفاصيل الغذائية</button>
     </section>
   );
@@ -228,7 +231,7 @@ export function MealSections({
                 <Icon size={21} aria-hidden="true" />
                 <span className="meal-title-copy"><strong>{mealLabels[meal]}</strong><small>{items.length === 0 ? mealItemCountLabel(0) : <>{mealItemCountLabel(items.length)} · <bdi dir="ltr">{calories}</bdi> سعرة</>}</small></span>
                 <ChevronDown className="meal-chevron" size={18} aria-hidden="true" />
-                {items.length > 0 ? <small className="meal-macro-totals"><bdi dir="ltr">بروتين {formatServingMacro(protein)} جم</bdi><span> · </span><bdi dir="ltr">كربوهيدرات {formatServingMacro(carbs)} جم</bdi><span> · </span><bdi dir="ltr">دهون {formatServingMacro(fat)} جم</bdi></small> : null}
+                {items.length > 0 ? <small className="meal-macro-totals"><span>بروتين <bdi dir="ltr">{formatServingMacro(protein)}</bdi> جم</span><span> · </span><span>كربوهيدرات <bdi dir="ltr">{formatServingMacro(carbs)}</bdi> جم</span><span> · </span><span>دهون <bdi dir="ltr">{formatServingMacro(fat)}</bdi> جم</span></small> : null}
               </button>
               {meal !== "unspecified" ? (
                 <button data-diary-add-trigger={`meal-${meal}`} className="btn icon meal-add" type="button" onClick={() => onAdd(meal)} aria-label={`إضافة طعام إلى ${mealLabels[meal]}`}><Plus size={18} /></button>

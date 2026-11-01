@@ -236,7 +236,7 @@ export function DiaryPage() {
       />
 
       <div className="diary-layout">
-        <main className="diary-log" aria-labelledby="daily-log-title">
+        <section className="diary-log" aria-labelledby="daily-log-title">
           <div className="diary-section-heading">
             <h2 id="daily-log-title">وجبات اليوم</h2>
           </div>
@@ -273,7 +273,7 @@ export function DiaryPage() {
             />
             </>
           ) : null}
-        </main>
+        </section>
 
         <aside className="diary-summary-column" aria-label="ملخص تقدم اليوم">
           {weekQuery.isError ? (
@@ -284,7 +284,7 @@ export function DiaryPage() {
               compact
             />
           ) : (
-            <DailyProgressSummary totals={totals} targets={targets} pending={weekQuery.isPending || entriesQuery.isPending} failed={entriesQuery.isError} onOpenNutrition={() => setNutritionDetailsOpen(true)} />
+            <DailyProgressSummary totals={totals} targets={targets} hasLoggedFood={Boolean(selectedDay && entries.length)} pending={weekQuery.isPending || entriesQuery.isPending} failed={entriesQuery.isError} onOpenNutrition={() => setNutritionDetailsOpen(true)} />
           )}
         </aside>
       </div>
