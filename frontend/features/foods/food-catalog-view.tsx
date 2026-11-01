@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 
 import {
   calculateServingNutrition,
@@ -30,16 +30,17 @@ export function FoodTableRow({
   categoryLabel,
 }: FoodItemProps) {
   const nutrition = calculateServingNutrition(food);
+  const id = useId();
   return (
     <tr>
       <td>
-        <Link className="food-table-name" href={`/foods/${food.id}`} dir="auto" aria-label={`عرض تفاصيل ${food.name}`}>
+        <Link className="food-table-name" href={`/foods/${food.id}`} dir="auto" aria-label={`عرض تفاصيل ${food.name}`} aria-describedby={food.brand ? `${id}-brand ${id}-serving` : `${id}-serving`}>
           {food.name}
         </Link>
-        {food.brand ? <span className="food-table-brand" dir="auto">{food.brand}</span> : null}
+        {food.brand ? <span className="food-table-brand" id={`${id}-brand`}><bdi dir="auto">{food.brand}</bdi></span> : null}
       </td>
       <td>{categoryLabel}</td>
-      <td><span className="serving-label">{defaultServingText(food)}</span></td>
+      <td><span className="serving-label" id={`${id}-serving`}>{defaultServingText(food)}</span></td>
       <NutritionCells nutrition={nutrition} />
       <td className="table-actions-cell">
         {isAdmin ? <FoodActionsMenu food={food} open={menuOpen} onOpenChange={onMenuChange} onDelete={onDelete} /> : null}
@@ -71,24 +72,25 @@ export function FoodCard({
   categoryLabel,
 }: FoodItemProps) {
   const nutrition = calculateServingNutrition(food);
+  const id = useId();
   return (
     <article className="food-card">
-      <Link className="food-card-overlay" href={`/foods/${food.id}`} aria-label={`عرض تفاصيل ${food.name}`} />
+      <Link className="food-card-overlay" href={`/foods/${food.id}`} aria-label={`عرض تفاصيل ${food.name}`} aria-describedby={`${id}-identity ${id}-serving`} />
       <div className="food-card-heading">
         <div>
           {/* Lines stay right-aligned (RTL); only the names are isolated so Latin text keeps its own order. */}
           <h2 className="food-card-title" title={food.name}><bdi dir="auto">{food.name}</bdi></h2>
-          <p className="food-card-secondary">{food.brand ? <><bdi dir="auto">{food.brand}</bdi>{categoryLabel ? " · " : null}</> : null}{categoryLabel}</p>
+          <p className="food-card-secondary" id={`${id}-identity`}>{food.brand ? <><bdi dir="auto">{food.brand}</bdi>{categoryLabel ? " · " : null}</> : null}{categoryLabel}</p>
         </div>
         {isAdmin ? <FoodActionsMenu food={food} open={menuOpen} onOpenChange={onMenuChange} onDelete={onDelete} /> : null}
       </div>
-      <span className="serving-badge">{defaultServingText(food)}</span>
+      <span className="serving-badge" id={`${id}-serving`}>{defaultServingText(food)}</span>
       {nutrition ? (
         <div className="serving-macro-grid" aria-label="القيم الغذائية للحصة الافتراضية">
           <ServingMetric value={formatServingCalories(nutrition.calories)} label="سعرة" />
-          <ServingMetric value={formatServingMacro(nutrition.protein_g)} label="بروتين" />
-          <ServingMetric value={formatServingMacro(nutrition.carb_g)} label="كربوهيدرات" />
-          <ServingMetric value={formatServingMacro(nutrition.fat_g)} label="دهون" />
+          <ServingMetric value={formatServingMacro(nutrition.protein_g)} label="بروتين" unit="جم" />
+          <ServingMetric value={formatServingMacro(nutrition.carb_g)} label="كربوهيدرات" unit="جم" />
+          <ServingMetric value={formatServingMacro(nutrition.fat_g)} label="دهون" unit="جم" />
         </div>
       ) : (
         <span className="nutrition-unavailable">تعذر حساب قيم الحصة</span>
@@ -97,10 +99,10 @@ export function FoodCard({
   );
 }
 
-function ServingMetric({ value, label }: { value: string; label: string }) {
+function ServingMetric({ value, label, unit }: { value: string; label: string; unit?: string }) {
   return (
     <span className="serving-metric">
-      <strong>{value}</strong>
+      <strong><bdi dir="ltr">{value}</bdi>{unit && <span className="serving-unit"> {unit}</span>}</strong>
       <small>{label}</small>
     </span>
   );

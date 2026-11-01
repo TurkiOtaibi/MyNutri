@@ -808,6 +808,7 @@ a {
 .food-card-title {
   margin: 0;
   font-size: 15px;
+  font-weight: 700;
   line-height: 1.4;
   text-align: start;
 }
@@ -824,9 +825,12 @@ a {
 }
 
 .food-card .serving-badge {
-  position: relative;
-  z-index: 2;
+  max-width: 100%;
+  white-space: normal;
 }
+
+.food-card-overlay:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+.serving-metric .serving-unit { color: var(--muted); font-size: .75rem; font-weight: 400; }
 
 .serving-macro-grid {
   display: grid;

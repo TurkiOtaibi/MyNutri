@@ -19,6 +19,8 @@ test.describe("Foods serving-first catalog and details @foods", () => {
     const card = page.locator(".food-card", { hasText: food.name });
     await expect(card).toBeVisible();
     await expect(card).toContainText("قطعة واحدة · 14 جم");
+    await expect(card.getByRole("link")).toHaveAccessibleDescription(/قطعة واحدة · 14 جم/);
+    await expect(card.locator(".serving-metric").nth(1)).toContainText("1.1 جم");
     await expect(card.locator(".serving-metric").nth(0)).toContainText("69");
     await expect(card.locator(".serving-metric").nth(1)).toContainText("1.1");
     await expect(card.locator(".serving-metric").nth(2)).toContainText("9.5");
