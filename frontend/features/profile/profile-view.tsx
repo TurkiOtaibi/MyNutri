@@ -307,10 +307,11 @@ export function ProfileView({
                 onChange={(event) => intents.changeEffectiveFrom(event.target.value)}
                 aria-label="تاريخ سريان الأهداف"
                 aria-invalid={Boolean(errors.effective_from)}
-                aria-describedby={errors.effective_from ? "effective-from-error" : undefined}
+                aria-describedby={errors.effective_from ? "effective-from-error effective-from-hint" : "effective-from-hint"}
               />
               {errors.effective_from ? <small id="effective-from-error" className="profile-field-error">{errors.effective_from}</small> : null}
             </label>
+            <p id="effective-from-hint" className="profile-effective-hint">اختر اليوم أو تاريخًا لاحقًا لبدء تطبيق الأهداف الجديدة.</p>
           </section>
 
           {registry.pending ? <RegistryState kind="loading" /> : registry.failed ? <RegistryState kind="unavailable" onRetry={intents.retryRegistry} /> : registryReady ? <AdditionalTargetsCard targets={savedTargets} registry={registry.data!} open={layout.additionalTargetsOpen} onToggle={intents.toggleAdditionalTargets} /> : null}

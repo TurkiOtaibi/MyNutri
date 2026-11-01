@@ -196,6 +196,15 @@ button:global(.profile-setting-row):focus-visible,
   white-space: nowrap;
 }
 
+:global(.profile-effective-hint) {
+  margin: 0;
+  padding: 8px 15px;
+  background: var(--field-bg);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 :global(.profile-date-row) {
   cursor: pointer;
 }
