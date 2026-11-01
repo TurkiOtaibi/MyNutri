@@ -54,7 +54,9 @@ test("empty owner overview and the complete 51-test catalog remain distinct", as
   await expect(page.getByText("لم تسجل أي نتائج بعد.", { exact: true })).toBeVisible();
   await expect(page.getByTestId("lab-row")).toHaveCount(0);
 
-  await page.getByRole("tab", { name: "كل التحاليل" }).click();
+  await expect(page.getByText("يمكنك تغيير البحث أو التصنيف لعرض نتائج أخرى.", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "كل التحاليل", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "كل التحاليل", exact: true })).toBeFocused();
   await expect(page.getByTestId("lab-row")).toHaveCount(51);
   await expect(page.getByText("51 تحليلاً", { exact: true })).toBeVisible();
 });
@@ -125,7 +127,13 @@ test("owned filters retain a clear empty-category state", async ({ labsPage: pag
   await navigateToOwnerLabs(page);
   await openFilters(page);
   await page.locator("label").filter({ hasText: /^التصنيف/ }).locator("select").selectOption("iron");
+  await page.getByRole("searchbox", { name: "البحث في التحاليل" }).fill("Ferritin");
   await expect(page.getByText("لا توجد نتائج ضمن هذا التصنيف.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "مسح البحث والتصفية", exact: true }).click();
+  await expect(page.getByRole("searchbox", { name: "البحث في التحاليل" })).toHaveValue("");
+  await expect(page.getByRole("searchbox", { name: "البحث في التحاليل" })).toBeFocused();
+  await expect(page.locator("label").filter({ hasText: /^التصنيف/ }).locator("select")).toHaveValue("");
+  await expect(page.getByTestId("lab-row")).toHaveCount(1);
 });
 
 test("latest owned result shows canonical value, status, and date", async ({ labsPage: page, labsApi }) => {

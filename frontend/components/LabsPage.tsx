@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { CircleAlert, FlaskConical, Plus } from "lucide-react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useSessionAbortSignal } from "@/components/SessionQueryProvider";
@@ -12,6 +13,15 @@ import { filterLabs, sortLabs, toLabListItems, type LabSort, type LabsView } fro
 import { labsQueryKeys } from "@/features/labs/lab-query-keys";
 import styles from "@/features/labs/labs.module.css";
 import { getLabCatalog, getLabs } from "@/lib/api";
+
+function LabsHeading({ children }: { children?: React.ReactNode }) {
+  return <header className={styles.heading}>
+    <div className={styles.headingIdentity}><span className={styles.headingIcon}><FlaskConical size={24} aria-hidden="true" /></span>
+      <div><h1>تحاليلك</h1><p>تابع أحدث نتيجة محفوظة لكل تحليل وفق القيم المرجعية للنظام.</p></div>
+    </div>
+    {children}
+  </header>;
+}
 
 export function LabsPage() {
   const { session } = useAuth();
@@ -53,9 +63,15 @@ export function LabsPage() {
     return sortLabs(filterLabs(toLabListItems(catalog.data, overview.data, view === "owned" ? "owned" : "all"), search, category), sort);
   }, [catalog.data, category, overview.data, search, sort, view]);
 
-  if (catalog.isPending || overview.isPending) return <div className={styles.loading}>جارٍ تحميل التحاليل...</div>;
-  if (!catalog.data || !overview.data) return <div className={styles.loading} role="alert">تعذر تحميل التحاليل الحالية. حاول مرة أخرى.
-    <button className="btn" type="button" onClick={() => { void catalog.refetch(); void overview.refetch(); }}>إعادة تحميل التحاليل</button>
+  if (catalog.isPending || overview.isPending) return <div className={`${styles.labsPage} ${styles.overview}`}>
+    <LabsHeading />
+    <div className={styles.pageState} role="status"><FlaskConical size={32} aria-hidden="true" /><p>جارٍ تحميل التحاليل...</p></div>
+  </div>;
+  if (!catalog.data || !overview.data) return <div className={`${styles.labsPage} ${styles.overview}`}>
+    <LabsHeading />
+    <div className={styles.pageState} role="alert"><CircleAlert size={32} aria-hidden="true" /><p>تعذر تحميل التحاليل الحالية. حاول مرة أخرى.</p>
+      <button className="btn" type="button" onClick={() => { void catalog.refetch(); void overview.refetch(); }}>إعادة تحميل التحاليل</button>
+    </div>
   </div>;
   const props = {
     catalog: catalog.data,
@@ -70,17 +86,19 @@ export function LabsPage() {
     onSortChange: setSort,
     filtersOpen,
     onToggleFilters: () => setFiltersOpen((current) => !current),
+    onClearFilters: () => { setSearch(""); setCategory(null); },
+    onBrowseCatalog: () => { setView("all"); document.getElementById("labs-tab-all")?.focus(); },
     onAddTest: (testKey: string) => openBatch([testKey]),
     detailHref: (testKey: string) => `/labs/${encodeURIComponent(testKey)}`,
   };
-  return <div className={styles.labsPage}>
-    <header className={styles.heading}><div><h1>تحاليلك</h1><p>تابع أحدث نتيجة محفوظة لكل تحليل وفق القيم المرجعية للنظام.</p></div>
-      {!overview.data.read_only && overview.data.eligibility.allowed ? <button className="btn primary" type="button" disabled={batch.opening} onClick={() => openBatch()}>إضافة نتائج</button> : null}
-    </header>
-    {batch.opening ? <p role="status">جارٍ تحميل تاريخ التحاليل...</p> : null}
-    {batch.openError ? <p role="alert">{batch.openError}</p> : null}
-    {batch.phase?.kind === "saved" ? <p role="status">{batch.phase.replayed ? "تم تأكيد نجاح عملية الحفظ السابقة." : "تم حفظ النتائج."}</p> : null}
-    {batch.refreshError || overview.isError || catalog.isError ? <div role="alert">تعذر تحميل التحاليل الحالية. حاول مرة أخرى.
+  return <div className={`${styles.labsPage} ${styles.overview}`}>
+    <LabsHeading>
+      {!overview.data.read_only && overview.data.eligibility.allowed ? <button className="btn primary" type="button" disabled={batch.opening} onClick={() => openBatch()}><Plus size={18} aria-hidden="true" />إضافة نتائج</button> : null}
+    </LabsHeading>
+    {batch.opening ? <p className={styles.feedback} role="status">جارٍ تحميل تاريخ التحاليل...</p> : null}
+    {batch.openError ? <p className={styles.feedback} role="alert">{batch.openError}</p> : null}
+    {batch.phase?.kind === "saved" ? <p className={styles.feedback} role="status">{batch.phase.replayed ? "تم تأكيد نجاح عملية الحفظ السابقة." : "تم حفظ النتائج."}</p> : null}
+    {batch.refreshError || overview.isError || catalog.isError ? <div className={styles.feedback} role="alert">تعذر تحميل التحاليل الحالية. حاول مرة أخرى.
       <button className="btn" type="button" onClick={() => { if (catalog.isError) void catalog.refetch(); void batch.refresh(); }}>إعادة تحميل التحاليل</button>
     </div> : null}
     <LabsViewTabs view={view} onViewChange={setView} />

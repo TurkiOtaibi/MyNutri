@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { SlidersHorizontal } from "lucide-react";
+import { useRef, type RefObject } from "react";
+import { FlaskConical, SlidersHorizontal } from "lucide-react";
 
 import type { LabCatalogResponse, LabOverviewResponse } from "@/lib/types";
 import { nextLabsView, type LabListItem, type LabSort, type LabsView } from "./lab-model";
@@ -48,6 +49,8 @@ type LabsViewProps = {
   onSearchChange: (value: string) => void;
   onCategoryChange: (value: string | null) => void;
   onSortChange: (value: LabSort) => void;
+  onClearFilters?: () => void;
+  onBrowseCatalog?: () => void;
 };
 
 const DEFAULT_SORT: LabSort = "newest_updated";
@@ -64,13 +67,13 @@ function EligibilityNotice({ eligibility }: { eligibility: LabsViewProps["eligib
 }
 
 // Search stays visible; category and sort sit behind one toggle (Product Owner decision, 29 Oct 2026).
-function Controls({ catalog, search, category, sort, filtersOpen, onToggleFilters, onSearchChange, onCategoryChange, onSortChange }: LabsViewProps) {
+function Controls({ catalog, search, category, sort, filtersOpen, onToggleFilters, onSearchChange, onCategoryChange, onSortChange, searchRef }: LabsViewProps & { searchRef: RefObject<HTMLInputElement | null> }) {
   const activeFilters = Number(category !== null) + Number(sort !== DEFAULT_SORT);
   return <div className={styles.controls}>
     <div className={styles.searchRow}>
       <label className={styles.searchField}>
         <span className="sr-only">البحث في التحاليل</span>
-        <input type="search" value={search} placeholder="البحث في التحاليل" onChange={(event) => onSearchChange(event.target.value)} />
+        <input ref={searchRef} type="search" dir="auto" value={search} placeholder="البحث في التحاليل" onChange={(event) => onSearchChange(event.target.value)} />
       </label>
       <button type="button" className={styles.filterToggle} aria-label="التصنيف والترتيب" aria-expanded={filtersOpen} aria-controls="labs-filters" onClick={onToggleFilters}>
         <SlidersHorizontal size={19} aria-hidden="true" />
@@ -99,8 +102,8 @@ function Controls({ catalog, search, category, sort, filtersOpen, onToggleFilter
   </div>;
 }
 
-function LabRows({ rows, emptyMessage, onAddTest, detailHref }: { rows: LabListItem[]; emptyMessage: string; onAddTest?: (testKey: string) => void; detailHref?: (testKey: string) => string }) {
-  if (rows.length === 0) return <div className={styles.empty}><strong>{emptyMessage}</strong><span>يمكنك تغيير البحث أو التصنيف لعرض نتائج أخرى.</span></div>;
+function LabRows({ rows, emptyMessage, onAddTest, detailHref, emptyContent }: { rows: LabListItem[]; emptyMessage: string; onAddTest?: (testKey: string) => void; detailHref?: (testKey: string) => string; emptyContent?: React.ReactNode }) {
+  if (rows.length === 0) return <div className={styles.empty}>{emptyContent !== undefined ? <FlaskConical size={30} aria-hidden="true" /> : null}<strong>{emptyMessage}</strong>{emptyContent !== undefined ? emptyContent : <span>يمكنك تغيير البحث أو التصنيف لعرض نتائج أخرى.</span>}</div>;
   return <ul className={styles.rows}>
     {rows.map((item) => <li
       key={item.test_key}
@@ -125,6 +128,8 @@ function LabRows({ rows, emptyMessage, onAddTest, detailHref }: { rows: LabListI
 }
 
 function LabsView(props: LabsViewProps & { mode: "owned" | "catalog" }) {
+  const searchRef = useRef<HTMLInputElement>(null);
+  const hasFilters = Boolean(props.search || props.category);
   const emptyMessage = props.adminOwn && props.mode === "owned"
     ? "تسجيل التحاليل غير متاح لحساب المشرف."
     : props.category
@@ -132,9 +137,12 @@ function LabsView(props: LabsViewProps & { mode: "owned" | "catalog" }) {
     : props.search ? "لا توجد تحاليل مطابقة." : props.adminSelected ? "لم يسجل المستخدم أي نتائج بعد." : "لم تسجل أي نتائج بعد.";
   return <section className={styles.panel} aria-label={props.mode === "owned" ? "نتائج التحاليل" : "كتالوج التحاليل"}>
     <EligibilityNotice eligibility={props.eligibility} />
-    <Controls {...props} />
-    <div className={styles.resultBar}><span>{props.rows.length} تحليلاً</span>{props.readOnly ? <strong>للقراءة فقط</strong> : null}</div>
-    <LabRows rows={props.rows} emptyMessage={emptyMessage} detailHref={props.detailHref} onAddTest={!props.readOnly && props.eligibility.allowed ? props.onAddTest : undefined} />
+    <Controls {...props} searchRef={searchRef} />
+    <div className={styles.resultBar}><span role="status" aria-atomic="true"><bdi>{props.rows.length}</bdi> تحليلاً</span>{props.readOnly ? <strong>للقراءة فقط</strong> : null}
+      {hasFilters && props.onClearFilters ? <button className="btn" type="button" onClick={() => { props.onClearFilters?.(); searchRef.current?.focus(); }}>مسح البحث والتصفية</button> : null}
+    </div>
+    <LabRows rows={props.rows} emptyMessage={emptyMessage} detailHref={props.detailHref} onAddTest={!props.readOnly && props.eligibility.allowed ? props.onAddTest : undefined}
+      emptyContent={props.onBrowseCatalog ? hasFilters ? <span>يمكنك تغيير البحث أو التصنيف لعرض نتائج أخرى.</span> : props.mode === "owned" ? <button className="btn" type="button" onClick={props.onBrowseCatalog}>كل التحاليل</button> : null : undefined} />
   </section>;
 }
 

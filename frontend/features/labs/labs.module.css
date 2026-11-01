@@ -116,3 +116,48 @@
 .resultMenuList button { display: flex; align-items: center; gap: 8px; min-height: 44px; border: 0; background: transparent; color: var(--ink); padding: 8px 14px; font: inherit; text-align: start; }
 .resultMenuList button:hover, .resultMenuList button:focus-visible { background: var(--surface-strong); }
 .resultMenuList .dangerItem { color: var(--danger); }
+
+.overview { gap: 22px; min-width: 0; }
+.overview .heading { align-items: center; padding-block: 8px; }
+.headingIdentity { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.headingIcon { display: grid; place-items: center; flex: 0 0 52px; height: 52px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent-strong); }
+.overview .heading h1 { font-weight: 700; }
+.overview .heading p { max-width: 580px; line-height: 1.8; }
+.overview .heading > button { flex-shrink: 0; }
+.overview .tabs button { white-space: nowrap; }
+.overview .controls label { min-width: 0; gap: 8px; }
+.overview .controls input, .overview .controls select { width: 100%; }
+.overview .resultBar { align-items: center; flex-wrap: wrap; min-height: 28px; }
+.overview .resultBar > span { display: inline-flex; align-items: center; gap: 6px; }
+.overview .resultBar bdi { font-weight: 700; color: var(--ink); }
+.overview .resultBar button { margin-inline-start: auto; color: var(--accent-strong); }
+.overview .row { grid-template-columns: minmax(0, 1fr) minmax(0, 220px); padding: 18px 20px; }
+.overview .identity, .overview .latest { min-width: 0; overflow-wrap: anywhere; }
+.overview .identity bdi { width: fit-content; max-width: 100%; }
+.overview .identity a { max-width: 100%; line-height: 1.6; }
+.overview .identity a:hover { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 4px; }
+.overview .latest { gap: 7px; padding-inline-start: 20px; border-inline-start: 1px solid var(--line); }
+.overview .latest > strong { max-width: 100%; font-size: 1.3rem; font-variant-numeric: tabular-nums; line-height: 1.4; }
+.overview .empty, .pageState { min-height: 230px; gap: 14px; padding: 28px 20px; }
+.overview .empty > svg, .pageState > svg { color: var(--accent-strong); }
+.pageState { display: grid; justify-items: center; align-content: center; border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-sm); text-align: center; color: var(--muted); }
+.pageState p { margin: 0; }
+.feedback { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 0; padding: 14px 16px; border: 1px solid var(--line); border-inline-start: 4px solid var(--accent); border-radius: var(--radius); background: var(--surface-strong); }
+.feedback[role="alert"] { border-inline-start-color: var(--danger); }
+.overview :is(button, a, input, select):focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+@media (max-width: 700px) {
+  .overview { gap: 16px; }
+  .overview .heading { align-items: stretch; }
+  .headingIdentity { align-items: start; gap: 12px; }
+  .headingIcon { flex-basis: 44px; height: 44px; }
+  .overview .heading h1 { font-size: 1.6rem; }
+  .overview .heading p { font-size: .85rem; }
+  .overview .tabs { width: 100%; }
+  .overview .tabs button { padding-inline: 10px; }
+  .overview .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview .controls select { font-size: .8rem; }
+  .overview .row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; padding: 14px; }
+  .overview .latest { justify-items: end; text-align: end; padding-inline-start: 12px; }
+  .overview .latest > strong { font-size: 1.15rem; }
+}
