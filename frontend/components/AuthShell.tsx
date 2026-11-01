@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff, LogIn } from "lucide-react";
+import { Eye, EyeOff, LogIn, Salad } from "lucide-react";
 import { FormEvent, useLayoutEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
@@ -8,6 +8,8 @@ import { ApiError } from "@/lib/api";
 import { useAuth } from "./AuthProvider";
 
 const GENERIC_ERROR = "تعذر إكمال الطلب. تحقق من البيانات وحاول مرة أخرى.";
+const USERNAME_REQUIRED = "أدخل اسم المستخدم.";
+const PASSWORD_SHORT = "كلمة المرور قصيرة. استخدم 8 أحرف على الأقل.";
 
 export function AuthShell() {
   const { signIn } = useAuth();
@@ -19,6 +21,7 @@ export function AuthShell() {
   const submitting = useRef(false);
   const [message, setMessage] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
+  const usernameRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const pendingFocusHandledRef = useRef(false);
   const focusPasswordAfterFailureRef = useRef(false);
@@ -60,8 +63,16 @@ export function AuthShell() {
     event.preventDefault();
     if (submitting.current) return;
     setMessage("");
-    if (!username.trim()) { setMessage("أدخل اسم المستخدم."); return; }
-    if (Array.from(password).length < 8) { setMessage("كلمة المرور قصيرة. استخدم 8 أحرف على الأقل."); return; }
+    if (!username.trim()) {
+      setMessage(USERNAME_REQUIRED);
+      usernameRef.current?.focus();
+      return;
+    }
+    if (Array.from(password).length < 8) {
+      setMessage(PASSWORD_SHORT);
+      passwordRef.current?.focus();
+      return;
+    }
     setPending(true);
     submitting.current = true;
     try {
@@ -78,30 +89,38 @@ export function AuthShell() {
   }
 
   return (
-    <section className="auth-page">
+    <section className="auth-page login-page" aria-labelledby="login-title">
       <form ref={formRef} className="auth-panel" onSubmit={submit} noValidate>
-        <div className="auth-brand">myNutri</div>
-        <h1>تسجيل الدخول</h1>
-        <p>ادخل إلى بياناتك الغذائية بأمان.</p>
+        <header className="login-heading">
+          <div className="auth-brand"><span className="brand-mark"><Salad size={21} aria-hidden="true" /></span><bdi>myNutri</bdi></div>
+          <h1 id="login-title">تسجيل الدخول</h1>
+          <p>ادخل إلى بياناتك الغذائية بأمان.</p>
+        </header>
         <label>
           <span>اسم المستخدم</span>
-          <input value={username} onChange={(e) => setUsername(e.target.value)} type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={32} required dir="ltr" />
+          <input ref={usernameRef} value={username} onChange={(e) => {
+            setUsername(e.target.value);
+            if (message === USERNAME_REQUIRED) setMessage("");
+          }} aria-invalid={message === USERNAME_REQUIRED || undefined} aria-describedby={message === USERNAME_REQUIRED ? "login-message" : undefined} type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={32} required dir="ltr" />
         </label>
-        <label>
-          <span>كلمة المرور</span>
-          <div className="password-field">
-            <input ref={passwordRef} value={password} onChange={(e) => setPassword(e.target.value)} type={visible ? "text" : "password"} autoComplete="current-password" required dir="ltr" />
+        <div className="login-password">
+          <label htmlFor="login-password">كلمة المرور</label>
+          <div className="password-field" dir="ltr">
+            <input id="login-password" ref={passwordRef} value={password} onChange={(e) => {
+              setPassword(e.target.value);
+              if (message === PASSWORD_SHORT) setMessage("");
+            }} aria-invalid={message === PASSWORD_SHORT || undefined} aria-describedby={message === PASSWORD_SHORT ? "login-message" : undefined} type={visible ? "text" : "password"} autoComplete="current-password" required dir="ltr" />
             <button type="button" onClick={() => setVisible((value) => !value)} aria-label={visible ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}>
               {visible ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
-        </label>
-        {message || search.get("reason") ? <div className="auth-message" role="status">{message || (search.get("reason") === "disabled" ? "حسابك موقوف. تواصل مع المشرف." : "انتهت جلستك. سجّل الدخول مرة أخرى.")}</div> : null}
+        </div>
+        {message || search.get("reason") ? <div className="auth-message" id="login-message" role="status">{message || (search.get("reason") === "disabled" ? "حسابك موقوف. تواصل مع المشرف." : "انتهت جلستك. سجّل الدخول مرة أخرى.")}</div> : null}
         <button className="btn primary" disabled={pending} type="submit">
           <LogIn size={18} />
           {pending ? "جارٍ الإرسال..." : "دخول"}
         </button>
-        <p>ليس لديك حساب أو نسيت كلمة المرور؟ تواصل مع المشرف.</p>
+        <p className="login-help">ليس لديك حساب أو نسيت كلمة المرور؟ تواصل مع المشرف.</p>
       </form>
     </section>
   );
