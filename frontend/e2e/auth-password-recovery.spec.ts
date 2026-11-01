@@ -174,6 +174,8 @@ test("@issue111 missing username sends no login request", async ({ page }) => {
   await page.getByLabel("كلمة المرور", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: "دخول", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("أدخل اسم المستخدم.");
+  await expect(page.getByLabel("اسم المستخدم", { exact: true })).toBeFocused();
+  await expect(page.getByLabel("اسم المستخدم", { exact: true })).toHaveAccessibleDescription("أدخل اسم المستخدم.");
   expect(calls).toBe(0);
 });
 
@@ -185,6 +187,8 @@ test("@issue111 short login password sends no login request", async ({ page }) =
   await page.getByLabel("كلمة المرور", { exact: true }).fill("short");
   await page.getByRole("button", { name: "دخول", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(SHORT);
+  await expect(page.getByLabel("كلمة المرور", { exact: true })).toBeFocused();
+  await expect(page.getByLabel("كلمة المرور", { exact: true })).toHaveAccessibleDescription(SHORT);
   expect(calls).toBe(0);
 });
 

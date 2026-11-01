@@ -997,6 +997,18 @@ a {
 .password-field button { position: absolute; inset-inline-end: 4px; top: 4px; width: 40px; height: 40px; border: 0; background: transparent; }
 .password-field input { padding-inline-end: 48px; }
 .auth-message { border-radius: var(--radius); padding: 12px 14px; background: var(--accent-soft); color: var(--accent-ink); }
+.main-surface:has(> .login-page) { max-width: none; padding: 0; }
+.login-page .auth-panel { min-width: 0; gap: 18px; padding: clamp(20px, 5vw, 32px); }
+.login-heading .auth-brand { display: flex; align-items: center; gap: 8px; font-size: 1rem; color: var(--accent-strong); }
+.login-heading h1 { margin-block: 18px 4px; font-size: 1.75rem; line-height: 1.4; font-weight: 700; }
+.login-heading p, .login-help { color: var(--muted); }
+.login-page .login-help { padding-block-start: 14px; border-block-start: 1px solid var(--line); font-size: .88rem; }
+.login-password { display: grid; gap: 7px; }
+.login-page .password-field input { padding-inline-end: 52px; }
+.login-page .password-field button { display: grid; place-items: center; inset-inline-end: 2px; top: 2px; width: 44px; height: 44px; border-radius: var(--radius); color: var(--muted); }
+.login-page input[aria-invalid="true"] { border-color: var(--danger); }
+.login-page .auth-message { border-inline-start: 3px solid var(--warning); color: var(--warning-ink); background: var(--warning-soft); }
+.login-page button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .auth-switch { color: var(--muted); }
 
 .admin-home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
