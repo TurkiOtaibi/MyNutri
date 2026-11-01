@@ -1581,7 +1581,22 @@
 
 :global(.diary-page) :global(.diary-section-heading) h2 {
   font-size: 18px;
+  font-weight: 700;
 }
+
+:global(.diary-page) :global(.diary-summary) h2 { font-weight: 700; }
+:global(.diary-without-target) :global(.diary-logged-total) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-block: 8px;
+  color: var(--muted);
+}
+:global(.diary-logged-total) strong { color: var(--ink); font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+:global(.diary-target-prompt) { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+:global(.diary-target-prompt) p { margin: 0; }
 
 :global(.diary-page) :global(.diary-summary) {
   border-radius: 16px;

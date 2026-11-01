@@ -15,9 +15,20 @@ describe("issue 102 missing UI states", () => {
       totals: emptyNutritionTotals(), targets: null, pending: false, failed: false, onOpenNutrition: () => {},
     }));
     expect(html).toContain("لم تحدد أهدافك بعد.");
+    expect(html).not.toContain("إجمالي اليوم");
     expect(html).toMatch(/href="\/profile"[^>]*>تحديد أهدافي<\/a>/);
     expect(renderToStaticMarkup(createElement(TargetsCard, { title: "الأهداف", badge: "اليوم", targets: null })))
       .toContain("لم تحدد أهدافك بعد.");
+  });
+  it("shows logged calories without implying a target or estimating calories remaining", () => {
+    const html = renderToStaticMarkup(createElement(DailyProgressSummary, {
+      totals: { ...emptyNutritionTotals(), calories: 239.8 }, targets: null, hasLoggedFood: true,
+      pending: false, failed: false, onOpenNutrition: () => {},
+    }));
+    expect(html).toContain("إجمالي اليوم");
+    expect(html).toContain(">240</bdi>");
+    expect(html).not.toContain('role="progressbar"');
+    expect(html).not.toContain("المتبقي");
   });
   it("BR-NAV-016 supplies an Arabic installation description", () => {
     const manifest = JSON.parse(readFileSync("public/manifest.json", "utf8"));
