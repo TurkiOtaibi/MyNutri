@@ -9,7 +9,7 @@ import type { DiaryEntryInput, DiaryEntryResponse, FoodPickerItem, MealType, Rec
 import { useUnsavedChanges } from "@/components/UnsavedChangesProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { useSessionAbortSignal } from "@/components/SessionQueryProvider";
-import { convertDiaryQuantity, validateMeasuredQuantity, mealAddLabels, mealLabels, multiplyServing, parseQuantity, pickerServingNutrition, scaleEntryPreview, standardMeals, validateQuantity } from "./diary-model";
+import { convertDiaryQuantity, entryQuantityLabel, validateMeasuredQuantity, mealAddLabels, mealLabels, multiplyServing, parseQuantity, pickerServingNutrition, scaleEntryPreview, standardMeals, validateQuantity } from "./diary-model";
 import { useDebouncedValue } from "./diary-hooks";
 import { ModalFrame } from "./diary-modal";
 
@@ -387,7 +387,7 @@ export function EditEntryDialog({ entry, onClose, onSaved }: { entry: DiaryEntry
           <div><p className="section-eyebrow-text" dir="auto">{entry.food.name}</p><h2 id="edit-entry-title">تعديل الكمية والقسم</h2></div>
           <button className="btn icon" type="button" onClick={onClose} disabled={mutation.isPending} aria-label="إغلاق تعديل الكمية"><X size={19} /></button>
         </div>
-        <p className="dialog-help">يمكن تعديل الكمية والقسم فقط. تبقى الكمية المسجلة ثابتة، وتُحسب القيم من بيانات الطعام الحالية.</p>
+        <p className="dialog-help"><strong>الكمية قبل التعديل: <bdi>{entryQuantityLabel(entry)}</bdi></strong><br />تُحسب القيم الغذائية من بيانات الطعام الحالية.</p>
         <MealTypeSelector value={mealType} disabled={mutation.isPending} onChange={setMealType} />
         <QuantityStepper
           value={quantity}
@@ -399,8 +399,7 @@ export function EditEntryDialog({ entry, onClose, onSaved }: { entry: DiaryEntry
         />
         {preview ? (
           <div className="entry-preview edit-entry-preview" aria-label="معاينة القيم الغذائية بعد التعديل" aria-live="polite">
-            <p>
-              {entry.recorded_unit_label ? <><bdi dir="ltr">{formatServingMacro(amount ?? 0)}</bdi> {unitLabel}</> : <bdi>{countedUnitText(amount ?? 0, entry.recorded_unit_type)}</bdi>}
+            <p>الكمية بعد التعديل: {entry.recorded_unit_label ? <><bdi dir="ltr">{formatServingMacro(amount ?? 0)}</bdi> {unitLabel}</> : <bdi>{countedUnitText(amount ?? 0, entry.recorded_unit_type)}</bdi>}
               {equivalentAmount != null ? <> · <bdi dir="ltr">{formatServingMacro(equivalentAmount)}</bdi> {unitBasisLabels[entry.recorded_unit_basis]}</> : null}
             </p>
             <div>

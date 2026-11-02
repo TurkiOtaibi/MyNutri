@@ -140,6 +140,7 @@ test.describe("@diary quantity and UX refinement", () => {
     await expect(dialog.getByRole("button", { name: "زيادة الكمية" })).toBeVisible();
     await dialog.getByRole("button", { name: "زيادة الكمية" }).click();
     await expect(dialog.getByRole("textbox", { name: "الكمية", exact: true })).toHaveValue("1.5");
+    await expect(dialog.getByText(/الكمية قبل التعديل/)).toContainText("30 جم");
     await expect(dialog.getByLabel("معاينة القيم الغذائية بعد التعديل")).toContainText("45 جم");
     await expect(dialog.getByLabel("معاينة القيم الغذائية بعد التعديل")).toContainText("90");
     await dialog.getByRole("textbox", { name: "الكمية", exact: true }).fill("51");
