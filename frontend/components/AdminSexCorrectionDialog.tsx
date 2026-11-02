@@ -2,17 +2,19 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { getAdminUser } from "@/lib/api";
+import { type AdminAccount, getAdminUser } from "@/lib/api";
 import type { Sex } from "@/lib/types";
-import { FormDialog } from "./AdminAccountActions";
+import { AccountIdentity, FormDialog } from "./AdminAccountActions";
 
-export function AdminSexCorrectionDialog({ principalId, busy, error, onClose, onSave }: {
-  principalId: string;
+export function AdminSexCorrectionDialog({ account, busy, error, onClose, onSave }: {
+  account: Pick<AdminAccount, "principal_id" | "username" | "email">;
   busy: boolean;
   error: string;
   onClose: () => void;
   onSave: (sex: Sex) => Promise<void>;
 }) {
+  const principalId = account.principal_id;
+  const identityId = useId();
   const profile = useQuery({ queryKey: ["admin-profile-sex", principalId], queryFn: () => getAdminUser(principalId), retry: false, staleTime: 0, gcTime: 0 });
   const [selected, setSelected] = useState<Sex | null>(null);
   const warningId = useId();
@@ -25,14 +27,15 @@ export function AdminSexCorrectionDialog({ principalId, busy, error, onClose, on
     event.preventDefault();
     if (current) await onSave(selected ?? current);
   }
-  return <FormDialog busy={busy} title="تصحيح الجنس" className="account-sex-dialog" descriptionId={warningId} onClose={onClose}>
+  return <FormDialog busy={busy} title="تصحيح الجنس" className="account-sex-dialog" descriptionId={`${identityId} ${warningId}`} onClose={onClose}>
+    <AccountIdentity account={account} id={identityId} />
     <p id={warningId}>تصحيح الجنس يغيّر حساب الأهداف وتقييم نتائج التحاليل.</p>
     {profile.isPending ? <p role="status">جارٍ تحميل بيانات المستخدم...</p>
       : profile.isError ? <p role="alert">تعذر تحميل بيانات المستخدم.</p>
         : !current ? <p role="alert">لا يمكن تصحيح الجنس قبل حفظ الملف الشخصي للمستخدم.</p>
           : <form onSubmit={submit}>
             <p>الجنس الحالي: {current === "male" ? "ذكر" : "أنثى"}</p>
-            <fieldset disabled={busy}><legend>الجنس</legend>
+            <fieldset disabled={busy}><legend>الجنس بعد التصحيح</legend>
               {([ ["male", "ذكر"], ["female", "أنثى"] ] as const).map(([value, label]) => <label key={value}>
                 <input ref={value === current ? inputRef : undefined} type="radio" name="corrected-sex" value={value} checked={(selected ?? current) === value} onChange={() => setSelected(value)} />{label}
               </label>)}

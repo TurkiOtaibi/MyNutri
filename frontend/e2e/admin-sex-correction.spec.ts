@@ -24,7 +24,7 @@ for (const location of ["list", "details"]) {
     await page.getByRole("menuitem", { name: "تصحيح الجنس", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "تصحيح الجنس", exact: true });
     await expect(dialog).toContainText("تصحيح الجنس يغيّر حساب الأهداف وتقييم نتائج التحاليل.");
-    await expect(dialog).toHaveAccessibleDescription("تصحيح الجنس يغيّر حساب الأهداف وتقييم نتائج التحاليل.");
+    await expect(dialog).toHaveAccessibleDescription(`البريد الإلكتروني: ${account.email} تصحيح الجنس يغيّر حساب الأهداف وتقييم نتائج التحاليل.`);
     await expect(dialog.getByLabel("أنثى", { exact: true })).toBeChecked();
     expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     const radioWidth = await dialog.getByLabel("أنثى", { exact: true }).evaluate(element => element.getBoundingClientRect().width);
