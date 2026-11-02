@@ -52,10 +52,11 @@ function DeleteDialog({ account, onClose, onDelete }: {
     try { await onDelete(confirmation.trim()); }
     catch (failure) { setError(accountActionErrorMessage(failure, "delete")); setBusy(false); confirmationInput.current?.focus(); }
   }
-  return <dialog ref={dialog} className="account-delete-dialog" onCancel={event => { if (busy) event.preventDefault(); }} onClose={onClose} aria-labelledby="delete-account-title" aria-describedby="delete-account-body">
+  return <dialog ref={dialog} className="account-delete-dialog" onCancel={event => { if (busy) event.preventDefault(); }} onClose={event => { if (!event.currentTarget.open) onClose(); }} aria-labelledby="delete-account-title" aria-describedby="delete-account-target delete-account-body">
     <form onSubmit={submit}>
       <h2 id="delete-account-title">حذف المستخدم نهائيًا؟</h2>
       <p id="delete-account-body">سيُحذف حساب هذا المستخدم وجميع بياناته الخاصة نهائيًا. لا يمكن التراجع عن هذا الإجراء.</p>
+      <AccountIdentity account={account} id="delete-account-target" />
       <label htmlFor="delete-account-identity">{account.username ? "اكتب اسم المستخدم لتأكيد الحذف النهائي." : "اكتب البريد الإلكتروني للمستخدم لتأكيد الحذف النهائي."}</label>
       <input ref={confirmationInput} id="delete-account-identity" type={account.username ? "text" : "email"} dir="ltr" autoComplete="off" value={confirmation} onChange={event => { setConfirmation(event.target.value); setError(""); }} aria-invalid={Boolean(error)} aria-describedby={error ? "delete-account-error" : undefined} />
       {error && <p id="delete-account-error" role="alert">{error}</p>}

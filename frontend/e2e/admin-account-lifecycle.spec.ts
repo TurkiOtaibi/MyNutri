@@ -67,6 +67,7 @@ test("@p0 Admin manages a user and confirms permanent deletion by username", asy
   await chooseRowAction(page, row, "حذف المستخدم نهائيًا");
   const dialog = page.getByRole("dialog", { name: "حذف المستخدم نهائيًا؟" });
   await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAccessibleDescription(`اسم المستخدم: ${email} سيُحذف حساب هذا المستخدم وجميع بياناته الخاصة نهائيًا. لا يمكن التراجع عن هذا الإجراء.`);
   const confirmation = dialog.getByLabel("اكتب اسم المستخدم لتأكيد الحذف النهائي.");
   await expect(confirmation).toBeFocused();
   await confirmation.fill("wrong@example.test");
