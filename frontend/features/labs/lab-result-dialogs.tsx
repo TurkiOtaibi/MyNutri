@@ -46,6 +46,11 @@ export function LabEditDialog(props: LabEditDialogProps) {
       <Dialog.Popup className={styles.batchDialog} dir="rtl" initialFocus={() => props.isCurrent?.() === false ? false : document.getElementById("lab-edit-value")} finalFocus={props.returnFocus}>
         <Dialog.Title>تعديل النتيجة</Dialog.Title>
         <Dialog.Description>{test.name_ar} <bdi dir="ltr">{test.abbreviation ?? test.name_en}</bdi></Dialog.Description>
+        <section className={styles.batchSummary} aria-labelledby="lab-edit-original-title">
+          <strong id="lab-edit-original-title">القراءة قبل التعديل</strong>
+          <bdi className={styles.exactValue} dir="ltr">{result.entered_value} {result.entered_unit}</bdi>
+          <time dateTime={result.test_date}>{formatGregorianArabicDate(result.test_date)}</time>
+        </section>
         <form noValidate onSubmit={event => {
           event.preventDefault();
           if (locked || submitted.current || props.isCurrent?.() === false) return;

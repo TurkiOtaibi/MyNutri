@@ -30,7 +30,7 @@ test("edit uses full entered precision and supported units, immutable identity a
   await expect(page.locator("#lab-edit-value")).toBeFocused();
   await expect(page.locator("#lab-edit-unit")).toHaveValue("mmol/mol");
   await expect(page.locator("#lab-edit-date")).toHaveValue(date);
-  await expect(edit(page).locator(`time[datetime="${date}"]`)).toContainText(formatGregorianArabicDate(date));
+  await expect(edit(page).locator(`label time[datetime="${date}"]`)).toContainText(formatGregorianArabicDate(date));
   expect(await page.locator("#lab-edit-unit option").evaluateAll(options => options.map(option => (option as HTMLOptionElement).value)))
     .toEqual((await labsApi.detail("hba1c")).test.supported_units);
   await expect(edit(page).locator("[data-tone]")).toHaveCount(0);
@@ -47,6 +47,12 @@ test("edit uses full entered precision and supported units, immutable identity a
   await firstEditControl.focus();
   await page.keyboard.press("Shift+Tab");
   await expect(lastEditControl).toBeFocused();
+  await firstEditControl.fill("6.10");
+  await page.locator("#lab-edit-unit").selectOption("%");
+  await page.locator("#lab-edit-date").fill(offsetIsoDate(date, -1));
+  const original = edit(page).getByRole("region", { name: "القراءة قبل التعديل" });
+  await expect(original).toContainText("38.797950 mmol/mol");
+  await expect(original.locator("time")).toHaveAttribute("datetime", date);
   await page.keyboard.press("Escape");
   await expect(edit(page)).toHaveCount(0);
   await expect(row(page, id).getByRole("button", { name: /^خيارات نتيجة/ })).toBeFocused();
