@@ -100,10 +100,22 @@ test("BR-NAV-012 guards browser navigation while preserving local cancel and foc
   await page.goto("/foods");
   await page.getByRole("link", { name: "اليوميات", exact: true }).click();
   const dialog = await selectFood(page, food.name);
+  const quantity = dialog.getByRole("textbox", { name: "الكمية", exact: true });
+  await quantity.fill("2");
+  let creates = 0;
+  page.on("request", request => {
+    if (request.method() === "POST" && request.url() === `${API_URL}/diary/entries`) creates++;
+  });
   await page.goBack();
   const guard = page.getByRole("dialog", { name: "تغييرات غير محفوظة", exact: true });
   await expect(guard).toBeVisible();
   await expect(guard.getByRole("button", { name: "متابعة التعديل" })).toBeFocused();
+  await guard.getByRole("button", { name: "متابعة التعديل" }).press("Enter");
+  await expect(quantity).toHaveValue("2");
+  await expect(quantity).toBeFocused();
+  await expect(dialog.getByRole("region", { name: `الطعام المحدد: ${food.name}` })).toBeVisible();
+  await page.goBack();
+  await expect(guard).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(guard).toHaveCount(0);
   await expect(dialog.getByText("إلغاء إضافة الطعام؟", { exact: true })).toHaveCount(0);
@@ -114,6 +126,7 @@ test("BR-NAV-012 guards browser navigation while preserving local cancel and foc
   await page.goBack();
   await guard.getByRole("button", { name: "تجاهل التغييرات والمغادرة" }).click();
   await expect(page).toHaveURL(/\/foods$/);
+  expect(creates).toBe(0);
 });
 
 test("BR-DRY-032 an older undo completion cannot overwrite a newer deletion notice", async ({ page, foodsApi }) => {
