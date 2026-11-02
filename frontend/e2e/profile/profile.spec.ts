@@ -545,7 +545,13 @@ test.describe("@profile Profile and targets redesign", () => {
     await effectiveDate.fill(future);
     await expect.poll(() => previewRequests).toBe(1);
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
-    await page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" }).getByRole("button", { name: "حفظ الخطة" }).click();
+    const confirmation = page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" });
+    await expect(confirmation.locator(".profile-calorie-target strong")).toHaveText(String(originalProfile.targets.final_target_calories));
+    await confirmation.getByRole("button", { name: "متابعة المراجعة" }).click();
+    expect(writePayload).toBeNull();
+    await expect(effectiveDate).toHaveValue(future);
+    await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+    await confirmation.getByRole("button", { name: "حفظ الخطة" }).click();
     await expect.poll(() => writePayload?.effective_from).toBe(future);
     expect(writePayload).toEqual(expect.objectContaining({
       effective_from: future,

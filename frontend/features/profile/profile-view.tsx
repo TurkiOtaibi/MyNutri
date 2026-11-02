@@ -442,7 +442,12 @@ export function ProfileView({
           pending={writePhase.kind === "submitting"}
           onClose={intents.cancelWriteConfirmation}
           onConfirm={intents.confirmWrite}
-        />
+        >
+          <div className="profile-calorie-target">
+            <strong><bdi dir="ltr">{writePhase.submission.preview.final_target_calories}</bdi></strong>
+            <span>سعرة حرارية يوميًا</span>
+          </div>
+        </ProfileConfirm>
       ) : null}
 
     </main>
