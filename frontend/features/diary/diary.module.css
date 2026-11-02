@@ -2194,6 +2194,8 @@
 
 :global(.daily-nutrition-sheet) > header h2 { margin: 0; font-size: 1.15rem; }
 
+:global(.daily-nutrition-sheet) > header time { color: var(--muted); font-size: .85rem; }
+
 :global(.daily-nutrition-sheet) > header button { width: 44px; height: 44px; border: 0; background: transparent; border-radius: 10px; }
 
 :global(.daily-nutrition-sheet-content) { overflow-y: auto; overscroll-behavior: contain; padding: 14px 16px max(16px, env(safe-area-inset-bottom)); }
