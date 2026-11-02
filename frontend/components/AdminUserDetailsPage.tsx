@@ -141,14 +141,21 @@ export function AdminUserDetailsPage({ principalId }: { principalId: string }) {
   useErrorOccurrenceFocus(detail.isSuccess && nextPageFailure, diaryQuery.errorUpdatedAt, nextDiaryRetryRef);
   useErrorOccurrenceFocus(detail.isSuccess && refetchFailure, diaryQuery.errorUpdatedAt, refetchDiaryRetryRef);
 
-  if (detail.isPending) return <div className="state-note">جارٍ تحميل بيانات المستخدم...</div>;
+  if (detail.isPending) return <div role="status" className="state-note">جارٍ تحميل بيانات المستخدم...</div>;
   if (!detail.data) return <div className="state-note" role="alert"><p>تعذر تحميل بيانات المستخدم.</p><button ref={detailRetryRef} className="btn" type="button" disabled={detail.isFetching} onClick={() => detail.refetch()}>{detail.isFetching ? "جارٍ إعادة تحميل بيانات المستخدم..." : "إعادة محاولة تحميل بيانات المستخدم"}</button></div>;
   const { account, profile, current_target: target } = detail.data.pages[0];
   const plans = detail.data.pages.flatMap(page => page.plan_history.items);
+  const identifier = account.username ?? account.email;
   const selectedName = String(account.display_name || account.username || account.email || principalId);
 
   return <AdminAccountActionsProvider onDeleted={() => router.push(backHref)}>
-    <div className="selected-user-banner"><strong>عرض مستخدم آخر: {selectedName}</strong><span>وضع قراءة فقط</span></div>
+    <div className="selected-user-banner admin-detail-banner">
+      <div className="account-identity">
+        <strong>عرض مستخدم آخر: <bdi>{selectedName}</bdi></strong>
+        {identifier && identifier !== selectedName && <span className="account-meta"><bdi dir="ltr">{identifier}</bdi></span>}
+      </div>
+      <span>وضع قراءة فقط</span>
+    </div>
     <div className="page-head admin-detail-head"><Link className="icon-button detail-back" href={backHref} aria-label="رجوع"><ArrowRight size={21} aria-hidden="true" /></Link><div><h1 className="page-title">تفاصيل المستخدم</h1><p className="page-kicker">بيانات الحساب والتغذية المعروضة للمراقبة دون صلاحية تعديل.</p></div><div className="actions"><AdminAccountActions account={account} /><Link className="btn" href={`/admin/users/${encodeURIComponent(principalId)}/labs`}>عرض التحاليل</Link></div></div>
     <nav className="admin-section-links" aria-label="أقسام الصفحة">{detailSections.map(([id, title]) => <a key={id} href={`#admin-section-${id}`}>{title}</a>)}</nav>
     <section id="admin-section-account" className="section-panel admin-detail-section"><h2>ملخص الحساب</h2><ReadOnlyFields data={{ ...account, username: account.username ?? account.email }} keys={["display_name", "username", "status", "created_at", "last_login_at"]} />{!account.username && <p>حساب قديم</p>}{account.role !== "admin" && account.is_locked && <span className="account-status-badge">مقفل</span>}</section>
