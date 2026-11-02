@@ -52,6 +52,7 @@ test("@p0 Admin manages a user and confirms permanent deletion by username", asy
   await expect(row).toContainText("اسم جديد");
 
   await chooseRowAction(page, row, "إعادة تعيين كلمة المرور");
+  await expect(editor).toHaveAccessibleDescription(`اسم المستخدم: ${email} سيخرج المستخدم من كل أجهزته.`);
   await editor.getByLabel("كلمة المرور الجديدة").fill("New-password-2026!");
   await editor.getByRole("button", { name: "إعادة تعيين كلمة المرور" }).click();
   await expect(editor).toHaveCount(0);
