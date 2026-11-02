@@ -2244,6 +2244,9 @@
   background: var(--surface);
 }
 
+:global(.diary-undo-copy) { display: grid; flex: 1; min-width: 0; gap: 2px; overflow-wrap: anywhere; }
+:global(.diary-undo-copy) small { color: var(--muted); }
+
 :global(.diary-undo-notice):empty { padding: 0; border: 0; }
 
 /* Soft visual system: var(--surface) cards separated by soft shadows, rounded corners and meal/macro colour cues. */

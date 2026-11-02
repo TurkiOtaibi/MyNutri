@@ -21,7 +21,7 @@ import { useAuth } from "./AuthProvider";
 import { useSessionAbortSignal } from "./SessionQueryProvider";
 import { CompactWeekNavigator, DailyNutritionDetails, DailyProgressSummary, MealSections } from "@/features/diary/diary-summary";
 import { AddEntrySheet, ConfirmDialog, DiaryEntriesSkeleton, EditEntryDialog, RetryState } from "@/features/diary/diary-entry-dialogs";
-import { emptyNutritionTotals, standardMeals } from "@/features/diary/diary-model";
+import { emptyNutritionTotals, mealLabels, standardMeals } from "@/features/diary/diary-model";
 import { invalidateDiary, useCalendarAuthorityRefresh } from "@/features/diary/diary-hooks";
 import "@/features/diary/diary.module.css";
 
@@ -213,7 +213,10 @@ export function DiaryPage() {
     <div className="diary-page">
       <h1 className="sr-only">اليوميات</h1>
       <div ref={undoNoticeRef} tabIndex={-1} role={undoFailed ? "alert" : "status"} className="diary-undo-notice">
-        {undoMessage ? <span>{undoMessage}</span> : null}
+        {undoMessage ? <div className="diary-undo-copy">
+          <span>{undoMessage}</span>
+          {undoEntry && <small><bdi>{undoEntry.food.name}</bdi> · {mealLabels[undoEntry.meal_type ?? "unspecified"]}</small>}
+        </div> : null}
         {undoEntry ? <button className="btn" type="button" onClick={() => {
           if (undoLock.current || sessionSignal.aborted) return;
           undoLock.current = true;
