@@ -35,7 +35,7 @@ it("BR-PRF-027 formats effective date and confirmation while preserving the nati
       errors: {}, effectiveFrom: "2026-10-17", authoritativeDate: "2026-10-17", displayBirthDate: "1 يناير 1990", activeSheet: null, advancedOpen: false, restoreOpen: false,
       sexRef: ref, effectiveFromRef: ref, birthRef: ref, heightRef: ref, weightRef: ref, proteinRef: ref, fatRef: ref },
     targets: { savedTargets: null, registry: { pending: true, failed: false, data: undefined }, history: { plans: [], pending: false, failed: false, hasMore: false, loadingMore: false }, preview: { visible: false, current: null, pending: false, failed: false, safetyOutcome: null, safetyAttemptSequence: 0, safetyRef: ref } },
-    write: { registryReady: false, validationHasPayload: true, writeErrorCode: null, writePhase: { kind: "confirming", submission: { effectiveFrom: "2026-10-17" } }, restoreWriteFocusRef: { current: true } },
+    write: { registryReady: false, validationHasPayload: true, writeErrorCode: null, writePhase: { kind: "confirming", submission: { effectiveFrom: "2026-10-17", preview: { final_target_calories: 2150 } } }, restoreWriteFocusRef: { current: true } },
     intents: new Proxy({}, { get: () => noop }),
   } as unknown as ComponentProps<typeof ProfileView>;
   const html = renderToStaticMarkup(createElement(ProfileView, props));
