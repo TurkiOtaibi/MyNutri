@@ -13,7 +13,7 @@ const editorTitles: Record<EditorMode, string> = {
   edit: "تعديل المستخدم", password: "إعادة تعيين كلمة المرور"
 };
 
-function AccountIdentity({ account, id }: { account: ActionAccount; id: string }) {
+export function AccountIdentity({ account, id }: { account: Pick<ActionAccount, "principal_id" | "username" | "email">; id: string }) {
   return <p id={id} className="account-meta">
     {account.username ? "اسم المستخدم" : account.email ? "البريد الإلكتروني" : "معرّف الحساب"}: <bdi dir="ltr">{account.username || account.email || account.principal_id}</bdi>
   </p>;
@@ -223,7 +223,7 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
   return <ActionsContext.Provider value={renderActions}>
     {children}
     {(externalNotice || notice) && <p role="status" className="state-note account-notice">{externalNotice || notice}</p>}
-    {sexTarget && <AdminSexCorrectionDialog principalId={sexTarget.principal_id} busy={busy} error={sexError}
+    {sexTarget && <AdminSexCorrectionDialog account={sexTarget} busy={busy} error={sexError}
       onClose={() => { if (!busy) setSexTarget(null); }}
       onSave={async sex => {
         setSexError("");
