@@ -2358,11 +2358,11 @@ a {
 
 
 .diary-page .week-day-arrow.previous {
-  left: 0;
+  inset-inline-start: 0;
 }
 
 .diary-page .week-day-arrow.next {
-  right: 0;
+  inset-inline-end: 0;
 }
 
 
