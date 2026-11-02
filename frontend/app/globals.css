@@ -1035,6 +1035,8 @@ a {
 .admin-section-links a:hover { background: var(--surface-strong); }
 .admin-detail-section { scroll-margin-top: 96px; }
 .selected-user-banner { display: flex; justify-content: space-between; gap: 12px; background: var(--warning-soft); border: 1px solid var(--warning-line); border-radius: var(--radius-card); padding: 14px 16px; margin-bottom: 14px; }
+.admin-detail-banner { flex-wrap: wrap; align-items: center; }
+.admin-detail-banner .account-identity { overflow-wrap: anywhere; }
 .admin-data-view { white-space: pre-wrap; overflow-wrap: anywhere; direction: ltr; text-align: left; background: var(--surface-subtle); padding: 12px; border-radius: 7px; }
 .admin-readonly-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 0; }
 .admin-readonly-grid > div { border-bottom: 1px solid var(--line); padding-block: 8px; }
