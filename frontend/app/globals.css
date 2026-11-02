@@ -1125,9 +1125,19 @@ a {
   box-shadow: 0 22px 60px rgba(13, 31, 27, 0.24);
 }
 
-.unsaved-dialog h2,
+.unsaved-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
 .unsaved-dialog p {
-  margin-top: 0;
+  margin: 0 0 16px;
+  line-height: 1.6;
+}
+
+@media (max-width: 640px) {
+  .unsaved-dialog .actions > button { width: 100%; }
 }
 
 .unsaved-dialog .actions,

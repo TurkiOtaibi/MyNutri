@@ -299,7 +299,7 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
             <h2 id="unsaved-dialog-title">تغييرات غير محفوظة</h2>
             <p id="unsaved-dialog-description">ستفقد التغييرات التي لم تحفظها إذا غادرت هذه الصفحة.</p>
             <div className="actions">
-              <button ref={cancelRef} className="btn" type="button" onClick={cancel}>متابعة التعديل</button>
+              <button ref={cancelRef} className="btn primary" type="button" onClick={cancel}>متابعة التعديل</button>
               <button className="btn danger" type="button" onClick={confirm}>تجاهل التغييرات والمغادرة</button>
             </div>
           </div>
