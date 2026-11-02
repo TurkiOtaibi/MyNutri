@@ -85,6 +85,7 @@ test("cancel clears all add fields and disable requires confirmation with date f
   await row.getByRole("button", { name: /^إجراءات/ }).click();
   await page.getByRole("menuitem", { name: "تعطيل المستخدم", exact: true }).click();
   const confirm = page.getByRole("dialog", { name: "تعطيل المستخدم؟" });
+  await expect(confirm).toHaveAccessibleDescription(`البريد الإلكتروني: ${account.email} سيخرج المستخدم من كل أجهزته. يمكنه تسجيل الدخول مجددًا بعد إعادة تفعيل الحساب.`);
   await expect(confirm).toBeVisible(); expect(writes).toBe(0);
   await confirm.getByRole("button", { name: "إلغاء", exact: true }).click();
   expect(writes).toBe(0);
