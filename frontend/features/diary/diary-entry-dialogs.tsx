@@ -213,10 +213,10 @@ export function AddEntrySheet({ selectedDate, initialMeal, initialFood = null, o
                 <MealTypeSelector value={mealType} disabled={mutation.isPending || saveSucceeded} onChange={(value) => { setMealType(value); setError(""); }} />
               </section>
               <section className="add-config-section">
-                <h3>الكمية</h3>
-                <div className="actions" role="group" aria-label="طريقة إدخال الكمية">
-                  <button className="btn" type="button" aria-pressed={!measured} disabled={mutation.isPending || saveSucceeded} onClick={() => changeMeasurement(false)}>{defaultServingText(selectedFood)}</button>
-                  <button className="btn" type="button" aria-pressed={measured} disabled={mutation.isPending || saveSucceeded} onClick={() => changeMeasurement(true)}>{unitBasisLabels[selectedFood.unit_basis]}</button>
+                <h3 id="add-measurement-title">طريقة إدخال الكمية</h3>
+                <div className="actions add-measurement-options" role="group" aria-labelledby="add-measurement-title">
+                  <button className="btn" type="button" aria-pressed={!measured} disabled={mutation.isPending || saveSucceeded} onClick={() => changeMeasurement(false)}>{!measured && <Check size={16} aria-hidden="true" />}{defaultServingText(selectedFood)}</button>
+                  <button className="btn" type="button" aria-pressed={measured} disabled={mutation.isPending || saveSucceeded} onClick={() => changeMeasurement(true)}>{measured && <Check size={16} aria-hidden="true" />}{unitBasisLabels[selectedFood.unit_basis]}</button>
                 </div>
             <QuantityStepper
               value={quantity}

@@ -17,12 +17,15 @@ for (const basis of ["g", "ml"] as const) {
     const dialog = await selectFood(page, food.name);
     const mode = dialog.getByRole("group", { name: "طريقة إدخال الكمية" });
     await mode.getByRole("button", { name: basis === "g" ? "جم" : "مل", exact: true }).click();
+    await expect(mode.getByRole("button", { pressed: true })).toHaveText(basis === "g" ? "جم" : "مل");
     const quantity = dialog.getByRole("textbox", { name: "الكمية", exact: true });
     await expect(quantity).toHaveValue("200");
     await quantity.fill("300");
     await expect(dialog.locator(".add-calorie-total strong")).toHaveText("300");
     await mode.getByRole("button").first().click();
     await expect(quantity).toHaveValue("1.5");
+    await expect(mode.getByRole("button").first()).toHaveAttribute("aria-pressed", "true");
+    await expect(dialog.locator(".add-calorie-total strong")).toHaveText("300");
     await mode.getByRole("button").last().click();
     await expect(quantity).toHaveValue("300");
     await quantity.fill("10001");
