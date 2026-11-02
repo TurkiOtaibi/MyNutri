@@ -59,12 +59,14 @@ test("BR-DRY-032 deletes immediately and undo recreates once with a new ID", asy
   await page.getByRole("menuitem", { name: "حذف", exact: true }).click();
   await page.getByRole("dialog", { name: "حذف الطعام؟" }).getByRole("button", { name: "حذف", exact: true }).click();
   await expect(page.getByText("تم حذف الطعام", { exact: true })).toBeVisible();
+  await expect(page.locator(".diary-undo-notice")).toContainText(`${food.name} · فطور`);
   expect((await foodsApi.listDiary(diaryDate())).some((entry) => entry.id === original.id)).toBe(false);
   await page.getByRole("button", { name: "تراجع", exact: true }).click();
   await expect(page.getByText("تمت استعادة الطعام", { exact: true })).toBeVisible();
   const restored = (await foodsApi.listDiary(diaryDate())).filter((entry) => entry.food.id === food.id);
   expect(restored).toHaveLength(1);
   expect(restored[0]).toMatchObject({ entry_date: diaryDate(), meal_type: "breakfast", quantity: 1.5 });
+  expect(restored[0].totals.calories).toBe(original.totals.calories);
   expect(restored[0].id).not.toBe(original.id);
   await foodsApi.removeDiary(restored[0].id);
 });
