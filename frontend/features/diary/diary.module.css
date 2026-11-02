@@ -649,6 +649,12 @@
   white-space: normal;
 }
 
+:global(.add-measurement-options) button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
 :global(.add-config-section) {
   display: grid;
   gap: 8px;
