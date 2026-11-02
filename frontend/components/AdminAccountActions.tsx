@@ -13,6 +13,12 @@ const editorTitles: Record<EditorMode, string> = {
   edit: "تعديل المستخدم", password: "إعادة تعيين كلمة المرور"
 };
 
+function AccountIdentity({ account, id }: { account: ActionAccount; id: string }) {
+  return <p id={id} className="account-meta">
+    {account.username ? "اسم المستخدم" : account.email ? "البريد الإلكتروني" : "معرّف الحساب"}: <bdi dir="ltr">{account.username || account.email || account.principal_id}</bdi>
+  </p>;
+}
+
 function DeleteDialog({ account, onClose, onDelete }: {
   account: ActionAccount;
   onClose: () => void;
@@ -222,7 +228,9 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
         setSexError("");
         if (await execute(() => correctAdminProfileSex(sexTarget.principal_id, { sex }), "edit", setSexError)) setSexTarget(null);
       }} />}
-    {disableTarget && <FormDialog busy={busy} title="تعطيل المستخدم؟" onClose={() => { if (!busy) { setDisableTarget(null); setDisableError(""); } }}>
+    {disableTarget && <FormDialog busy={busy} title="تعطيل المستخدم؟" descriptionId="disable-account-identity disable-account-note" onClose={() => { if (!busy) { setDisableTarget(null); setDisableError(""); } }}>
+      <AccountIdentity account={disableTarget} id="disable-account-identity" />
+      <p id="disable-account-note">سيخرج المستخدم من كل أجهزته. يمكنه تسجيل الدخول مجددًا بعد إعادة تفعيل الحساب.</p>
       {disableError && <p role="alert">{disableError}</p>}
       <div className="actions"><button className="btn" disabled={busy} onClick={() => { setDisableTarget(null); setDisableError(""); }}>إلغاء</button><button className="btn danger" disabled={busy} onClick={async () => {
         if (await execute(() => setAdminAccountEnabled(disableTarget.principal_id, false), "status", setDisableError)) setDisableTarget(null);
@@ -230,9 +238,7 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
     </FormDialog>}
 
     {selected && mode && <FormDialog busy={busy} title={editorTitles[mode]} className="account-editor" descriptionId={mode === "password" ? "edit-account-identity reset-session-note" : "edit-account-identity"} onClose={closeEditor}>
-      <p id="edit-account-identity" className="account-meta">
-        {selected.username ? "اسم المستخدم" : selected.email ? "البريد الإلكتروني" : "معرّف الحساب"}: <bdi dir="ltr">{selected.username || selected.email || selected.principal_id}</bdi>
-      </p>
+      <AccountIdentity account={selected} id="edit-account-identity" />
       <form className="account-form" onSubmit={submitEditor}>
         {mode === "edit" ? <div className="account-field"><label>الاسم المعروض<input required maxLength={120} aria-describedby="edit-name-note" value={displayName} onChange={event => setDisplayName(event.target.value)} /></label><small id="edit-name-note" className="account-field-hint">120 حرفًا كحد أقصى</small></div>
           : <PasswordInput label="كلمة المرور الجديدة" value={password} onChange={setPassword} />}
