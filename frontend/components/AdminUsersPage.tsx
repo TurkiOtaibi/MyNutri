@@ -126,20 +126,22 @@ export function AdminUsersPage() {
           {filterStatuses.map(status => <option key={status} value={status}>{filterLabels[status]}</option>)}
         </select>
       </div>
-      {query.isPending && <p className="state-note">جارٍ تحميل المستخدمين...</p>}
+      {query.isPending && <p role="status" className="state-note">جارٍ تحميل المستخدمين...</p>}
       {query.isError && <p role="alert" className="state-note">تعذر تحميل المستخدمين. <button className="btn" onClick={() => query.refetch()}>إعادة المحاولة</button></p>}
       {query.data && <p aria-live="polite" className="admin-results-count">{adminResultsLabel(page, query.data.page_size, query.data.total)}</p>}
       {query.data?.total === 0 && !showSelf && <p className="state-note">لا توجد نتائج.</p>}
       {showSelf && self && <article className="account-row account-self-row" key={self.principal_id}>
         <div className="account-identity">
           <span className="account-name-line"><strong>{self.display_name}</strong><span className="account-self-marker">(أنت)</span><AdminStatusBadge status={self.status} /></span>
-          <span className="account-meta">آخر دخول: {query.data?.self?.last_login_at ? <time dateTime={query.data.self.last_login_at}>{formatAdminDateTime(query.data.self.last_login_at)}</time> : "لم يسجل الدخول بعد."} · <bdi dir="ltr">{self.username ?? self.email}</bdi>{!self.username && <span> · حساب قديم</span>}</span>
+          <span className="account-meta"><bdi dir="ltr">{self.username ?? self.email}</bdi>{!self.username && <span> · حساب قديم</span>}</span>
+          <span className="account-meta">آخر دخول: {query.data?.self?.last_login_at ? <time dateTime={query.data.self.last_login_at}>{formatAdminDateTime(query.data.self.last_login_at)}</time> : "لم يسجل الدخول بعد."}</span>
         </div>
       </article>}
       {query.data?.items.map(account => {
         const identity = <>
           <span className="account-name-line"><strong>{account.display_name}</strong><AdminStatusBadge status={account.status} />{account.is_locked && <span className="account-status-badge">مقفل</span>}</span>
-          <span className="account-meta">آخر دخول: {account.last_login_at ? <time dateTime={account.last_login_at}>{formatAdminDateTime(account.last_login_at)}</time> : "لم يسجل الدخول بعد."} · <bdi dir="ltr">{account.username ?? account.email}</bdi>{!account.username && <span> · حساب قديم</span>}</span>
+          <span className="account-meta"><bdi dir="ltr">{account.username ?? account.email}</bdi>{!account.username && <span> · حساب قديم</span>}</span>
+          <span className="account-meta">آخر دخول: {account.last_login_at ? <time dateTime={account.last_login_at}>{formatAdminDateTime(account.last_login_at)}</time> : "لم يسجل الدخول بعد."}</span>
           {account.status === "disabled" && account.disabled_at && <span className="account-meta">معطّل منذ <time dateTime={account.disabled_at}>{formatAdminDate(account.disabled_at)}</time></span>}
         </>;
         return <article className="account-row" key={account.principal_id}>
@@ -151,7 +153,7 @@ export function AdminUsersPage() {
       })}
       {query.data && query.data.total > query.data.page_size && <div className="actions">
         <button className="btn" disabled={page <= 1} onClick={() => updateUrl({ page: page - 1 })}>السابق</button>
-        <span>{page} / {Math.ceil(query.data.total / query.data.page_size)}</span>
+        <bdi dir="ltr">{page} / {Math.ceil(query.data.total / query.data.page_size)}</bdi>
         <button className="btn" disabled={page * query.data.page_size >= query.data.total} onClick={() => updateUrl({ page: page + 1 })}>التالي</button>
       </div>}
     </section>
