@@ -47,6 +47,7 @@ test("@p0 Admin manages a user and confirms permanent deletion by username", asy
   const editor = page.locator(".account-editor");
   await expect(editor.getByLabel("الاسم المعروض")).toBeFocused();
   await editor.getByLabel("الاسم المعروض").fill("اسم جديد");
+  await expect(editor).toHaveAccessibleDescription(`اسم المستخدم: ${email}`);
   await editor.getByRole("button", { name: "حفظ التغييرات" }).click();
   await expect(row).toContainText("اسم جديد");
 
