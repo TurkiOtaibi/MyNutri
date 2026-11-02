@@ -64,6 +64,7 @@ test.describe("@nutrition-quality", () => {
     await expect(breakfast).toContainText("حصتان");
     await page.getByRole("button", { name: "عرض التفاصيل الغذائية" }).click();
     const sheet = page.getByRole("dialog", { name: "التفاصيل الغذائية لليوم" });
+    await expect(sheet.locator("header time")).toHaveAttribute("datetime", date);
     const fiber = sheet.locator(".daily-nutrient-row").filter({ hasText: "الألياف" });
     await expect(fiber).toContainText("6 جم");
     await expect(sheet).toContainText("اكتمال البيانات 100%");

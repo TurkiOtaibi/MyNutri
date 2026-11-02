@@ -292,7 +292,7 @@ export function DiaryPage() {
         </aside>
       </div>
 
-      {nutritionDetailsOpen ? <DailyNutritionDetails day={selectedDay} registry={registryQuery.data} registryPending={registryQuery.isPending} registryFailed={registryQuery.isError} onRetryRegistry={() => registryQuery.refetch()} onClose={() => setNutritionDetailsOpen(false)} /> : null}
+      {nutritionDetailsOpen ? <DailyNutritionDetails selectedDate={activeDate} day={selectedDay} registry={registryQuery.data} registryPending={registryQuery.isPending} registryFailed={registryQuery.isError} onRetryRegistry={() => registryQuery.refetch()} onClose={() => setNutritionDetailsOpen(false)} /> : null}
 
       {addOpen ? (
         <AddEntrySheet

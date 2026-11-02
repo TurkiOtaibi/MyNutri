@@ -1,7 +1,7 @@
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Cookie, MoreVertical, Moon, Pencil, Plus, Sun, Sunrise, Trash2, X } from "lucide-react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useRef } from "react";
-import { addDays, formatDayNumber, formatShortDate, weekdays, weekStartSunday } from "@/lib/dates";
+import { addDays, formatDayNumber, formatLongArabicDate, formatShortDate, weekdays, weekStartSunday } from "@/lib/dates";
 import { formatServingMacro } from "@/lib/food";
 import { definitionsFromRegistry, formatNutrientValue, targetTypeLabels, type NutrientDefinition } from "@/lib/nutrients";
 import type { DaySummary, DiaryEntryResponse, DiaryNutrientAggregate, MealType, NutritionRegistryResponse, NutritionTotals, TargetResponse, WeekSummary } from "@/lib/types";
@@ -338,7 +338,7 @@ function DiaryEntryRow({
   );
 }
 
-export function DailyNutritionDetails({ day, registry, registryPending, registryFailed, onRetryRegistry, onClose }: { day: DaySummary | undefined; registry: NutritionRegistryResponse | undefined; registryPending: boolean; registryFailed: boolean; onRetryRegistry: () => void; onClose: () => void }) {
+export function DailyNutritionDetails({ selectedDate, day, registry, registryPending, registryFailed, onRetryRegistry, onClose }: { selectedDate: string; day: DaySummary | undefined; registry: NutritionRegistryResponse | undefined; registryPending: boolean; registryFailed: boolean; onRetryRegistry: () => void; onClose: () => void }) {
   const definitions = new Map((registry ? definitionsFromRegistry(registry) : []).map((item) => [item.key, item]));
   const overallCoverage = day?.overall_nutrient_coverage_percent ?? null;
   const empty = day?.nutrient_aggregates.every((item) => item.coverage_state === "no_entries") ?? false;
@@ -346,7 +346,7 @@ export function DailyNutritionDetails({ day, registry, registryPending, registry
     <ModalFrame labelledBy="daily-nutrition-details-title" onClose={onClose} pending={false} className="nutrition-details-modal">
       <div className="daily-nutrition-sheet">
         <div className="add-sheet-handle" aria-hidden="true" />
-        <header><h2 id="daily-nutrition-details-title">التفاصيل الغذائية لليوم</h2><button type="button" onClick={onClose} aria-label="إغلاق التفاصيل الغذائية"><X size={20} /></button></header>
+        <header><div><h2 id="daily-nutrition-details-title">التفاصيل الغذائية لليوم</h2><time dateTime={selectedDate}>{formatLongArabicDate(selectedDate)}</time></div><button type="button" onClick={onClose} aria-label="إغلاق التفاصيل الغذائية"><X size={20} /></button></header>
         <div className="daily-nutrition-sheet-content">
           {registryPending ? <div className="daily-nutrition-empty" role="status">جارٍ تحميل سجل المغذيات</div> : registryFailed || !registry ? <div className="daily-nutrition-empty" role="alert">تعذر تحميل البيانات الغذائية<button className="btn" type="button" onClick={onRetryRegistry}>إعادة المحاولة</button></div> : !day ? <div className="daily-nutrition-empty">تعذر تحميل ملخص المغذيات لهذا اليوم.</div> : empty ? <div className="daily-nutrition-empty">لا توجد أطعمة مسجلة في هذا اليوم</div> : <>
             <section className="nutrition-coverage-notice" aria-label={`اكتمال بيانات العناصر الإضافية: ${overallCoverage}%`}><strong>اكتمال بيانات العناصر الإضافية: <bdi>{overallCoverage}%</bdi></strong>{overallCoverage !== 100 ? <p>بعض الأطعمة لا تحتوي بيانات كاملة لجميع المغذيات. هذه نسبة توفر البيانات وليست تقييمًا صحيًا، وقد تكون المجاميع المعروضة حدًا أدنى مؤكدًا.</p> : <p>تتوفر بيانات جميع المغذيات المتتبعة للأطعمة المسجلة.</p>}</section>
@@ -388,7 +388,7 @@ function DailyNutrientRow({ aggregate, definition }: { aggregate: DiaryNutrientA
   return (
     <section className={`daily-nutrient-row ${overMaximum ? "over" : ""}`} aria-label={`${label}: ${qualifier} ${amountText}، ${status}${aggregate.coverage_percent == null ? "" : `، اكتمال البيانات ${aggregate.coverage_percent}%`}`}>
       <header><strong>{label}</strong><span>{targetValue == null ? targetTypeLabels[targetType] : `${targetTypeLabels[targetType]} ${formatNutrientValue(targetValue, precision)} ${unit}`}</span></header>
-      <div className="daily-nutrient-value"><bdi dir={aggregate.amount === null ? "rtl" : "ltr"}>{amountText}</bdi>{qualifier ? <small>{qualifier}</small> : null}</div>
+      <div className="daily-nutrient-value"><small>الكمية المسجّلة</small><bdi dir="auto">{amountText}</bdi>{qualifier ? <small>{qualifier}</small> : null}</div>
       {showProgress ? <div className="daily-nutrient-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(aggregate.progress_percent ?? 0, 100)} aria-valuetext={`${aggregate.progress_percent}%`}><span style={{ width: `${Math.min(aggregate.progress_percent ?? 0, 100)}%` }} /></div> : null}
       <footer><span>{status}</span>{aggregate.coverage_percent != null ? <small>اكتمال البيانات <bdi>{aggregate.coverage_percent}%</bdi></small> : null}</footer>
       {aggregate.coverage_state === "partial" ? <p>بعض الأطعمة المسجلة لا تحتوي قيمة لهذا المغذي.</p> : null}
