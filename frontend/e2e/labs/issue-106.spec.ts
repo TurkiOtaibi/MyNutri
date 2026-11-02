@@ -54,8 +54,20 @@ test("undo rejected by a new same-date result reports failure without replacing 
 test("note-only draft guards browser navigation and preserves focus on continuing", async ({ labsPage: page }) => {
   await page.goto("/foods");
   await page.getByRole("navigation", { name: "التنقل الرئيسي" }).getByRole("link", { name: "التحاليل", exact: true }).click();
+  // Put focus in the note as soon as the dialog mounts, before deferred step focus.
+  await page.evaluate(() => {
+    const observer = new MutationObserver(() => {
+      const note = document.querySelector<HTMLTextAreaElement>("#lab-batch-note");
+      if (!note) return;
+      observer.disconnect();
+      note.focus();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  });
   await page.getByRole("button", { name: "إضافة نتائج", exact: true }).click();
-  await page.getByLabel("ملاحظة", { exact: true }).fill("ملاحظة غير محفوظة");
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.getByLabel("ملاحظة", { exact: true })).toBeFocused();
+  await page.keyboard.insertText("ملاحظة غير محفوظة");
   await expect(page.getByLabel("ملاحظة", { exact: true })).toHaveValue("ملاحظة غير محفوظة");
   await page.goBack();
   const guard = page.getByRole("dialog", { name: "تغييرات غير محفوظة", exact: true });
@@ -103,6 +115,7 @@ test("undo expires after eight seconds without restoring or leaving focus on a r
 test("lost undo response reports uncertainty and refreshes the actual restored result", async ({ labsPage: page, labsApi }) => {
   await addNote(page);
   const before = (await labsApi.detail("hba1c")).results[0];
+  expect(before.note).toBe("مختبر تجريبي");
   await page.goto("/labs/hba1c");
   await page.getByRole("button", { name: /^خيارات نتيجة/ }).click();
   await page.getByRole("menuitem", { name: /^حذف نتيجة/ }).click();
@@ -120,6 +133,6 @@ test("lost undo response reports uncertainty and refreshes the actual restored r
   const restored = (await labsApi.detail("hba1c")).results;
   expect(restored).toHaveLength(1);
   expect(restored[0].id).not.toBe(before.id);
-  expect(restored[0].note).toBe(before.note);
-  await expect(page.locator(`[data-history-result="${restored[0].id}"]`)).toContainText(before.note!);
+  for (const key of ["test_key", "test_date", "entered_value", "entered_unit", "note"] as const) expect(restored[0][key]).toBe(before[key]);
+  await expect(page.locator(`[data-history-result="${restored[0].id}"]`)).toContainText("مختبر تجريبي");
 });

@@ -31,7 +31,9 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
   useEffect(() => {
     if (!step) return;
     const frame = requestAnimationFrame(() => {
-      const input = popup.current?.querySelector<HTMLElement>("fieldset input");
+      const fields = popup.current?.querySelector("fieldset");
+      if (fields?.contains(document.activeElement)) return;
+      const input = fields?.querySelector<HTMLInputElement>("input");
       input?.focus({ preventScroll: true });
       input?.scrollIntoView({ block: "nearest" });
     });
@@ -55,7 +57,7 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
   }}>
     <Dialog.Portal>
       <Dialog.Backdrop className={styles.batchBackdrop} />
-      <Dialog.Popup ref={popup} className={styles.batchDialog} dir="rtl" initialFocus={() => document.getElementById("lab-batch-date")} finalFocus={props.returnFocusRef}>
+      <Dialog.Popup ref={popup} className={styles.batchDialog} dir="rtl" initialFocus={false} finalFocus={props.returnFocusRef}>
         <Dialog.Title>إضافة نتائج</Dialog.Title>
         <Dialog.Description>التاريخ، ثم اختيار التحاليل، ثم إدخال القيم.</Dialog.Description>
         {draft && catalog ? <>
