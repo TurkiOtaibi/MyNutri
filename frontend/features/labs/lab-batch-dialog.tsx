@@ -112,7 +112,10 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
               </fieldset>;
             }) : null}
           </fieldset>
-          {draft.step === "values" ? <p aria-live="polite">سيتم حفظ <bdi dir="auto">{resultCountLabel(populatedCount(draft))}</bdi></p> : null}
+          {draft.step === "values" ? <div className={styles.batchSummary}>
+            <span>تاريخ التحليل: <time dateTime={draft.date}>{formatGregorianArabicDate(draft.date)}</time></span>
+            <span aria-live="polite">سيتم حفظ <bdi dir="auto">{resultCountLabel(populatedCount(draft))}</bdi></span>
+          </div> : null}
           <footer className={styles.batchActions}>
             <button className="btn" type="button" disabled={locked} onClick={props.onCancel}>إلغاء</button>
             {draft.step !== "date" ? <button className="btn" type="button" disabled={locked} onClick={props.onBack}>السابق</button> : null}

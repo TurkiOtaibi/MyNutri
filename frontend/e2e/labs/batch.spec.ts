@@ -175,6 +175,7 @@ for (const invalid of ["٬", "-2", "duplicate"]) {
     await page.locator("#lab-hba1c-value").fill("5.270");
     await page.locator("#lab-ferritin-unit").selectOption("µg/L");
     await page.locator("#lab-ferritin-value").fill(invalid === "duplicate" ? "8" : invalid);
+    await expect(dialog(page).locator(`time[datetime="${date}"]`)).toHaveText(formatGregorianArabicDate(date));
     await save(page);
     await expect(page.locator("#lab-ferritin-value")).toBeFocused();
     await expect(page.locator("#lab-ferritin-value")).toBeInViewport();
