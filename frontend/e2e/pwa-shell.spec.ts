@@ -2,7 +2,7 @@ import { expect, test, type BrowserContext, type Page, type Request, type Respon
 import { API_URL, createActor, createLabsApi, loginOwner, offsetIsoDate } from "./labs/helpers";
 
 const APP_CACHE_PREFIX = "mynutri-shell-";
-const CURRENT_CACHE = "mynutri-shell-v5";
+const CURRENT_CACHE = "mynutri-shell-v6";
 const GENERIC_PATHS = new Set(["/offline", "/manifest.json", "/icon.svg"]);
 const APP_ORIGIN = "http://127.0.0.1:3000";
 
@@ -236,7 +236,7 @@ function observeProfileRequest(request: Request): ProfileRequestObservation | nu
 test("@plan017 worker activation awaits shell population and removes only obsolete app caches", async ({ page }) => {
   await page.goto("/manifest.json");
   await page.evaluate(async () => {
-    await caches.open("mynutri-shell-v1");
+    await caches.open("mynutri-shell-v5");
     await caches.open("unrelated-cache");
     await navigator.serviceWorker.register("/service-worker.js");
     await navigator.serviceWorker.ready;
@@ -249,7 +249,7 @@ test("@plan017 worker activation awaits shell population and removes only obsole
 
   const state = await page.evaluate(async () => {
     const keys = await caches.keys();
-    const cache = await caches.open("mynutri-shell-v5");
+    const cache = await caches.open("mynutri-shell-v6");
     const urls = (await cache.keys()).map((request) => new URL(request.url).pathname).sort();
     const registration = await navigator.serviceWorker.ready;
     return {
@@ -264,10 +264,10 @@ test("@plan017 worker activation awaits shell population and removes only obsole
   expect(state.active).toMatch(/\/service-worker\.js$/);
   expect(state.keys).toContain(CURRENT_CACHE);
   expect(state.keys).toContain("unrelated-cache");
-  expect(state.keys).not.toContain("mynutri-shell-v1");
+  expect(state.keys).not.toContain("mynutri-shell-v5");
   expect(state.urls).toEqual(["/icon.svg", "/manifest.json", "/offline"]);
   const manifest = await page.evaluate(async () => {
-    const response = await (await caches.open("mynutri-shell-v5")).match("/manifest.json");
+    const response = await (await caches.open("mynutri-shell-v6")).match("/manifest.json");
     return response?.json();
   });
   expect(manifest).toMatchObject({
@@ -682,7 +682,7 @@ test("@plan017 reuses only immutable Next static assets while offline", async ({
   await page.reload();
 
   const staticUrl = await page.evaluate(async () => {
-    const cache = await caches.open("mynutri-shell-v5");
+    const cache = await caches.open("mynutri-shell-v6");
     const request = (await cache.keys()).find((candidate) => new URL(candidate.url).pathname.startsWith("/_next/static/"));
     return request?.url ?? "";
   });
@@ -700,7 +700,7 @@ test("@plan017 reuses only immutable Next static assets while offline", async ({
 test("@plan017 deep navigations return the exact generic offline document", async ({ page, context }) => {
   await waitForWorkerControl(page);
   const offline = await page.evaluate(async () => {
-    const response = await (await caches.open("mynutri-shell-v5")).match("/offline");
+    const response = await (await caches.open("mynutri-shell-v6")).match("/offline");
     if (!response) throw new Error("Offline document was not precached.");
     return {
       body: await response.clone().text(),
@@ -1063,7 +1063,7 @@ test("Labs private reads and successful writes never enter browser persistence o
     expect(await page.evaluate(() => indexedDB.databases().then((databases) => databases.length))).toBe(0);
 
     const offlineDocument = await page.evaluate(async () => {
-      const response = await (await caches.open("mynutri-shell-v5")).match("/offline");
+      const response = await (await caches.open("mynutri-shell-v6")).match("/offline");
       if (!response) throw new Error("Offline document was not precached.");
       return response.text();
     });

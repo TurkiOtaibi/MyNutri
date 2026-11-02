@@ -2,17 +2,13 @@ import { WifiOff } from "lucide-react";
 
 export default function OfflinePage() {
   return (
-    <section className="section-panel">
-      <h1 className="page-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <WifiOff size={26} />
-        الاتصال غير متاح
-      </h1>
-      <p className="page-kicker">
-        النظام يحتاج اتصالًا بالإنترنت لتحميل بيانات التغذية وحفظ التغييرات. لا يتم حفظ التغييرات محليًا ولا توجد
-        مزامنة لاحقة. تحقق من الاتصال ثم أعد المحاولة.
-      </p>
+    <section className="section-panel offline-panel" aria-labelledby="offline-title">
+      <h1 id="offline-title" className="page-title"><WifiOff size={26} aria-hidden="true" />الاتصال غير متاح</h1>
+      <p>النظام يحتاج اتصالًا بالإنترنت لتحميل بيانات التغذية وحفظ التغييرات.</p>
+      <p className="offline-save-note">لا يتم حفظ التغييرات محليًا ولا توجد مزامنة لاحقة.</p>
       <form action="/diary" method="get">
-        <button className="btn primary" type="submit">إعادة المحاولة</button>
+        <p id="offline-retry-note">تحقق من الاتصال ثم أعد المحاولة لفتح اليوميات.</p>
+        <button aria-describedby="offline-retry-note" className="btn primary" type="submit">إعادة المحاولة</button>
       </form>
     </section>
   );

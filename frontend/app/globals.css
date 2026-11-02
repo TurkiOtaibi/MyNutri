@@ -234,6 +234,28 @@ a {
   color: var(--muted);
 }
 
+.offline-panel {
+  display: grid;
+  gap: 16px;
+  max-inline-size: 40rem;
+  margin-inline: auto;
+}
+
+.offline-panel .page-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.offline-panel p { margin: 0; line-height: 1.7; }
+.offline-panel form { display: grid; justify-items: start; gap: 10px; }
+.offline-save-note {
+  padding: 10px 14px;
+  border-inline-start: 3px solid var(--warning-line);
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+}
+
 .workspace-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
