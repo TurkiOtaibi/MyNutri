@@ -53,8 +53,14 @@ export function AdminUserLabsPage({ principalId }: { principalId: string }) {
     return sortLabs(filterLabs(toLabListItems(catalog.data, overview.data, "owned"), search, category), sort);
   }, [catalog.data, category, overview.data, search, sort]);
 
-  if (catalog.isPending || overview.isPending) return <div className={styles.loading}>جارٍ تحميل تحاليل المستخدم...</div>;
-  if (catalog.isError || overview.isError) return <div className={styles.loading} role="alert">تعذر تحميل تحاليل المستخدم.</div>;
+  if (catalog.isPending || overview.isPending) return <div className={styles.loading} role="status">جارٍ تحميل تحاليل المستخدم...</div>;
+  if (catalog.isError || overview.isError) return <div className={styles.empty}>
+    <strong role="alert">تعذر تحميل تحاليل المستخدم.</strong>
+    <button className="btn" type="button" disabled={catalog.isFetching || overview.isFetching} onClick={() => {
+      if (catalog.isError) void catalog.refetch();
+      if (overview.isError) void overview.refetch();
+    }}>إعادة المحاولة</button>
+  </div>;
   return <div className={styles.labsPage}>
     <AdminSelectedUserBanner principalId={principalId} />
     <header className={styles.heading}><div><h1>تحاليل المستخدم</h1><p>أحدث النتائج المحفوظة للمراقبة الإدارية.</p></div><Link className="btn" href={`/admin/users/${encodeURIComponent(principalId)}`}>رجوع</Link></header>

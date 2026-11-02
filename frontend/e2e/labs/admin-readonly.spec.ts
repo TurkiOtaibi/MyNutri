@@ -7,6 +7,18 @@ import { API_URL, expect, offsetIsoDate, test, waitForLabsGet } from "./helpers"
 const TOKEN_FILE = path.join(process.cwd(), "e2e", ".auth", "access-token.txt");
 const adminHeaders = () => ({ Authorization: `Bearer ${readFileSync(TOKEN_FILE, "utf8").trim()}` });
 
+test("admin can retry a failed selected-user overview without leaving the page", async ({ page, labsApi }) => {
+  const base = `/admin/users/${labsApi.actor.principalId}/labs`;
+  await page.route(`${API_URL}${base}`, route => route.fulfill({ status: 503, json: { detail: "unavailable" } }));
+  await page.goto(base);
+  await expect(page.getByRole("alert").filter({ hasText: "تعذر تحميل تحاليل المستخدم." })).toBeVisible();
+  await page.unroute(`${API_URL}${base}`);
+  const read = waitForLabsGet(page, base);
+  await page.getByRole("button", { name: "إعادة المحاولة" }).press("Enter");
+  expect((await read).status()).toBe(200);
+  await expect(page.getByRole("heading", { name: "تحاليل المستخدم" })).toBeVisible();
+});
+
 test("same-subject overview detail and back retain current queries while detail is active", async ({ page, labsApi }) => {
   await labsApi.create((await labsApi.overview()).server_today, [{ test_key: "hba1c", entered_value: "5.270", entered_unit: "%" }]);
   const base = `/admin/users/${labsApi.actor.principalId}/labs`;
