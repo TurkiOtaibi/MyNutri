@@ -94,12 +94,17 @@ export function LabDeleteDialog(props: LabDeleteDialogProps) {
     <AlertDialog.Portal><AlertDialog.Backdrop className={styles.batchBackdrop} />
       <AlertDialog.Popup className={styles.batchDialog} dir="rtl" initialFocus={() => props.isCurrent?.() === false ? false : document.getElementById("lab-delete-cancel")} finalFocus={props.returnFocus}>
         <AlertDialog.Title>حذف النتيجة</AlertDialog.Title>
-        <AlertDialog.Description>هل تريد حذف نتيجة {props.test.name_ar} <bdi dir="ltr">{props.test.abbreviation ?? props.test.name_en}</bdi> بتاريخ <time dateTime={props.result.test_date}>{formatGregorianArabicDate(props.result.test_date)}</time>؟</AlertDialog.Description>
+        <AlertDialog.Description>هل تريد حذف نتيجة {props.test.name_ar} <bdi dir="ltr">{props.test.abbreviation ?? props.test.name_en}</bdi> بتاريخ <time dateTime={props.result.test_date}>{formatGregorianArabicDate(props.result.test_date)}</time>؟
+          <span className={styles.batchSummary}>
+            <span>القراءة المحددة</span>
+            <strong className={styles.exactValue}><bdi dir="ltr">{props.result.display_is_approximate ? "≈ " : ""}{props.result.display_value} {props.result.display_unit}</bdi></strong>
+          </span>
+        </AlertDialog.Description>
         {props.error ? <p role="alert">{props.error}</p> : null}
         <footer className={styles.batchActions}>
           <button id="lab-delete-cancel" type="button" className="btn" disabled={props.pending} onClick={() => { if (!submitted.current) props.onCancel(); }}>إلغاء</button>
           {props.onReread ? <button type="button" className="btn" disabled={props.pending} onClick={props.onReread}>إعادة قراءة النتيجة</button> : null}
-          <button type="button" className="btn primary" disabled={props.pending || props.retryAllowed === false} onClick={() => {
+          <button type="button" className="btn danger" disabled={props.pending || props.retryAllowed === false} onClick={() => {
             if (props.pending || submitted.current || props.retryAllowed === false || props.isCurrent?.() === false) return;
             submitted.current = true;
             void props.onConfirm().finally(() => { if (props.isCurrent?.() !== false) submitted.current = false; });

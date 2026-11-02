@@ -246,6 +246,8 @@ test("delete cancellation identifies test/date, starts at cancel, restores opene
   let deletes = 0;
   page.on("request", request => { if (request.method() === "DELETE") deletes += 1; });
   await page.goto("/labs/hba1c"); await open(page, id, "delete");
+  const displayedReading = await row(page, id).locator("bdi").innerText();
+  await expect(deletion(page).locator("strong bdi")).toHaveText(displayedReading);
   await expect(deletion(page)).toContainText(formatGregorianArabicDate(date));
   await expect(deletion(page)).toContainText((await labsApi.detail("hba1c")).test.name_ar);
   await expect(deletion(page).getByRole("button", { name: "إلغاء", exact: true })).toBeFocused();
