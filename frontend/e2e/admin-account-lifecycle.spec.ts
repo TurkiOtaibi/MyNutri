@@ -105,6 +105,14 @@ test("Admin account page is RTL, keyboard reachable, and accessible on mobile", 
   await expect(page.getByRole("menu")).toHaveCount(0);
   await expect(menuButton).toBeFocused();
 
+  await menuButton.click();
+  const deleteAction = page.getByRole("menuitem", { name: "حذف المستخدم نهائيًا" });
+  const actionBox = await deleteAction.boundingBox();
+  const navBox = await page.locator(".nav-links").boundingBox();
+  expect(actionBox && navBox && actionBox.y + actionBox.height <= navBox.y).toBe(true);
+  await deleteAction.click();
+  await page.getByRole("dialog", { name: "حذف المستخدم نهائيًا؟" }).getByRole("button", { name: "إلغاء" }).click();
+
   const dialog = await openCreateDialog(page);
   await expect(dialog.getByLabel("اسم المستخدم", { exact: true })).toHaveAccessibleDescription("من 3 إلى 32 حرفًا. استخدم أحرفًا إنجليزية أو أرقامًا أو أحد الرموز . _ - لا يمكن تغيير اسم المستخدم بعد إنشاء الحساب.");
   await expect(dialog.getByLabel("كلمة المرور الأولية")).toHaveAccessibleDescription("استخدم 8 أحرف على الأقل.");

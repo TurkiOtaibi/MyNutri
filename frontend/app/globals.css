@@ -1771,6 +1771,16 @@ a {
     padding: 4px;
   }
 
+  .account-actions .food-actions-popover {
+    position: fixed;
+    inset-inline: 12px;
+    top: auto;
+    bottom: calc(var(--bottom-nav-offset) + env(safe-area-inset-bottom) + 8px);
+    width: auto;
+    max-height: calc(100dvh - var(--bottom-nav-offset) - env(safe-area-inset-bottom) - 76px);
+    overflow-y: auto;
+  }
+
   .nav-link {
     min-width: 0;
     min-height: 50px;
