@@ -160,7 +160,8 @@ export function AdminUsersPage() {
     {createOpen && <FormDialog title="إضافة مستخدم" className="account-create-dialog" busy={busy} onClose={closeCreate}>
       <form className="account-form" onSubmit={submitCreate}>
         <div className="account-field">
-          <label>اسم المستخدم<input type="text" dir="ltr" autoComplete="off" aria-describedby="account-username-note" value={username} onChange={event => { setUsername(event.target.value); setKey(crypto.randomUUID()); }} /></label>
+          <label>اسم المستخدم<input type="text" dir="ltr" autoComplete="off" aria-required="true" aria-describedby="account-username-format account-username-note" value={username} onChange={event => { setUsername(event.target.value); setKey(crypto.randomUUID()); }} /></label>
+          <small id="account-username-format" className="account-field-hint">من 3 إلى 32 حرفًا. استخدم أحرفًا إنجليزية أو أرقامًا أو أحد الرموز <bdi dir="ltr">. _ -</bdi></small>
           <small id="account-username-note" className="account-field-hint">لا يمكن تغيير اسم المستخدم بعد إنشاء الحساب.</small>
         </div>
         <div className="account-field"><label>الاسم المعروض<input required maxLength={120} aria-describedby="create-name-note" value={createName} onChange={event => { setCreateName(event.target.value); setKey(crypto.randomUUID()); }} /></label><small id="create-name-note" className="account-field-hint">120 حرفًا كحد أقصى</small></div>

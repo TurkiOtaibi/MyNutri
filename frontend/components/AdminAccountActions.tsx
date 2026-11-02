@@ -78,7 +78,7 @@ export function FormDialog({ title, className, onClose, children, busy = false, 
       else document.querySelector<HTMLSelectElement>(".admin-status-filter")?.focus({ preventScroll: true });
     };
   }, []);
-  return <dialog ref={dialog} className={`account-delete-dialog account-form-dialog ${className ?? ""}`} onCancel={event => { if (busy) event.preventDefault(); }} onClose={onClose} aria-label={title} aria-describedby={descriptionId}>
+  return <dialog ref={dialog} className={`account-delete-dialog account-form-dialog ${className ?? ""}`} onCancel={event => { if (busy) event.preventDefault(); }} onClose={event => { if (!event.currentTarget.open) onClose(); }} aria-label={title} aria-describedby={descriptionId}>
     <h2>{title}</h2>
     {children}
   </dialog>;

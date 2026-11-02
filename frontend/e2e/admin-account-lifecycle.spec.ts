@@ -103,7 +103,7 @@ test("Admin account page is RTL, keyboard reachable, and accessible on mobile", 
   await expect(menuButton).toBeFocused();
 
   const dialog = await openCreateDialog(page);
-  await expect(dialog.getByLabel("اسم المستخدم", { exact: true })).toHaveAccessibleDescription("لا يمكن تغيير اسم المستخدم بعد إنشاء الحساب.");
+  await expect(dialog.getByLabel("اسم المستخدم", { exact: true })).toHaveAccessibleDescription("من 3 إلى 32 حرفًا. استخدم أحرفًا إنجليزية أو أرقامًا أو أحد الرموز . _ - لا يمكن تغيير اسم المستخدم بعد إنشاء الحساب.");
   await expect(dialog.getByLabel("كلمة المرور الأولية")).toHaveAccessibleDescription("استخدم 8 أحرف على الأقل.");
   const box = await dialog.boundingBox();
   expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
