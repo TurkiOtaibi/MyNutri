@@ -1438,7 +1438,7 @@
 :global(.diary-page) :global(.compact-week-topline) {
   position: relative;
   display: block;
-  direction: ltr;
+  direction: rtl;
   min-height: 44px;
 }
 

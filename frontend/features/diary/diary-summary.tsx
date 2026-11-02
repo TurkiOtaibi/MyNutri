@@ -40,13 +40,13 @@ export function CompactWeekNavigator({
   return (
     <section className={`compact-week-nav ${pending ? "is-loading" : ""}`} aria-label={`التنقل بين أيام اليوميات، الأسبوع من ${formatShortDate(days[0].date)} إلى ${formatShortDate(days[6].date)}`}>
       <div className={`compact-week-topline ${selectedDate !== today ? "has-today" : ""}`}>
-        <button className="week-day-arrow previous" type="button" onClick={() => onSelect(addDays(selectedDate, -1))} aria-label="اليوم السابق"><ChevronLeft size={19} /></button>
+        <button className="week-day-arrow previous" type="button" onClick={() => onSelect(addDays(selectedDate, -1))} aria-label="اليوم السابق"><ChevronRight size={19} /></button>
         <label className="compact-selected-date">
           <CalendarDays size={17} aria-hidden="true" />
           <h2>{selectedLabel}</h2>
           <input type="date" value={selectedDate} onChange={(event) => onSelect(event.target.value)} aria-label="اختيار تاريخ اليوميات" />
         </label>
-        <button className="week-day-arrow next" type="button" onClick={() => onSelect(addDays(selectedDate, 1))} aria-label="اليوم التالي"><ChevronRight size={19} /></button>
+        <button className="week-day-arrow next" type="button" onClick={() => onSelect(addDays(selectedDate, 1))} aria-label="اليوم التالي"><ChevronLeft size={19} /></button>
         {selectedDate !== today ? <button className="compact-today" type="button" onClick={() => onSelect(today)}>اليوم</button> : null}
       </div>
       <div className="compact-week-days" role="group" aria-label="أيام الأسبوع">

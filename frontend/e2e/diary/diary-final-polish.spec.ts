@@ -31,6 +31,7 @@ test.describe("@diary @final-polish compact visual refinements", () => {
       const [lineBox, previousBox, nextBox, titleBox] = await Promise.all([
         topline.boundingBox(), previous.boundingBox(), next.boundingBox(), title.boundingBox()
       ]);
+      expect(previousBox!.x).toBeGreaterThan(nextBox!.x);
       expect(previousBox?.width).toBeCloseTo(nextBox?.width ?? 0, 0);
       expect(previousBox?.height).toBeCloseTo(nextBox?.height ?? 0, 0);
       expect(previousBox?.width).toBeGreaterThanOrEqual(44);
