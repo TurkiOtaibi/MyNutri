@@ -1014,8 +1014,8 @@ test("Admin private list and detail caches disappear when the same browser conte
   await expect(page.getByText(fixtureUsername(emailMonitored), { exact: true })).toBeVisible();
   await page.locator(`a[href="/admin/users/${monitoredPrincipalId}"]`).click();
   await page.waitForURL(new RegExp(`/admin/users/${monitoredPrincipalId}$`));
-  await expect(page.locator(".selected-user-banner")).toBeVisible();
-  await expect(page.getByText(fixtureUsername(emailMonitored), { exact: true })).toBeVisible();
+  await expect(page.locator(".selected-user-banner").getByText(fixtureUsername(emailMonitored), { exact: true })).toBeVisible();
+  await expect(page.locator("#admin-section-account").getByText(fixtureUsername(emailMonitored), { exact: true })).toBeVisible();
   expect(await page.evaluate(() => {
     const inspect = (window as Window & { __mynutriE2EQueryKeys?: () => string[] }).__mynutriE2EQueryKeys;
     if (!inspect) throw new Error("E2E query inspection hook is unavailable.");
