@@ -229,14 +229,14 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
       }}>تعطيل المستخدم</button></div>
     </FormDialog>}
 
-    {selected && mode && <FormDialog busy={busy} title={editorTitles[mode]} className="account-editor" descriptionId={mode === "edit" ? "edit-account-identity" : undefined} onClose={closeEditor}>
-      {mode === "edit" && <p id="edit-account-identity" className="account-meta">
+    {selected && mode && <FormDialog busy={busy} title={editorTitles[mode]} className="account-editor" descriptionId={mode === "password" ? "edit-account-identity reset-session-note" : "edit-account-identity"} onClose={closeEditor}>
+      <p id="edit-account-identity" className="account-meta">
         {selected.username ? "اسم المستخدم" : selected.email ? "البريد الإلكتروني" : "معرّف الحساب"}: <bdi dir="ltr">{selected.username || selected.email || selected.principal_id}</bdi>
-      </p>}
+      </p>
       <form className="account-form" onSubmit={submitEditor}>
         {mode === "edit" ? <div className="account-field"><label>الاسم المعروض<input required maxLength={120} aria-describedby="edit-name-note" value={displayName} onChange={event => setDisplayName(event.target.value)} /></label><small id="edit-name-note" className="account-field-hint">120 حرفًا كحد أقصى</small></div>
           : <PasswordInput label="كلمة المرور الجديدة" value={password} onChange={setPassword} />}
-        {mode === "password" && <p>سيخرج المستخدم من كل أجهزته.</p>}
+        {mode === "password" && <p id="reset-session-note">سيخرج المستخدم من كل أجهزته.</p>}
         {editorError && <p role="alert" className="account-dialog-error">{editorError}</p>}
         <div className="actions"><button type="button" className="btn" disabled={busy} onClick={closeEditor}>إلغاء</button><button type="submit" className="btn primary" disabled={busy}>{mode === "edit" ? "حفظ التغييرات" : "إعادة تعيين كلمة المرور"}</button></div>
       </form>
