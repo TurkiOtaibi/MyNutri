@@ -1260,8 +1260,24 @@ button:global(.profile-setting-row):focus-visible,
   transform: rotate(180deg);
 }
 
+:global(.profile-account-card) :global(.profile-setting-row) {
+  grid-template-columns: 22px minmax(0, 1fr);
+}
+
+:global(.profile-account-card) bdi {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
 :global(.profile-sign-out) {
   justify-self: start;
+}
+
+@media (max-width: 640px) {
+  :global(.profile-sign-out) {
+    justify-self: stretch;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
