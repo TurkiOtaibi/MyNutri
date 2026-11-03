@@ -141,7 +141,7 @@ export function ProfilePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileQuery.data]);
 
-  const { requestDiscard } = useUnsavedChanges({
+  const { requestDiscard, requestGuardedAction } = useUnsavedChanges({
     identity: "profile",
     dirty: (!writeOwnsAuthority && dirty) || password.dirty,
     enabled: !writeOwnsAuthority || password.dirty,
@@ -534,7 +534,7 @@ export function ProfilePage() {
       intents={{
         changeTab: (next) => { setTab(next); writeProfileTab(next); },
         toggleAdditionalTargets: () => setAdditionalTargetsOpen((current) => !current),
-        signOut: () => void signOut(),
+        signOut: () => requestGuardedAction(() => void signOut(), { discardOnConfirm: false }),
         keepLocalProfile: () => setPendingServerProfile(undefined),
         acceptServerProfile,
         updateField: update,
