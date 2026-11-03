@@ -70,6 +70,8 @@ export function useProfilePassword(subjectId: string | null, accessToken: string
         setError({ field: "current", message: WRONG_PASSWORD });
       } else if (cause instanceof ApiError && cause.message === SHORT_PASSWORD) {
         setError({ field: "new", message: SHORT_PASSWORD });
+      } else if (cause instanceof TypeError || (cause instanceof ApiError && (cause.status === 408 || cause.status >= 500))) {
+        setError({ field: null, message: "تعذر التأكد من تغيير كلمة المرور. بعد عودة الاتصال، جرّب كلمة المرور الجديدة عند تسجيل الدخول." });
       } else {
         setError({ field: null, message: "تعذر حفظ التغييرات" });
       }
