@@ -52,6 +52,7 @@ type ProfileTargetsViewState = {
     plans: TargetPlanHistoryResponse["items"];
     pending: boolean;
     failed: boolean;
+    loadMoreFailed: boolean;
     hasMore: boolean;
     loadingMore: boolean;
   };
@@ -351,6 +352,7 @@ export function ProfileView({
           today={authoritativeDate}
           pending={history.pending}
           failed={history.failed}
+          loadMoreFailed={history.loadMoreFailed}
           hasMore={history.hasMore}
           loadingMore={history.loadingMore}
           onRetry={intents.retryHistory}
