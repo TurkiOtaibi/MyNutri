@@ -107,29 +107,32 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
   test("@plan014 @p0 picker reads are bounded and never use full Food or lifetime Diary endpoints", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Bounded picker") });
     const apiOrigin = new URL(API_URL).origin;
-    const pickerAudits: Array<Promise<void>> = [];
     const getUrls: URL[] = [];
     page.on("request", (request) => {
       const url = new URL(request.url());
       if (request.method() === "GET" && url.origin === apiOrigin) getUrls.push(url);
     });
-    page.on("response", (response) => {
-      const url = new URL(response.url());
-      if (url.origin !== apiOrigin || url.pathname !== "/foods/picker" || !response.ok()) return;
-      pickerAudits.push((async () => {
-        const requestedLimit = Number(url.searchParams.get("limit"));
-        const body = await response.json() as { items: unknown[]; recent_items: unknown[] };
-        expect(requestedLimit).toBeGreaterThanOrEqual(1);
-        expect(requestedLimit).toBeLessThanOrEqual(30);
-        expect(body.items.length).toBeLessThanOrEqual(requestedLimit);
-        expect(body.recent_items.length).toBeLessThanOrEqual(5);
-      })());
-    });
+    async function auditPickerRead(search: string) {
+      const response = await page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "GET" && url.origin === apiOrigin
+          && url.pathname === "/foods/picker" && (url.searchParams.get("search") ?? "") === search;
+      });
+      expect(response.ok()).toBe(true);
+      const requestedLimit = Number(new URL(response.url()).searchParams.get("limit"));
+      const body = await response.json() as { items: unknown[]; recent_items: unknown[] };
+      expect(requestedLimit).toBeGreaterThanOrEqual(1);
+      expect(requestedLimit).toBeLessThanOrEqual(30);
+      expect(body.items.length).toBeLessThanOrEqual(requestedLimit);
+      expect(body.recent_items.length).toBeLessThanOrEqual(5);
+    }
 
-    const dialog = await openGeneral(page);
-    await dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية").fill(food.name);
+    const [, dialog] = await Promise.all([auditPickerRead(""), openGeneral(page)]);
+    await Promise.all([
+      auditPickerRead(food.name),
+      dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية").fill(food.name)
+    ]);
     await expect(dialog.getByRole("button", { name: new RegExp(food.name) })).toBeVisible();
-    await Promise.all(pickerAudits);
 
     expect(getUrls.filter((url) => url.pathname === "/foods/picker").length).toBeGreaterThan(0);
     expect(getUrls.filter((url) => url.pathname === "/foods")).toHaveLength(0);
