@@ -378,7 +378,7 @@ export function ProfileView({
       {["reconciling", "committed"].includes(writePhase.kind) ? <div className="profile-save-status" role="status"><Check size={17} /> تم حفظ التغييرات</div> : null}
       {writePhase.kind === "recovery" ? (
         <div className="profile-reconciliation-status" role="status">
-          <div><Check size={17} /><span><strong>تم حفظ التغييرات</strong><small>تعذر تحديث البيانات المعروضة. الأهداف المحفوظة أدناه ما زالت معتمدة.</small></span></div>
+          <div><Check size={17} /><span><strong>تم حفظ التغييرات</strong><small>تعذر تحديث البيانات المعروضة. يمكنك تحديث العرض دون إعادة حفظ الخطة.</small></span></div>
           <button className="btn" type="button" onClick={intents.retryReconciliation}>
             <RotateCcw size={17} /> إعادة تحديث البيانات
           </button>
