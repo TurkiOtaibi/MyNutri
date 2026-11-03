@@ -1155,6 +1155,23 @@ button:global(.profile-setting-row):focus-visible,
 
 :global(.profile-history-error) { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--danger, #a33b32); }
 
+:global(.profile-history-first-load) {
+  margin-block-start: 10px;
+}
+
+:global(.profile-history-first-load) p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: .84rem;
+}
+
+@media (max-width: 640px) {
+  :global(.profile-history-first-load):global(.profile-history-error) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 @media (max-width: 360px) {
   :global(.profile-additional-target-row) { grid-template-columns: 1fr; }
 }
