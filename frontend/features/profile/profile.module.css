@@ -655,8 +655,7 @@ button:global(.profile-setting-row):focus-visible,
 }
 
 :global(.profile-safety-next-step) {
-  border-inline-start: 3px solid var(--danger);
-  padding-inline-start: 8px;
+  background: var(--surface);
 }
 
 :global(.profile-safety-decision):global(.is-available) {
