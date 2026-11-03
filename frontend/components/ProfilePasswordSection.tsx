@@ -101,6 +101,7 @@ export function ProfilePasswordSection({ password }: { password: ReturnType<type
             required disabled={pending} value={currentPassword}
             aria-invalid={error?.field === "current"} aria-describedby={error?.field === "current" ? "profile-password-result" : undefined}
             onChange={(event) => updateCurrent(event.target.value)} />
+          {error?.field === "current" ? <p id="profile-password-result" role="alert" className="field-error">{error.message}</p> : null}
         </div>
         <div className="field">
           <label htmlFor="profile-new-password">كلمة المرور الجديدة</label>
@@ -108,9 +109,10 @@ export function ProfilePasswordSection({ password }: { password: ReturnType<type
             required disabled={pending} value={newPassword}
             aria-invalid={error?.field === "new"} aria-describedby={`profile-password-hint${error?.field === "new" ? " profile-password-result" : ""}`}
             onChange={(event) => updateNew(event.target.value)} />
+          {error?.field === "new" ? <p id="profile-password-result" role="alert" className="field-error">{error.message}</p> : null}
           <p id="profile-password-hint">استخدم 8 أحرف على الأقل.</p>
         </div>
-        {error || success ? (
+        {error?.field === null || success ? (
           <p id="profile-password-result" ref={resultRef} tabIndex={-1} role={error ? "alert" : "status"} className={error ? "field-error" : undefined}>
             {error?.message ?? "تم تغيير كلمة المرور."}
           </p>
