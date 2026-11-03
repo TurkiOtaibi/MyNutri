@@ -1242,6 +1242,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "حفظ الخطة" }).click();
     await expect(page.getByText("تعذر حفظ التغييرات")).toBeVisible();
+    await expect(page.getByRole("alert")).toContainText("لم نتأكد من الحفظ");
     await expect(page.getByLabel("الطول")).toHaveValue(String(nextHeight));
     let profileRefetches = 0;
     await page.route(profilePath, async (route) => {

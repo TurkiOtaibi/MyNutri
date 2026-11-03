@@ -112,7 +112,7 @@ export type TargetPlanWritePhase =
   | { kind: "reconciling"; submission: TargetPlanSubmission; accepted: TargetPlanWriteResponse }
   | { kind: "committed" }
   | { kind: "recovery"; submission: TargetPlanSubmission; accepted: TargetPlanWriteResponse }
-  | { kind: "failed"; submission: TargetPlanSubmission };
+  | { kind: "failed"; submission: TargetPlanSubmission; rejected: boolean };
 
 export function toDraft(profile: ProfileInput): DraftProfile {
   return {

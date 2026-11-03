@@ -76,8 +76,9 @@ export function ProfilePage() {
     return Boolean(target?.current);
   }
 
-  useEffect(() => () => {
-    mountedRef.current = false;
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
   }, []);
 
   const profileQueryKey = ["profile", subjectId] as const;
@@ -346,7 +347,8 @@ export function ProfilePage() {
         transitionWrite({ kind: "idle" });
         requestPreview();
       } else {
-        transitionWrite({ kind: "failed", submission });
+        const rejected = error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 408;
+        transitionWrite({ kind: "failed", submission, rejected });
       }
     } finally {
       if (writePhaseRef.current.kind === "submitting") {

@@ -368,7 +368,7 @@ export function ProfileView({
       {dirty && layout.tab === "goals" ? (
         <div className="profile-save-bar" role="region" aria-label="حفظ تغييرات الملف الشخصي">
           <span>{Object.keys(errors).length > 0 ? "صحح الحقول المعلّمة للمتابعة" : preview.safetyOutcome ? "راجع قرار السلامة وحدّث المعاينة قبل المتابعة" : writeErrorCode ? "تغيّرت المعاينة. راجع الأهداف المحدثة ثم أكد مجددًا" : writePhase.kind === "failed" ? PROFILE_WRITE_ERROR : !registryReady ? "سجل التغذية غير جاهز" : "تغييرات غير محفوظة"}</span>
-          {writePhase.kind === "failed" ? <small>تحقق من الاتصال ثم أعد المحاولة</small> : null}
+          {writePhase.kind === "failed" ? <small role="alert">{writePhase.rejected ? "لم يُقبل الطلب. راجع التغييرات ثم أعد المحاولة." : "لم نتأكد من الحفظ. تحقق من الاتصال ثم أعد المحاولة بنفس التغييرات."}</small> : null}
           <button className="btn primary" type="button" onClick={() => intents.submit()} disabled={!registryReady || writePhase.kind === "submitting" || preview.pending || (validationHasPayload && !preview.current?.preview_hash && !preview.safetyOutcome)}>
             {writePhase.kind === "submitting" ? <><LoaderCircle className="spin" size={17} /> جارٍ حفظ الخطة…</> : preview.safetyOutcome ? "تحديث المعاينة" : writeErrorCode ? "مراجعة المعاينة" : writePhase.kind === "failed" ? <><RotateCcw size={17} /> إعادة المحاولة</> : "مراجعة وتأكيد"}
           </button>
