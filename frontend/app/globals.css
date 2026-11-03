@@ -1679,6 +1679,7 @@ a {
 
   .food-table-wrap,
   .foods-pagination,
+  .foods-desktop-error,
   .foods-desktop-controls {
     display: none;
   }
@@ -1700,7 +1701,7 @@ a {
   }
 
   .foods-controls {
-    display: block;
+    display: none;
   }
 
   .foods-mobile-filters {
@@ -1835,14 +1836,16 @@ a {
   }
 
   .foods-page-head {
-    align-items: stretch;
-    flex-direction: column;
+    align-items: start;
     gap: 12px;
     margin-bottom: 14px;
   }
 
   .foods-add-button {
-    align-self: start;
+    flex: 0 0 auto;
+    background: var(--surface);
+    color: var(--accent);
+    box-shadow: none;
   }
 
   .foods-catalog {

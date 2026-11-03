@@ -57,7 +57,7 @@ describe("Diary and Food clause traceability", () => {
   });
 
   it("BR-FOD-004 exposes both exact no-results messages and clear action", () => {
-    const html = renderToStaticMarkup(createElement(EmptyFoodsState, { hasFilters: true, onClear: () => {} }));
+    const html = renderToStaticMarkup(createElement(EmptyFoodsState, { hasSearch: true, onClear: () => {}, onClearCategory: () => {} }));
     expect(html).toContain("لا توجد نتائج مطابقة للبحث.");
     expect(html).toContain("جرّب اسمًا آخر أو امسح عوامل التصفية.");
     expect(html).toContain("مسح البحث والتصفية</button>");

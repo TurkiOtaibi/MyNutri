@@ -109,7 +109,7 @@ export function FoodsPage() {
   });
 
   const data = foodsQuery.data;
-  const hasFilters = Boolean(search || category);
+  const retainedPageError = foodsQuery.isError && page > 1 && mobileItems.length > 0;
   const desktopFoods = data?.items ?? [];
   const canLoadMore = Boolean(data && page < data.total_pages);
   const shownMobileCount = Math.min(mobileItems.length, data?.total ?? mobileItems.length);
@@ -142,7 +142,7 @@ export function FoodsPage() {
           <p className="page-kicker">ابحث بسرعة واعرض القيم الغذائية حسب الحصة التي تستخدمها يوميًا.</p>
         </div>
         {isAdmin ? (
-          <Link className="btn primary foods-add-button" href="/foods/new">
+          <Link className="btn foods-add-button" href="/foods/new">
             <Plus size={18} aria-hidden="true" />
             إضافة طعام
           </Link>
@@ -159,7 +159,7 @@ export function FoodsPage() {
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
               placeholder="ابحث باسم الطعام أو العلامة التجارية..."
-              aria-label="بحث باسم الطعام"
+              aria-label="بحث باسم الطعام أو العلامة التجارية"
             />
             {searchInput ? (
               <button type="button" className="search-clear" onClick={() => {
@@ -257,7 +257,7 @@ export function FoodsPage() {
         {foodsQuery.isPending && page === 1 ? <FoodsLoading /> : null}
 
         {foodsQuery.isError ? (
-          <div className="catalog-state" role="alert">
+          <div className={retainedPageError ? "catalog-state foods-desktop-error" : "catalog-state"} role="alert">
             <strong>تعذر تحميل الأطعمة</strong>
             <span>{FOODS_READ_ERROR}</span>
             <button className="btn" type="button" onClick={() => foodsQuery.refetch()}>
@@ -268,10 +268,18 @@ export function FoodsPage() {
         ) : null}
 
         {!foodsQuery.isPending && !foodsQuery.isError && data?.total === 0 ? (
-          <EmptyFoodsState hasFilters={hasFilters} onClear={clearFilters} />
+          <EmptyFoodsState
+            hasSearch={Boolean(search)}
+            categoryLabel={category ? categoryLabels.get(category) ?? category : undefined}
+            onClear={clearFilters}
+            onClearCategory={() => {
+              resetCollection({ category: "" });
+              searchRef.current?.focus();
+            }}
+          />
         ) : null}
 
-        {!foodsQuery.isError && (desktopFoods.length > 0 || mobileItems.length > 0) ? (
+        {(!foodsQuery.isError || retainedPageError) && (desktopFoods.length > 0 || mobileItems.length > 0) ? (
           <>
             <div className="food-table-wrap">
               <table className="food-table serving-first-table">
@@ -317,7 +325,15 @@ export function FoodsPage() {
                 />
               ))}
               {foodsQuery.isPending && page > 1 ? <div className="loading-more" role="status">جاري تحميل المزيد...</div> : null}
-              {canLoadMore ? (
+              {retainedPageError ? (
+                <div className="catalog-state" role="alert">
+                  <strong>تعذّر تحميل المزيد من الأطعمة.</strong>
+                  <button className="btn" type="button" onClick={() => foodsQuery.refetch()} disabled={foodsQuery.isFetching}>
+                    إعادة المحاولة
+                  </button>
+                </div>
+              ) : null}
+              {canLoadMore && !foodsQuery.isError ? (
                 <button className="btn load-more" type="button" onClick={() => setPage((current) => current + 1)}>
                   عرض المزيد
                 </button>
