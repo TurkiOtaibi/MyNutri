@@ -119,7 +119,7 @@ export function ProfilePasswordSection({ password }: { password: ReturnType<type
             {error?.message ?? "تم تغيير كلمة المرور."}
           </p>
         ) : null}
-        <div className="actions"><button className="btn primary" type="submit" disabled={pending}>تغيير كلمة المرور</button></div>
+        <div className="actions"><button className="btn primary" type="submit" disabled={pending}>{pending ? "جارٍ تغيير كلمة المرور…" : "تغيير كلمة المرور"}</button></div>
       </form>
     </section>
   );
