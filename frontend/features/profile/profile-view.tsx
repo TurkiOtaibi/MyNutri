@@ -4,7 +4,7 @@ import type { ActivityLevel, Goal, NutritionRegistryResponse, Sex, TargetPlanHis
 import { NumericSettingsRow, OptionList, SelectionCard, SettingsButton, CutIntensitySelector } from "./profile-controls";
 import { AdditionalTargetsCard, CalculationExplanation, ExpectedTargetsCard, RegistryState, TargetPlanHistory, TargetsCard } from "./profile-targets";
 import { ProfileConfirm, ProfileSheet } from "./profile-dialogs";
-import { PROFILE_LIMITS, activityDescriptions, activityDisplayLabels, activityLabels, goalDescriptions, goalDisplayLabels, goalLabels, sexLabels, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type SheetKind, type TargetPlanWritePhase } from "./profile-model";
+import { FAT_DEFAULTS, PROFILE_LIMITS, PROTEIN_DEFAULT, activityDescriptions, activityDisplayLabels, activityLabels, goalDescriptions, goalDisplayLabels, goalLabels, sexLabels, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type SheetKind, type TargetPlanWritePhase } from "./profile-model";
 import "./profile.module.css";
 import { formatGregorianArabicDate } from "@/lib/dates";
 
@@ -438,7 +438,13 @@ export function ProfileView({
           confirmLabel="استعادة القيم"
           onClose={intents.cancelRestoreDefaults}
           onConfirm={intents.confirmRestoreDefaults}
-        />
+        >
+          <dl className="profile-preview-summary profile-restore-values">
+            <div><dt>البروتين لكل كجم</dt><dd><bdi dir="ltr">{PROTEIN_DEFAULT}</bdi> جم/كجم</dd></div>
+            <div><dt>نسبة الدهون</dt><dd><bdi dir="ltr">{FAT_DEFAULTS[draft.sex] * 100}%</bdi></dd></div>
+          </dl>
+          <p>تظهر القيم في النموذج بعد الاستعادة، وتُحفظ عند تأكيد الخطة.</p>
+        </ProfileConfirm>
       ) : null}
 
       {(writePhase.kind === "confirming" || writePhase.kind === "submitting") ? (
