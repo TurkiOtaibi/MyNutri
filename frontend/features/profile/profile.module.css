@@ -948,6 +948,10 @@ button:global(.profile-setting-row):focus-visible,
   padding-block: 8px;
 }
 
+:global(.profile-restore-values) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 :global(.profile-confirm) p {
   margin: 0 0 6px;
   color: var(--muted);

@@ -279,6 +279,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.getByLabel("نسبة الدهون").fill("28");
     await page.getByRole("button", { name: "استعادة القيم الافتراضية" }).click();
     const confirm = page.getByRole("dialog", { name: "استعادة القيم الافتراضية؟" });
+    await expect(confirm.locator("dd")).toHaveText(["1.2 جم/كجم", originalProfile.sex === "female" ? "30%" : "25%"]);
     await confirm.getByRole("button", { name: "استعادة القيم", exact: true }).click();
     await expect(page.getByLabel("البروتين لكل كجم")).toHaveValue("1.2");
     await expect(page.getByLabel("نسبة الدهون")).toHaveValue(originalProfile.sex === "female" ? "30" : "25");
