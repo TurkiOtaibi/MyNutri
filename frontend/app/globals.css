@@ -1238,6 +1238,12 @@ a {
   font-size: 19px;
 }
 
+.serving-comparison {
+  margin: 14px 0 0;
+  padding-block-start: 12px;
+  border-block-start: 1px solid var(--line);
+}
+
 .basis-reference {
   color: var(--muted);
   font-size: 12px;

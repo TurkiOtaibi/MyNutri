@@ -47,6 +47,7 @@ test.describe("Foods serving-first catalog and details @foods", () => {
     });
     await page.goto(`/foods/${food.id}`);
 
+    await expect(page.locator(".serving-comparison")).toHaveText("حصتان (28 جم) · 138 سعرة · 2.2 جم بروتين");
     await expect(page.locator(".serving-summary")).toContainText("69");
     await expect(page.locator(".food-detail-mode-caption")).toContainText("قطعة واحدة · 14 جم");
     await expect(page.locator(".serving-summary")).toContainText("1.1");
