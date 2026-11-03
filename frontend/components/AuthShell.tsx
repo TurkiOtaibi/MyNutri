@@ -88,6 +88,11 @@ export function AuthShell() {
     } finally { submitting.current = false; setPending(false); }
   }
 
+  const reason = search.get("reason");
+  const sessionNotice = reason === "expired" ? "انتهت جلستك. سجّل الدخول مرة أخرى."
+    : reason === "disabled" ? "حسابك موقوف. تواصل مع المشرف." : null;
+  const showSessionNotice = Boolean(sessionNotice && !message);
+
   return (
     <section className="auth-page login-page" aria-labelledby="login-title">
       <form ref={formRef} className="auth-panel" onSubmit={submit} noValidate>
@@ -96,12 +101,13 @@ export function AuthShell() {
           <h1 id="login-title">تسجيل الدخول</h1>
           <p>ادخل إلى بياناتك الغذائية بأمان.</p>
         </header>
+        {showSessionNotice ? <div className="auth-message" id="session-notice" role="status">{sessionNotice}</div> : null}
         <label>
           <span>اسم المستخدم</span>
           <input ref={usernameRef} value={username} onChange={(e) => {
             setUsername(e.target.value);
             if (message === USERNAME_REQUIRED) setMessage("");
-          }} aria-invalid={message === USERNAME_REQUIRED || undefined} aria-describedby={message === USERNAME_REQUIRED ? "login-message" : undefined} type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={32} required dir="ltr" />
+          }} aria-invalid={message === USERNAME_REQUIRED || undefined} aria-describedby={message === USERNAME_REQUIRED ? "login-message" : showSessionNotice ? "session-notice" : undefined} type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={32} required dir="ltr" />
         </label>
         <div className="login-password">
           <label htmlFor="login-password">كلمة المرور</label>
@@ -115,7 +121,7 @@ export function AuthShell() {
             </button>
           </div>
         </div>
-        {message || search.get("reason") ? <div className="auth-message" id="login-message" role="status">{message || (search.get("reason") === "disabled" ? "حسابك موقوف. تواصل مع المشرف." : "انتهت جلستك. سجّل الدخول مرة أخرى.")}</div> : null}
+        {message ? <div className="auth-message" id="login-message" role="status">{message}</div> : null}
         <button className="btn primary" disabled={pending} type="submit">
           <LogIn size={18} />
           {pending ? "جارٍ الإرسال..." : "دخول"}

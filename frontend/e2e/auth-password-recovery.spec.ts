@@ -63,6 +63,7 @@ for (const [code, message] of [
     await page.goto("/profile");
     await expect(page).toHaveURL(/\/auth\/login\?/);
     await expect(page.getByRole("status")).toHaveText(message);
+    await expect(page.getByLabel("اسم المستخدم", { exact: true })).toHaveAccessibleDescription(message);
     expect(new URL(page.url()).searchParams.get("next")).toBe("/profile");
     expect(await page.evaluate(key => localStorage.getItem(key), SESSION_TOKEN_KEY)).toBeNull();
     await page.unroute(`${API_URL}/account/me`);
