@@ -689,14 +689,6 @@ button:global(.profile-setting-row):focus-visible,
   font-size: 12px;
 }
 
-:global(.profile-preview-error) button {
-  min-height: 44px;
-  border: 0;
-  background: transparent;
-  color: var(--danger);
-  font-weight: 750;
-}
-
 :global(.profile-save-bar) {
   position: fixed;
   z-index: 40;

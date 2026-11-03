@@ -140,9 +140,9 @@ export function ExpectedTargetsCard({
   const announceSafety = safetyAttemptSequence > 0;
   return (
     <section className="profile-preview-card" aria-label="الأهداف المتوقعة بعد الحفظ">
-      <header><div><h2>الأهداف المتوقعة بعد الحفظ</h2><p>{previewDescription}</p></div><span>معاينة</span></header>
+      <header><div><h2>الأهداف المتوقعة بعد الحفظ</h2><p>{failed ? "يمكنك إعادة المحاولة بنفس القيم التي أدخلتها." : previewDescription}</p></div><span>معاينة</span></header>
       {pending ? <div className="profile-preview-skeleton" aria-label="جارٍ تحديث معاينة الأهداف" role="status" /> : null}
-      {failed ? <div className="profile-preview-error"><strong>تعذر تحديث معاينة الأهداف</strong><button type="button" onClick={onRetry}>إعادة المحاولة</button></div> : null}
+      {failed ? <div className="profile-preview-error"><strong role="alert">تعذر تحديث معاينة الأهداف</strong><button className="btn" type="button" onClick={onRetry}>إعادة المحاولة</button></div> : null}
       {!pending && !failed && targets ? (
         <>
           {isPreviewActivatable(targets) ? <div className="profile-calorie-target">
