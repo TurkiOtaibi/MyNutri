@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, getFood, getNutritionRegistry, getCalendarAuthority } from "@/lib/api";
+import { multiplyServing } from "@/features/diary/diary-model";
 import { AddEntrySheet } from "@/features/diary/diary-entry-dialogs";
 import { invalidateDiary, useCalendarAuthorityRefresh } from "@/features/diary/diary-hooks";
 import { useSessionAbortSignal } from "./SessionQueryProvider";
@@ -25,6 +26,8 @@ import {
   calculateServingNutrition,
   defaultServingText,
   defaultUnitText,
+  formatNutrientNumber,
+  unitBasisLabels,
   formatServingCalories,
   formatServingMacro,
   nutritionBasisLabels,
@@ -118,6 +121,7 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
   const food = foodQuery.data;
   const registry = registryQuery.data;
   const servingNutrition = calculateServingNutrition(food);
+  const twoServings = multiplyServing(food, 2);
   const basisNutrition = perBasisNutrition(food);
   const displayedNutrition = mode === "serving" ? servingNutrition : basisNutrition;
   const basisLabel = nutritionBasisLabels[food.nutrition_basis];
@@ -182,6 +186,13 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
           </div>
         ) : (
           <p className="nutrition-unavailable">تعذر حساب القيم الغذائية للحصة الافتراضية.</p>
+        )}
+        {twoServings && (
+          <p className="serving-comparison">
+            <strong>حصتان (<bdi>{formatNutrientNumber(food.unit_amount * 2)} {unitBasisLabels[food.unit_basis]}</bdi>)</strong>
+            {" · "}<bdi>{formatServingCalories(twoServings.calories)}</bdi> سعرة
+            {" · "}<bdi>{formatServingMacro(twoServings.protein_g)}</bdi> جم بروتين
+          </p>
         )}
         <p className="basis-reference">القيم محسوبة من بيانات {basisLabel}</p>
       </section>
