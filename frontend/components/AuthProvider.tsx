@@ -175,7 +175,13 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   // It contains only the generic static shell, never account or domain data.
   if (offlineShell) return children;
   return <>
-    {signOutFailed ? <p role="alert" className="state-note" dir="rtl">تعذر تسجيل الخروج. حاول مرة أخرى.</p> : null}
+    {signOutFailed ? (
+      <div role="alert" className="state-note" dir="rtl">
+        <strong>انتهت جلستك في هذا المتصفح.</strong>
+        <p>لم نتمكن من تأكيد إنهاء الجلسة على الخادم.</p>
+        <small>تعذر تسجيل الخروج. حاول مرة أخرى.</small>
+      </div>
+    ) : null}
     {loading && slow ? <p role="status" className="state-note" dir="rtl">نجهّز بياناتك…</p> : null}
     {content ?? (permitted ? children : null)}
   </>;
