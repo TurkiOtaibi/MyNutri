@@ -41,6 +41,7 @@ for (const [code, message] of [
     await page.route(`${API_URL}/auth/login`, route => route.fulfill({ status: 401, json: { detail: { code } } }));
     await signIn(page, "message@example.test");
     await expect(page.getByRole("status")).toHaveText(message);
+    await expect(page.getByLabel("اسم المستخدم", { exact: true })).toHaveAccessibleDescription(message);
     expect(await page.evaluate(key => localStorage.getItem(key), SESSION_TOKEN_KEY)).toBeNull();
   });
 }
