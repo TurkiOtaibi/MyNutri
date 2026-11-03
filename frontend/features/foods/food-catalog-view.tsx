@@ -230,13 +230,20 @@ export function FoodsLoading() {
   );
 }
 
-export function EmptyFoodsState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () => void }) {
-  if (hasFilters) {
+export function EmptyFoodsState({ hasSearch, categoryLabel, onClear, onClearCategory }: {
+  hasSearch: boolean;
+  categoryLabel?: string;
+  onClear: () => void;
+  onClearCategory: () => void;
+}) {
+  if (hasSearch || categoryLabel) {
     return (
       <div className="catalog-state">
-        <strong>لا توجد نتائج مطابقة للبحث.</strong>
-        <span>جرّب اسمًا آخر أو امسح عوامل التصفية.</span>
-        <button className="btn" type="button" onClick={onClear}>مسح البحث والتصفية</button>
+        {categoryLabel && <span>التصنيف الحالي: <bdi>{categoryLabel}</bdi></span>}
+        <strong>{hasSearch ? "لا توجد نتائج مطابقة للبحث." : "لا توجد أطعمة ضمن هذا التصنيف."}</strong>
+        {hasSearch && <span>جرّب اسمًا آخر أو امسح عوامل التصفية.</span>}
+        {categoryLabel && <button className="btn" type="button" onClick={onClearCategory}>عرض كل التصنيفات</button>}
+        {hasSearch && <button className="btn" type="button" onClick={onClear}>مسح البحث والتصفية</button>}
       </div>
     );
   }

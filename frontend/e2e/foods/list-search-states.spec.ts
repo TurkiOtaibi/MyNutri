@@ -482,9 +482,14 @@ test.describe("Foods list, search, and states @foods", () => {
     const categorized = plan024Food(245, "Plan024 categorized");
     const sorted = plan024Food(246, "Plan024 sorted");
 
+    let rejectPageTwo = true;
     await page.route(/\/foods\?.*$/, async (route) => {
       const params = new URL(route.request().url()).searchParams;
       const requestedPage = Number(params.get("page") ?? "1");
+      if (requestedPage === 2 && rejectPageTwo) return route.fulfill({ status: 503, body: "" });
+      if (params.get("search") && params.get("category")) {
+        return route.fulfill({ json: plan024Page([]) });
+      }
       if (params.get("search")) {
         return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan024Page([searched])) });
       }
@@ -502,6 +507,11 @@ test.describe("Foods list, search, and states @foods", () => {
     await page.goto("/foods");
     await expect(plan024VisibleRowTrigger(page, activeFirst)).toBeVisible();
     await page.getByRole("button", { name: "عرض المزيد" }).click();
+    const retry = page.getByRole("button", { name: "إعادة المحاولة" });
+    await expect(retry).toBeVisible();
+    await expect(plan024VisibleRowTrigger(page, activeFirst)).toBeVisible();
+    rejectPageTwo = false;
+    await retry.press("Enter");
     await expect(plan024VisibleRowTrigger(page, activeSecond)).toBeVisible();
 
     await page.getByLabel("بحث باسم الطعام").fill("needle");
@@ -516,6 +526,17 @@ test.describe("Foods list, search, and states @foods", () => {
     await otherCategory.click();
     await expect(plan024VisibleRowTrigger(page, categorized)).toBeVisible();
     await expect(plan024VisibleRowTrigger(page, activeFirst)).toHaveCount(0);
+
+    const search = page.getByRole("textbox", { name: "بحث باسم الطعام أو العلامة التجارية" });
+    await search.fill("needle");
+    await page.getByRole("button", { name: "عرض كل التصنيفات" }).press("Enter");
+    await expect(search).toBeFocused();
+    await expect(search).toHaveValue("needle");
+    await expect(plan024VisibleRowTrigger(page, searched)).toBeVisible();
+    await search.fill("");
+    await expect(plan024VisibleRowTrigger(page, activeFirst)).toBeVisible();
+    await otherCategory.click();
+    await expect(plan024VisibleRowTrigger(page, categorized)).toBeVisible();
 
     const allCategories = plan024MobileCategory(page, "الكل");
     await expect(allCategories).toHaveCount(1);
