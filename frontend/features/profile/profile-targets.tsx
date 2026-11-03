@@ -77,14 +77,15 @@ export function RegistryState({ kind, onRetry }: { kind: "loading" | "unavailabl
   );
 }
 
-export function TargetPlanHistory({ plans, pending, failed, hasMore, loadingMore, onRetry, onLoadMore }: { plans: TargetPlanSummary[]; pending: boolean; failed: boolean; hasMore: boolean; loadingMore: boolean; onRetry: () => void; onLoadMore: () => void }) {
+export function TargetPlanHistory({ effectivePlanId, today, plans, pending, failed, hasMore, loadingMore, onRetry, onLoadMore }: { effectivePlanId: string | null; today: string | null; plans: TargetPlanSummary[]; pending: boolean; failed: boolean; hasMore: boolean; loadingMore: boolean; onRetry: () => void; onLoadMore: () => void }) {
   return (
     <section className="profile-plan-history" aria-labelledby="target-plan-history-title">
       <h2 id="target-plan-history-title">سجل الخطط</h2>
       {pending ? <div className="profile-history-loading" role="status">جارٍ تحميل سجل الخطط</div> : null}
       {failed ? <div className="profile-history-error" role="alert">تعذر تحميل سجل الخطط<button className="btn" type="button" onClick={onRetry}>إعادة المحاولة</button></div> : null}
       {!pending && !failed && plans.length === 0 ? <p>لا توجد خطط محفوظة بعد.</p> : null}
-      {!failed && plans.length > 0 ? <ol>{plans.map((plan) => <li key={plan.id}><div><strong>النسخة <bdi dir="ltr">{plan.revision}</bdi></strong><span>تاريخ السريان <time dateTime={plan.effective_from}>{formatShortDate(plan.effective_from)} {plan.effective_from.slice(0, 4)}</time></span></div><span><bdi dir="ltr">{plan.targets.target_calories}</bdi> سعرة</span><dl className="profile-history-macros">{([
+      {!failed && plans.length > 0 ? <ol>{plans.map((plan) => <li key={plan.id}><div><strong>تاريخ السريان <time dateTime={plan.effective_from}>{formatShortDate(plan.effective_from)} {plan.effective_from.slice(0, 4)}</time></strong>
+        <span>النسخة <bdi dir="ltr">{plan.revision}</bdi>{plan.id === effectivePlanId ? " · خطة اليوم" : today && plan.effective_from > today ? " · تاريخ مستقبلي" : ""}</span></div><span><bdi dir="ltr">{plan.targets.target_calories}</bdi> سعرة</span><dl className="profile-history-macros">{([
         ["البروتين", plan.targets.protein_g],
         ["الكربوهيدرات", plan.targets.carb_g],
         ["الدهون", plan.targets.fat_g]

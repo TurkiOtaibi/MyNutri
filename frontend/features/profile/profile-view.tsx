@@ -48,6 +48,7 @@ type ProfileTargetsViewState = {
     data: NutritionRegistryResponse | undefined;
   };
   history: {
+    effectivePlanId: string | null;
     plans: TargetPlanHistoryResponse["items"];
     pending: boolean;
     failed: boolean;
@@ -336,6 +337,8 @@ export function ProfileView({
       <div className="profile-tab-panel" role="tabpanel" id="profile-panel-history" aria-labelledby="profile-tab-history" hidden={layout.tab !== "history"}>
         <TargetPlanHistory
           plans={history.plans}
+          effectivePlanId={history.effectivePlanId}
+          today={authoritativeDate}
           pending={history.pending}
           failed={history.failed}
           hasMore={history.hasMore}
