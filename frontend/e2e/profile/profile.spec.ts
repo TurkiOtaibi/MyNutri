@@ -544,6 +544,7 @@ test.describe("@profile Profile and targets redesign", () => {
     expect(writePayload).toBeNull();
 
     await effectiveDate.fill(future);
+    await expect(effectiveDate).toHaveAccessibleDescription("بعد الحفظ، تبدأ الأهداف الجديدة في التاريخ المحدد ولا تتغيّر أهداف يوميات اليوم.");
     await expect.poll(() => previewRequests).toBe(1);
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
     const confirmation = page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" });
