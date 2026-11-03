@@ -10,6 +10,7 @@ test("own-password validation, backend rejection, success and independent profil
   let requests = 0;
   await page.route("**/auth/change-password", async (route) => {
     requests += 1;
+    if (requests === 2) return route.abort("connectionreset");
     expect(route.request().postDataJSON()).toEqual({
       current_password: "Synthetic-current-password!",
       new_password: "Synthetic-new-password!",
@@ -33,6 +34,10 @@ test("own-password validation, backend rejection, success and independent profil
   await submit.click();
   await expect(page.getByText("كلمة المرور الحالية غير صحيحة.", { exact: true })).toBeVisible();
   await expect(current).toBeFocused();
+  await submit.click();
+  const unconfirmed = page.getByRole("alert").filter({ hasText: "تعذر التأكد من تغيير كلمة المرور" });
+  await expect(unconfirmed).toBeFocused();
+  expect(requests).toBe(2);
   await openSection(page, "أهدافي");
   const weight = page.getByLabel("الوزن", { exact: true });
   const previousWeight = await weight.inputValue();
