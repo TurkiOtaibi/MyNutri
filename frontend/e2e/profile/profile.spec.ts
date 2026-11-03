@@ -1406,10 +1406,14 @@ test.describe("@profile Profile and targets redesign", () => {
     const weight = page.getByLabel("الوزن", { exact: true });
     const draft = String(originalProfile.weight_kg + 3);
     await weight.fill(draft);
-    await page.locator(".nav-signout").click();
+    await page.getByRole("tab", { name: "الحساب", exact: true }).click();
+    const accountLogout = page.getByRole("tabpanel", { name: "الحساب" }).getByRole("button", { name: "تسجيل الخروج" });
+    await accountLogout.press("Enter");
     const dialog = page.getByRole("dialog", { name: "تغييرات غير محفوظة" });
     await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
     expect(logoutCalls).toBe(0);
+    await expect(accountLogout).toBeFocused();
+    await page.getByRole("tab", { name: "أهدافي", exact: true }).click();
     await expect(page).toHaveURL(/\/profile$/);
     await expect(page.locator(".nav-signout")).toBeVisible();
     await expect(weight).toHaveValue(draft);
