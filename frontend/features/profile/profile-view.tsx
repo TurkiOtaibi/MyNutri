@@ -145,9 +145,15 @@ export function ProfileView({
           {hasPendingServerProfile ? (
             <div className="unsaved-conflict" role="status">
               <p>توجد نسخة أحدث من بيانات الملف على الخادم. احتفظنا بتعديلاتك الحالية.</p>
-              <div className="actions">
-                <button className="btn" type="button" onClick={intents.keepLocalProfile}>الاحتفاظ بتعديلاتي</button>
-                <button className="btn danger" type="button" onClick={intents.acceptServerProfile}>تحميل نسخة الخادم</button>
+              <div className="profile-conflict-options">
+                <div>
+                  <button className="btn" type="button" aria-describedby="keep-profile-hint" onClick={intents.keepLocalProfile}>الاحتفاظ بتعديلاتي</button>
+                  <small id="keep-profile-hint">عند تأكيد الحفظ، تُرسل كل القيم الظاهرة في النموذج.</small>
+                </div>
+                <div>
+                  <button className="btn danger" type="button" aria-describedby="load-profile-hint" onClick={intents.acceptServerProfile}>تحميل نسخة الخادم</button>
+                  <small id="load-profile-hint">بعد تأكيد تجاهل تعديلاتك، تظهر قيم النسخة الأحدث.</small>
+                </div>
               </div>
             </div>
           ) : null}

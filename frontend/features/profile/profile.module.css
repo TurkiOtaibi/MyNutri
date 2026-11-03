@@ -63,6 +63,19 @@
   font-size: 17px;
 }
 
+:global(.profile-conflict-options) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: 12px;
+}
+
+:global(.profile-conflict-options) > div {
+  display: grid;
+  justify-items: start;
+  align-content: start;
+  gap: 4px;
+}
+
 :global(.profile-cut-intensity) {
   min-width: 0;
   margin: 0;
