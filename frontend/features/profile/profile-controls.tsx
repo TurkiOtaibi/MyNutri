@@ -36,7 +36,7 @@ const cutIntensityOptions: Array<{ value: CutIntensity; label: string; percent: 
 
 export function CutIntensitySelector({ value, onChange }: { value: CutIntensity; onChange: (value: CutIntensity) => void }) {
   return (
-    <fieldset className="profile-cut-intensity" role="radiogroup">
+    <fieldset className="profile-cut-intensity" role="radiogroup" aria-describedby="cut-intensity-hint">
       <legend>شدة خفض الوزن</legend>
       <div className="profile-cut-intensity-options">
         {cutIntensityOptions.map((option) => (
@@ -49,13 +49,14 @@ export function CutIntensitySelector({ value, onChange }: { value: CutIntensity;
               onChange={() => onChange(option.value)}
             />
             <span>
-              <strong>{option.label}</strong>
+              <strong>{value === option.value ? <Check size={14} aria-hidden="true" /> : null}{option.label}</strong>
               <bdi dir="ltr">{option.percent}</bdi>
               {option.recommended ? <small>موصى به</small> : null}
             </span>
           </label>
         ))}
       </div>
+      <p id="cut-intensity-hint">بعد تغيير النسبة، راجع السعرات والعجز المطبق في «الأهداف المتوقعة بعد الحفظ».</p>
     </fieldset>
   );
 }
