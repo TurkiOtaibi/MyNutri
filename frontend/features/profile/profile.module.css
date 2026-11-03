@@ -118,7 +118,18 @@
   text-align: center;
 }
 
+:global(.profile-cut-intensity) > p {
+  margin: 0;
+  padding: 0 12px 12px;
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.5;
+}
+
 :global(.profile-cut-intensity-options) strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--ink);
   font-size: 13px;
 }
