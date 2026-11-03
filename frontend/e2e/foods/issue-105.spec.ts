@@ -2,7 +2,10 @@ import { API_URL, diaryDate, test, expect, uniqueName, fillRequiredFoodForm, sub
 
 for (const role of ["admin", "user"] as const) {
   test(`BR-FOD-013 ${role} opens the shared add flow with food and server today`, async ({ page, foodsApi }) => {
-    const food = await foodsApi.create({ name: uniqueName("Details add") });
+    const food = await foodsApi.create({
+      name: uniqueName("Details add"), default_unit_type: "serving", unit_amount: 30, calories: 400, protein_g: 20
+    });
+    await page.setViewportSize({ width: role === "user" ? 375 : 1440, height: 844 });
     if (role === "user") await page.route(`${API_URL}/account/me`, async (route) => {
       const response = await route.fetch();
       await route.fulfill({ response, json: { ...await response.json(), role: "user" } });
@@ -14,8 +17,29 @@ for (const role of ["admin", "user"] as const) {
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(food.name, { exact: true })).toBeVisible();
     await expect(dialog.locator('[role="radio"][aria-checked="true"]')).toHaveCount(0);
+    const quantity = dialog.getByRole("textbox", { name: "الكمية", exact: true });
+    const preview = dialog.getByLabel("معاينة القيم الغذائية");
+    await expect(dialog.getByRole("button", { name: "إضافة الطعام", exact: true })).toBeDisabled();
+    await expect(dialog.getByText("اختر قسم الوجبة للمتابعة")).toBeVisible();
     await dialog.getByRole("radio", { name: "غداء", exact: true }).click();
-    await dialog.getByRole("textbox", { name: "الكمية", exact: true }).fill("2");
+    await quantity.fill("2");
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme });
+      await dialog.getByRole("button", { name: "جم", exact: true }).press("Enter");
+      await expect(quantity).toHaveValue("60");
+      await expect(preview).toContainText("60 جم");
+      await expect(preview.locator(".add-calorie-total strong")).toHaveText("240");
+      await expect(preview.getByText("بروتين", { exact: false })).toContainText("12 جم");
+      await expect(dialog.getByRole("radio", { name: "غداء", exact: true })).toHaveAttribute("aria-checked", "true");
+      await dialog.getByRole("button", { name: "حصة واحدة · 30 جم", exact: true }).press("Enter");
+      await expect(quantity).toHaveValue("2");
+      await expect(preview.locator(".add-calorie-total strong")).toHaveText("240");
+      await expect(preview.getByText("بروتين", { exact: false })).toContainText("12 جم");
+    }
+    if (role === "user") {
+      await dialog.getByRole("button", { name: "جم", exact: true }).click();
+      await quantity.fill("60");
+    }
     await dialog.getByRole("button", { name: "إضافة إلى الغداء", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.getByRole("button", { name: "إضافة إلى اليوميات", exact: true })).toBeFocused();
