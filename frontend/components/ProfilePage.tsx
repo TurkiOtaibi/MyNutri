@@ -504,6 +504,7 @@ export function ProfilePage() {
         savedTargets,
         registry: { pending: registryQuery.isPending, failed: registryQuery.isError, data: registryQuery.data },
         history: {
+          effectivePlanId: profileQuery.data?.effective_plan?.id ?? null,
           plans: planHistoryQuery.data?.pages.flatMap((page) => page.items) ?? [],
           pending: planHistoryQuery.isPending,
           failed: planHistoryQuery.isError,
