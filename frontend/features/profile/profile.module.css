@@ -654,6 +654,11 @@ button:global(.profile-setting-row):focus-visible,
   overflow-wrap: anywhere;
 }
 
+:global(.profile-safety-next-step) {
+  border-inline-start: 3px solid var(--danger);
+  padding-inline-start: 8px;
+}
+
 :global(.profile-safety-decision):global(.is-available) {
   border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
   background: color-mix(in srgb, var(--diary-soft) 65%, var(--surface));

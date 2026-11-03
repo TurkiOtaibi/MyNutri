@@ -205,7 +205,7 @@ export function ExpectedTargetsCard({
           data-focus-requested={announceSafety ? "true" : "false"}
         >
           <AlertTriangle size={20} aria-hidden="true" />
-          <div><strong>لا يمكن حفظ الهدف</strong><p>{safetyMessage}</p>{explanation ? <><p>{explanation.reason}</p><p>{explanation.alternative}</p></> : null}</div>
+          <div><strong>لا يمكن حفظ الهدف</strong><p>{safetyMessage}</p>{explanation ? <><p>{explanation.reason}</p><p className="profile-safety-next-step"><strong>الخطوة المقترحة</strong> — <span>{explanation.alternative}</span></p></> : null}</div>
         </div>
       ) : !pending && !failed && isPreviewActivatable(targets) ? (
         <div className="profile-safety-decision is-available" role="status">
