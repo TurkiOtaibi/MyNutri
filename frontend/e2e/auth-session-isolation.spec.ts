@@ -622,6 +622,36 @@ test("same browser context isolates cached profile and diary data across A to B 
   await context.close();
 });
 
+for (const sameAccount of [true, false]) {
+  test(`expired Profile draft stays cleared after login to ${sameAccount ? "the same" : "another"} account`, async ({ browser, request }) => {
+    const email = `expiry-a-${Date.now()}@example.test`;
+    const nextEmail = sameAccount ? email : `expiry-b-${Date.now()}@example.test`;
+    await applyProfileThroughTargetPlan(request, await token(email), profile(71));
+    if (!sameAccount) await applyProfileThroughTargetPlan(request, await token(nextEmail), profile(89));
+
+    const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    try {
+      const page = await context.newPage();
+      await signIn(page, email, PASSWORD, "/profile");
+      const weight = page.locator('input[aria-label="الوزن"]');
+      await expect(weight).toHaveValue("71");
+      await page.route(`${API_URL}/profile/preview`, route => route.request().postDataJSON()?.weight_kg === 72
+        ? route.fulfill({ status: 401, json: { detail: { code: "INVALID_CREDENTIAL" } } })
+        : route.continue());
+      await weight.fill("72");
+      await expect(page.getByRole("status")).toHaveText("انتهت جلستك. سجّل الدخول مرة أخرى.");
+      expect(new URL(page.url()).searchParams.get("next")).toBe("/profile");
+      await expect(weight).toHaveCount(0);
+      await installLeakObserver(page, [], sameAccount ? ["72"] : ["71", "72"]);
+      await submitLogin(page, nextEmail, PASSWORD, "/profile");
+      await expect(weight).toHaveValue(sameAccount ? "71" : "89");
+      expect(await leakRecords(page)).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+}
+
 test("@plan016 external A to B subject change clears A's dirty Profile registration synchronously", async ({ browser, request }) => {
   const suffix = Date.now();
   const emailA = `plan016-a-${suffix}@example.test`;
