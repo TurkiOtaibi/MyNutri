@@ -1430,6 +1430,8 @@ test.describe("@profile Profile and targets redesign", () => {
     await expect(page).toHaveURL(/\/auth\/login(?:\?.*)?$/);
     expect(logoutCalls).toBe(1);
     const signOutFailure = page.getByRole("alert").filter({ hasText: "تعذر تسجيل الخروج. حاول مرة أخرى." });
+    await expect(signOutFailure).toContainText("انتهت جلستك في هذا المتصفح.");
+    await expect(signOutFailure).toContainText("لم نتمكن من تأكيد إنهاء الجلسة على الخادم.");
     await expect(signOutFailure).toBeVisible();
     await expect(page.locator(".profile-form")).toHaveCount(0);
     await expect(page.getByLabel("الوزن", { exact: true })).toHaveCount(0);
