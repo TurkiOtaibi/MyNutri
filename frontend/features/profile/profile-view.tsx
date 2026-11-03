@@ -318,7 +318,11 @@ export function ProfileView({
               />
               {errors.effective_from ? <small id="effective-from-error" className="profile-field-error">{errors.effective_from}</small> : null}
             </label>
-            <p id="effective-from-hint" className="profile-effective-hint">اختر اليوم أو تاريخًا لاحقًا لبدء تطبيق الأهداف الجديدة.</p>
+            <p id="effective-from-hint" className="profile-effective-hint">
+              {authoritativeDate && effectiveFrom > authoritativeDate
+                ? "بعد الحفظ، تبدأ الأهداف الجديدة في التاريخ المحدد ولا تتغيّر أهداف يوميات اليوم."
+                : "اختر اليوم أو تاريخًا لاحقًا لبدء تطبيق الأهداف الجديدة."}
+            </p>
           </section>
 
           {registry.pending ? <RegistryState kind="loading" /> : registry.failed ? <RegistryState kind="unavailable" onRetry={intents.retryRegistry} /> : registryReady ? <AdditionalTargetsCard targets={savedTargets} registry={registry.data!} open={layout.additionalTargetsOpen} onToggle={intents.toggleAdditionalTargets} /> : null}
