@@ -1442,6 +1442,7 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.getByRole("button", { name: "كيف حُسبت أهدافي؟" }).click();
     const sheet = page.getByRole("dialog", { name: "طريقة حساب أهدافك" });
     await expect(sheet).toContainText("Mifflin–St Jeor");
+    await expect(sheet.getByRole("heading", { level: 3 })).toHaveText(["حساب السعرات", "حساب البروتين"]);
     await expect(targets).toContainText("الكربوهيدرات");
     for (const term of ["معدل الأيض الأساسي", "أساس الحساب", "وزن الحساب", "الوزن الفعلي", "الوزن المعدل",
       "مؤشر كتلة الجسم المستخدم", "العجز المطلوب", "العجز المطبق", "شدة الخفض المختارة", "تفاصيل حساب البروتين"]) {
