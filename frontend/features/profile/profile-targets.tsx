@@ -145,8 +145,11 @@ export function ExpectedTargetsCard({
       {failed ? <div className="profile-preview-error"><strong>تعذر تحديث معاينة الأهداف</strong><button type="button" onClick={onRetry}>إعادة المحاولة</button></div> : null}
       {!pending && !failed && targets ? (
         <>
+          <div className="profile-calorie-target">
+            <strong><bdi dir="ltr">{targets.final_target_calories}</bdi></strong>
+            <span>سعرة حرارية يوميًا</span>
+          </div>
           <div className="profile-preview-values">
-            <strong><bdi>{targets.final_target_calories}</bdi> سعرة</strong>
             <span>بروتين <bdi dir="ltr">{formatTargetNumber(targets.protein_g)}</bdi> جم</span>
             <span>كربوهيدرات <bdi dir="ltr">{formatTargetNumber(targets.carb_g)}</bdi> جم</span>
             <span>دهون <bdi dir="ltr">{formatTargetNumber(targets.fat_g)}</bdi> جم</span>

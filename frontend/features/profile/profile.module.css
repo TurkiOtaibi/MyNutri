@@ -497,7 +497,7 @@ button:global(.profile-setting-row):focus-visible,
 
 :global(.profile-preview-values) {
   display: grid;
-  grid-template-columns: 1.25fr repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 7px;
   align-items: center;
 }
@@ -508,11 +508,6 @@ button:global(.profile-setting-row):focus-visible,
   font-size: 11px;
   text-align: center;
   white-space: normal;
-}
-
-:global(.profile-preview-values) > strong {
-  color: var(--ink);
-  font-size: 14px;
 }
 
 :global(.profile-preview-summary),
@@ -1037,12 +1032,6 @@ button:global(.profile-setting-row):focus-visible,
 @media (max-width: 340px) {
   :global(.profile-macro-targets) strong {
       font-size: 15px;
-    }
-}
-
-@media (max-width: 340px) {
-  :global(.profile-preview-values) {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
