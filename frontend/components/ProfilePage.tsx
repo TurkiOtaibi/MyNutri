@@ -251,7 +251,7 @@ export function ProfilePage() {
   ) {
     transitionWrite({ kind: "reconciling", submission, accepted });
     try {
-      const refreshed = await profileQuery.refetch();
+      const refreshed = await profileQuery.refetch({ throwOnError: true });
       if (sessionSignal.aborted || !mountedRef.current) return;
       const profile = refreshed.data;
       if (!profile || !profileMatchesAcceptedPlan(profile, submission, accepted)) {

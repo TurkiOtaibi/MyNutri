@@ -766,7 +766,15 @@ test.describe("@profile Profile and targets redesign", () => {
       });
 
       await page.goto(`/profile?plan011-reconciliation=${reconciliation}`);
-      const acceptedWeight = await changedWeight(page, originalProfile);
+      let acceptedWeight = String(originalProfile.weight_kg);
+      if (reconciliation === "error") {
+        const date = page.getByRole("textbox", { name: "تاريخ سريان الأهداف" });
+        await expect(date).toHaveValue(/\d{4}-\d{2}-\d{2}/);
+        acceptedPlan.effective_from = addIsoDays(await date.inputValue(), 1);
+        await date.fill(acceptedPlan.effective_from);
+      } else {
+        acceptedWeight = await changedWeight(page, originalProfile);
+      }
       await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
       await page.getByRole("dialog").getByRole("button", { name: "حفظ الخطة" }).click();
 
@@ -778,7 +786,7 @@ test.describe("@profile Profile and targets redesign", () => {
       await expect(page.getByRole("region", { name: "الأهداف اليومية" })).toContainText("1777");
       await expect(page.locator(".profile-save-bar")).toHaveCount(0);
       expect(activationRequests).toBe(1);
-      if (reconciliation === "stale") {
+      if (reconciliation !== "empty") {
         allowFresh = true;
         await recovery.getByRole("button", { name: "إعادة تحديث البيانات" }).click();
         await expect(recovery).toHaveCount(0);
