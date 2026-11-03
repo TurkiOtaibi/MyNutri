@@ -1128,6 +1128,19 @@ button:global(.profile-setting-row):focus-visible,
 
 :global(.profile-registry-state) { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 72px; }
 
+:global(.profile-registry-state) p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: .84rem;
+}
+
+@media (max-width: 640px) {
+  :global(.profile-registry-state)[role="alert"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 :global(.profile-plan-history) > p,
 :global(.profile-history-loading) { color: var(--muted); }
 

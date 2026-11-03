@@ -87,7 +87,10 @@ export function RegistryState({ kind, onRetry }: { kind: "loading" | "unavailabl
     : "تعذر تحميل البيانات الغذائية";
   return (
     <section className="profile-registry-state" role={kind === "loading" ? "status" : "alert"} aria-live="polite">
-      <strong>{copy}</strong>
+      <div>
+        <strong>{copy}</strong>
+        {kind === "unavailable" ? <p>أعد تحميل البيانات الغذائية لتتمكن من مراجعة أهدافك بالقيم التي أدخلتها.</p> : null}
+      </div>
       {kind !== "loading" ? <button className="btn" type="button" onClick={onRetry}>إعادة المحاولة</button> : null}
     </section>
   );
