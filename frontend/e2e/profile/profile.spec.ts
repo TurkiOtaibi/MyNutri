@@ -1589,6 +1589,34 @@ test.describe("@profile Profile and targets redesign", () => {
     }
   });
 
+  test("@p1 retries only the failed history page and preserves visible revisions", async ({ page, originalProfile }) => {
+    const cursors: (string | null)[] = [];
+    const plan = writtenPlan(originalProfile, originalProfile.targets!);
+    let failOlder = true;
+    await page.route("**/target-plans?**", (route) => {
+      const cursor = new URL(route.request().url()).searchParams.get("cursor");
+      cursors.push(cursor);
+      if (cursor && failOlder) return route.fulfill({ status: 503, json: { detail: "unavailable" } });
+      return route.fulfill({ json: {
+        items: [cursor ? { ...plan, id: "00000000-0000-4000-8000-000000000012", effective_from: "2025-01-01" } : plan],
+        next_cursor: cursor ? null : "older"
+      } });
+    });
+    await page.goto("/profile?tab=history");
+    const history = page.getByRole("region", { name: "سجل الخطط" });
+    await history.getByRole("button", { name: "عرض خطط أقدم" }).click();
+    await expect(history.getByRole("alert")).toContainText("تعذر تحميل الخطط الأقدم");
+    await expect(history.locator("time")).toHaveAttribute("datetime", plan.effective_from);
+    expect(cursors[0]).toBeNull();
+    expect(cursors.slice(1).every((cursor) => cursor === "older")).toBe(true);
+    const requestsBeforeRetry = cursors.length;
+    failOlder = false;
+    await history.getByRole("button", { name: "إعادة محاولة تحميل الخطط الأقدم" }).press("Enter");
+    await expect(history.getByRole("listitem")).toHaveCount(2);
+    await expect(history.locator("time").last()).toHaveAttribute("datetime", "2025-01-01");
+    expect(cursors.slice(requestsBeforeRetry)).toEqual(["older"]);
+  });
+
   test("@p1 stale write responses require a fresh preview without discarding the draft", async ({ page, originalProfile }) => {
     await page.route(targetPlanWritePath, (route) => {
       if (route.request().method() !== "POST") return route.continue();
