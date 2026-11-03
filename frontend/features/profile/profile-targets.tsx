@@ -66,8 +66,14 @@ export function AdditionalTargetsCard({ targets, registry, open, onToggle }: { t
         {definitions.map((item) => (
           <div className="profile-additional-target-row" key={item.key}>
             <strong>{item.label}</strong>
-            <span>{item.targetValue == null ? (item.targetType === "monitor_only" ? "متابعة فقط" : "لم يُحدد هدف افتراضي بعد") : <><bdi dir="ltr">{formatNutrientValue(item.targetValue, item.precision)} {item.unit}</bdi> يوميًا</>}</span>
-            {item.targetValue != null ? <small>{targetTypeLabels[item.targetType]}</small> : null}
+            <div className="profile-additional-target-value">
+              {item.targetValue == null ? (item.targetType === "monitor_only" ? "متابعة فقط" : "لم يُحدد هدف افتراضي بعد") : (
+                <>
+                  <small>{targetTypeLabels[item.targetType]}</small>
+                  <span><bdi dir="ltr">{formatNutrientValue(item.targetValue, item.precision)}</bdi> {item.unit} يوميًا</span>
+                </>
+              )}
+            </div>
           </div>
         ))}
       </div>
