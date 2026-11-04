@@ -183,6 +183,11 @@ export function DiaryPage() {
       setUndoFailed(false);
       setUndoMessage("تم حذف الطعام");
       setUndoEntry(entry);
+      const generation = undoGeneration.current;
+      requestAnimationFrame(() => {
+        if (sessionSignal.aborted || generation !== undoGeneration.current) return;
+        undoNoticeRef.current?.focus({ preventScroll: true });
+      });
       await invalidateDiary(queryClient);
       if (sessionSignal.aborted) return;
     },

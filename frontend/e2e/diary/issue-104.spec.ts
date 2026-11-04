@@ -54,6 +54,8 @@ test("BR-DRY-028 maps authoritative rejection and preserves the add draft", asyn
 test("BR-DRY-032 deletes immediately and undo recreates once with a new ID", async ({ page, foodsApi }) => {
   const food = await foodsApi.create({ name: uniqueName("Undo") });
   const original = await foodsApi.createDiary(food.id, diaryDate(), 1.5, "breakfast");
+  await page.setViewportSize({ width: 375, height: 844 });
+  await page.emulateMedia({ colorScheme: "dark" });
   await page.goto("/diary");
   await page.getByRole("button", { name: new RegExp(`خيارات ${food.name}`) }).click();
   await page.getByRole("menuitem", { name: "حذف", exact: true }).click();
@@ -61,8 +63,15 @@ test("BR-DRY-032 deletes immediately and undo recreates once with a new ID", asy
   await expect(page.getByText("تم حذف الطعام", { exact: true })).toBeVisible();
   await expect(page.locator(".diary-undo-notice")).toContainText(`${food.name} · فطور`);
   expect((await foodsApi.listDiary(diaryDate())).some((entry) => entry.id === original.id)).toBe(false);
-  await page.getByRole("button", { name: "تراجع", exact: true }).click();
+  await expect(page.locator(".diary-undo-notice")).toBeFocused();
+  await page.keyboard.press("Tab");
+  const undo = page.getByRole("button", { name: "تراجع", exact: true });
+  await expect(undo).toBeFocused();
+  await expect(undo).toBeInViewport();
+  await page.keyboard.press("Enter");
   await expect(page.getByText("تمت استعادة الطعام", { exact: true })).toBeVisible();
+  await expect(page.locator("#meal-breakfast").getByRole("heading", { name: food.name })).toBeVisible();
+  await expect(page.locator("#meal-section-breakfast .meal-title-copy")).toContainText("270 سعرة");
   const restored = (await foodsApi.listDiary(diaryDate())).filter((entry) => entry.food.id === food.id);
   expect(restored).toHaveLength(1);
   expect(restored[0]).toMatchObject({ entry_date: diaryDate(), meal_type: "breakfast", quantity: 1.5 });
