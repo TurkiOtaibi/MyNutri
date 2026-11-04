@@ -65,11 +65,12 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
           <ol className={styles.batchSteps} aria-label="خطوات إضافة النتائج">
             {([ ["date", "التاريخ"], ["selection", "اختيار التحاليل"], ["values", "القيم"] ] as const).map(([key, label]) => <li key={key} aria-current={draft.step === key ? "step" : undefined}>{label}</li>)}
           </ol>
+          {phase?.kind === "ambiguous" ? <p role="alert">لم نتأكد من حفظ النتائج. اضغط «إعادة المحاولة»، ولن تتكرر النتائج.</p> : null}
+          <div className={styles.batchFieldViewport}>
           {phase?.kind === "validation_error" ? <div id="lab-batch-errors" role="alert" tabIndex={-1} className={styles.batchError}>
             {phase.errors.map((error, index) => <p key={index}>{labErrorMessage(error)}</p>)}
           </div> : null}
-          {phase?.kind === "ambiguous" ? <p role="alert">لم نتأكد من حفظ النتائج. اضغط «إعادة المحاولة»، ولن تتكرر النتائج.</p> : null}
-          <div className={styles.batchFieldViewport}><fieldset className={styles.batchFields} disabled={locked}>
+          <fieldset className={styles.batchFields} disabled={locked}>
             <legend className="sr-only">{draft.step === "date" ? "تاريخ النتائج" : draft.step === "selection" ? "اختيار التحاليل" : "قيم النتائج"}</legend>
             {draft.step === "date" ? <label>تاريخ التحليل
               <input id="lab-batch-date" type="date" value={draft.date} aria-invalid={Boolean(errors.test_date)} aria-describedby={errors.test_date ? "lab-date-error" : undefined} onChange={(event) => props.onDate(event.target.value)} />
@@ -97,14 +98,15 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
                 </label>)}</div>
               </div>)}
             </> : null}
+            {draft.step === "values" ? <p id="lab-values-hint" className={styles.batchValuesHint}>أدخل القيمة واختر الوحدة كما تظهر في تقرير المختبر. اترك ما لا تتوفر له نتيجة فارغًا؛ تُحفظ القيم المدخلة فقط.</p> : null}
             {draft.step === "values" ? Object.entries(draft.rows).map(([key, row]) => {
               const test = catalog.tests.find((test) => test.test_key === key)!;
               const rowErrors = errors.rows[key];
               const valueError = rowErrors?.entered_value ?? rowErrors?.form;
               return <fieldset className={styles.batchRow} key={key} data-testid="lab-batch-row" data-test-key={key} aria-labelledby={`lab-${key}-name`}>
-                <legend id={`lab-${key}-name`}><strong>{test.name_ar} <bdi dir="ltr">{test.abbreviation ?? test.name_en}</bdi></strong></legend>
+                <legend id={`lab-${key}-name`}><strong>{test.name_ar}</strong> <bdi dir="ltr">{test.abbreviation ?? test.name_en}</bdi></legend>
                 <label>القيمة
-                  <input id={`lab-${key}-value`} type="text" inputMode="decimal" dir="ltr" value={row.value} aria-invalid={Boolean(valueError)} aria-describedby={valueError ? `lab-${key}-value-error` : undefined} onChange={(event) => props.onValue(key, event.target.value)} />
+                  <input id={`lab-${key}-value`} type="text" inputMode="decimal" dir="ltr" value={row.value} aria-invalid={Boolean(valueError)} aria-describedby={valueError ? `lab-${key}-value-error` : "lab-values-hint"} onChange={(event) => props.onValue(key, event.target.value)} />
                   {valueError ? <span id={`lab-${key}-value-error`} className={styles.batchError}>{valueError}</span> : null}
                 </label>
                 <label>الوحدة
@@ -119,7 +121,7 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
           {draft.step === "selection" ? <div className={styles.batchSummary} data-testid="lab-selection-summary" aria-live="polite" aria-atomic="true">
             <strong>التحاليل المحددة: <bdi>{Object.keys(draft.rows).length}</bdi></strong>
           </div> : null}
-          {draft.step === "values" ? <div className={styles.batchSummary}>
+          {draft.step === "values" ? <div className={styles.batchSummary} data-testid="lab-values-summary">
             <span>تاريخ التحليل: <time dateTime={draft.date}>{formatGregorianArabicDate(draft.date)}</time></span>
             <span aria-live="polite">سيتم حفظ <bdi dir="auto">{resultCountLabel(populatedCount(draft))}</bdi></span>
           </div> : null}

@@ -98,7 +98,7 @@ test("Labs overview is responsive and exposes a complete RTL roving-tab pattern"
 
 test("the CBC value step names all twenty groups and wraps focus at the modal boundary", async ({ labsPage: page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  for (const width of [320, 390, 430]) {
+  for (const width of [320, 375, 390, 430, 1440]) {
     await page.setViewportSize({ width, height: 760 });
     await navigateToOwnerLabs(page);
     const opener = page.getByRole("button", { name: "إضافة نتائج", exact: true });
@@ -117,8 +117,27 @@ test("the CBC value step names all twenty groups and wraps focus at the modal bo
     }
     const first = rows.first().getByRole("textbox", { name: "القيمة" });
     const last = dialog.getByRole("button", { name: "حفظ النتائج", exact: true });
+    const summary = dialog.getByTestId("lab-values-summary");
+    await expect(last).toBeDisabled();
+    await expect(first).toHaveAttribute("aria-describedby", "lab-values-hint");
+    await expect(dialog.locator("#lab-values-hint")).toContainText("تُحفظ القيم المدخلة فقط.");
     await first.fill("1");
     await expect(last).toBeEnabled();
+    await expect(summary).toContainText("سيتم حفظ نتيجة واحدة");
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme });
+      const finalValue = rows.last().getByRole("textbox", { name: "القيمة" });
+      await first.focus();
+      await finalValue.focus();
+      await expect(finalValue).toBeInViewport();
+      await expect(last).toBeInViewport();
+      await expect(summary).toBeInViewport();
+      const valueBox = (await finalValue.boundingBox())!;
+      expect(valueBox.y + valueBox.height).toBeLessThan((await summary.boundingBox())!.y);
+      await expect(finalValue).toHaveAttribute("dir", "ltr");
+      await expect(rows.last().getByRole("combobox", { name: "الوحدة" })).toHaveAttribute("dir", "ltr");
+      expect(await rows.evaluateAll((elements) => elements.every(element => element.scrollWidth <= element.clientWidth))).toBe(true);
+    }
     await last.focus();
     await page.keyboard.press("Tab");
     await expect(first).toBeFocused();
