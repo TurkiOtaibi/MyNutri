@@ -208,7 +208,7 @@ export function AddEntrySheet({ selectedDate, initialMeal, initialFood = null, o
           ) : (
             <div className="add-food-configure-state">
               <SelectedFoodSummary food={selectedFood} disabled={mutation.isPending || saveSucceeded} onChange={changeFood} />
-              <section className="add-config-section">
+              <section className="add-config-section add-meal-section">
                 <h3>قسم الوجبة</h3>
                 <MealTypeSelector value={mealType} disabled={mutation.isPending || saveSucceeded} onChange={(value) => { setMealType(value); setError(""); }} />
               </section>
@@ -243,7 +243,7 @@ export function AddEntrySheet({ selectedDate, initialMeal, initialFood = null, o
           )}
         </div>
 
-        <div className="add-sheet-footer">
+        <div className={`add-sheet-footer${selectedFood ? " has-selected-food" : ""}`}>
           {selectedFood ? (
             <>
               {error && !quantityError ? <div className="add-save-error" role="alert"><strong>{error}</strong><span>حاول مرة أخرى.</span><button type="button" onClick={saveCurrent}>إعادة المحاولة</button></div> : null}

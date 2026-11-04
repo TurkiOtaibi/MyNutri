@@ -15,19 +15,28 @@ async function openAddAndSelect(page: Page, foodName: string) {
 test.describe("@diary quantity and UX refinement", () => {
   test("@p0 stepper appears only after Food selection and selected result is accessible", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Stepper Selected"), brand: "علامة الاختبار", primary_category: "meals", subcategory: "other" });
-    await page.goto("/diary");
-    await page.getByRole("button", { name: "إضافة طعام إلى فطور" }).click();
-    const dialog = page.getByRole("dialog", { name: "إضافة طعام" });
-    await expect(dialog.getByRole("textbox", { name: "الكمية", exact: true })).toHaveCount(0);
-    await expect(dialog.getByRole("button", { name: "إضافة الطعام", exact: true })).toHaveCount(0);
-    await dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية").fill(food.name);
-    const result = dialog.getByRole("button", { name: new RegExp(food.name) });
-    await expect(result).toContainText("علامة الاختبار");
-    await result.click();
-    await dialog.getByRole("radio", { name: "فطور" }).click();
-    await expect(dialog.getByLabel(`الطعام المحدد: ${food.name}`)).toBeVisible();
-    await expect(dialog.getByRole("textbox", { name: "الكمية", exact: true })).toHaveValue("1");
-    await expect(dialog.getByRole("button", { name: "إضافة إلى الفطور" })).toBeEnabled();
+    for (const width of [375, 1440]) {
+      for (const colorScheme of ["light", "dark"] as const) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.emulateMedia({ colorScheme });
+        await page.goto("/diary");
+        await page.getByRole("button", { name: "إضافة طعام إلى فطور" }).click();
+        const dialog = page.getByRole("dialog", { name: "إضافة طعام" });
+        await expect(dialog.getByRole("textbox", { name: "الكمية", exact: true })).toHaveCount(0);
+        await expect(dialog.getByRole("button", { name: "إضافة الطعام", exact: true })).toHaveCount(0);
+        await dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية").fill(food.name);
+        const result = dialog.getByRole("button", { name: new RegExp(food.name) });
+        await expect(result).toContainText("علامة الاختبار");
+        await result.click();
+        await dialog.getByRole("radio", { name: "فطور" }).click();
+        await expect(dialog.getByLabel(`الطعام المحدد: ${food.name}`)).toBeVisible();
+        await expect(dialog.getByRole("textbox", { name: "الكمية", exact: true })).toHaveValue("1");
+        await expect(dialog.getByRole("button", { name: "إضافة إلى الفطور" })).toBeEnabled();
+        await expect(dialog.getByLabel("معاينة القيم الغذائية")).toBeInViewport({ ratio: 1 });
+        await expect(dialog.getByRole("button", { name: "إضافة إلى الفطور" })).toBeInViewport({ ratio: 1 });
+        expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+      }
+    }
   });
 
   test("@p0 plus and minus adjust predictably, respect minimum, and never submit", async ({ page, foodsApi }) => {
