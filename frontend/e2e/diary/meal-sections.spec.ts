@@ -123,6 +123,9 @@ test.describe("@diary @meals Gregorian meal sections", () => {
       await dialog.getByRole("button", { name: "إضافة إلى الغداء" }).click();
       const lunch = page.locator("#meal-section-lunch");
       await expect(lunch.getByRole("heading", { name: food.name })).toBeVisible();
+      await expect(lunch.getByRole("status")).toHaveText("تمت الإضافة");
+      await expect(lunch.getByRole("button", { name: "إغلاق قسم غداء" })).toBeFocused();
+      await expect(lunch.locator(".meal-title-copy")).toContainText("360 سعرة");
       const entries = (await foodsApi.listDiary(selectedDate)).filter((entry) => entry.food.id === food.id);
       expect(entries).toHaveLength(1);
       expect(entries[0]).toMatchObject({ entry_date: selectedDate, meal_type: "lunch", quantity: 2 });

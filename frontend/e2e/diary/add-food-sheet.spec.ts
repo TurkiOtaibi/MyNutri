@@ -422,7 +422,6 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
 
   test("@p0 save is single-submit, exposes saving state, and inserts into selected meal", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Single modern save") });
-    const trigger = page.getByRole("button", { name: "إضافة طعام إلى فطور" });
     let posts = 0;
     const createPayloads: Array<Record<string, unknown>> = [];
     await page.route("**/diary/entries", async (route) => {
@@ -442,7 +441,8 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     await expect(dialog.getByRole("textbox", { name: "الكمية", exact: true })).toBeDisabled();
     await expect(dialog.getByRole("button", { name: "تغيير الطعام" })).toBeDisabled();
     await expect(dialog).toHaveCount(0);
-    await expect(trigger).toBeFocused();
+    await expect(page.getByRole("button", { name: "إغلاق قسم عشاء", exact: true })).toBeFocused();
+    await expect(page.locator("#meal-section-dinner").getByRole("status")).toHaveText("تمت الإضافة");
     expect(posts).toBe(1);
     expect(Object.keys(createPayloads[0] ?? {}).sort()).toEqual(["entry_date", "food_id", "meal_type", "quantity"]);
     expect(createPayloads[0]?.food_id).toBe(food.id);
