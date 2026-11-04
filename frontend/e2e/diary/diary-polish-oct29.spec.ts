@@ -33,7 +33,35 @@ test.describe("@diary @polish-oct29 Diary summary and week polish", () => {
     for (const expression of await summary.locator(".macro-value-expression").all()) {
       await expect(expression).toHaveText(/^\d+ من \d+ جم$/);
     }
+    for (const width of [320, 375, 1440]) {
+      for (const colorScheme of ["light", "dark"] as const) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.emulateMedia({ colorScheme });
+        const consumed = summary.locator(".calorie-summary-primary > strong > bdi");
+        const goal = summary.locator(".calorie-summary-goal");
+        await expect(consumed).toHaveText("120");
+        await expect(goal).toContainText("سعرة");
+        expect((await consumed.boundingBox())!.y).toBeLessThan((await goal.boundingBox())!.y);
+        expect(await consumed.evaluate((element) => parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThan(await goal.evaluate((element) => parseFloat(getComputedStyle(element).fontSize)));
+        const expressions = summary.locator(".macro-value-expression");
+        for (const expression of await expressions.all()) {
+          expect(await expression.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+          const value = expression.locator(":scope > bdi");
+          const target = expression.locator(".macro-target-expression");
+          expect((await value.boundingBox())!.y).toBeLessThan((await target.boundingBox())!.y);
+          expect(await value.evaluate((element) => parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(18);
+        }
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        const details = summary.getByRole("button", { name: "عرض التفاصيل الغذائية" });
+        await details.focus();
+        await page.keyboard.press("Enter");
+        await expect(page.getByRole("dialog", { name: "التفاصيل الغذائية لليوم" })).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(details).toBeFocused();
+      }
+    }
 
+    await page.setViewportSize({ width: 390, height: 844 });
     for (const meal of ["breakfast", "lunch"]) {
       const toggle = page.locator(`#meal-section-${meal} .meal-toggle`);
       const icon = (await toggle.locator("> svg").first().boundingBox())!;
