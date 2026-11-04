@@ -1860,6 +1860,7 @@
   color: var(--ink);
   font-size: 16px;
   font-weight: 700;
+  line-height: 1.25;
 }
 
 :global(.meal-title-copy) small {
@@ -1867,6 +1868,7 @@
   color: var(--muted);
   font-size: 12px;
   font-weight: 500;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1894,7 +1896,7 @@
 :global(.diary-page) :global(.diary-entry-row) {
   grid-template-columns: minmax(0, 1fr) 44px;
   gap: 9px;
-  min-height: 64px;
+  min-height: 72px;
   border-radius: 0;
   padding: 5px 0;
   cursor: pointer;
@@ -1917,23 +1919,45 @@
   display: -webkit-box;
   overflow: hidden;
   font-size: 15px;
+  font-weight: 650;
   line-height: 1.35;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
 :global(.diary-page) :global(.diary-entry-copy) p {
-  overflow: hidden;
   margin-top: 3px;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+:global(.diary-entry-meta) {
+  display: grid;
+  gap: 5px;
+  justify-items: end;
 }
 
 :global(.diary-entry-calories) {
   color: var(--ink);
-  font-size: 13px;
+  font-size: 17px;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.diary-entry-calories) small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+:global(.diary-entry-edit-hint) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-strong);
+  font-size: 12px;
 }
 
 :global(.diary-page) :global(.entry-menu-trigger) {
@@ -2258,7 +2282,28 @@
 }
 
 
-:global(.meal-macro-totals) { display: flex; flex-wrap: wrap; gap: 2px; color: var(--muted); font-size: .72rem; line-height: 1.35; margin-top: 2px; }
+:global(.meal-macro-totals) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: min(100%, 360px);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+:global(.meal-macro-totals) > span {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+:global(.meal-macro-totals) strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
 
 :global(.diary-nutrition-details-action) { width: 100%; min-height: 44px; margin-top: 10px; border: 0; border-top: 1px solid rgba(31, 55, 48, .09); background: transparent; color: var(--accent); font: inherit; font-weight: 700; }
 
@@ -2301,10 +2346,6 @@
 :global(.daily-nutrient-row) > p { margin: 7px 0 0; color: var(--muted); font-size: .76rem; }
 
 :global(.daily-nutrition-empty) { padding: 30px 12px; text-align: center; color: var(--muted); }
-
-@media (max-width: 360px) {
-  :global(.meal-macro-totals) { max-width: 190px; }
-}
 
 :global(.diary-undo-notice) {
   position: fixed;

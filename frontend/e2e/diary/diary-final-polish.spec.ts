@@ -49,27 +49,42 @@ test.describe("@diary @final-polish compact visual refinements", () => {
     const date = localDate(-301);
     const food = await foodsApi.create({ name: uniqueName("Compact row"), calories: 78, default_unit_type: "piece", unit_amount: 50 });
     await foodsApi.createDiary(food.id, date, 1, "breakfast");
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/diary");
-    await selectDate(page, date);
+    for (const width of [375, 1440]) {
+      for (const colorScheme of ["light", "dark"] as const) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.emulateMedia({ colorScheme });
+        await page.goto("/diary");
+        await selectDate(page, date);
 
-    const header = page.locator("#meal-section-breakfast .meal-section-header");
-    const add = page.getByRole("button", { name: "إضافة طعام إلى فطور" });
-    const toggle = page.locator("#meal-section-breakfast .meal-toggle");
-    const row = page.locator("#meal-breakfast .diary-entry-row");
-    const [headerBox, addBox, rowBox] = await Promise.all([header.boundingBox(), add.boundingBox(), row.boundingBox()]);
-    expect(headerBox!.height).toBeLessThanOrEqual(78);
-    expect(addBox!.width).toBeGreaterThanOrEqual(44);
-    expect(addBox!.height).toBeGreaterThanOrEqual(44);
-    expect(rowBox!.height).toBeGreaterThanOrEqual(64);
-    expect(rowBox!.height).toBeLessThanOrEqual(72.5);
-    await expect(toggle).toContainText("طعام واحد");
+        const header = page.locator("#meal-section-breakfast .meal-section-header");
+        const add = page.getByRole("button", { name: "إضافة طعام إلى فطور" });
+        const toggle = page.locator("#meal-section-breakfast .meal-toggle");
+        const row = page.locator("#meal-breakfast .diary-entry-row");
+        const [headerBox, addBox, rowBox] = await Promise.all([header.boundingBox(), add.boundingBox(), row.boundingBox()]);
+        expect(headerBox!.height).toBeLessThanOrEqual(78);
+        expect(addBox!.width).toBeGreaterThanOrEqual(44);
+        expect(addBox!.height).toBeGreaterThanOrEqual(44);
+        expect(rowBox!.height).toBeGreaterThanOrEqual(64);
+        expect(rowBox!.height).toBeLessThanOrEqual(72.5);
+        await expect(toggle).toContainText("طعام واحد");
+        await expect(row.locator(".diary-entry-edit-hint")).toHaveText("تعديل");
+        await expect(row.locator(".diary-entry-copy p")).toContainText("50 جم");
+        expect(await row.locator(".diary-entry-copy p").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        const edit = row.getByRole("button", { name: `تعديل ${food.name}`, exact: true });
+        await edit.focus();
+        await page.keyboard.press("Enter");
+        await expect(page.getByRole("dialog", { name: "تعديل الكمية والقسم" })).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(edit).toBeFocused();
 
-    const expanded = await toggle.getAttribute("aria-expanded");
-    await add.click();
-    await expect(page.getByRole("dialog", { name: "إضافة طعام" })).toBeVisible();
-    await page.getByRole("dialog", { name: "إضافة طعام" }).getByRole("button", { name: "إلغاء" }).click();
-    await expect(toggle).toHaveAttribute("aria-expanded", expanded!);
+        const expanded = await toggle.getAttribute("aria-expanded");
+        await add.click();
+        await expect(page.getByRole("dialog", { name: "إضافة طعام" })).toBeVisible();
+        await page.getByRole("dialog", { name: "إضافة طعام" }).getByRole("button", { name: "إلغاء" }).click();
+        await expect(toggle).toHaveAttribute("aria-expanded", expanded!);
+      }
+    }
   });
 
   test("@p0 macro copy is RTL-safe and progress widths represent 1%, 9%, and 22%", async ({ page, request, foodsApi }) => {
