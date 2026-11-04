@@ -77,8 +77,16 @@
 .chartPoint[aria-pressed="true"] span { width: 13px; height: 13px; background: var(--accent-strong); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent); }
 .chartPoint:focus-visible { z-index: 2; outline: 3px solid var(--accent-strong); outline-offset: -4px; }
 .referencePanel { min-width: 0; border-radius: var(--radius-card); padding: 16px; background: var(--surface); box-shadow: var(--shadow-sm); }
-.referenceZones { display: grid; gap: 10px; padding: 0; list-style: none; }
-.referenceZones li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; min-width: 0; }
+.referencePanel h2 { margin-bottom: 6px; }
+.referenceContext { margin: 0 0 18px; color: var(--muted); font-size: .85rem; }
+.referenceNotice { padding: 12px; border-radius: var(--radius); background: var(--surface-strong); font-size: .85rem; line-height: 1.8; }
+.referenceZones { display: grid; gap: 10px; margin-block: 16px; padding: 0; list-style: none; }
+.referenceZones li { display: grid; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); }
+.referenceBounds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.referenceBounds > div { min-width: 0; }
+.referenceBounds > div + div { border-inline-start: 1px solid var(--line); padding-inline-start: 12px; }
+.referenceBounds dt { margin-bottom: 4px; color: var(--muted); font-size: .75rem; }
+.referenceBounds dd { margin: 0; overflow-wrap: anywhere; font-size: .9rem; font-variant-numeric: tabular-nums; }
 .exactValue { min-width: 0; overflow-wrap: anywhere; }
 .historyRow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); padding: 14px 16px; box-shadow: var(--shadow-sm); }
 .historyRow:has(.resultMenu) { grid-template-columns: auto minmax(0, 1fr) auto auto; }
@@ -204,10 +212,9 @@
 .ownerDetail .historyFigure, .ownerDetail .referencePanel { padding: clamp(16px, 2vw, 24px); }
 .selectedReading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-block: 12px 18px; }
 .selectedReading strong { min-width: 0; max-width: 100%; overflow-wrap: anywhere; font-size: 1.65rem; font-variant-numeric: tabular-nums; }
+.selectedReading small { color: var(--muted); font-size: .85rem; font-weight: 500; }
 .selectedReading time { flex-basis: 100%; color: var(--muted); }
 .readingLabel { flex-basis: 100%; font-weight: 700; }
-.ownerDetail .referenceZones { margin-block: 16px; }
-.ownerDetail .referenceZones li { padding-block: 6px; border-bottom: 1px solid var(--line-subtle); }
 .ownerDetail .chartPlot { width: min(100%, 500px); height: auto; aspect-ratio: 3 / 2; margin-inline: auto; }
 .ownerDetail .historyFigure:has(.empty) figcaption { display: none; }
 .ownerDetail > [role="alert"], .detailNotice:not(:empty) { padding: 12px 16px; border-radius: var(--radius); background: var(--surface); }
