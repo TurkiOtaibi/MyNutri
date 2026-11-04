@@ -192,6 +192,7 @@ function MacroProgress({ macro, label, value, max }: { macro: "protein" | "carbs
 
 export function MealSections({
   savedMeal = null,
+  savedAction = "add",
   entries,
   expanded,
   openMenuId,
@@ -203,6 +204,7 @@ export function MealSections({
   deletingId
 }: {
   savedMeal?: MealType | null;
+  savedAction?: "add" | "edit";
   entries: DiaryEntryResponse[];
   expanded: Set<MealType>;
   openMenuId: string | null;
@@ -239,7 +241,7 @@ export function MealSections({
                 <button data-diary-add-trigger={`meal-${meal}`} className="btn icon meal-add" type="button" onClick={() => onAdd(meal)} aria-label={`إضافة طعام إلى ${mealLabels[meal]}`}><Plus size={18} /></button>
               ) : null}
             </div>
-            {savedMeal === meal ? <p className="state-note" role="status">تمت الإضافة</p> : null}
+            {savedMeal === meal ? <p className="state-note" role="status">{savedAction === "edit" ? "تم حفظ التعديل" : "تمت الإضافة"}</p> : null}
             <div id={`meal-${meal}`} className="meal-section-content" hidden={!isOpen}>
               {items.map((entry) => (
                 <DiaryEntryRow

@@ -35,7 +35,7 @@ export function DiaryPage() {
   const queryClient = useQueryClient();
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [savedAddition, setSavedAddition] = useState<{ date: string; meal: MealType } | null>(null);
+  const [savedChange, setSavedChange] = useState<{ date: string; meal: MealType; action: "add" | "edit" } | null>(null);
   const [addMeal, setAddMeal] = useState<MealType | null>(null);
   const [editingEntry, setEditingEntry] = useState<DiaryEntryResponse | null>(null);
   const [deletingEntry, setDeletingEntry] = useState<DiaryEntryResponse | null>(null);
@@ -88,7 +88,7 @@ export function DiaryPage() {
     previousSubjectRef.current = subject;
     setAddOpen(false);
     setUndoEntry(null);
-    setSavedAddition(null);
+    setSavedChange(null);
     setUndoMessage("");
     setUndoFailed(false);
     undoLock.current = false;
@@ -193,7 +193,7 @@ export function DiaryPage() {
   });
 
   function chooseDate(nextDate: string) {
-    setSavedAddition(null);
+    setSavedChange(null);
     setSelectedDate(nextDate);
   }
 
@@ -204,9 +204,18 @@ export function DiaryPage() {
   }
 
   function openAdd(meal: MealType | null = null) {
-    setSavedAddition(null);
+    setSavedChange(null);
     setAddMeal(meal);
     setAddOpen(true);
+  }
+
+  function focusSavedMeal(meal: MealType) {
+    requestAnimationFrame(() => {
+      if (sessionSignal.aborted) return;
+      const section = document.getElementById(`meal-section-${meal}`);
+      section?.querySelector<HTMLButtonElement>(".meal-toggle")?.focus({ preventScroll: true });
+      section?.scrollIntoView({ block: "nearest", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    });
   }
 
   function closeAdd() {
@@ -256,7 +265,8 @@ export function DiaryPage() {
             <>
             {entries.length === 0 ? <div className="diary-empty-note"><strong>لا توجد أطعمة مسجلة في هذا اليوم</strong><span>أضف طعامًا من زر + بجانب الوجبة المناسبة</span></div> : null}
             <MealSections
-              savedMeal={savedAddition?.date === activeDate ? savedAddition.meal : null}
+              savedMeal={savedChange?.date === activeDate ? savedChange.meal : null}
+              savedAction={savedChange?.action}
               entries={entries}
               expanded={expandedMeals}
               openMenuId={openMenuId}
@@ -269,13 +279,13 @@ export function DiaryPage() {
               onAdd={openAdd}
               onToggleMenu={(id) => setOpenMenuId((current) => current === id ? null : id)}
               onEdit={(entry) => {
-                setSavedAddition(null);
+                setSavedChange(null);
                 setOpenMenuId(null);
                 setEditingEntry(entry);
               }}
               deletingId={deleteMutation.isPending ? deletingEntry?.id ?? null : null}
               onDelete={(entry) => {
-                setSavedAddition(null);
+                setSavedChange(null);
                 setOpenMenuId(null);
                 setDeleteError("");
                 setDeletingEntry(entry);
@@ -309,7 +319,7 @@ export function DiaryPage() {
           onSaved={async (savedMeal) => {
             if (sessionSignal.aborted) return;
             setAddOpen(false);
-            setSavedAddition({ date: activeDate, meal: savedMeal });
+            setSavedChange({ date: activeDate, meal: savedMeal, action: "add" });
             setExpandedMeals((current) => {
               const next = new Set(current).add(savedMeal);
               expandedMealsByDateRef.current.set(activeDate, new Set(next));
@@ -317,12 +327,7 @@ export function DiaryPage() {
             });
             await invalidateDiary(queryClient);
             if (sessionSignal.aborted) return;
-            requestAnimationFrame(() => {
-              if (sessionSignal.aborted) return;
-              const section = document.getElementById(`meal-section-${savedMeal}`);
-              section?.querySelector<HTMLButtonElement>(".meal-toggle")?.focus({ preventScroll: true });
-              section?.scrollIntoView({ block: "nearest", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-            });
+            focusSavedMeal(savedMeal);
           }}
         />
       ) : null}
@@ -334,6 +339,7 @@ export function DiaryPage() {
           onSaved={async (savedMeal) => {
             if (sessionSignal.aborted) return;
             setEditingEntry(null);
+            setSavedChange({ date: activeDate, meal: savedMeal, action: "edit" });
             setExpandedMeals((current) => {
               const next = new Set(current).add(savedMeal);
               expandedMealsByDateRef.current.set(activeDate, new Set(next));
@@ -341,6 +347,7 @@ export function DiaryPage() {
             });
             await invalidateDiary(queryClient);
             if (sessionSignal.aborted) return;
+            focusSavedMeal(savedMeal);
           }}
         />
       ) : null}
