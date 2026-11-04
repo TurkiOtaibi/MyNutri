@@ -104,7 +104,8 @@ test.describe("@diary @meals Gregorian meal sections", () => {
     for (const offset of [-1, 1]) {
       const selectedDate = localDate(offset);
       await page.setViewportSize({ width: offset === -1 ? 375 : 1440, height: 844 });
-      await selectHistoricalDiaryDate(page, selectedDate);
+      await page.getByLabel("اختيار تاريخ اليوميات").fill(selectedDate);
+      await expect(page.getByLabel("اختيار تاريخ اليوميات")).toHaveValue(selectedDate);
       await page.getByRole("button", { name: "إضافة طعام إلى غداء" }).click();
       const dialog = page.getByRole("dialog", { name: "إضافة طعام" });
       const description = `الإضافة إلى يوم ${formatLongArabicDate(selectedDate)}`;
