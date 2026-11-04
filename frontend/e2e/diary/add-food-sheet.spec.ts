@@ -280,17 +280,31 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
 
   test("@p0 search supports Food name, brand, clear focus, and no-results copy", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Search name"), brand: uniqueName("BrandSearch") });
-    const dialog = await openGeneral(page);
-    const search = dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية");
-    await search.fill(food.name);
-    await expect(dialog.getByRole("button", { name: new RegExp(food.name) })).toBeVisible();
-    await search.fill(food.brand!);
-    await expect(dialog.getByRole("button", { name: new RegExp(food.name) })).toBeVisible();
-    await dialog.getByRole("button", { name: "مسح البحث" }).click();
-    await expect(search).toBeFocused();
-    await search.fill(`No match ${Date.now()}`);
-    await expect(dialog.getByText("لم نجد طعامًا مطابقًا")).toBeVisible();
-    await expect(dialog.getByText("جرّب اسمًا آخر أو ابحث بالعلامة التجارية")).toBeVisible();
+    const other = await foodsApi.create({ name: food.name, brand: uniqueName("OtherBrand") });
+    for (const width of [375, 1440]) {
+      for (const colorScheme of ["light", "dark"] as const) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.emulateMedia({ colorScheme });
+        const dialog = await openGeneral(page);
+        const search = dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية");
+        await search.fill(food.name);
+        const option = dialog.getByRole("button", { name: new RegExp(`${food.name}، ${food.brand}،`) });
+        await expect(option).toBeVisible();
+        await expect(dialog.getByRole("button", { name: new RegExp(`${other.name}، ${other.brand}،`) })).toBeVisible();
+        await option.focus();
+        await page.keyboard.press("Enter");
+        await expect(dialog.locator(".selected-food-summary")).toContainText(food.brand!);
+        await dialog.getByRole("button", { name: "تغيير الطعام", exact: true }).click();
+        await search.fill(food.brand!);
+        await expect(option).toBeVisible();
+        await expect(dialog.getByRole("button", { name: new RegExp(other.brand!) })).toHaveCount(0);
+        await dialog.getByRole("button", { name: "مسح البحث" }).click();
+        await expect(search).toBeFocused();
+        await search.fill(`No match ${Date.now()}`);
+        await expect(dialog.getByText("لم نجد طعامًا مطابقًا")).toBeVisible();
+        await expect(dialog.getByText("جرّب اسمًا آخر أو ابحث بالعلامة التجارية")).toBeVisible();
+      }
+    }
   });
 
   test("@plan014 @p0 picker result can be selected with the keyboard", async ({ page, foodsApi }) => {
