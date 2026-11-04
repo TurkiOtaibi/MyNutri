@@ -147,6 +147,13 @@ test("mixed entered units show complete canonical history with keyboard, touch, 
   await expectReferences(page, detail.results.at(-1)!);
   await page.locator(`[data-chart-point="${detail.results[0].id}"]`).tap();
   await expectReferences(page, detail.results[0]);
+  const historical = page.locator(`[data-history-result="${detail.results[1].id}"] button[aria-pressed]`);
+  await historical.focus();
+  await page.keyboard.press("Enter");
+  await expect(historical).toHaveAttribute("aria-pressed", "true");
+  await expect(historical.locator("svg")).toBeVisible();
+  await expect(page.locator(`[data-history-result="${detail.results[0].id}"] button[aria-pressed]`)).toHaveAttribute("aria-pressed", "false");
+  await expectReferences(page, detail.results[1]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect((await new AxeBuilder({ page }).include('[data-testid="lab-detail"]').analyze()).violations).toEqual([]);
 });
