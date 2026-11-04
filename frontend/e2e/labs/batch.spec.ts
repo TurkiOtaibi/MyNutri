@@ -83,6 +83,8 @@ test("panels plus individuals deduplicate, two panels render all rows, removing 
     for (const colorScheme of ["light", "dark"] as const) {
       await page.setViewportSize({ width, height });
       await page.emulateMedia({ colorScheme });
+      await dialog(page).getByRole("button", { name: "التالي", exact: true }).focus();
+      // Enter the choices again after resizing rather than refocusing the active element.
       await dialog(page).locator("input[data-individual-key]").last().focus();
       await expect(dialog(page).locator("input[data-individual-key]").last()).toBeInViewport();
       await expect(summary).toBeInViewport();
