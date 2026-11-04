@@ -111,7 +111,7 @@ test.describe("@diary @meals Gregorian meal sections", () => {
       const description = `الإضافة إلى يوم ${formatLongArabicDate(selectedDate)}`;
       await expect(dialog).toHaveAccessibleDescription(description);
       await dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية").fill(food.name);
-      await dialog.getByRole("button", { name: new RegExp(food.name) }).click();
+      await dialog.locator(".diary-food-option").filter({ hasText: food.name }).click();
       await expect(dialog.getByRole("radio", { name: "غداء" })).toHaveAttribute("aria-checked", "true");
       for (const colorScheme of ["light", "dark"] as const) {
         await page.emulateMedia({ colorScheme });
