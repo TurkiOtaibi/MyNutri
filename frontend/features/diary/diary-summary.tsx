@@ -116,9 +116,7 @@ export function DailyProgressSummary({ totals, targets, hasLoggedFood, pending, 
         <div className="calorie-summary-primary">
           <strong aria-label={`${Math.round(totals.calories)} من ${targets.target_calories} سعرة`}>
             <bdi>{Math.round(totals.calories)}</bdi>
-            <span> من </span>
-            <bdi>{targets.target_calories}</bdi>
-            <small> سعرة</small>
+            <span className="calorie-summary-goal"> من <bdi>{targets.target_calories}</bdi> سعرة</span>
           </strong>
           {reached && !exceeded ? <p className="reached">تم الوصول إلى الهدف</p> : null}
         </div>
@@ -169,9 +167,7 @@ function MacroProgress({ macro, label, value, max }: { macro: "protein" | "carbs
         <strong>{label}</strong>
         <span className="macro-value-expression">
           <bdi dir="ltr">{Math.round(value)}</bdi>
-          <span> من </span>
-          <bdi dir="ltr">{Math.round(max)}</bdi>
-          <span> جم</span>
+          <span className="macro-target-expression"> من <bdi dir="ltr">{Math.round(max)}</bdi> جم</span>
         </span>
       </div>
       <div

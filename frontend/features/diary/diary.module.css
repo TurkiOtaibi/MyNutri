@@ -1699,7 +1699,11 @@
 }
 
 :global(.diary-page) :global(.calorie-summary-primary) > strong {
-  font-size: 25px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  font-size: 32px;
+  font-variant-numeric: tabular-nums;
 }
 
 :global(.diary-page) :global(.calorie-summary-primary) p {
@@ -1757,8 +1761,14 @@
 
 :global(.diary-page) :global(.macro-progress-row) {
   grid-template-columns: 1fr;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
+  padding-inline: 4px;
+}
+
+:global(.diary-page) :global(.macro-progress-row) + :global(.macro-progress-row) {
+  border-inline-start: 1px solid var(--line);
+  padding-inline-start: 10px;
 }
 
 :global(.diary-page) :global(.macro-progress-track) {
@@ -1767,7 +1777,7 @@
 
 :global(.diary-page) :global(.macro-progress-row) > div {
   display: grid;
-  gap: 1px;
+  gap: 4px;
   text-align: center;
 }
 
@@ -1776,14 +1786,20 @@
 }
 
 :global(.diary-page) :global(.macro-value-expression) {
-  justify-content: center;
-  font-size: 10px;
-  white-space: nowrap;
+  display: grid;
+  justify-items: center;
+  gap: 0;
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 :global(.diary-page) :global(.macro-progress-row) small {
-  color: color-mix(in srgb, var(--muted) 72%, transparent);
-  font-size: 9px;
+  color: var(--muted);
+  font-size: 11px;
   text-align: center;
 }
 
@@ -2038,7 +2054,7 @@
 
 @media (max-width: 640px) {
   :global(.diary-page) :global(.calorie-summary-primary) > strong {
-      font-size: 22px;
+      font-size: 32px;
     }
 }
 
@@ -2092,12 +2108,6 @@
       align-items: flex-start;
       flex-direction: column;
       gap: 5px;
-    }
-}
-
-@media (max-width: 340px) {
-  :global(.diary-page) :global(.macro-value-expression) {
-      font-size: 9px;
     }
 }
 
@@ -2173,10 +2183,8 @@
 
 @media (max-width: 640px) {
   :global(.macro-progress-row) > div span {
-      overflow: hidden;
-      font-size: 10px;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      overflow: visible;
+      white-space: normal;
     }
 }
 
@@ -2267,6 +2275,14 @@
   align-items: baseline;
   unicode-bidi: isolate;
 }
+
+:global(.diary-page) :global(.macro-value-expression) :global(.macro-target-expression) {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+:global(.calorie-summary-goal) { font-variant-numeric: tabular-nums; }
 
 :global(.calorie-summary-primary) bdi,
 :global(.macro-value-expression) bdi {
