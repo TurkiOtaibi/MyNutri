@@ -44,9 +44,9 @@ export function LabResultMenu({ dateLabel, disabled, onEdit, onDelete }: {
   };
 
   return <div className={styles.resultMenu} ref={rootRef}>
-    <button ref={triggerRef} type="button" className="icon-button" disabled={disabled} aria-label={`خيارات نتيجة ${dateLabel}`}
+    <button ref={triggerRef} type="button" className={`btn ${styles.resultMenuTrigger}`} disabled={disabled} aria-label={`خيارات نتيجة ${dateLabel}`}
       aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(current => !current)}>
-      <MoreVertical size={19} aria-hidden="true" />
+      <MoreVertical size={18} aria-hidden="true" /><span>خيارات</span>
     </button>
     {open ? <div ref={menuRef} role="menu" className={styles.resultMenuList} onKeyDown={handleMenuKeyDown}>
       <button type="button" role="menuitem" aria-label={`تعديل نتيجة ${dateLabel}`} onClick={() => choose(onEdit)}><Pencil size={16} aria-hidden="true" /> تعديل</button>

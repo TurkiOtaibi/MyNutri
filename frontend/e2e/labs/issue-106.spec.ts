@@ -24,6 +24,34 @@ test("batch note appears in history and real delete undo restores the same facts
   expect(before.note).toBe("مختبر تجريبي");
   await page.goto("/labs/hba1c");
   await expect(page.locator(`[data-history-result="${before.id}"]`)).toContainText("مختبر تجريبي");
+  const row = page.locator(`[data-history-result="${before.id}"]`);
+  for (const width of [375, 1440]) {
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ colorScheme });
+      const selection = row.locator('button[aria-pressed]');
+      const options = row.getByRole("button", { name: /^خيارات نتيجة/ });
+      await expect(options).toHaveText("خيارات");
+      const selectionBox = (await selection.boundingBox())!;
+      const optionsBox = (await options.boundingBox())!;
+      expect(Math.abs(selectionBox.y - optionsBox.y)).toBeLessThan(2);
+      const noteBox = (await row.locator("p").boundingBox())!;
+      expect(noteBox.y).toBeGreaterThan(optionsBox.y + optionsBox.height);
+      const value = row.locator("span:has(> bdi)");
+      const valueSize = await value.evaluate(element => parseFloat(getComputedStyle(element).fontSize));
+      const unitSize = await value.locator("small").evaluate(element => parseFloat(getComputedStyle(element).fontSize));
+      expect(valueSize).toBeGreaterThan(unitSize);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await options.focus();
+      await page.keyboard.press("Enter");
+      await expect(row.getByRole("menuitem", { name: /^تعديل نتيجة/ })).toBeFocused();
+      await page.keyboard.press("ArrowDown");
+      await expect(row.getByRole("menuitem", { name: /^حذف نتيجة/ })).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(options).toBeFocused();
+      await expect(row.getByRole("menu")).toHaveCount(0);
+    }
+  }
   await page.getByRole("button", { name: /^خيارات نتيجة/ }).click();
   await page.getByRole("menuitem", { name: /^حذف نتيجة/ }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "حذف النتيجة", exact: true }).click();
