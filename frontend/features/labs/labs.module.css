@@ -118,6 +118,21 @@
 .batchFields input:focus, .batchFields select:focus, .batchFields textarea:focus { outline: 3px solid color-mix(in srgb, var(--accent) 22%, var(--surface)); border-color: var(--accent); background: var(--surface); }
 .batchFields .batchChoice { display: flex; align-items: center; min-height: 44px; gap: 10px; }
 .batchChoice input { width: 20px; height: 20px; flex-shrink: 0; }
+.batchDialog[data-step="selection"] { display: flex; flex-direction: column; overflow: hidden; }
+.batchDialog[data-step="selection"] > :not(.batchFieldViewport) { flex-shrink: 0; }
+.batchDialog[data-step="selection"] .batchFieldViewport { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px; }
+.batchDialog[data-step="selection"] .batchChoice { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); cursor: pointer; }
+.batchDialog[data-step="selection"] .batchChoice[data-selected="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.batchChoice:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.batchChoiceGrid { display: grid; gap: 8px; min-width: 0; }
+.batchChoiceText { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
+.batchChoiceText bdi, .batchChoiceText small, .batchSelectionHint { color: var(--muted); font-size: .8rem; }
+.batchSelectionHint { margin: 0; }
+.batchDialog[data-step="selection"] h3 { margin: 8px 0 0; font-size: 1rem; font-weight: 800; }
+.batchCategory h4 { margin: 4px 0 8px; padding-block-end: 6px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .85rem; font-weight: 700; }
+@media (min-width: 600px) {
+  .batchChoiceGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .batchRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 150px); gap: 12px; min-width: 0; margin: 0; padding: 14px 0; border: 0; border-bottom: 1px solid var(--line); }
 .batchRow legend { grid-column: 1 / -1; max-width: 100%; padding: 0; overflow-wrap: anywhere; }
 .batchError { color: var(--danger-ink); }
