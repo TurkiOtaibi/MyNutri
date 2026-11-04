@@ -269,11 +269,13 @@ export function DiaryPage() {
               onAdd={openAdd}
               onToggleMenu={(id) => setOpenMenuId((current) => current === id ? null : id)}
               onEdit={(entry) => {
+                setSavedAddition(null);
                 setOpenMenuId(null);
                 setEditingEntry(entry);
               }}
               deletingId={deleteMutation.isPending ? deletingEntry?.id ?? null : null}
               onDelete={(entry) => {
+                setSavedAddition(null);
                 setOpenMenuId(null);
                 setDeleteError("");
                 setDeletingEntry(entry);
