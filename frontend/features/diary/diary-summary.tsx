@@ -235,7 +235,7 @@ export function MealSections({
                 <Icon size={21} aria-hidden="true" />
                 <span className="meal-title-copy"><strong>{mealLabels[meal]}</strong><small>{items.length === 0 ? mealItemCountLabel(0) : <>{mealItemCountLabel(items.length)} · <bdi dir="ltr">{calories}</bdi> سعرة</>}</small></span>
                 <ChevronDown className="meal-chevron" size={18} aria-hidden="true" />
-                {items.length > 0 ? <small className="meal-macro-totals"><span>بروتين <bdi dir="ltr">{formatServingMacro(protein)}</bdi> جم</span><span> · </span><span>كربوهيدرات <bdi dir="ltr">{formatServingMacro(carbs)}</bdi> جم</span><span> · </span><span>دهون <bdi dir="ltr">{formatServingMacro(fat)}</bdi> جم</span></small> : null}
+                {items.length > 0 ? <small className="meal-macro-totals"><span>بروتين <strong><bdi dir="ltr">{formatServingMacro(protein)}</bdi> جم</strong></span><span>كربوهيدرات <strong><bdi dir="ltr">{formatServingMacro(carbs)}</bdi> جم</strong></span><span>دهون <strong><bdi dir="ltr">{formatServingMacro(fat)}</bdi> جم</strong></span></small> : null}
               </button>
               {meal !== "unspecified" ? (
                 <button data-diary-add-trigger={`meal-${meal}`} className="btn icon meal-add" type="button" onClick={() => onAdd(meal)} aria-label={`إضافة طعام إلى ${mealLabels[meal]}`}><Plus size={18} /></button>
@@ -325,7 +325,10 @@ function DiaryEntryRow({
           <h3 dir="auto">{entry.food.name}</h3>
           <p>{entryQuantityLabel(entry)}</p>
         </div>
-        <strong className="diary-entry-calories"><bdi dir="ltr">{Math.round(entry.totals.calories)}</bdi> سعرة</strong>
+        <div className="diary-entry-meta">
+          <strong className="diary-entry-calories"><bdi dir="ltr">{Math.round(entry.totals.calories)}</bdi> <small>سعرة</small></strong>
+          <span className="diary-entry-edit-hint" aria-hidden="true"><Pencil size={13} /> تعديل</span>
+        </div>
         <button className="diary-entry-edit-button" type="button" disabled={deleting} aria-label={`تعديل ${entry.food.name}`} onClick={onEdit} />
       </div>
       <div className="entry-menu-wrap">
