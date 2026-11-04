@@ -168,9 +168,9 @@ function MacroProgress({ macro, label, value, max }: { macro: "protein" | "carbs
       <div>
         <strong>{label}</strong>
         <span className="macro-value-expression">
-          <bdi dir="ltr">{formatServingMacro(value)}</bdi>
+          <bdi dir="ltr">{Math.round(value)}</bdi>
           <span> من </span>
-          <bdi dir="ltr">{formatServingMacro(max)}</bdi>
+          <bdi dir="ltr">{Math.round(max)}</bdi>
           <span> جم</span>
         </span>
       </div>

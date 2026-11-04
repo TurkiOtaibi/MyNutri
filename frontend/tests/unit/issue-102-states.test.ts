@@ -31,13 +31,13 @@ describe("issue 102 missing UI states", () => {
     expect(html).not.toContain('role="progressbar"');
     expect(html).not.toContain("المتبقي");
   });
-  it("preserves fractional macro amounts and announces an excess below half a percent", () => {
+  it("announces an excess below half a percent while preserving whole-gram display", () => {
     const html = renderToStaticMarkup(createElement(DailyProgressSummary, {
       totals: { ...emptyNutritionTotals(), calories: 1200, protein_g: 100.4 },
       targets: { target_calories: 2000, protein_g: 100, carb_g: 250, fat_g: 60 } as TargetResponse,
       pending: false, failed: false, onOpenNutrition: () => {},
     }));
-    expect(html).toContain(">100.4</bdi>");
+    expect(html).toContain(">100</bdi>");
     expect(html).toContain('class="macro-progress-row over" data-macro="protein"');
     expect(html).toContain("فوق الهدف بـ 0.4 جم");
   });
