@@ -138,6 +138,7 @@ export function DiaryPage() {
 
   useEffect(() => {
     if (!undoEntry) return;
+    undoNoticeRef.current?.focus({ preventScroll: true });
     const timer = window.setTimeout(() => {
       if (undoNoticeRef.current?.contains(document.activeElement)) undoNoticeRef.current.focus();
       setUndoEntry(null);
