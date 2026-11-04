@@ -1616,6 +1616,8 @@
 
 :global(.diary-page) :global(.calorie-summary-primary) {
   display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;

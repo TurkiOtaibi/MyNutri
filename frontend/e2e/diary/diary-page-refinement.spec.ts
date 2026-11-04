@@ -160,6 +160,7 @@ test.describe("@diary @page-refinement compact Diary page", () => {
   });
 
   test("@p0 exact and above-target summaries use non-negative, clamped, accessible states", async ({ page, request, foodsApi }) => {
+    await page.setViewportSize({ width: 375, height: 844 });
     const exactDate = localDate();
     const overDate = exactDate;
     const exactTargets = await targetsForDate(request, exactDate);
@@ -171,6 +172,7 @@ test.describe("@diary @page-refinement compact Diary page", () => {
     await selectDate(page, exactDate);
     const summary = page.getByLabel("ملخص تقدم اليوم");
     await expect(summary.getByText("تم الوصول إلى الهدف")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await expect(summary.getByRole("progressbar", { name: /100% من هدف السعرات/ })).toHaveAttribute("aria-valuenow", "100");
     await foodsApi.removeDiary(exactEntry.id);
     await foodsApi.createDiary(over.id, overDate, 1, "lunch");

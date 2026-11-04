@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import type { TargetResponse } from "@/lib/types";
 import OfflinePage from "@/app/offline/page";
 import { TargetsCard } from "@/features/profile/profile-targets";
 import { DailyProgressSummary } from "@/features/diary/diary-summary";
@@ -29,6 +30,16 @@ describe("issue 102 missing UI states", () => {
     expect(html).toContain(">240</bdi>");
     expect(html).not.toContain('role="progressbar"');
     expect(html).not.toContain("المتبقي");
+  });
+  it("announces an excess below half a percent while preserving whole-gram display", () => {
+    const html = renderToStaticMarkup(createElement(DailyProgressSummary, {
+      totals: { ...emptyNutritionTotals(), calories: 1200, protein_g: 100.4 },
+      targets: { target_calories: 2000, protein_g: 100, carb_g: 250, fat_g: 60 } as TargetResponse,
+      pending: false, failed: false, onOpenNutrition: () => {},
+    }));
+    expect(html).toContain(">100</bdi>");
+    expect(html).toContain('class="macro-progress-row over" data-macro="protein"');
+    expect(html).toContain("فوق الهدف بـ 0.4 جم");
   });
   it("BR-NAV-016 supplies an Arabic installation description", () => {
     const manifest = JSON.parse(readFileSync("public/manifest.json", "utf8"));

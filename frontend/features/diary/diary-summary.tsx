@@ -160,7 +160,7 @@ function CalorieRing({ percent, state, label, center }: { percent: number; state
 
 function MacroProgress({ macro, label, value, max }: { macro: "protein" | "carbs" | "fat"; label: string; value: number; max: number }) {
   const percent = max > 0 ? Math.round((value / max) * 100) : 0;
-  const over = percent > 100;
+  const over = value > max;
   const visualPercent = Math.min(percent, 100);
   const minimumVisualPixels = visualPercent === 0 ? 0 : visualPercent < 5 ? 4 : visualPercent < 15 ? 8 : visualPercent < 30 ? 14 : 0;
   return (
