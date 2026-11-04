@@ -51,6 +51,16 @@
 .historyFigure { margin: 0; min-width: 0; border-radius: var(--radius-card); padding: 16px; background: var(--surface); box-shadow: var(--shadow-sm); }
 .historyFigure h2, .referencePanel h2 { margin-top: 0; }
 .historyFigure figcaption { color: var(--muted); font-size: .85rem; }
+.chartReading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 12px; margin-block: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-strong); }
+.chartReading > span:first-child, .chartReading time { color: var(--muted); font-size: .8rem; }
+.chartReading strong { min-width: 0; overflow-wrap: anywhere; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.chartReading small { font-size: .85rem; font-weight: 500; color: var(--muted); }
+.chartReading time, .chartReading .status { justify-self: end; }
+.chartNavigation { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; margin-block: 12px; }
+.chartNavigation button { min-width: 0; gap: 4px; padding-inline: 8px; }
+.chartNavigation button svg { flex-shrink: 0; }
+.chartNavigation > span { font-size: .8rem; color: var(--muted); text-align: center; }
+.chartNavigation button:focus-visible { outline: 3px solid var(--accent-strong); outline-offset: 2px; }
 .chartUnit { text-align: start; overflow-wrap: anywhere; }
 .chartPlot { position: relative; width: 100%; height: 280px; }
 .chartPlot svg { display: block; width: 100%; height: 100%; overflow: visible; }
@@ -64,7 +74,7 @@
 .chartPoint { position: absolute; transform: translate(-50%, -50%); width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
 .chartPoint span { width: 9px; height: 9px; border: 2px solid var(--accent-strong); border-radius: 50%; background: var(--surface); }
 .chartPoint[aria-pressed="true"] { z-index: 1; }
-.chartPoint[aria-pressed="true"] span { background: var(--accent-strong); }
+.chartPoint[aria-pressed="true"] span { width: 13px; height: 13px; background: var(--accent-strong); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent); }
 .chartPoint:focus-visible { z-index: 2; outline: 3px solid var(--accent-strong); outline-offset: -4px; }
 .referencePanel { min-width: 0; border-radius: var(--radius-card); padding: 16px; background: var(--surface); box-shadow: var(--shadow-sm); }
 .referenceZones { display: grid; gap: 10px; padding: 0; list-style: none; }

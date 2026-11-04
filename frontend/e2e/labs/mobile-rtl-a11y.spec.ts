@@ -162,6 +162,37 @@ test("extreme converted history remains readable and chart points support keyboa
       spans.some((span) => (span.textContent?.trim().length ?? 0) >= 100))).toBe(true);
     await assertMobileSurface(page);
   }
+  const detail = await labsApi.detail("hba1c");
+  const figure = page.getByRole("figure", { name: "سجل النتائج عبر الزمن" });
+  const older = figure.getByRole("button", { name: "الأقدم", exact: true });
+  const newer = figure.getByRole("button", { name: "الأحدث", exact: true });
+  const reading = figure.getByTestId("chart-selected-reading");
+  for (const width of [375, 1440]) {
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ colorScheme });
+      await page.locator('[data-chart-point][tabindex="0"]').focus();
+      await page.keyboard.press("End");
+      await expect(newer).toBeDisabled();
+      await older.click();
+      await expect(reading.locator("time")).toHaveAttribute("datetime", detail.results[1].test_date);
+      await expect(reading.locator("strong")).toContainText(detail.results[1].display_value);
+      await expect(page.locator(`[data-chart-point="${detail.results[1].id}"]`)).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByRole("region", { name: "القيم المرجعية للنظام" })).toHaveAttribute("data-reference-date", detail.results[1].test_date);
+      await newer.focus();
+      await page.keyboard.press("Enter");
+      await expect(reading.locator("time")).toHaveAttribute("datetime", detail.results[0].test_date);
+      expect((await older.boundingBox())!.x).toBeLessThan((await newer.boundingBox())!.x);
+      await page.locator('[data-chart-point][tabindex="0"]').focus();
+      await page.keyboard.press("Home");
+      await expect(older).toBeDisabled();
+      await expect(reading.locator("strong")).toContainText(detail.results.at(-1)!.display_value);
+      expect(await reading.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await newer.click();
+      await expect(reading.locator("time")).toHaveAttribute("datetime", detail.results.at(-2)!.test_date);
+    }
+  }
 });
 
 test("selected-user admin Labs stays read-only and mobile safe", async ({ page, labsApi }, testInfo) => {

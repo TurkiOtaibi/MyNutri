@@ -1,4 +1,5 @@
 import React, { useId, useRef } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { LabTestDetailResponse } from "@/lib/types";
 import { chartGeometry } from "./lab-chart-model";
 import { formatGregorianArabicDate } from "@/lib/dates";
@@ -13,9 +14,17 @@ export function LabHistoryChart({ detail, selectedResultId, onSelectResult }: {
   const results = new Map(detail.results.map(result => [result.id, result]));
   const statuses = new Map(detail.chart_zones.flatMap(segment => segment.zones.map(zone => [zone.status.code, zone.status] as const)));
   const selected = selectedResultId ?? detail.results[0]?.id;
+  const selectedIndex = geometry.points.findIndex(point => point.id === selected);
+  const reading = selected ? results.get(selected) : undefined;
   return <figure className={styles.historyFigure} aria-labelledby={labelId} aria-describedby={captionId}>
     <h2 id={labelId}>سجل النتائج عبر الزمن</h2>
     {geometry.points.length ? <>
+      {reading && <div className={styles.chartReading} data-testid="chart-selected-reading">
+        <span>النتيجة المختارة</span>
+        <time dateTime={reading.test_date}>{formatGregorianArabicDate(reading.test_date)}</time>
+        <strong><bdi dir="ltr">{reading.display_is_approximate ? "≈ " : ""}{reading.display_value} <small>{reading.display_unit}</small></bdi></strong>
+        <span className={styles.status} data-tone={reading.status.tone}>{reading.status.label_ar}</span>
+      </div>}
       <div className={styles.chartUnit} aria-label={`القيمة (${detail.test.canonical_unit})`}>القيمة (<bdi dir="ltr">{detail.test.canonical_unit}</bdi>)</div>
       <div className={styles.chartPlot} dir="ltr">
         <svg viewBox="0 0 360 240" preserveAspectRatio="none" role="img" aria-label="الرسم التاريخي للنتائج والقيم المرجعية للنظام">
@@ -44,6 +53,13 @@ export function LabHistoryChart({ detail, selectedResultId, onSelectResult }: {
             }}><span aria-hidden="true" /></button>;
         })}
       </div>
+      {geometry.points.length > 1 && <div className={styles.chartNavigation} dir="ltr" role="group" aria-label="التنقّل بين النتائج">
+        <button type="button" className="btn" disabled={selectedIndex <= 0}
+          onClick={() => onSelectResult(geometry.points[selectedIndex - 1].id)}><ChevronLeft size={18} aria-hidden="true" /><span dir="rtl">الأقدم</span></button>
+        <span dir="rtl">قراءة <bdi>{selectedIndex + 1}</bdi> من <bdi>{geometry.points.length}</bdi></span>
+        <button type="button" className="btn" disabled={selectedIndex < 0 || selectedIndex >= geometry.points.length - 1}
+          onClick={() => onSelectResult(geometry.points[selectedIndex + 1].id)}><span dir="rtl">الأحدث</span><ChevronRight size={18} aria-hidden="true" /></button>
+      </div>}
     </> : <p className={styles.empty}>لا توجد نتائج مسجلة لهذا التحليل.</p>}
     <figcaption id={captionId}>التاريخ من الأقدم يسارًا إلى الأحدث يمينًا. اختر نقطة لعرض القيم المرجعية في تاريخها. السجل الكامل متاح أدناه.</figcaption>
   </figure>;
