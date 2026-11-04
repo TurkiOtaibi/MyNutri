@@ -395,9 +395,12 @@ function DailyNutrientRow({ aggregate, definition }: { aggregate: DiaryNutrientA
   const showProgress = aggregate.progress_percent !== null;
   return (
     <section className={`daily-nutrient-row ${overMaximum ? "over" : ""}`} aria-label={`${label}: ${qualifier} ${amountText}، ${status}${aggregate.coverage_percent == null ? "" : `، اكتمال البيانات ${aggregate.coverage_percent}%`}`}>
-      <header><strong>{label}</strong><span>{targetValue == null ? targetTypeLabels[targetType] : `${targetTypeLabels[targetType]} ${formatNutrientValue(targetValue, precision)} ${unit}`}</span></header>
-      <div className="daily-nutrient-value"><small>الكمية المسجّلة</small><bdi dir="auto">{amountText}</bdi>{qualifier ? <small>{qualifier}</small> : null}</div>
-      {showProgress ? <div className="daily-nutrient-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(aggregate.progress_percent ?? 0, 100)} aria-valuetext={`${aggregate.progress_percent}%`}><span style={{ width: `${Math.min(aggregate.progress_percent ?? 0, 100)}%` }} /></div> : null}
+      <header><strong>{label}</strong></header>
+      <div className="daily-nutrient-comparison">
+        <div className="daily-nutrient-value"><small>الكمية المسجّلة</small><strong><bdi dir="auto">{amountText}</bdi>{qualifier ? <small> {qualifier}</small> : null}</strong></div>
+        <div className="daily-nutrient-target"><small>{targetTypeLabels[targetType]}</small>{targetValue == null ? null : <strong><bdi dir="auto">{formatNutrientValue(targetValue, precision)} {unit}</bdi></strong>}</div>
+      </div>
+      {showProgress ? <div className="daily-nutrient-progress" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(aggregate.progress_percent ?? 0, 100)} aria-valuetext={`${aggregate.progress_percent}%`}><span style={{ width: `${Math.min(aggregate.progress_percent ?? 0, 100)}%` }} /></div> : null}
       <footer><span>{status}</span>{aggregate.coverage_percent != null ? <small>اكتمال البيانات <bdi>{aggregate.coverage_percent}%</bdi></small> : null}</footer>
       {aggregate.coverage_state === "partial" ? <p>بعض الأطعمة المسجلة لا تحتوي قيمة لهذا المغذي.</p> : null}
     </section>

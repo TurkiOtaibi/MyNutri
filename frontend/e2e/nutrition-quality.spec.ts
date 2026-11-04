@@ -94,6 +94,29 @@ test.describe("@nutrition-quality", () => {
     await expect(fiber).toContainText("اكتمال البيانات 50%");
     await expect(fiber).toContainText("لا يمكن الحكم لأن بعض البيانات ناقصة");
     await expect(fiber).not.toContainText("المتبقي");
+    for (const width of [375, 1440]) {
+      for (const colorScheme of ["light", "dark"] as const) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.emulateMedia({ colorScheme });
+        await expect(fiber.locator(".daily-nutrient-value")).toContainText("5 جم");
+        await expect(fiber.locator(".daily-nutrient-value")).toContainText("على الأقل");
+        await expect(fiber.locator(".daily-nutrient-target")).toContainText("حد أدنى");
+        await expect(fiber.locator(".daily-nutrient-target")).toContainText("30 جم");
+        const amount = await fiber.locator(".daily-nutrient-value").boundingBox();
+        const target = await fiber.locator(".daily-nutrient-target").boundingBox();
+        expect(amount).not.toBeNull();
+        expect(target).not.toBeNull();
+        expect(Math.abs(amount!.y - target!.y)).toBeLessThan(2);
+        expect(target!.x + target!.width).toBeLessThanOrEqual(amount!.x);
+        expect(await sheet.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+        expect(await fiber.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+        await page.keyboard.press("Escape");
+        await expect(sheet).toBeHidden();
+        await expect(page.getByRole("button", { name: "عرض التفاصيل الغذائية" })).toBeFocused();
+        await page.keyboard.press("Enter");
+        await expect(sheet).toBeVisible();
+      }
+    }
     expect((await foodsApi.update(known.id, { carb_g: 50, fiber_g: 40, sodium_mg: 3000 })).status()).toBe(200);
     await page.reload();
     await page.getByRole("button", { name: "عرض التفاصيل الغذائية" }).click();
