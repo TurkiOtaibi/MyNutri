@@ -138,6 +138,7 @@ export function DiaryPage() {
 
   useEffect(() => {
     if (!undoEntry) return;
+    undoNoticeRef.current?.focus({ preventScroll: true });
     const timer = window.setTimeout(() => {
       if (undoNoticeRef.current?.contains(document.activeElement)) undoNoticeRef.current.focus();
       setUndoEntry(null);
@@ -183,11 +184,6 @@ export function DiaryPage() {
       setUndoFailed(false);
       setUndoMessage("تم حذف الطعام");
       setUndoEntry(entry);
-      const generation = undoGeneration.current;
-      requestAnimationFrame(() => {
-        if (sessionSignal.aborted || generation !== undoGeneration.current) return;
-        undoNoticeRef.current?.focus({ preventScroll: true });
-      });
       await invalidateDiary(queryClient);
       if (sessionSignal.aborted) return;
     },
