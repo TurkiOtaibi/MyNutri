@@ -303,7 +303,7 @@ function RecentFoodGroup({ foods, onChoose, onQuickAdd }: { foods: RecentFoodPic
               className="diary-quick-add"
               type="button"
               onClick={() => onQuickAdd(food)}
-              aria-label={`أضف مجددًا: ${food.name}، ${countedUnitText(food.last_quantity, food.default_unit_type)}`}
+              aria-label={`أضف مجددًا: ${food.name}${food.brand ? `، ${food.brand}` : ""}، ${countedUnitText(food.last_quantity, food.default_unit_type)}`}
             >
               <Plus size={15} aria-hidden="true" />
               <span>أضف مجددًا</span>
@@ -318,7 +318,7 @@ function RecentFoodGroup({ foods, onChoose, onQuickAdd }: { foods: RecentFoodPic
 function FoodResultRow({ food, onChoose }: { food: FoodPickerItem; onChoose: (food: FoodPickerItem) => void }) {
   const serving = pickerServingNutrition(food);
   return (
-    <button className="diary-food-option" type="button" onClick={() => onChoose(food)} aria-label={`${food.name}، ${defaultServingText(food)}، ${serving ? Math.round(serving.calories) : "غير متاح"} سعرة`}>
+    <button className="diary-food-option" type="button" onClick={() => onChoose(food)} aria-label={`${food.name}${food.brand ? `، ${food.brand}` : ""}، ${defaultServingText(food)}، ${serving ? Math.round(serving.calories) : "غير متاح"} سعرة`}>
       <span className="diary-food-option-copy">
         <strong dir="auto">{food.name}</strong>
         {food.brand ? <small dir="auto">{food.brand}</small> : null}
