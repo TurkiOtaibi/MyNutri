@@ -1,6 +1,6 @@
 import type { Page, Response } from "@playwright/test";
 
-import { weekStartSunday } from "../../lib/dates";
+import { formatLongArabicDate, weekStartSunday } from "../../lib/dates";
 import { API_URL, diaryDate as localDate, expect, test, uniqueName } from "../foods/helpers";
 
 const apiOrigin = new URL(API_URL).origin;
@@ -101,14 +101,31 @@ test.describe("@diary @meals Gregorian meal sections", () => {
   test("@p0 section Add preselects meal and saves into that expanded section", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Lunch meal") });
     await page.goto("/diary");
-    await page.getByRole("button", { name: "إضافة طعام إلى غداء" }).click();
-    const dialog = page.getByRole("dialog", { name: "إضافة طعام" });
-    await dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية").fill(food.name);
-    await dialog.getByRole("button", { name: new RegExp(food.name) }).click();
-    await expect(dialog.getByRole("radio", { name: "غداء" })).toHaveAttribute("aria-checked", "true");
-    await dialog.getByRole("button", { name: "إضافة إلى الغداء" }).click();
-    const lunch = page.locator("#meal-section-lunch");
-    await expect(lunch.getByRole("heading", { name: food.name })).toBeVisible();
+    for (const offset of [-1, 1]) {
+      const selectedDate = localDate(offset);
+      await page.setViewportSize({ width: offset === -1 ? 375 : 1440, height: 844 });
+      await selectHistoricalDiaryDate(page, selectedDate);
+      await page.getByRole("button", { name: "إضافة طعام إلى غداء" }).click();
+      const dialog = page.getByRole("dialog", { name: "إضافة طعام" });
+      const description = `الإضافة إلى يوم ${formatLongArabicDate(selectedDate)}`;
+      await expect(dialog).toHaveAccessibleDescription(description);
+      await dialog.getByPlaceholder("ابحث باسم الطعام أو العلامة التجارية").fill(food.name);
+      await dialog.getByRole("button", { name: new RegExp(food.name) }).click();
+      await expect(dialog.getByRole("radio", { name: "غداء" })).toHaveAttribute("aria-checked", "true");
+      for (const colorScheme of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme });
+        await dialog.getByRole("textbox", { name: "الكمية", exact: true }).fill("2");
+        await expect(dialog.locator("time")).toHaveAttribute("datetime", selectedDate);
+        await expect(dialog.locator("time")).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      }
+      await dialog.getByRole("button", { name: "إضافة إلى الغداء" }).click();
+      const lunch = page.locator("#meal-section-lunch");
+      await expect(lunch.getByRole("heading", { name: food.name })).toBeVisible();
+      const entries = (await foodsApi.listDiary(selectedDate)).filter((entry) => entry.food.id === food.id);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({ entry_date: selectedDate, meal_type: "lunch", quantity: 2 });
+    }
   });
 
   test("@p0 Diary exposes only meal-specific Add actions", async ({ page, foodsApi }) => {

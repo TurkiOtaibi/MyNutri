@@ -160,7 +160,7 @@ export function AddEntrySheet({ selectedDate, initialMeal, initialFood = null, o
           <div className="add-sheet-title-row">
             <div>
               <h2 id="add-entry-title">إضافة طعام</h2>
-              <p id="add-entry-description">{formatLongArabicDate(selectedDate)}</p>
+              <p id="add-entry-description">الإضافة إلى يوم <time dateTime={selectedDate}>{formatLongArabicDate(selectedDate)}</time></p>
             </div>
             <button className="btn icon add-sheet-close" type="button" onClick={requestClose} aria-label="إغلاق إضافة الطعام"><X size={19} /></button>
           </div>
