@@ -594,20 +594,19 @@
 
 :global(.add-food-configure-state) {
   display: grid;
-  gap: 22px;
-  padding-top: 18px;
+  gap: 16px;
+  padding-top: 16px;
 }
 
 :global(.selected-food-summary) {
-  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: center;
-  min-height: 112px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
   border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--line));
   border-radius: 18px;
   background: color-mix(in srgb, var(--accent-soft) 38%, var(--surface));
-  padding: 12px 16px 42px;
+  padding: 12px;
 }
 
 :global(.selected-food-summary) h3 {
@@ -632,20 +631,34 @@
 }
 
 :global(.selected-food-summary) button {
-  position: absolute;
-  inset-inline-end: 10px;
-  bottom: 4px;
   min-height: 44px;
-  border: 0;
-  background: transparent;
-  color: var(--accent);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--accent-strong);
   font-size: 13px;
   font-weight: 750;
+  padding: 0 10px;
   white-space: nowrap;
 }
 
 :global(.selected-food-summary) :global(.selected-food-serving) {
   direction: rtl;
+  white-space: normal;
+}
+
+:global(.add-measurement-options) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  margin: 0;
+}
+
+:global(.add-measurement-options) button {
+  justify-content: center;
+  min-height: 44px;
+  min-width: 0;
+  border-radius: 12px;
   white-space: normal;
 }
 
@@ -658,6 +671,10 @@
 :global(.add-config-section) {
   display: grid;
   gap: 8px;
+}
+
+:global(.add-config-section) h3 {
+  margin: 0;
 }
 
 :global(.entry-sheet) :global(.meal-type-selector) {
@@ -716,10 +733,10 @@
 
 :global(.add-nutrition-preview) {
   display: grid;
-  gap: 11px;
+  gap: 10px;
   border-radius: 18px;
   background: var(--surface-strong);
-  padding: 16px;
+  padding: 12px;
   text-align: center;
 }
 
@@ -730,13 +747,16 @@
 }
 
 :global(.add-calorie-total) {
-  display: grid;
-  justify-items: center;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 :global(.add-calorie-total) strong {
   color: var(--ink);
-  font-size: 36px;
+  font-size: 32px;
   line-height: 1;
 }
 
@@ -751,7 +771,7 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   border-top: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
-  padding-top: 11px;
+  padding-top: 10px;
 }
 
 :global(.add-macro-row) span {
@@ -775,6 +795,60 @@
   background: color-mix(in srgb, var(--surface) 97%, transparent);
   padding: 12px 16px max(12px, env(safe-area-inset-bottom));
   backdrop-filter: blur(14px);
+}
+
+:global(.add-sheet-footer):global(.has-selected-food) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+}
+
+:global(.has-selected-food) :global(.add-sheet-cancel) {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 56px;
+}
+
+:global(.has-selected-food) :global(.add-save-error),
+:global(.has-selected-food) :global(.add-action-helper) {
+  grid-column: 1 / -1;
+}
+
+:global(.has-selected-food) :global(.add-save-error) {
+  grid-row: 1;
+}
+
+:global(.has-selected-food):has(:global(.add-save-error)) :global(.add-food-submit),
+:global(.has-selected-food):has(:global(.add-save-error)) :global(.add-sheet-cancel) {
+  grid-row: 2;
+}
+
+@media (min-width: 641px) {
+  :global(.entry-sheet):global(.diary-modal-backdrop) {
+    align-items: center;
+    padding: 24px 0;
+  }
+
+  :global(.entry-sheet) :global(.diary-modal-panel) {
+    height: min(88dvh, 660px);
+    border-radius: 24px;
+  }
+
+  :global(.add-food-configure-state) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 20px;
+  }
+
+  :global(.selected-food-summary),
+  :global(.add-meal-section) {
+    grid-column: 1 / -1;
+  }
+
+  :global(.add-nutrition-preview) {
+    align-self: stretch;
+    align-content: center;
+  }
 }
 
 :global(.add-food-submit) {

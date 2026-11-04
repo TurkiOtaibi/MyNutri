@@ -259,6 +259,10 @@ test.describe("critical visual regression", () => {
     await stableRendering(page);
 
     await expect(sheet).toHaveScreenshot("diary-add-food-open.png");
+    await sheet.getByRole("button", { name: new RegExp(pickerFood.name) }).click();
+    await expect(sheet.getByLabel("معاينة القيم الغذائية")).toBeInViewport({ ratio: 1 });
+    await stableRendering(page);
+    await expect(sheet).toHaveScreenshot("diary-add-food-configure.png");
   });
 
   test("Foods admin actions on mobile", async ({ page }) => {
