@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { useRef, type RefObject } from "react";
-import { FlaskConical, SlidersHorizontal } from "lucide-react";
+import { ChevronLeft, FlaskConical, SlidersHorizontal } from "lucide-react";
 
 import type { LabCatalogResponse, LabOverviewResponse } from "@/lib/types";
 import { nextLabsView, type LabListItem, type LabSort, type LabsView } from "./lab-model";
@@ -104,7 +104,7 @@ function Controls({ catalog, search, category, sort, filtersOpen, onToggleFilter
 
 function LabRows({ rows, emptyMessage, onAddTest, detailHref, emptyContent }: { rows: LabListItem[]; emptyMessage: string; onAddTest?: (testKey: string) => void; detailHref?: (testKey: string) => string; emptyContent?: React.ReactNode }) {
   if (rows.length === 0) return <div className={styles.empty}>{emptyContent !== undefined ? <FlaskConical size={30} aria-hidden="true" /> : null}<strong>{emptyMessage}</strong>{emptyContent !== undefined ? emptyContent : <span>يمكنك تغيير البحث أو التصنيف لعرض نتائج أخرى.</span>}</div>;
-  return <ul className={styles.rows}>
+  return <ul className={`${styles.rows} ${styles.resultCards}`}>
     {rows.map((item) => <li
       key={item.test_key}
       className={styles.row}
@@ -113,11 +113,11 @@ function LabRows({ rows, emptyMessage, onAddTest, detailHref, emptyContent }: { 
       data-category={item.test.primary_category}
     >
       <div className={styles.identity}>
-        <strong>{detailHref ? <Link href={detailHref(item.test_key)}>{item.test.name_ar}</Link> : item.test.name_ar}</strong>
+        <strong>{detailHref ? <Link href={detailHref(item.test_key)}><span>{item.test.name_ar}</span><ChevronLeft size={18} aria-hidden="true" /></Link> : item.test.name_ar}</strong>
         <bdi dir="ltr">{item.test.abbreviation ?? item.test.name_en}</bdi>
       </div>
-      {item.latest ? <div className={styles.latest}>
-        <strong><bdi dir="ltr">{item.latest.display_value} {item.latest.display_unit}</bdi></strong>
+      {item.latest ? <div className={`${styles.latest} ${styles.latestResult}`}>
+        <strong className={styles.resultValue}><bdi dir="ltr">{item.latest.display_value} <small>{item.latest.display_unit}</small></bdi></strong>
         <span className={styles.status} data-tone={item.latest.status.tone}>{item.latest.status.label_ar}</span>
         <time dateTime={item.latest.test_date}>{formatGregorianArabicDate(item.latest.test_date)}</time>
       </div> : <div className={styles.latest}><span className={styles.noResult}>لا توجد نتيجة مسجلة</span>

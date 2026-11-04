@@ -33,6 +33,7 @@ async function assertMobileSurface(page: Page) {
 test("Labs overview is responsive and exposes a complete RTL roving-tab pattern", async ({ labsPage: page, labsApi }, testInfo) => {
   const today = (await labsApi.overview()).server_today;
   await labsApi.create(offsetIsoDate(today, -1), [{ test_key: "hba1c", entered_value: "5.27", entered_unit: "%" }]);
+  await labsApi.create(offsetIsoDate(today, -1), [{ test_key: "ferritin", entered_value: "9".repeat(128), entered_unit: "ng/mL" }]);
   for (const width of [320, 390, 430]) {
     await page.setViewportSize({ width, height: 760 });
     await navigateToOwnerLabs(page);
@@ -62,6 +63,37 @@ test("Labs overview is responsive and exposes a complete RTL roving-tab pattern"
       body: await page.screenshot({ fullPage: true }), contentType: "image/png",
     });
   }
+  for (const width of [375, 1440]) {
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ colorScheme });
+      const row = page.locator('[data-testid="lab-row"][data-test-key="hba1c"]');
+      const result = row.locator("strong:has(> bdi)");
+      await expect(result).toHaveText("5.27 %");
+      await expect(result.locator("small")).toHaveText("%");
+      const valueSize = await result.evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
+      const unitSize = await result.locator("small").evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
+      expect(valueSize).toBeGreaterThan(unitSize);
+      const link = row.getByRole("link");
+      expect((await link.boundingBox())!.y).toBeLessThan((await result.boundingBox())!.y);
+      expect(await row.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await expect(row.locator("time")).toHaveAttribute("datetime", offsetIsoDate(today, -1));
+      const longRow = page.locator('[data-testid="lab-row"][data-test-key="ferritin"]');
+      const longValue = longRow.locator("strong:has(> bdi)");
+      expect(await longValue.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+      if (width === 1440) {
+        const firstBox = (await row.boundingBox())!;
+        const secondBox = (await longRow.boundingBox())!;
+        expect(Math.abs(firstBox.y - secondBox.y)).toBeLessThan(2);
+        expect(Math.abs(firstBox.x - secondBox.x)).toBeGreaterThan(firstBox.width);
+      }
+    }
+  }
+  const detailLink = page.locator('[data-testid="lab-row"][data-test-key="hba1c"]').getByRole("link");
+  await detailLink.focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/labs\/hba1c$/);
+  await expect(page.getByRole("region", { name: "القيم المرجعية للنظام" })).toBeVisible();
 });
 
 test("the CBC value step names all twenty groups and wraps focus at the modal boundary", async ({ labsPage: page }) => {

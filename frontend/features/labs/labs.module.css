@@ -132,13 +132,21 @@
 .overview .resultBar > span { display: inline-flex; align-items: center; gap: 6px; }
 .overview .resultBar bdi { font-weight: 700; color: var(--ink); }
 .overview .resultBar button { margin-inline-start: auto; color: var(--accent-strong); }
-.overview .row { grid-template-columns: minmax(0, 1fr) minmax(0, 220px); padding: 18px 20px; }
-.overview .identity, .overview .latest { min-width: 0; overflow-wrap: anywhere; }
-.overview .identity bdi { width: fit-content; max-width: 100%; }
-.overview .identity a { max-width: 100%; line-height: 1.6; }
-.overview .identity a:hover { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 4px; }
-.overview .latest { gap: 7px; padding-inline-start: 20px; border-inline-start: 1px solid var(--line); }
-.overview .latest > strong { max-width: 100%; font-size: 1.3rem; font-variant-numeric: tabular-nums; line-height: 1.4; }
+.resultCards .row { grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 16px 20px; }
+@media (min-width: 1000px) {
+  .resultCards { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+}
+.resultCards .identity, .resultCards .latest { min-width: 0; overflow-wrap: anywhere; }
+.resultCards .identity bdi { width: fit-content; max-width: 100%; }
+.resultCards .identity a { width: 100%; max-width: 100%; justify-content: space-between; gap: 12px; line-height: 1.6; }
+.resultCards .identity a svg { flex-shrink: 0; color: var(--accent-strong); }
+.resultCards .identity a:hover { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 4px; }
+.resultCards .latest { gap: 7px; padding-block-start: 12px; border-block-start: 1px solid var(--line); }
+.resultCards .latestResult { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px; }
+.resultCards .latestResult .resultValue { grid-column: 1; grid-row: 1 / 3; justify-self: start; text-align: start; }
+.resultCards .latestResult .status, .resultCards .latestResult time { grid-column: 2; }
+.resultCards .latest > strong { max-width: 100%; min-width: 0; font-size: 1.75rem; font-variant-numeric: tabular-nums; line-height: 1.4; }
+.resultCards .resultValue small { color: var(--muted); font-size: .85rem; font-weight: 500; }
 .overview .empty, .pageState { min-height: 230px; gap: 14px; padding: 28px 20px; }
 .overview .empty > svg, .pageState > svg { color: var(--accent-strong); }
 .pageState { display: grid; justify-items: center; align-content: center; border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-sm); text-align: center; color: var(--muted); }
@@ -158,9 +166,8 @@
   .overview .tabs button { padding-inline: 10px; }
   .overview .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .overview .controls select { font-size: .8rem; }
-  .overview .row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; padding: 14px; }
-  .overview .latest { justify-items: end; text-align: end; padding-inline-start: 12px; }
-  .overview .latest > strong { font-size: 1.15rem; }
+  .resultCards .row { padding: 14px; }
+  .resultCards .latest { justify-items: end; text-align: end; }
 }
 
 .detailBack { gap: 8px; color: var(--accent-strong); font-weight: 700; }
