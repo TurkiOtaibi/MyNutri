@@ -67,9 +67,34 @@ test("panels plus individuals deduplicate, two panels render all rows, removing 
   await navigateToOwnerLabs(page);
   await page.getByRole("button", { name: "إضافة نتائج", exact: true }).click();
   await next(page);
+  const summary = page.getByTestId("lab-selection-summary");
+  await expect(summary).toHaveText("التحاليل المحددة: 0");
+  await expect(dialog(page).getByRole("button", { name: "التالي", exact: true })).toBeDisabled();
   await page.locator('[data-panel-key="lipid_panel"]').check();
+  await expect(summary).toHaveText("التحاليل المحددة: 4");
+  const ldlChoice = dialog(page).locator("label").filter({ has: page.locator('[data-individual-key="ldl_c"]') });
+  await expect(ldlChoice).toHaveAttribute("data-selected", "true");
+  await expect(ldlChoice).toContainText("مضاف ضمن مجموعة");
   await page.locator('[data-panel-key="iron_studies"]').check();
+  await expect(summary).toHaveText("التحاليل المحددة: 8");
   await page.locator('[data-individual-key="ldl_c"]').check();
+  await expect(summary).toHaveText("التحاليل المحددة: 8");
+  for (const [width, height] of [[375, 812], [1440, 812], [812, 320]]) {
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.setViewportSize({ width, height });
+      await page.emulateMedia({ colorScheme });
+      await dialog(page).getByRole("button", { name: "التالي", exact: true }).focus();
+      // Enter the choices again after resizing rather than refocusing the active element.
+      await dialog(page).locator("input[data-individual-key]").last().focus();
+      await expect(dialog(page).locator("input[data-individual-key]").last()).toBeInViewport();
+      await expect(summary).toBeInViewport();
+      await expect(dialog(page).getByRole("button", { name: "التالي", exact: true })).toBeInViewport();
+      const lastChoice = await dialog(page).locator("input[data-individual-key]").last().boundingBox();
+      const summaryBox = await summary.boundingBox();
+      expect(lastChoice!.y + lastChoice!.height).toBeLessThan(summaryBox!.y);
+      expect(await dialog(page).evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    }
+  }
   await next(page);
   await expect(page.getByTestId("lab-batch-row")).toHaveCount(8);
   await expect(page.locator("#lab-ldl_c-value")).toHaveCount(1);
@@ -77,6 +102,9 @@ test("panels plus individuals deduplicate, two panels render all rows, removing 
   await page.locator("#lab-ldl_c-unit").selectOption("mmol/L");
   await back(page);
   await page.locator('[data-panel-key="lipid_panel"]').uncheck();
+  await expect(summary).toHaveText("التحاليل المحددة: 5");
+  await expect(ldlChoice).toHaveAttribute("data-selected", "true");
+  await expect(ldlChoice).not.toContainText("مضاف ضمن مجموعة");
   await next(page);
   await expect(page.getByTestId("lab-batch-row")).toHaveCount(5);
   await expect(page.locator("#lab-ldl_c-value")).toHaveValue("100.00");
