@@ -69,10 +69,12 @@ async function expectReferences(page: Page, result: LabTestDetailResponse["resul
   await expect(panel).toBeVisible();
   await expect(panel.getByRole("status")).toContainText(result.display_value);
   await expect(panel.getByRole("status")).toContainText(result.status.label_ar);
+  await expect(panel.getByTestId("reference-context").locator("time")).toHaveAttribute("datetime", result.test_date);
   await expect(panel.locator("[data-reference-zone]")).toHaveCount(result.reference_zones.length);
   for (const zone of result.reference_zones) {
     const legend = panel.locator(`[data-reference-zone="${zone.status.code}"]`);
     await expect(legend).toContainText(zone.status.label_ar);
+    await expect(legend.locator("dt")).toHaveText(["الحد الأدنى", "الحد الأعلى"]);
     await expect(legend).toContainText(zone.low === null ? "بلا حد أدنى" : `${zone.low_inclusive ? "≥" : ">"} ${zone.low}`);
     await expect(legend).toContainText(zone.high === null ? "بلا حد أعلى" : `${zone.high_inclusive ? "≤" : "<"} ${zone.high}`);
   }
@@ -115,6 +117,30 @@ for (const scenario of transitions) test.describe(`historical ${scenario.key}`, 
     await page.keyboard.press("End");
     await expectReferences(page, detail.results[0]);
     await expect(page.locator('[data-chart-point][tabindex="0"]')).toHaveCount(1);
+    if (scenario.key === "ferritin") {
+      for (const width of [375, 1440]) {
+        for (const colorScheme of ["light", "dark"] as const) {
+          await page.setViewportSize({ width, height: 900 });
+          await page.emulateMedia({ colorScheme });
+          const panel = page.getByRole("region", { name: "القيم المرجعية للنظام" });
+          for (const legend of await panel.locator("[data-reference-zone]").all()) {
+            const bounds = legend.locator("dd");
+            const low = (await bounds.nth(0).boundingBox())!;
+            const high = (await bounds.nth(1).boundingBox())!;
+            expect(low.x).toBeGreaterThan(high.x);
+            expect(Math.abs(low.y - high.y)).toBeLessThan(2);
+            expect(await legend.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+            for (const value of await bounds.locator("bdi").all()) await expect(value).toHaveAttribute("dir", "ltr");
+          }
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+          await page.locator('[data-chart-point][tabindex="0"]').focus();
+          await page.keyboard.press("Home");
+          await expectReferences(page, detail.results[2]);
+          await page.keyboard.press("End");
+          await expectReferences(page, detail.results[0]);
+        }
+      }
+    }
   });
 });
 
@@ -179,6 +205,7 @@ test("empty detail uses today's server reference and preselects shared add wizar
   const empty = await labsApi.detail("hba1c");
   await openDetail(page, "hba1c");
   await expect(page.locator(`[data-reference-date="${empty.reference_at_date}"]`)).toBeVisible();
+  await expect(page.getByTestId("reference-context").locator("time")).toHaveAttribute("datetime", empty.reference_at_date);
   await expect(page.getByText("لا توجد نتائج مسجلة لهذا التحليل.")).toBeVisible();
   const opener = page.getByRole("button", { name: "إضافة نتيجة", exact: true });
   await opener.click();

@@ -23,19 +23,22 @@ export function LabTestView(props: { detail: LabTestDetailResponse; selectedResu
       {!readingFirst && <h2>القيم المرجعية للنظام</h2>}
       {readingFirst ? <div className={styles.selectedReading} role="status" aria-atomic="true">
         <span className={styles.readingLabel}>النتيجة المختارة</span>
-        <strong><bdi dir="ltr">{selected.display_is_approximate ? "≈ " : ""}{selected.display_value} {selected.display_unit}</bdi></strong>
+        <strong><bdi dir="ltr">{selected.display_is_approximate ? "≈ " : ""}{selected.display_value} <small>{selected.display_unit}</small></bdi></strong>
         <span className={styles.status} data-tone={selected.status.tone}>{selected.status.label_ar}</span>
         <time dateTime={date}>{formatGregorianArabicDate(date)}</time>
       </div> : <p role="status" aria-live="polite" className={styles.exactValue}><time dateTime={date}>{formatGregorianArabicDate(date)}</time>
         {selected ? <> — <bdi dir="ltr">{selected.display_is_approximate ? "≈ " : ""}{selected.display_value} {selected.display_unit}</bdi> — {selected.status.label_ar}</> : null}
       </p>}
       {readingFirst && <h2>القيم المرجعية للنظام</h2>}
+      <p className={styles.referenceContext} data-testid="reference-context">بتاريخ <time dateTime={date}>{formatGregorianArabicDate(date)}</time></p>
       {selected ? <LabRangeBar zones={zones} value={selected.display_unit === detail.test.canonical_unit ? selected.display_value : null} /> : null}
-      {selected && (selected.status.tone === "outside" || selected.status.tone === "caution") ? <p>هذه القيم للمتابعة فقط، ولا تغني عن استشارة الطبيب.</p> : null}
+      {selected && (selected.status.tone === "outside" || selected.status.tone === "caution") ? <p className={styles.referenceNotice}>هذه القيم للمتابعة فقط، ولا تغني عن استشارة الطبيب.</p> : null}
       <ul className={styles.referenceZones}>{zones.map((zone, index) => <li key={index} data-reference-zone={zone.status.code}>
         <span className={styles.status} data-tone={zone.status.tone}>{zone.status.label_ar}</span>
-        <span className={styles.exactValue}>{zone.low === null ? "بلا حد أدنى" : <bdi dir="ltr">{zone.low_inclusive ? "≥" : ">"} {zone.low} {detail.test.canonical_unit}</bdi>}
-          {" ؛ "}{zone.high === null ? "بلا حد أعلى" : <bdi dir="ltr">{zone.high_inclusive ? "≤" : "<"} {zone.high} {detail.test.canonical_unit}</bdi>}</span>
+        <dl className={styles.referenceBounds}>
+          <div><dt>الحد الأدنى</dt><dd>{zone.low === null ? "بلا حد أدنى" : <bdi dir="ltr">{zone.low_inclusive ? "≥" : ">"} {zone.low} {detail.test.canonical_unit}</bdi>}</dd></div>
+          <div><dt>الحد الأعلى</dt><dd>{zone.high === null ? "بلا حد أعلى" : <bdi dir="ltr">{zone.high_inclusive ? "≤" : "<"} {zone.high} {detail.test.canonical_unit}</bdi>}</dd></div>
+        </dl>
       </li>)}</ul>
       {detail.test.fasting_assumption === "fasting" ? <p>يفترض هذا التحليل الصيام.</p> : null}
     </section>
