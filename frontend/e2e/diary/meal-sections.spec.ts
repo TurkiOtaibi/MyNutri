@@ -190,11 +190,13 @@ test.describe("@diary @meals Gregorian meal sections", () => {
   test("@p0 edit moves entry between meals without exposing immutable fields", async ({ page, foodsApi }) => {
     const food = await foodsApi.create({ name: uniqueName("Move meal") });
     await foodsApi.createDiary(food.id, localDate(), 1, "breakfast");
+    await page.setViewportSize({ width: 375, height: 844 });
     await page.goto("/diary");
     await page.getByRole("button", { name: new RegExp(`خيارات ${food.name}`) }).click();
     await page.getByRole("menuitem", { name: "تعديل" }).click();
     const dialog = page.getByRole("dialog", { name: "تعديل الكمية والقسم" });
     await dialog.getByRole("radio", { name: "عشاء" }).click();
+    await dialog.getByRole("textbox", { name: "الكمية", exact: true }).fill("2");
     let markPatchStarted!: () => void;
     let releasePatch!: () => void;
     const patchStarted = new Promise<void>((resolve) => { markPatchStarted = resolve; });
@@ -219,6 +221,14 @@ test.describe("@diary @meals Gregorian meal sections", () => {
     await expect(dinnerToggle).toContainText("طعام واحد");
     if ((await dinnerToggle.getAttribute("aria-expanded")) !== "true") await dinnerToggle.click();
     await expect(dinnerToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(dinnerToggle).toBeFocused();
+    await expect(dinnerToggle).toContainText("360 سعرة");
+    await expect(page.locator("#meal-section-dinner").getByRole("status")).toHaveText("تم حفظ التعديل");
+    await expect(page.locator("#meal-section-breakfast")).toHaveAttribute("data-empty", "");
+    await expect(page.locator(".calorie-summary-primary > strong")).toHaveAttribute("aria-label", /^360 من /);
+    const saved = (await foodsApi.listDiary(localDate())).filter((entry) => entry.food.id === food.id);
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ meal_type: "dinner", quantity: 2 });
     await expect(page.locator("#meal-dinner").getByRole("heading", { name: food.name })).toBeVisible();
   });
 });
