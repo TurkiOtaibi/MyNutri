@@ -222,6 +222,7 @@ for (const invalid of ["٬", "-2", "duplicate"]) {
 }
 
 test("committed response loss freezes dismissal and retries the identical key/body/UUID receipt", async ({ labsPage: page, labsApi }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
   await navigateToOwnerLabs(page);
   const attempts: { key: string; body: string | null }[] = [];
   let committed: LabCreateReceipt | undefined;
@@ -245,8 +246,9 @@ test("committed response loss freezes dismissal and retries the identical key/bo
     }
   });
   try {
-    await open(page);
+    await open(page, ["hba1c", "total_cholesterol", "ldl_c", "hdl_c", "triglycerides", "ferritin"]);
     await page.locator("#lab-hba1c-value").fill("٥٫٢٧٠");
+    await page.locator("#lab-ferritin-unit").focus();
     await save(page);
     await ready;
     await page.keyboard.press("Escape");
@@ -254,6 +256,8 @@ test("committed response loss freezes dismissal and retries the identical key/bo
     await expect(dialog(page).getByRole("button", { name: "إلغاء" })).toBeDisabled();
     release();
     await expect(dialog(page).getByRole("button", { name: "إعادة المحاولة" })).toBeVisible();
+    await expect(dialog(page).getByRole("alert")).toBeInViewport();
+    await expect(dialog(page).getByRole("button", { name: "إعادة المحاولة" })).toBeInViewport();
     await expect(dialog(page)).toContainText("لم نتأكد من حفظ النتائج. اضغط «إعادة المحاولة»، ولن تتكرر النتائج.");
     await page.keyboard.press("Escape");
     await page.mouse.click(2, 2);
