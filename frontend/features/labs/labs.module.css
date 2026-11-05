@@ -165,6 +165,12 @@
 .batchError { color: var(--danger-ink); }
 .batchError p { margin: 6px 0; }
 .batchSummary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; margin-top: 12px; padding: 10px 14px; border-radius: var(--radius); background: var(--accent-soft); color: var(--ink); }
+.batchSummary.deleteReading { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; }
+.deleteReading > strong { justify-self: end; max-width: 100%; }
+@media (max-width: 500px) {
+  .batchSummary.deleteReading { grid-template-columns: minmax(0, 1fr); }
+  .deleteReading > strong { justify-self: start; }
+}
 .batchActions { display: flex; justify-content: end; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 
 @media (max-width: 700px) {

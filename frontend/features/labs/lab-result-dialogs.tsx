@@ -101,9 +101,11 @@ export function LabDeleteDialog(props: LabDeleteDialogProps) {
       <AlertDialog.Popup className={styles.batchDialog} dir="rtl" initialFocus={() => props.isCurrent?.() === false ? false : document.getElementById("lab-delete-cancel")} finalFocus={props.returnFocus}>
         <AlertDialog.Title>حذف النتيجة</AlertDialog.Title>
         <AlertDialog.Description>هل تريد حذف نتيجة {props.test.name_ar} <bdi dir="ltr">{props.test.abbreviation ?? props.test.name_en}</bdi> بتاريخ <time dateTime={props.result.test_date}>{formatGregorianArabicDate(props.result.test_date)}</time>؟
-          <span className={styles.batchSummary}>
-            <span>القراءة المحددة</span>
+          <span className={`${styles.batchSummary} ${styles.deleteReading}`}>
+            <span>القراءة المحددة{props.result.display_unit !== props.result.entered_unit ? " بوحدة العرض" : ""}</span>
             <strong className={styles.exactValue}><bdi dir="ltr">{props.result.display_is_approximate ? "≈ " : ""}{props.result.display_value} {props.result.display_unit}</bdi></strong>
+            <LabEnteredReading result={props.result} />
+            {props.result.note ? <span className={styles.historyNote}><span>ملاحظة</span>{" "}<bdi dir="auto">{props.result.note}</bdi></span> : null}
           </span>
         </AlertDialog.Description>
         {props.error ? <p role="alert">{props.error}</p> : null}
