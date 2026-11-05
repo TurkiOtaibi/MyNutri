@@ -2,6 +2,7 @@ import React, { type ReactNode } from "react";
 import type { LabResultResponse, LabTestDetailResponse } from "@/lib/types";
 import { rangeBarGeometry } from "./lab-chart-model";
 import { LabHistoryChart } from "./lab-history-chart";
+import { LabEnteredReading } from "./lab-entered-reading";
 import { LabHistoryList } from "./lab-history-list";
 import { formatGregorianArabicDate } from "@/lib/dates";
 import styles from "./labs.module.css";
@@ -22,12 +23,14 @@ export function LabTestView(props: { detail: LabTestDetailResponse; selectedResu
     <section className={styles.referencePanel} aria-label="القيم المرجعية للنظام" data-reference-date={date}>
       {!readingFirst && <h2>القيم المرجعية للنظام</h2>}
       {readingFirst ? <div className={styles.selectedReading} role="status" aria-atomic="true">
-        <span className={styles.readingLabel}>النتيجة المختارة</span>
+        <span className={styles.readingLabel}>{selected.entered_unit === selected.display_unit ? "النتيجة المختارة" : "النتيجة المختارة بوحدة العرض"}</span>
         <strong><bdi dir="ltr">{selected.display_is_approximate ? "≈ " : ""}{selected.display_value} <small>{selected.display_unit}</small></bdi></strong>
         <span className={styles.status} data-tone={selected.status.tone}>{selected.status.label_ar}</span>
         <time dateTime={date}>{formatGregorianArabicDate(date)}</time>
+        <LabEnteredReading result={selected} />
       </div> : <p role="status" aria-live="polite" className={styles.exactValue}><time dateTime={date}>{formatGregorianArabicDate(date)}</time>
-        {selected ? <> — <bdi dir="ltr">{selected.display_is_approximate ? "≈ " : ""}{selected.display_value} {selected.display_unit}</bdi> — {selected.status.label_ar}</> : null}
+        {selected ? <> — {selected.entered_unit !== selected.display_unit ? "قيمة العرض: " : ""}<bdi dir="ltr">{selected.display_is_approximate ? "≈ " : ""}{selected.display_value} {selected.display_unit}</bdi> — {selected.status.label_ar}</> : null}
+        {selected && <LabEnteredReading result={selected} />}
       </p>}
       {readingFirst && <h2>القيم المرجعية للنظام</h2>}
       <p className={styles.referenceContext} data-testid="reference-context">بتاريخ <time dateTime={date}>{formatGregorianArabicDate(date)}</time></p>

@@ -158,7 +158,7 @@ test("extreme converted history remains readable and chart points support keyboa
     await labsApi.create(offsetIsoDate(today, -offset), [{
       test_key: "hba1c",
       entered_value: offset === 20 ? "9".repeat(128) : `${30 + offset}.000`,
-      entered_unit: "mmol/mol",
+      entered_unit: offset === 1 ? "%" : "mmol/mol",
     }]);
   }
   for (const width of [320, 390, 430]) {
@@ -196,11 +196,18 @@ test("extreme converted history remains readable and chart points support keyboa
       await older.click();
       await expect(reading.locator("time")).toHaveAttribute("datetime", detail.results[1].test_date);
       await expect(reading.locator("strong")).toContainText(detail.results[1].display_value);
+      const original = reading.getByText("القيمة المُدخلة:", { exact: false });
+      await expect(original.locator("bdi")).toHaveText(`${detail.results[1].entered_value} ${detail.results[1].entered_unit}`);
+      await expect(original.locator("bdi")).toHaveAttribute("dir", "ltr");
+      const summary = page.getByRole("region", { name: "القيم المرجعية للنظام" }).getByRole("status");
+      await expect(summary).toContainText(`${detail.results[1].entered_value} ${detail.results[1].entered_unit}`);
       await expect(page.locator(`[data-chart-point="${detail.results[1].id}"]`)).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByRole("region", { name: "القيم المرجعية للنظام" })).toHaveAttribute("data-reference-date", detail.results[1].test_date);
       await newer.focus();
       await page.keyboard.press("Enter");
       await expect(reading.locator("time")).toHaveAttribute("datetime", detail.results[0].test_date);
+      await expect(original).toHaveCount(0);
+      await expect(summary).not.toContainText("القيمة المُدخلة");
       expect((await older.boundingBox())!.x).toBeLessThan((await newer.boundingBox())!.x);
       await page.locator('[data-chart-point][tabindex="0"]').focus();
       await page.keyboard.press("Home");
@@ -216,7 +223,7 @@ test("extreme converted history remains readable and chart points support keyboa
 
 test("selected-user admin Labs stays read-only and mobile safe", async ({ page, labsApi }, testInfo) => {
   const today = (await labsApi.overview()).server_today;
-  await labsApi.create(offsetIsoDate(today, -1), [{ test_key: "hba1c", entered_value: "5.27", entered_unit: "%" }]);
+  await labsApi.create(offsetIsoDate(today, -1), [{ test_key: "hba1c", entered_value: "35.270", entered_unit: "mmol/mol" }]);
   for (const width of [320, 390, 430]) {
     await page.setViewportSize({ width, height: 760 });
     await page.goto(`/admin/users/${labsApi.actor.principalId}/labs`);
@@ -228,6 +235,7 @@ test("selected-user admin Labs stays read-only and mobile safe", async ({ page, 
     });
     await page.getByRole("link", { name: /السكر التراكمي/ }).click();
     await expect(page.getByTestId("lab-detail")).toContainText("للقراءة فقط");
+    await expect(page.getByRole("region", { name: "القيم المرجعية للنظام" }).getByRole("status")).toContainText("35.270 mmol/mol");
     await expect(page.getByRole("button", { name: /إضافة|تعديل|حذف/ })).toHaveCount(0);
     await assertMobileSurface(page);
   }
