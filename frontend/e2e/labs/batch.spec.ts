@@ -123,6 +123,8 @@ test("keyboard containment, previous steps, cancellation and reopening preserve 
   await navigateToOwnerLabs(page);
   const opener = page.getByRole("button", { name: "إضافة نتائج", exact: true });
   await opener.focus(); await page.keyboard.press("Enter");
+  const currentStep = dialog(page).locator('[aria-current="step"]');
+  await expect(currentStep).toHaveText("التاريخ");
   await expect(page.locator("#lab-batch-date")).toBeFocused();
   const lastDateStepControl = dialog(page).getByRole("button", { name: "التالي", exact: true });
   await lastDateStepControl.focus();
@@ -134,11 +136,14 @@ test("keyboard containment, previous steps, cancellation and reopening preserve 
   await next(page);
   // Step entry schedules initial focus; finish that transition before sending keys.
   await expect(dialog(page).locator("input[data-panel-key]").first()).toBeFocused();
+  await expect(currentStep).toHaveText("اختيار التحاليل");
   await page.locator('[data-individual-key="hba1c"]').focus();
   await page.keyboard.press("Space");
   await expect(page.locator('[data-individual-key="hba1c"]')).toBeChecked();
   await next(page);
   await expect(page.locator("#lab-hba1c-value")).toBeFocused();
+  await expect(currentStep).toHaveText("القيم");
+  await expect(dialog(page)).toHaveAccessibleDescription("«السابق» يحتفظ بإدخالك. «إلغاء» يغلق النافذة دون حفظ.");
   const hba1cGroup = dialog(page).getByRole("group", { name: /السكر التراكمي.*HbA1c/ });
   await expect(hba1cGroup).toBeVisible();
   await expect(hba1cGroup.getByRole("textbox", { name: "القيمة" })).toHaveAttribute("id", "lab-hba1c-value");
@@ -148,6 +153,10 @@ test("keyboard containment, previous steps, cancellation and reopening preserve 
   await expect(page.locator("#lab-hba1c-value")).toHaveValue("5.270");
   await dialog(page).getByRole("button", { name: "إلغاء", exact: true }).click();
   await expect(opener).toBeFocused();
+  await opener.click();
+  await expect(currentStep).toHaveText("التاريخ");
+  await next(page);
+  await expect(page.locator('[data-individual-key="hba1c"]')).not.toBeChecked();
 });
 
 test("future-date rejection returns to the date step while retaining values and units", async ({ labsPage: page, labsApi }) => {

@@ -60,9 +60,9 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
       <Dialog.Backdrop className={styles.batchBackdrop} />
       <Dialog.Popup ref={popup} className={styles.batchDialog} data-step={draft?.step} dir="rtl" initialFocus={false} finalFocus={props.returnFocusRef}>
         <Dialog.Title>إضافة نتائج</Dialog.Title>
-        <Dialog.Description>التاريخ، ثم اختيار التحاليل، ثم إدخال القيم.</Dialog.Description>
+        <Dialog.Description className={styles.batchNavigationHint}>{locked ? "التاريخ، ثم اختيار التحاليل، ثم إدخال القيم." : step === "date" ? "«إلغاء» يغلق النافذة دون حفظ." : "«السابق» يحتفظ بإدخالك. «إلغاء» يغلق النافذة دون حفظ."}</Dialog.Description>
         {draft && catalog ? <>
-          <ol className={styles.batchSteps} aria-label="خطوات إضافة النتائج">
+          <ol className={styles.batchSteps} role="list" aria-label="خطوات إضافة النتائج">
             {([ ["date", "التاريخ"], ["selection", "اختيار التحاليل"], ["values", "القيم"] ] as const).map(([key, label]) => <li key={key} aria-current={draft.step === key ? "step" : undefined}>{label}</li>)}
           </ol>
           {phase?.kind === "ambiguous" ? <p role="alert">لم نتأكد من حفظ النتائج. اضغط «إعادة المحاولة»، ولن تتكرر النتائج.</p> : null}
