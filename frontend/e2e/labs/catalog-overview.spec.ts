@@ -63,11 +63,18 @@ test("empty owner overview and the complete 51-test catalog remain distinct", as
 
 test("catalog search accepts Arabic, English, and abbreviation", async ({ labsPage: page }) => {
   await navigateToOwnerLabs(page);
-  await page.getByRole("tab", { name: "كل التحاليل" }).click();
   const search = page.getByRole("searchbox", { name: "البحث في التحاليل" });
-
+  const matches = page.getByRole("button", { name: "عرض التحاليل المطابقة" });
+  await search.fill("unmatched-lab");
+  await expect(matches).toHaveCount(0);
   for (const term of ["السكر التراكمي", "Hemoglobin A1c", "HbA1c"]) {
+    await page.getByRole("tab", { name: "تحاليلك", exact: true }).click();
     await search.fill(term);
+    await expect(page.getByTestId("lab-row")).toHaveCount(0);
+    await matches.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("tab", { name: "كل التحاليل" })).toBeFocused();
+    await expect(search).toHaveValue(term);
     await expect(page.getByTestId("lab-row")).toHaveCount(1);
     await expect(page.getByTestId("lab-row")).toContainText("HbA1c");
   }
@@ -126,9 +133,20 @@ test("owned filters retain a clear empty-category state", async ({ labsPage: pag
   ]);
   await navigateToOwnerLabs(page);
   await openFilters(page);
-  await page.locator("label").filter({ hasText: /^التصنيف/ }).locator("select").selectOption("iron");
-  await page.getByRole("searchbox", { name: "البحث في التحاليل" }).fill("Ferritin");
+  const category = page.locator("label").filter({ hasText: /^التصنيف/ }).locator("select");
+  const search = page.getByRole("searchbox", { name: "البحث في التحاليل" });
+  const sort = page.locator("label").filter({ hasText: /^الترتيب/ }).locator("select");
+  await category.selectOption("iron");
+  await sort.selectOption("name_desc");
+  await search.fill("HbA1c");
+  await expect(page.getByRole("button", { name: "عرض التحاليل المطابقة" })).toHaveCount(0);
+  await search.fill("Ferritin");
   await expect(page.getByText("لا توجد نتائج ضمن هذا التصنيف.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "عرض التحاليل المطابقة" }).click();
+  await expect(page.locator('[data-testid="lab-row"][data-test-key="ferritin"]')).toBeVisible();
+  await expect(category).toHaveValue("iron");
+  await expect(sort).toHaveValue("name_desc");
+  await page.getByRole("tab", { name: "تحاليلك", exact: true }).click();
   await page.getByRole("button", { name: "مسح البحث والتصفية", exact: true }).click();
   await expect(page.getByRole("searchbox", { name: "البحث في التحاليل" })).toHaveValue("");
   await expect(page.getByRole("searchbox", { name: "البحث في التحاليل" })).toBeFocused();
