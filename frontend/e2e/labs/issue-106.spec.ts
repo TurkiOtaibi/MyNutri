@@ -1,4 +1,4 @@
-import { API_URL, expect, navigateToOwnerLabs, test } from "./helpers";
+import { API_URL, expect, navigateToOwnerLabs, offsetIsoDate, test } from "./helpers";
 
 test.afterEach(async ({ labsApi }) => {
   for (const item of (await labsApi.overview()).items) {
@@ -6,22 +6,28 @@ test.afterEach(async ({ labsApi }) => {
   }
 });
 
-async function addNote(page: import("@playwright/test").Page) {
+async function addNote(page: import("@playwright/test").Page, options: { date?: string; unit?: string } = {}) {
   await navigateToOwnerLabs(page);
   await page.getByRole("button", { name: "إضافة نتائج", exact: true }).click();
   await page.getByLabel("ملاحظة", { exact: true }).fill("  مختبر تجريبي  ");
+  if (options.date) await page.locator("#lab-batch-date").fill(options.date);
   await page.getByRole("button", { name: "التالي", exact: true }).click();
   await page.locator('[data-individual-key="hba1c"]').check();
   await page.getByRole("button", { name: "التالي", exact: true }).click();
   await page.locator("#lab-hba1c-value").fill("5.270");
+  if (options.unit) await page.locator("#lab-hba1c-unit").selectOption(options.unit);
   await page.getByRole("button", { name: "حفظ النتائج", exact: true }).click();
   await expect(page.getByText("تم حفظ النتائج.", { exact: true })).toBeVisible();
 }
 
 test("batch note appears in history and real delete undo restores the same facts with a new ID", async ({ labsPage: page, labsApi }) => {
-  await addNote(page);
+  const today = (await labsApi.overview()).server_today;
+  await addNote(page, { date: offsetIsoDate(today, -1), unit: "mmol/mol" });
   const before = (await labsApi.detail("hba1c")).results[0];
   expect(before.note).toBe("مختبر تجريبي");
+  await labsApi.create(today, [{ test_key: "hba1c", entered_value: "6.00", entered_unit: "%" }]);
+  const originalHistory = (await labsApi.detail("hba1c")).results;
+  const newer = originalHistory[0];
   await page.goto("/labs/hba1c");
   await expect(page.locator(`[data-history-result="${before.id}"]`)).toContainText("مختبر تجريبي");
   const row = page.locator(`[data-history-result="${before.id}"]`);
@@ -52,14 +58,32 @@ test("batch note appears in history and real delete undo restores the same facts
       await expect(row.getByRole("menu")).toHaveCount(0);
     }
   }
-  await page.getByRole("button", { name: /^خيارات نتيجة/ }).click();
-  await page.getByRole("menuitem", { name: /^حذف نتيجة/ }).click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "حذف النتيجة", exact: true }).click();
+  const openDelete = async () => {
+    await row.getByRole("button", { name: /^خيارات نتيجة/ }).click();
+    await row.getByRole("menuitem", { name: /^حذف نتيجة/ }).click();
+  };
+  await page.setViewportSize({ width: 375, height: 812 });
+  await openDelete();
+  const confirmation = page.getByRole("alertdialog");
+  await expect(confirmation.locator("time")).toHaveAttribute("datetime", before.test_date);
+  await expect(confirmation).toContainText(`${before.display_value} ${before.display_unit}`);
+  await expect(confirmation).toContainText("5.270 mmol/mol");
+  await expect(confirmation).toContainText("مختبر تجريبي");
+  expect(await confirmation.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  const cancel = confirmation.getByRole("button", { name: "إلغاء", exact: true });
+  await expect(cancel).toBeFocused();
+  await cancel.click();
+  expect((await labsApi.detail("hba1c")).results).toEqual(originalHistory);
+  await openDelete();
+  await confirmation.getByRole("button", { name: "حذف النتيجة", exact: true }).click();
   await expect(page.getByText("تم حذف النتيجة", { exact: true })).toBeVisible();
-  expect((await labsApi.detail("hba1c")).results).toHaveLength(0);
+  expect((await labsApi.detail("hba1c")).results).toEqual([newer]);
   await page.getByRole("button", { name: "تراجع", exact: true }).click();
   await expect(page.getByText("تمت استعادة النتيجة", { exact: true })).toBeVisible();
-  const after = (await labsApi.detail("hba1c")).results[0];
+  const restored = (await labsApi.detail("hba1c")).results;
+  expect(restored).toHaveLength(2);
+  expect(restored[0]).toEqual(newer);
+  const after = restored[1];
   expect(after.id).not.toBe(before.id);
   for (const key of ["test_key", "test_date", "entered_value", "entered_unit", "note"] as const) expect(after[key]).toBe(before[key]);
 });
