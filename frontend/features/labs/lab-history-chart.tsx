@@ -2,6 +2,7 @@ import React, { useId, useRef } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { LabTestDetailResponse } from "@/lib/types";
 import { chartGeometry } from "./lab-chart-model";
+import { LabEnteredReading } from "./lab-entered-reading";
 import { formatGregorianArabicDate } from "@/lib/dates";
 import styles from "./labs.module.css";
 
@@ -20,10 +21,11 @@ export function LabHistoryChart({ detail, selectedResultId, onSelectResult }: {
     <h2 id={labelId}>سجل النتائج عبر الزمن</h2>
     {geometry.points.length ? <>
       {reading && <div className={styles.chartReading} data-testid="chart-selected-reading">
-        <span>النتيجة المختارة</span>
+        <span>{reading.entered_unit === reading.display_unit ? "النتيجة المختارة" : "النتيجة المختارة بوحدة العرض"}</span>
         <time dateTime={reading.test_date}>{formatGregorianArabicDate(reading.test_date)}</time>
         <strong><bdi dir="ltr">{reading.display_is_approximate ? "≈ " : ""}{reading.display_value} <small>{reading.display_unit}</small></bdi></strong>
         <span className={styles.status} data-tone={reading.status.tone}>{reading.status.label_ar}</span>
+        <LabEnteredReading result={reading} />
       </div>}
       <div className={styles.chartUnit} aria-label={`القيمة (${detail.test.canonical_unit})`}>القيمة (<bdi dir="ltr">{detail.test.canonical_unit}</bdi>)</div>
       <div className={styles.chartPlot} dir="ltr">
