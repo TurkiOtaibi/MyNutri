@@ -309,7 +309,7 @@ test.describe("critical visual regression", () => {
     await dialog.getByRole("button", { name: "التالي", exact: true }).click();
     await page.locator('[data-panel-key="iron_studies"]').check();
     await stableRendering(page);
-    await expect(dialog).toHaveScreenshot("labs-batch-selection.png", { timeout: 30_000 });
+    await expect.soft(dialog).toHaveScreenshot("labs-batch-selection.png", { timeout: 30_000 });
     await dialog.getByRole("button", { name: "التالي", exact: true }).click();
     await page.locator("#lab-ferritin-value").fill("12.400");
     await stableRendering(page);

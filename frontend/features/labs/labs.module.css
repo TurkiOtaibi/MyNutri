@@ -110,8 +110,10 @@
 .batchBackdrop { position: fixed; inset: 0; z-index: 80; background: rgb(0 0 0 / 45%); }
 .batchDialog { position: fixed; inset: 50% auto auto 50%; transform: translate(-50%, -50%); z-index: 81; width: min(680px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; border: 0; border-radius: var(--radius-hero); padding: 22px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-float); }
 .batchDialog h2 { margin-top: 0; }
-.batchSteps { display: flex; gap: 24px; padding-inline-start: 22px; color: var(--muted); }
-.batchSteps [aria-current="step"] { color: var(--ink); font-weight: 800; }
+.batchNavigationHint { margin: 4px 0; font-size: .85rem; color: var(--muted); }
+.batchSteps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 8px 0; padding: 0; list-style: none; color: var(--muted); }
+.batchSteps li { padding-block: 3px; border-block-end: 3px solid var(--line); text-align: center; font-size: .85rem; }
+.batchSteps [aria-current="step"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); font-weight: 800; }
 .batchFields { display: grid; gap: 12px; margin: 0; padding: 0; border: 0; min-width: 0; }
 .batchFields label { display: grid; gap: 6px; min-width: 0; }
 .batchFields input:not([type="checkbox"]), .batchFields select, .batchFields textarea { min-width: 0; width: 100%; min-height: 46px; background: var(--field-bg); color: var(--ink); border: 1px solid transparent; border-radius: var(--radius); padding: 8px 14px; }
