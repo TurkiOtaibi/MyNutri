@@ -6,6 +6,7 @@ import { AlertDialog } from "@base-ui-components/react/alert-dialog";
 import type { LabCatalogTest, LabFieldError, LabResultPatch, LabResultResponse } from "@/lib/types";
 import { enteredTriplet, freezeResultPatch, resultErrorTarget } from "./lab-result-model";
 import { labErrorMessage } from "./lab-batch-model";
+import { LabEnteredReading } from "./lab-entered-reading";
 import { formatGregorianArabicDate } from "@/lib/dates";
 import styles from "./labs.module.css";
 
@@ -34,6 +35,7 @@ export function LabEditDialog(props: LabEditDialogProps) {
     return () => cancelAnimationFrame(frame);
   }, [firstError, isCurrent]);
   const locked = pending || props.writeBlocked;
+  const showUnitHint = !locked && draft.entered_unit !== result.entered_unit;
   const fieldError = (id: string) => {
     const error = errors.find(error => resultErrorTarget(error) === id);
     return error ? labErrorMessage(error) : undefined;
@@ -48,7 +50,10 @@ export function LabEditDialog(props: LabEditDialogProps) {
         <Dialog.Description>{test.name_ar} <bdi dir="ltr">{test.abbreviation ?? test.name_en}</bdi></Dialog.Description>
         <section className={styles.batchSummary} aria-labelledby="lab-edit-original-title">
           <strong id="lab-edit-original-title">القراءة قبل التعديل</strong>
-          <bdi className={styles.exactValue} dir="ltr">{result.entered_value} {result.entered_unit}</bdi>
+          {result.display_unit !== result.entered_unit ? <div className={styles.editReadings}>
+            <span>في السجل: <bdi dir="ltr">{result.display_is_approximate ? "≈ " : ""}{result.display_value} {result.display_unit}</bdi></span>
+            <LabEnteredReading result={result} />
+          </div> : <bdi className={styles.exactValue} dir="ltr">{result.entered_value} {result.entered_unit}</bdi>}
           <time dateTime={result.test_date}>{formatGregorianArabicDate(result.test_date)}</time>
         </section>
         <form noValidate onSubmit={event => {
@@ -63,9 +68,10 @@ export function LabEditDialog(props: LabEditDialogProps) {
             <legend className="sr-only">بيانات النتيجة</legend>
             <label>القيمة<input id="lab-edit-value" type="text" inputMode="decimal" dir="ltr" value={draft.entered_value} aria-invalid={Boolean(valueError)} aria-describedby={valueError ? "lab-edit-value-error" : undefined} onChange={event => setDraft({ ...draft, entered_value: event.target.value })} />
               {valueError ? <span id="lab-edit-value-error" className={styles.batchError}>{valueError}</span> : null}</label>
-            <label>الوحدة<select id="lab-edit-unit" dir="ltr" value={draft.entered_unit} aria-invalid={Boolean(unitError)} aria-describedby={unitError ? "lab-edit-unit-error" : undefined} onChange={event => setDraft({ ...draft, entered_unit: event.target.value })}>
+            <label>الوحدة<select id="lab-edit-unit" dir="ltr" value={draft.entered_unit} aria-invalid={Boolean(unitError)} aria-describedby={[unitError && "lab-edit-unit-error", showUnitHint && "lab-edit-unit-hint"].filter(Boolean).join(" ") || undefined} onChange={event => setDraft({ ...draft, entered_unit: event.target.value })}>
               {test.supported_units.map(unit => <option key={unit} value={unit}>{unit}</option>)}
             </select>{unitError ? <span id="lab-edit-unit-error" className={styles.batchError}>{unitError}</span> : null}</label>
+            {showUnitHint ? <p id="lab-edit-unit-hint" className={styles.batchValuesHint}>عند تغيير الوحدة يبقى الرقم كما أدخلته. راجعه قبل الحفظ.</p> : null}
             <label>تاريخ التحليل<input id="lab-edit-date" type="date" dir="ltr" value={draft.test_date} aria-invalid={Boolean(dateError)} aria-describedby={dateError ? "lab-edit-date-error" : "lab-edit-today"} onChange={event => setDraft({ ...draft, test_date: event.target.value })} />
               {draft.test_date ? <time dateTime={draft.test_date}>{formatGregorianArabicDate(draft.test_date)}</time> : null}
               {dateError ? <span id="lab-edit-date-error" className={styles.batchError}>{dateError}</span> : null}</label>

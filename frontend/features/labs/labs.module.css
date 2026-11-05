@@ -60,6 +60,7 @@
 .chartReading small { font-size: .85rem; font-weight: 500; color: var(--muted); }
 .enteredReading { display: block; grid-column: 1 / -1; flex-basis: 100%; min-width: 0; padding-block-start: 6px; border-block-start: 1px solid var(--line); color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
 .enteredReading bdi { color: var(--ink); font-variant-numeric: tabular-nums; }
+.editReadings { display: grid; order: 1; flex-basis: 100%; min-width: 0; gap: 4px; overflow-wrap: anywhere; }
 .chartReading time, .chartReading .status { justify-self: end; }
 .chartNavigation { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; margin-block: 12px; }
 .chartNavigation button { min-width: 0; gap: 4px; padding-inline: 8px; }

@@ -31,8 +31,10 @@ test("edit uses full entered precision and supported units, immutable identity a
   await expect(page.locator("#lab-edit-unit")).toHaveValue("mmol/mol");
   await expect(page.locator("#lab-edit-date")).toHaveValue(date);
   await expect(edit(page).locator(`label time[datetime="${date}"]`)).toContainText(formatGregorianArabicDate(date));
+  const detail = await labsApi.detail("hba1c");
+  const saved = detail.results.find(result => result.id === id)!;
   expect(await page.locator("#lab-edit-unit option").evaluateAll(options => options.map(option => (option as HTMLOptionElement).value)))
-    .toEqual((await labsApi.detail("hba1c")).test.supported_units);
+    .toEqual(detail.test.supported_units);
   await expect(edit(page).locator("[data-tone]")).toHaveCount(0);
   await expect(edit(page).getByText("نطاق ما قبل السكري")).toHaveCount(0);
   await expect(edit(page).locator("select")).toHaveCount(1);
@@ -51,11 +53,21 @@ test("edit uses full entered precision and supported units, immutable identity a
   await page.locator("#lab-edit-unit").selectOption("%");
   await page.locator("#lab-edit-date").fill(offsetIsoDate(date, -1));
   const original = edit(page).getByRole("region", { name: "القراءة قبل التعديل" });
+  await expect(original).toContainText(`في السجل: ${saved.display_is_approximate ? "≈ " : ""}${saved.display_value} ${saved.display_unit}`);
   await expect(original).toContainText("38.797950 mmol/mol");
+  await expect(page.locator("#lab-edit-value")).toHaveValue("6.10");
+  await expect(page.locator("#lab-edit-unit")).toHaveAccessibleDescription("عند تغيير الوحدة يبقى الرقم كما أدخلته. راجعه قبل الحفظ.");
   await expect(original.locator("time")).toHaveAttribute("datetime", date);
   await page.keyboard.press("Escape");
   await expect(edit(page)).toHaveCount(0);
   await expect(row(page, id).getByRole("button", { name: /^خيارات نتيجة/ })).toBeFocused();
+  await open(page, id);
+  await expect(page.locator("#lab-edit-value")).toHaveValue(saved.entered_value);
+  await expect(page.locator("#lab-edit-unit")).toHaveValue(saved.entered_unit);
+  await expect(page.locator("#lab-edit-unit-hint")).toHaveCount(0);
+  await page.locator("#lab-edit-unit").selectOption("%");
+  await edit(page).getByRole("button", { name: "إلغاء", exact: true }).click();
+  expect((await labsApi.detail("hba1c")).results.find(result => result.id === id)).toEqual(saved);
 });
 
 test("a second browser context cannot overwrite a result changed after its dialog opened", async ({ labsPage: first, labsApi, browser }) => {
