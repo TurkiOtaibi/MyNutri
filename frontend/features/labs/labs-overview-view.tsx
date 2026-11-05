@@ -51,6 +51,7 @@ type LabsViewProps = {
   onSortChange: (value: LabSort) => void;
   onClearFilters?: () => void;
   onBrowseCatalog?: () => void;
+  hasCatalogMatches?: boolean;
 };
 
 const DEFAULT_SORT: LabSort = "newest_updated";
@@ -130,6 +131,7 @@ function LabRows({ rows, emptyMessage, onAddTest, detailHref, emptyContent }: { 
 function LabsView(props: LabsViewProps & { mode: "owned" | "catalog" }) {
   const searchRef = useRef<HTMLInputElement>(null);
   const hasFilters = Boolean(props.search || props.category);
+  const showCatalogMatches = Boolean(props.hasCatalogMatches && props.search.trim()) && !props.adminOwn;
   const emptyMessage = props.adminOwn && props.mode === "owned"
     ? "تسجيل التحاليل غير متاح لحساب المشرف."
     : props.category
@@ -142,7 +144,11 @@ function LabsView(props: LabsViewProps & { mode: "owned" | "catalog" }) {
       {hasFilters && props.onClearFilters ? <button className="btn" type="button" onClick={() => { props.onClearFilters?.(); searchRef.current?.focus(); }}>مسح البحث والتصفية</button> : null}
     </div>
     <LabRows rows={props.rows} emptyMessage={emptyMessage} detailHref={props.detailHref} onAddTest={!props.readOnly && props.eligibility.allowed ? props.onAddTest : undefined}
-      emptyContent={props.onBrowseCatalog ? hasFilters ? <span>يمكنك تغيير البحث أو التصنيف لعرض نتائج أخرى.</span> : props.mode === "owned" ? <button className="btn" type="button" onClick={props.onBrowseCatalog}>كل التحاليل</button> : null : undefined} />
+      emptyContent={props.onBrowseCatalog ? hasFilters ? <>
+        {showCatalogMatches ? <span>توجد تحاليل مطابقة في «كل التحاليل» لم تُسجّل لها نتيجة بعد.</span> : null}
+        <span>يمكنك تغيير البحث أو التصنيف لعرض نتائج أخرى.</span>
+        {showCatalogMatches ? <button className="btn" type="button" onClick={props.onBrowseCatalog}>عرض التحاليل المطابقة</button> : null}
+      </> : props.mode === "owned" ? <button className="btn" type="button" onClick={props.onBrowseCatalog}>كل التحاليل</button> : null : undefined} />
   </section>;
 }
 

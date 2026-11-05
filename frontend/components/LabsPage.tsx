@@ -58,9 +58,12 @@ export function LabsPage() {
     batchOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     void batch.open(keys);
   }
-  const rows = useMemo(() => {
-    if (!catalog.data || !overview.data) return [];
-    return sortLabs(filterLabs(toLabListItems(catalog.data, overview.data, view === "owned" ? "owned" : "all"), search, category), sort);
+  const { rows, hasCatalogMatches } = useMemo(() => {
+    if (!catalog.data || !overview.data) return { rows: [], hasCatalogMatches: false };
+    const matches = filterLabs(toLabListItems(catalog.data, overview.data, "all"), search, category);
+    const ownedKeys = new Set(overview.data.items.map(item => item.test_key));
+    const visible = view === "owned" ? matches.filter(item => ownedKeys.has(item.test_key)) : matches;
+    return { rows: sortLabs(visible, sort), hasCatalogMatches: matches.length > 0 };
   }, [catalog.data, category, overview.data, search, sort, view]);
 
   if (catalog.isPending || overview.isPending) return <div className={`${styles.labsPage} ${styles.overview}`}>
@@ -103,7 +106,7 @@ export function LabsPage() {
     </div> : null}
     <LabsViewTabs view={view} onViewChange={setView} />
     <div id="labs-panel-owned" role="tabpanel" aria-labelledby="labs-tab-owned" tabIndex={view === "owned" ? 0 : -1} hidden={view !== "owned"}>
-      {view === "owned" ? <OwnedLabsView {...props} adminOwn={overview.data.read_only} /> : null}
+      {view === "owned" ? <OwnedLabsView {...props} adminOwn={overview.data.read_only} hasCatalogMatches={hasCatalogMatches} /> : null}
     </div>
     <div id="labs-panel-all" role="tabpanel" aria-labelledby="labs-tab-all" tabIndex={view === "all" ? 0 : -1} hidden={view !== "all"}>
       {view === "all" ? <LabCatalogView {...props} /> : null}
