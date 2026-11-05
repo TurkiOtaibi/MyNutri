@@ -55,6 +55,13 @@ type LabsViewProps = {
 };
 
 const DEFAULT_SORT: LabSort = "newest_updated";
+const SORT_LABELS: Record<LabSort, string> = {
+  newest_updated: "الأحدث تحديثًا",
+  oldest_updated: "الأقدم تحديثًا",
+  name_asc: "الاسم تصاعديًا",
+  name_desc: "الاسم تنازليًا",
+  category: "التصنيف",
+};
 
 function EligibilityNotice({ eligibility }: { eligibility: LabsViewProps["eligibility"] }) {
   if (eligibility.allowed) return null;
@@ -68,19 +75,27 @@ function EligibilityNotice({ eligibility }: { eligibility: LabsViewProps["eligib
 }
 
 // Search stays visible; category and sort sit behind one toggle (Product Owner decision, 29 Oct 2026).
-function Controls({ catalog, search, category, sort, filtersOpen, onToggleFilters, onSearchChange, onCategoryChange, onSortChange, searchRef }: LabsViewProps & { searchRef: RefObject<HTMLInputElement | null> }) {
+function Controls({ catalog, search, category, sort, filtersOpen, adminSelected, onToggleFilters, onSearchChange, onCategoryChange, onSortChange, searchRef }: LabsViewProps & { searchRef: RefObject<HTMLInputElement | null> }) {
   const activeFilters = Number(category !== null) + Number(sort !== DEFAULT_SORT);
+  const showSummary = !adminSelected && !filtersOpen && activeFilters > 0;
   return <div className={styles.controls}>
     <div className={styles.searchRow}>
       <label className={styles.searchField}>
         <span className="sr-only">البحث في التحاليل</span>
         <input ref={searchRef} type="search" dir="auto" value={search} placeholder="البحث في التحاليل" onChange={(event) => onSearchChange(event.target.value)} />
       </label>
-      <button type="button" className={styles.filterToggle} aria-label="التصنيف والترتيب" aria-expanded={filtersOpen} aria-controls="labs-filters" onClick={onToggleFilters}>
+      <button type="button" className={styles.filterToggle} aria-label="التصنيف والترتيب" aria-expanded={filtersOpen} aria-controls="labs-filters" aria-describedby={showSummary ? "labs-filter-summary" : undefined} onClick={onToggleFilters}>
         <SlidersHorizontal size={19} aria-hidden="true" />
         {activeFilters ? <span className={styles.filterCount} aria-hidden="true">{activeFilters}</span> : null}
       </button>
     </div>
+    {showSummary ? <div className={styles.activeFilters}>
+      <div id="labs-filter-summary">
+        {category ? <span>التصنيف: <strong>{catalog.categories.find(item => item.key === category)?.name_ar}</strong></span> : null}
+        <span>الترتيب: <strong>{SORT_LABELS[sort]}</strong></span>
+      </div>
+      {category ? <button className="btn" type="button" onClick={() => { onCategoryChange(null); searchRef.current?.focus(); }}>إزالة التصنيف</button> : null}
+    </div> : null}
     <div id="labs-filters" className={styles.filters} hidden={!filtersOpen}>
     <label>
       <span>التصنيف</span>
@@ -92,11 +107,7 @@ function Controls({ catalog, search, category, sort, filtersOpen, onToggleFilter
     <label>
       <span>الترتيب</span>
       <select value={sort} onChange={(event) => onSortChange(event.target.value as LabSort)}>
-        <option value="newest_updated">الأحدث تحديثًا</option>
-        <option value="oldest_updated">الأقدم تحديثًا</option>
-        <option value="name_asc">الاسم تصاعديًا</option>
-        <option value="name_desc">الاسم تنازليًا</option>
-        <option value="category">التصنيف</option>
+        {Object.entries(SORT_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
       </select>
     </label>
     </div>

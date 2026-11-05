@@ -31,6 +31,9 @@
 .filterCount { position: absolute; top: 4px; inset-inline-end: 4px; min-width: 18px; height: 18px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
 .filters { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .filters[hidden] { display: none; }
+.activeFilters, .activeFilters > div { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-width: 0; }
+.activeFilters { grid-column: 1 / -1; justify-content: space-between; padding: 8px 14px; border-radius: var(--radius); background: var(--surface); color: var(--muted); font-size: .85rem; }
+.activeFilters strong { color: var(--ink); overflow-wrap: anywhere; }
 .controls input, .controls select { min-width: 0; min-height: 46px; border: 1px solid transparent; border-radius: var(--radius); background: var(--field-bg); color: var(--ink); padding: 8px 14px; }
 .controls input:focus, .controls select:focus { border-color: var(--accent); background: var(--surface); outline: 3px solid color-mix(in srgb, var(--accent) 22%, var(--surface)); }
 .resultBar { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .85rem; }
