@@ -72,15 +72,19 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
           </div> : null}
           <fieldset className={styles.batchFields} disabled={locked}>
             <legend className="sr-only">{draft.step === "date" ? "تاريخ النتائج" : draft.step === "selection" ? "اختيار التحاليل" : "قيم النتائج"}</legend>
-            {draft.step === "date" ? <label>تاريخ التحليل
-              <input id="lab-batch-date" type="date" value={draft.date} aria-invalid={Boolean(errors.test_date)} aria-describedby={errors.test_date ? "lab-date-error" : undefined} onChange={(event) => props.onDate(event.target.value)} />
-              {draft.date ? <time dateTime={draft.date}>{formatGregorianArabicDate(draft.date)}</time> : null}
+            {draft.step === "date" ? <div className={styles.batchDate}>
+              <label htmlFor="lab-batch-date">تاريخ التحليل</label>
+              <input id="lab-batch-date" type="date" dir="ltr" value={draft.date} aria-invalid={Boolean(errors.test_date)} aria-describedby={errors.test_date ? "lab-date-error" : "lab-date-context"} onChange={(event) => props.onDate(event.target.value)} />
+              <div id="lab-date-context" className={styles.batchDateContext}>
+                {draft.date ? <span>التاريخ المحدد: <strong><time dateTime={draft.date}>{formatGregorianArabicDate(draft.date)}</time></strong></span> : null}
+                {props.serverToday ? <span>تاريخ اليوم: <time dateTime={props.serverToday}>{formatGregorianArabicDate(props.serverToday)}</time></span> : null}
+              </div>
               {errors.test_date ? <span id="lab-date-error" className={styles.batchError}>{errors.test_date}</span> : null}
-            </label> : null}
-            {draft.step === "date" && props.serverToday ? <p>تاريخ اليوم: <time dateTime={props.serverToday}>{formatGregorianArabicDate(props.serverToday)}</time></p> : null}
+            </div> : null}
             {draft.step === "date" ? <div className={styles.batchNote}>
               <label htmlFor="lab-batch-note">ملاحظة</label>
-              <textarea id="lab-batch-note" value={draft.note} aria-invalid={Boolean(errors.note)} aria-describedby={errors.note ? "lab-note-error" : undefined} onChange={(event) => props.onNote(event.target.value)} />
+              <p id="lab-note-hint">الملاحظة اختيارية وتُحفظ مع كل نتيجة تضيفها في هذه الدفعة.</p>
+              <textarea id="lab-batch-note" dir="auto" value={draft.note} aria-invalid={Boolean(errors.note)} aria-describedby={errors.note ? "lab-note-error lab-note-hint" : "lab-note-hint"} onChange={(event) => props.onNote(event.target.value)} />
               {errors.note ? <span id="lab-note-error" className={styles.batchError}>{errors.note}</span> : null}
             </div> : null}
             {draft.step === "selection" ? <>

@@ -41,10 +41,16 @@ test("a new session refreshes yesterday's cached server date and catalog action 
   const opener = page.locator('[data-testid="lab-row"][data-test-key="hba1c"]').getByRole("button", { name: "إضافة نتيجة" });
   await opener.click();
   await expect(page.locator("#lab-batch-date")).toHaveValue(today);
-  const selectedDate = dialog(page).locator("label").filter({ has: page.locator("#lab-batch-date") }).locator("time");
+  const selectedDate = dialog(page).locator("#lab-date-context strong time");
   await expect(selectedDate).toHaveAttribute("datetime", today);
   await expect(selectedDate).toHaveText(formatGregorianArabicDate(today));
   await expect(dialog(page).getByText(`تاريخ اليوم: ${formatGregorianArabicDate(today)}`, { exact: true })).toBeVisible();
+  const earlier = offsetIsoDate(today, -2);
+  await page.getByLabel("تاريخ التحليل", { exact: true }).fill(earlier);
+  await expect(selectedDate).toHaveText(formatGregorianArabicDate(earlier));
+  await expect(dialog(page).getByText(`تاريخ اليوم: ${formatGregorianArabicDate(today)}`, { exact: true })).toBeVisible();
+  await expect(page.getByLabel("ملاحظة", { exact: true })).toHaveAccessibleDescription("الملاحظة اختيارية وتُحفظ مع كل نتيجة تضيفها في هذه الدفعة.");
+  await page.getByLabel("تاريخ التحليل", { exact: true }).fill(today);
   expect(reads).toBeGreaterThanOrEqual(2);
   await next(page);
   await expect(page.locator('[data-individual-key="hba1c"]')).toBeChecked();

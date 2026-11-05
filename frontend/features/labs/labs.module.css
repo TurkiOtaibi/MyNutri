@@ -169,7 +169,13 @@
 
 .historyNote { grid-column: 1 / -1; margin: 0; padding-block-start: 10px; border-block-start: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; font-size: .85rem; line-height: 1.8; }
 .historyNote > span { font-weight: 700; }
-.batchNote { display: grid; gap: 6px; min-width: 0; }
+.batchDate, .batchNote { display: grid; gap: 8px; min-width: 0; }
+.batchDate { margin-top: 8px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); }
+.batchDate label, .batchNote label { font-weight: 700; }
+.batchDateContext { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.batchDateContext, .batchNote p { margin: 0; color: var(--muted); font-size: .85rem; }
+.batchDateContext strong { color: var(--ink); }
+.batchNote textarea { resize: vertical; }
 .rangeBar { position: relative; height: 10px; margin: 6px 4px 8px; border-radius: 999px; background: var(--surface-strong); }
 .rangeSegment { position: absolute; top: 0; bottom: 0; background: var(--surface-strong); }
 .rangeTrack { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; }
