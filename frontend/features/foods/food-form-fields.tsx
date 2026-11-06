@@ -4,24 +4,28 @@ import Link from "next/link";
 import type { FoodResponse } from "@/lib/types";
 import { fieldId, type FoodFormValues } from "./food-form-model";
 
-export function FoodFormActions({ isEdit, foodId, pending, checking = false, food, onDelete }: { isEdit: boolean; foodId?: string; pending: boolean; checking?: boolean; food: FoodResponse | null; onDelete: (food: FoodResponse) => void }) {
+export function FoodFormActions({ isEdit, foodId, pending, checking = false, food, onDelete, saveDescriptionId }: { isEdit: boolean; foodId?: string; pending: boolean; checking?: boolean; food: FoodResponse | null; onDelete: (food: FoodResponse) => void; saveDescriptionId?: string }) {
   return (
-    <div className="form-actions-sticky">
-      <button className="btn primary" type="submit" disabled={pending || checking}>
-        <Save size={18} />
-        {pending ? "جاري الحفظ..." : isEdit ? "حفظ التعديل" : "حفظ الطعام"}
-      </button>
-      <Link className="btn" href={isEdit && foodId ? `/foods/${foodId}` : "/foods"}>
-        <X size={18} />
-        إلغاء
-      </Link>
+    <>
       {isEdit && food ? (
-        <button className="btn danger" type="button" onClick={() => onDelete(food)}>
-          <Trash2 size={18} />
-          حذف
-        </button>
+        <div className="food-form-delete-action">
+          <button className="btn danger quiet" type="button" onClick={() => onDelete(food)}>
+            <Trash2 size={18} aria-hidden="true" />
+            حذف
+          </button>
+        </div>
       ) : null}
-    </div>
+      <div className="form-actions-sticky">
+        <button className="btn primary" type="submit" disabled={pending || checking} aria-describedby={saveDescriptionId}>
+          <Save size={18} />
+          {pending ? "جاري الحفظ..." : isEdit ? "حفظ التعديل" : "حفظ الطعام"}
+        </button>
+        <Link className="btn" href={isEdit && foodId ? `/foods/${foodId}` : "/foods"}>
+          <X size={18} />
+          إلغاء
+        </Link>
+      </div>
+    </>
   );
 }
 
