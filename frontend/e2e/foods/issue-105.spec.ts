@@ -12,7 +12,11 @@ for (const role of ["admin", "user"] as const) {
     });
     await page.goto(`/foods/${food.id}`);
     await expect(page.getByRole("link", { name: "تعديل", exact: true })).toHaveCount(role === "admin" ? 1 : 0);
-    await page.getByRole("button", { name: "إضافة إلى اليوميات", exact: true }).click();
+    const add = page.getByRole("button", { name: "إضافة إلى اليوميات", exact: true });
+    await expect(add).toHaveAccessibleDescription("حصة واحدة · 30 جم");
+    await expect(page.locator(".serving-summary").getByRole("button", { name: "إضافة إلى اليوميات", exact: true })).toBeVisible();
+    await add.focus();
+    await add.press("Enter");
     const dialog = page.getByRole("dialog", { name: "إضافة طعام", exact: true });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(food.name, { exact: true })).toBeVisible();
