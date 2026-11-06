@@ -799,11 +799,11 @@ a {
 .food-card {
   position: relative;
   display: grid;
-  gap: 6px;
+  gap: 10px;
   border: 1px solid transparent;
   border-radius: var(--radius-card);
   background: var(--surface);
-  padding: 10px 14px 8px;
+  padding: 12px 14px;
   box-shadow: var(--shadow-sm);
 }
 
@@ -838,12 +838,10 @@ a {
 .food-card-secondary {
   margin: 1px 0 0;
   text-align: start;
-  overflow: hidden;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .food-card .serving-badge {
@@ -859,26 +857,42 @@ a {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
   border-top: 1px solid var(--line-subtle);
-  padding-top: 6px;
+  padding-top: 8px;
+  align-items: stretch;
 }
 
 .serving-metric {
   display: grid;
-  gap: 1px;
+  gap: 3px;
   min-width: 0;
   text-align: center;
+  align-content: center;
+  padding: 6px 2px;
+  overflow-wrap: anywhere;
 }
 
 .serving-metric strong {
-  font-size: 14px;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
 }
 
 .serving-metric small {
-  overflow: hidden;
   color: var(--muted);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 12px;
+}
+
+.serving-metric:first-child {
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.serving-metric:first-child strong {
+  font-size: 20px;
+}
+
+.serving-metric:first-child small {
+  color: inherit;
 }
 
 .food-actions-menu {

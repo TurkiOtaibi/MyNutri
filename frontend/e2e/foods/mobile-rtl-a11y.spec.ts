@@ -5,7 +5,7 @@ import { test, expect, expectNoHorizontalOverflow, submitFoodForm, validFood } f
 
 function accessibleFood(idSuffix: number, name: string) {
   return {
-    ...validFood({ name, brand: "علامة طويلة Mixed Latin Brand Name" }),
+    ...validFood({ name, brand: "علامة طويلة Mixed Latin Brand Name إضافات وحبوب كاملة" }),
     id: `00000000-0000-4000-8000-${String(idSuffix).padStart(12, "0")}`,
     net_carbs_g: 20,
     created_at: "2026-08-04T00:00:00Z",
@@ -71,6 +71,15 @@ test.describe("Foods mobile, RTL, and accessibility @foods", () => {
       await page.setViewportSize({ width, height: 844 });
       await page.goto("/foods");
       await expect(page.getByLabel("عرض الأرشيف")).toHaveCount(0);
+      if (width <= 920) {
+        const card = page.locator(".food-card");
+        await expect(card).toBeVisible();
+        for (const text of await card.locator(".food-card-secondary, .serving-metric small, .serving-metric strong").all()) {
+          expect(await text.evaluate((element) =>
+            element.scrollWidth <= element.clientWidth + 1 && element.scrollHeight <= element.clientHeight + 1
+          ), `${width}: card text stays visible in full`).toBe(true);
+        }
+      }
       const trigger = page.getByRole("button", { name: `إجراءات ${food.name}` });
       const box = await trigger.boundingBox();
       expect(box && box.x >= 0 && box.x + box.width <= width).toBe(true);
