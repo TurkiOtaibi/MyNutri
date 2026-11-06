@@ -96,6 +96,7 @@ export function NumberField({
   value,
   onChange,
   error,
+  hint,
   required = false
 }: {
   field: keyof FoodFormValues;
@@ -103,12 +104,13 @@ export function NumberField({
   value: number | null;
   onChange: (value: number | null) => void;
   error?: string;
+  hint?: string;
   required?: boolean;
 }) {
   const id = fieldId(field);
   return (
     <label className="field" htmlFor={id}>
-      <span>
+      <span id={`${id}-label`}>
         {label} {required ? <b aria-label="مطلوب">*</b> : null}
       </span>
       <input
@@ -118,10 +120,12 @@ export function NumberField({
         min="0"
         step="0.01"
         value={value ?? ""}
+        aria-labelledby={hint ? `${id}-label` : undefined}
         onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))}
         aria-invalid={Boolean(error)}
-        aria-describedby={error ? `${id}-error` : undefined}
+        aria-describedby={[error ? `${id}-error` : "", hint ? `${id}-hint` : ""].filter(Boolean).join(" ") || undefined}
       />
+      {hint ? <span id={`${id}-hint`} className="food-field-hint">{hint}</span> : null}
       {error ? <span id={`${id}-error`} className="field-error">{error}</span> : null}
     </label>
   );

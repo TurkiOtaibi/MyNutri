@@ -37,6 +37,42 @@
 :global(.food-form-serving) { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; }
 :global(.food-form-layout) :is(input, select, textarea) { scroll-margin-block: 6rem 10rem; }
 
+:global(.food-form-layout[data-mode="create"] .field) {
+  align-content: start;
+}
+
+:global(.food-form-layout[data-mode="create"] .field:has(#food-default-unit-type)) {
+  grid-column: 1 / -1;
+}
+
+:global(.food-form-layout[data-mode="create"] .field:has(#food-nutrition-basis)) {
+  grid-column: 1 / -1;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+:global(.food-form-layout[data-mode="create"]) :global(.food-form-serving) {
+  border: 1px solid var(--line);
+  background: var(--accent-soft);
+  padding: 14px;
+}
+
+:global(.food-form-layout[data-mode="create"]) :global(.food-form-serving) strong {
+  font-size: 1.05rem;
+}
+
+:global(.food-field-hint) {
+  color: var(--muted);
+  font-size: .8rem;
+  line-height: 1.6;
+}
+
+@media (max-width: 640px) {
+  :global(.food-form-layout[data-mode="create"] .field:has(#food-name, #food-brand)) {
+    grid-column: 1 / -1;
+  }
+}
+
 :global(.food-optional-section) {
   background: var(--surface);
 }
