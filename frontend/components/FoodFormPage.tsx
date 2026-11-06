@@ -324,7 +324,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
           </div>
         ) : null}
 
-        {isEdit && <div className="food-edit-impact"><FoodUsageNotice usage={usage} /></div>}
+        {isEdit && <div className="food-edit-impact" id="food-edit-impact"><FoodUsageNotice usage={usage} /></div>}
         <FormSection title="معلومات الطعام الأساسية">
           <TextField field="name" label="اسم الطعام" value={form.name} required maxLength={foodTextMax.name} error={errors.name} onChange={(value) => update("name", value)} />
           {hasSameName ? <p role="status">يوجد طعام بالاسم نفسه.</p> : null}
@@ -422,7 +422,8 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
           </div>
         </details>
 
-        <FoodFormActions isEdit={isEdit} foodId={foodId} pending={saveMutation.isPending} checking={checkingWarnings} food={foodQuery.data ?? null} onDelete={setDeleteTarget} />
+        <FoodFormActions isEdit={isEdit} foodId={foodId} pending={saveMutation.isPending} checking={checkingWarnings} food={foodQuery.data ?? null} onDelete={setDeleteTarget}
+          saveDescriptionId={isEdit && (usage.isPending || usage.isError || (usage.data?.diary_entries ?? 0) > 0) ? "food-edit-impact" : undefined} />
       </form>
 
       <FoodDeleteDialog
