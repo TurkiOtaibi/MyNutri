@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { FoodResponse } from "@/lib/types";
 import { FoodUsageNotice, useFoodUsage } from "@/features/foods/food-usage";
+import styles from "@/features/foods/food-delete-dialog.module.css";
 
 export function FoodDeleteDialog({
   food,
@@ -94,21 +95,25 @@ export function FoodDeleteDialog({
     <div className="dialog-backdrop" role="presentation">
       <section
         ref={panelRef}
-        className="dialog-panel"
+        className={`dialog-panel ${styles.panel}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="delete-food-title"
-        aria-describedby="delete-food-description"
+        aria-describedby="delete-food-identity delete-food-description"
       >
         <div className="dialog-title-row">
           <AlertTriangle size={22} aria-hidden="true" />
           <h2 id="delete-food-title">حذف الطعام؟</h2>
         </div>
-        <p id="delete-food-description" className="page-kicker">
+        <div id="delete-food-identity" className={styles.identity}>
+          <strong><bdi>{food.name}</bdi></strong>
+          {food.brand ? <span><bdi>{food.brand}</bdi></span> : null}
+        </div>
+        <p id="delete-food-description" className={styles.warning}>
           سيتم حذف هذا الطعام نهائيًا، كما سيتم حذف جميع سجلات اليوميات المرتبطة به لجميع المستخدمين. لا يمكن التراجع عن هذا الإجراء.
         </p>
-        <FoodUsageNotice usage={usage} deletion />
-        <div className="actions">
+        <div className={styles.usage}><FoodUsageNotice usage={usage} deletion /></div>
+        <div className={`actions ${styles.actions}`}>
           <button ref={cancelRef} className="btn" type="button" onClick={onCancel} disabled={deleting}>
             <X size={18} />
             إلغاء

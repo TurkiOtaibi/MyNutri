@@ -67,7 +67,7 @@ test("BR-FOD-029 warns on normalized names, permits different brand, excludes se
 });
 
 test("BR-FOD-030 and BR-FOD-035 show aggregate impact before edit and delete", async ({ page, foodsApi }) => {
-  const food = await foodsApi.create({ name: uniqueName("Impact") });
+  const food = await foodsApi.create({ name: uniqueName("Impact"), brand: "Synthetic Brand" });
   await foodsApi.createDiary(food.id, diaryDate());
   await foodsApi.createDiary(food.id, diaryDate(-1));
   await page.setViewportSize({ width: 375, height: 844 });
@@ -87,6 +87,9 @@ test("BR-FOD-030 and BR-FOD-035 show aggregate impact before edit and delete", a
   expect((await foodsApi.get(food.id)).calories).toBe(food.calories);
   await page.getByRole("button", { name: "حذف", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "حذف الطعام؟" });
+  await expect(dialog.getByText(food.name, { exact: true })).toBeVisible();
+  await expect(dialog.getByText("Synthetic Brand", { exact: true })).toBeVisible();
+  await expect(dialog).toHaveAccessibleDescription(`${food.name} Synthetic Brand سيتم حذف هذا الطعام نهائيًا، كما سيتم حذف جميع سجلات اليوميات المرتبطة به لجميع المستخدمين. لا يمكن التراجع عن هذا الإجراء.`);
   await expect(dialog).toContainText("عدد سجلات اليوميات: 2 · عدد المستخدمين المتأثرين: 1");
   await expect(dialog).toContainText("سيتم حذف هذا الطعام نهائيًا، كما سيتم حذف جميع سجلات اليوميات المرتبطة به لجميع المستخدمين. لا يمكن التراجع عن هذا الإجراء.");
   await expect(dialog.getByRole("button", { name: "إلغاء", exact: true })).toBeFocused();
