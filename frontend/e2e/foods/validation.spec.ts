@@ -19,8 +19,10 @@ test.describe("Food field validation @foods @validation", () => {
       const input = field(page, item.label);
       await expect(input).toHaveAttribute("aria-invalid", "true");
       const describedBy = await input.getAttribute("aria-describedby");
-      expect(describedBy).toBeTruthy();
-      await expect(page.locator(`#${describedBy}`)).toHaveText("هذا الحقل مطلوب.");
+      const errorId = `${await input.getAttribute("id")}-error`;
+      expect(describedBy?.split(/\s+/)).toContain(errorId);
+      await expect(page.locator(`#${errorId}`)).toHaveText("هذا الحقل مطلوب.");
+      await expect(input).toHaveAccessibleDescription(/هذا الحقل مطلوب\./);
     });
   }
 

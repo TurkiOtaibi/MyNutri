@@ -302,7 +302,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
         </div>
       </div>
 
-      <form className="food-form-layout" onSubmit={submit} noValidate>
+      <form className="food-form-layout" data-mode={mode} onSubmit={submit} noValidate>
         {pendingServerFood ? (
           <div className="unsaved-conflict" role="status">
             <p>توجد نسخة أحدث من هذا الطعام على الخادم. احتفظنا بتعديلاتك الحالية.</p>
@@ -382,7 +382,9 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
             onChange={(value) => update("default_unit_type", value as FoodFormValues["default_unit_type"])}
             options={defaultUnitOptions.map((option) => [option, defaultUnitLabels[option]])}
           />
-          <NumberField field="unit_amount" label="مقدار الوحدة" value={form.unit_amount} required error={errors.unit_amount} onChange={(value) => update("unit_amount", value)} />
+          <NumberField field="unit_amount" label="مقدار الوحدة" value={form.unit_amount} required error={errors.unit_amount}
+            hint={!isEdit ? `أدخل مقدار الحصة بـ ${unitBasisLabels[form.unit_basis]}. القيم الغذائية تبقى ${nutritionBasisLabels[form.nutrition_basis]}.` : undefined}
+            onChange={(value) => update("unit_amount", value)} />
           <SelectField
             field="unit_basis"
             label="أساس الوحدة"

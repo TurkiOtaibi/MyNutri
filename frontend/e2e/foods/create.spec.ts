@@ -21,6 +21,16 @@ test.describe("Food creation @foods", () => {
       const unit = testCase.unit === "g" ? "جم" : "مل";
       await expect(page.locator(".food-form-serving")).toContainText(`${testCase.amount} ${unit}`);
       await expect(page.locator(".food-form-basis").first()).toContainText(`لكل 100 ${unit}`);
+      const amount = page.getByLabel("مقدار الوحدة", { exact: false });
+      await expect(amount).toHaveAccessibleDescription(`أدخل مقدار الحصة بـ ${unit}. القيم الغذائية تبقى لكل 100 ${unit}.`);
+      await amount.fill(String(testCase.amount + 10));
+      await expect(page.locator(".food-form-serving")).toContainText(`${testCase.amount + 10} ${unit}`);
+      await expect(page.getByLabel("السعرات")).toHaveValue("123.45");
+      await amount.fill("0");
+      await submitFoodForm(page);
+      await expect(amount).toHaveAttribute("aria-invalid", "true");
+      await expect(amount).toHaveAccessibleDescription(`القيمة أقل من الحد المسموح. أدخل مقدار الحصة بـ ${unit}. القيم الغذائية تبقى لكل 100 ${unit}.`);
+      await amount.fill(String(testCase.amount));
       await submitFoodForm(page);
       await expect(page).toHaveURL(/\/foods\/[0-9a-f-]+$/);
       const id = page.url().split("/").pop()!;
@@ -52,6 +62,13 @@ test.describe("Food creation @foods", () => {
       const field = await basics.locator("label.field").filter({ has: page.getByLabel(label) }).boundingBox();
       expect(Math.abs((field?.width ?? 0) - (grid?.width ?? 0))).toBeLessThanOrEqual(1);
     }
+    await page.setViewportSize({ width: 375, height: 844 });
+    const mobileGrid = await basics.locator(".form-grid").boundingBox();
+    for (const label of ["اسم الطعام", "العلامة التجارية"]) {
+      const field = await basics.getByLabel(label).boundingBox();
+      expect(Math.abs((field?.width ?? 0) - (mobileGrid?.width ?? 0))).toBeLessThanOrEqual(1);
+    }
+    await expectNoHorizontalOverflow(page);
   });
 
   test("[FOOD-TC-039] @p1 optional nutrients are collapsed by default", async ({ page }) => {
