@@ -1,0 +1,49 @@
+.panel {
+  display: grid;
+  gap: 16px;
+  max-height: calc(100dvh - 36px);
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+.identity {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--surface-strong);
+}
+
+.identity strong {
+  font-size: 17px;
+}
+
+.identity span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.warning {
+  margin: 0;
+  line-height: 1.8;
+}
+
+.usage {
+  padding-block: 12px;
+  border-block: 1px solid var(--line);
+  line-height: 1.7;
+}
+
+.usage p {
+  margin: 0;
+}
+
+.actions {
+  margin-top: 0;
+}
+
+@media (max-width: 640px) {
+  .actions > button {
+    flex: 1;
+  }
+}
