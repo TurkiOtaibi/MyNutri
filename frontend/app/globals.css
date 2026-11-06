@@ -1215,6 +1215,10 @@ a {
   gap: 8px;
 }
 
+.food-detail-primary-action {
+  margin-top: 16px;
+}
+
 .serving-summary,
 .nutrition-details-surface,
 .food-metadata {

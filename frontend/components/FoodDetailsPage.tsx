@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowRight, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -146,7 +146,6 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
             {food.brand && <><bdi dir="auto">{food.brand}</bdi>{" · "}</>}
             <bdi dir="auto">{categoryLabel || food.primary_category}</bdi>
           </p>
-          <span className="serving-badge detail-serving-badge">{defaultServingText(food)}</span>
         </div>
         {account?.role === "admin" ? <div className="food-detail-actions">
           <Link className="btn" href={`/foods/${food.id}/edit`}>
@@ -161,9 +160,6 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
       </header>
 
       {note ? <div className="catalog-notice" role="alert">{note}</div> : null}
-      <div className="actions food-detail-primary-action">
-        <button className="btn primary" type="button" onClick={openDiary} aria-disabled={openingAdd} aria-busy={openingAdd}>إضافة إلى اليوميات</button>
-      </div>
       {addDate ? <AddEntrySheet key={`${session?.user.id}:${food.id}:${addDate}`} selectedDate={addDate} initialMeal={null} initialFood={food}
         onClose={() => setAddDate(null)} onSaved={async () => {
           await invalidateDiary(queryClient);
@@ -195,16 +191,13 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
           </p>
         )}
         <p className="basis-reference">القيم محسوبة من بيانات {basisLabel}</p>
+        <div className="actions food-detail-primary-action">
+          <button className="btn primary" type="button" onClick={openDiary} aria-disabled={openingAdd} aria-busy={openingAdd} aria-describedby="serving-summary-title">
+            <Plus size={18} aria-hidden="true" />
+            إضافة إلى اليوميات
+          </button>
+        </div>
       </section>
-
-      {registryNutrients ? (
-        <NutritionCompleteness food={food} nutrients={registryNutrients} open={completenessOpen} onToggle={() => setCompletenessOpen((value) => !value)} />
-      ) : (
-        <section className="catalog-state" role={registryQuery.isError ? "alert" : "status"}>
-          <strong>{registryQuery.isError ? "تعذر تحميل البيانات الغذائية" : "جارٍ تحميل سجل المغذيات"}</strong>
-          {registryQuery.isError ? <button className="btn" type="button" onClick={() => registryQuery.refetch()}><RotateCcw size={18} /> إعادة المحاولة</button> : null}
-        </section>
-      )}
 
       <section className="nutrition-details-surface" aria-labelledby="nutrition-details-title">
         <div className="nutrition-details-toolbar">
@@ -239,6 +232,15 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
           <p className="nutrition-unavailable">القيم غير متوفرة لهذا العرض.</p>
         )}
       </section>
+
+      {registryNutrients ? (
+        <NutritionCompleteness food={food} nutrients={registryNutrients} open={completenessOpen} onToggle={() => setCompletenessOpen((value) => !value)} />
+      ) : (
+        <section className="catalog-state" role={registryQuery.isError ? "alert" : "status"}>
+          <strong>{registryQuery.isError ? "تعذر تحميل البيانات الغذائية" : "جارٍ تحميل سجل المغذيات"}</strong>
+          {registryQuery.isError ? <button className="btn" type="button" onClick={() => registryQuery.refetch()}><RotateCcw size={18} /> إعادة المحاولة</button> : null}
+        </section>
+      )}
 
       <section className="food-metadata" aria-labelledby="food-metadata-title">
         <div className="detail-section-heading">
