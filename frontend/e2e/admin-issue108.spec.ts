@@ -78,6 +78,7 @@ test("cancel clears all add fields and disable requires confirmation with date f
   await add.getByLabel("الاسم المعروض").fill("مؤقت");
   await add.getByLabel("كلمة المرور الأولية").fill("discard-password");
   await add.getByRole("button", { name: "إلغاء", exact: true }).click();
+  await add.getByRole("alertdialog").getByRole("button", { name: "تجاهل التغييرات", exact: true }).click();
   await page.getByRole("button", { name: "إضافة مستخدم" }).click();
   for (const label of ["اسم المستخدم", "الاسم المعروض", "كلمة المرور الأولية"]) await expect(add.getByLabel(label)).toHaveValue("");
   await add.getByRole("button", { name: "إلغاء", exact: true }).click();

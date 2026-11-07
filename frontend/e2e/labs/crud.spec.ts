@@ -238,6 +238,7 @@ for (const outcome of ["matches", "different", "absent", "failed"] as const) {
     await expect(page.locator("#lab-edit-value")).toHaveValue(" ٤٠٫٠٠٠ ");
     expect(patches).toBe(1); expect(posts).toBe(0);
     await edit(page).getByRole("button", { name: "إغلاق", exact: true }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "تجاهل التغييرات", exact: true }).click();
     await expect(edit(page)).toHaveCount(0);
     if (outcome !== "absent") {
       await open(page, id);

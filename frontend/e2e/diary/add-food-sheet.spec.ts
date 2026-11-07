@@ -458,7 +458,8 @@ test.describe("@diary @add-food-sheet focused Add Food experience", () => {
     await expect(page.getByRole("button", { name: "إغلاق قسم عشاء", exact: true })).toBeFocused();
     await expect(page.locator("#meal-section-dinner").getByRole("status")).toHaveText("تمت الإضافة");
     expect(posts).toBe(1);
-    expect(Object.keys(createPayloads[0] ?? {}).sort()).toEqual(["entry_date", "food_id", "meal_type", "quantity"]);
+    expect(Object.keys(createPayloads[0] ?? {}).sort()).toEqual(["entry_date", "food_id", "id", "meal_type", "quantity"]);
+    expect(createPayloads[0]?.id).toMatch(/^[0-9a-f-]{36}$/i);
     expect(createPayloads[0]?.food_id).toBe(food.id);
     const dinner = page.locator("#meal-dinner");
     await expect(dinner.getByRole("heading", { name: food.name })).toBeVisible();

@@ -190,7 +190,11 @@ function FoodActionsMenu({
               <Pencil size={17} aria-hidden="true" />
               تعديل
             </Link>
-            <button type="button" role="menuitem" tabIndex={-1} className="danger-menu-item" onClick={onDelete}>
+            <button type="button" role="menuitem" tabIndex={-1} className="danger-menu-item" onClick={() => {
+              buttonRef.current?.focus();
+              onOpenChange(false);
+              onDelete();
+            }}>
               <Trash2 size={17} aria-hidden="true" />
               حذف
             </button>
