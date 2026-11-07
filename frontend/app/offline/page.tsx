@@ -1,5 +1,7 @@
 import { WifiOff } from "lucide-react";
 
+export const metadata = { title: "غير متصل | myNutri" };
+
 export default function OfflinePage() {
   return (
     <section className="section-panel offline-panel" aria-labelledby="offline-title">

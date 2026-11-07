@@ -1,7 +1,7 @@
 "use client";
 
 import { Eye, EyeOff } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 
 export function ForcedPasswordChange({ onSave, onSignOut }: {
@@ -13,6 +13,7 @@ export function ForcedPasswordChange({ onSave, onSignOut }: {
   const submitting = useRef(false);
   const [message, setMessage] = useState("");
   const field = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (message && !pending) field.current?.focus(); }, [message, pending]);
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (submitting.current) return;
@@ -26,18 +27,19 @@ export function ForcedPasswordChange({ onSave, onSignOut }: {
       field.current?.focus();
     } finally { submitting.current = false; setPending(false); }
   }
-  return <main className="auth-page" dir="rtl"><form className="auth-panel" onSubmit={submit} noValidate>
+  return <div className="auth-page" dir="rtl"><form className="auth-panel" onSubmit={submit} noValidate>
     <h1>تغيير كلمة المرور</h1>
+    <p>لا يمكن لصاحب الحساب استخدام النظام بكلمة المرور الأولية، حتى يغيّرها في شاشة «تغيير كلمة المرور».</p>
     <label><span>كلمة المرور الجديدة</span><div className="password-field">
       <input ref={field} value={password} onChange={event => setPassword(event.target.value)} type={visible ? "text" : "password"}
-        autoComplete="new-password" dir="ltr" aria-describedby="initial-password-hint" />
-      <button type="button" onClick={() => setVisible(value => !value)} aria-label={visible ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}>
+        autoComplete="new-password" dir="ltr" disabled={pending} aria-invalid={Boolean(message)} aria-describedby={`initial-password-hint${message ? " initial-password-error" : ""}`} />
+      <button type="button" disabled={pending} aria-pressed={visible} onClick={() => setVisible(value => !value)} aria-label={visible ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}>
         {visible ? <EyeOff size={18} /> : <Eye size={18} />}
       </button>
     </div></label>
     <p id="initial-password-hint">استخدم 8 أحرف على الأقل.</p>
-    {message ? <p role="alert">{message}</p> : null}
+    {message ? <p id="initial-password-error" role="alert">{message}</p> : null}
     <button className="btn primary" disabled={pending} type="submit">حفظ كلمة المرور</button>
     <button className="btn" disabled={pending} type="button" onClick={() => void onSignOut()}>تسجيل الخروج</button>
-  </form></main>;
+  </form></div>;
 }

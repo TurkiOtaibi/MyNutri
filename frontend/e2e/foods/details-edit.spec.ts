@@ -25,7 +25,7 @@ test.describe("Food details and editing @foods", () => {
     await page.goto(`/foods/${food.id}/edit`);
     await expect(page.getByLabel(/اسم الطعام/)).toHaveValue(food.name);
     await expect(page.getByLabel("العلامة التجارية")).toHaveValue("Brand Load");
-    await page.getByRole("spinbutton", { name: /مقدار الوحدة/ }).fill("75");
+    await page.getByRole("textbox", { name: /مقدار الوحدة/ }).fill("75");
     await expect(page.locator(".food-form-serving")).toContainText("75 جم");
     await expect(page.locator(".food-form-basis").first()).toContainText("لكل 100 جم");
     await expect(page.getByLabel(/السعرات/)).toHaveValue("321");

@@ -851,7 +851,7 @@ button:global(.profile-setting-row):focus-visible,
   display: grid;
 }
 
-:global(.profile-option-list) button {
+:global(.profile-option-list) label {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 24px;
   align-items: center;
@@ -865,15 +865,15 @@ button:global(.profile-setting-row):focus-visible,
   text-align: start;
 }
 
-:global(.profile-option-list) button:last-child {
+:global(.profile-option-list) label:last-child {
   border-bottom: 0;
 }
 
-:global(.profile-option-list) button[aria-checked="true"] {
+:global(.profile-option-list) label:has(input:checked) {
   background: color-mix(in srgb, var(--diary-soft) 65%, transparent);
 }
 
-:global(.profile-option-list) button > span:first-child {
+:global(.profile-option-list) label > span:first-child {
   display: grid;
   gap: 3px;
 }
@@ -1285,3 +1285,8 @@ button:global(.profile-setting-row):focus-visible,
     transition: none;
   }
 }
+
+:global(.profile-option-list) label { position: relative; cursor: pointer; }
+:global(.profile-option-list) input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+:global(.profile-option-list) label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+:global(.profile-protein-calculation) summary { cursor: pointer; min-height: 44px; align-content: center; font-weight: 700; }

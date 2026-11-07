@@ -70,7 +70,7 @@
 .chartUnit { text-align: start; overflow-wrap: anywhere; }
 .chartPlot { position: relative; width: 100%; height: 280px; }
 .chartPlot svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.chartPlot text { fill: var(--ink); font-size: 10px; }
+.chartPlot text { fill: var(--ink); font-size: 14px; }
 .chartBand { fill: var(--surface-strong); }
 .chartBand[data-tone="within"] { fill: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
 .chartBand[data-tone="caution"] { fill: color-mix(in srgb, var(--warning) 16%, var(--surface)); }
@@ -279,3 +279,11 @@
 @media (max-width: 700px) {
   .ownerDetail .heading { align-items: stretch; }
 }
+
+.selectedTests { max-block-size: 6rem; overflow-y: auto; overflow-wrap: anywhere; }
+
+.discardBackdrop { z-index: 90; }
+.discardDialog { z-index: 91; }
+
+.chartScale { display: grid; gap: 8px; max-inline-size: 24rem; margin-block: 12px; }
+.chartScale select { min-block-size: 44px; inline-size: 100%; }

@@ -34,10 +34,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ar" dir="rtl" className={plexArabic.variable}>
       <body>
+        <a className="skip-link" href="#main-content">انتقل إلى المحتوى الرئيسي</a>
         <Providers>
           <div className="app-shell">
             <AppNav />
-            <main className="main-surface">{children}</main>
+            <main id="main-content" tabIndex={-1} className="main-surface">{children}</main>
           </div>
         </Providers>
       </body>

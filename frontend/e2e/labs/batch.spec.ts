@@ -62,6 +62,7 @@ test("a new session refreshes yesterday's cached server date and catalog action 
   await next(page); await next(page);
   await expect(page.locator("#lab-hba1c-value")).toHaveValue("5.270");
   await page.keyboard.press("Escape");
+  await page.getByRole("alertdialog").getByRole("button", { name: "تجاهل التغييرات", exact: true }).click();
   await expect(dialog(page)).toHaveCount(0);
   await expect(opener).toBeFocused();
   await opener.click(); await next(page); await next(page);
@@ -74,17 +75,18 @@ test("panels plus individuals deduplicate, two panels render all rows, removing 
   await page.getByRole("button", { name: "إضافة نتائج", exact: true }).click();
   await next(page);
   const summary = page.getByTestId("lab-selection-summary");
-  await expect(summary).toHaveText("التحاليل المحددة: 0");
+  await expect(summary).toContainText("التحاليل المحددة: 0");
   await expect(dialog(page).getByRole("button", { name: "التالي", exact: true })).toBeDisabled();
+  await page.locator('[data-individual-key="ldl_c"]').check();
   await page.locator('[data-panel-key="lipid_panel"]').check();
-  await expect(summary).toHaveText("التحاليل المحددة: 4");
+  await expect(summary).toContainText("التحاليل المحددة: 4");
   const ldlChoice = dialog(page).locator("label").filter({ has: page.locator('[data-individual-key="ldl_c"]') });
   await expect(ldlChoice).toHaveAttribute("data-selected", "true");
   await expect(ldlChoice).toContainText("مضاف ضمن مجموعة");
   await page.locator('[data-panel-key="iron_studies"]').check();
-  await expect(summary).toHaveText("التحاليل المحددة: 8");
-  await page.locator('[data-individual-key="ldl_c"]').check();
-  await expect(summary).toHaveText("التحاليل المحددة: 8");
+  await expect(summary).toContainText("التحاليل المحددة: 8");
+  await expect(page.locator('[data-individual-key="ldl_c"]')).toBeChecked();
+  await expect(summary).toContainText("التحاليل المحددة: 8");
   for (const [width, height] of [[375, 812], [1440, 812], [812, 320]]) {
     for (const colorScheme of ["light", "dark"] as const) {
       await page.setViewportSize({ width, height });
@@ -108,7 +110,7 @@ test("panels plus individuals deduplicate, two panels render all rows, removing 
   await page.locator("#lab-ldl_c-unit").selectOption("mmol/L");
   await back(page);
   await page.locator('[data-panel-key="lipid_panel"]').uncheck();
-  await expect(summary).toHaveText("التحاليل المحددة: 5");
+  await expect(summary).toContainText("التحاليل المحددة: 5");
   await expect(ldlChoice).toHaveAttribute("data-selected", "true");
   await expect(ldlChoice).not.toContainText("مضاف ضمن مجموعة");
   await next(page);
@@ -135,7 +137,7 @@ test("keyboard containment, previous steps, cancellation and reopening preserve 
   await expect(lastDateStepControl).toBeFocused();
   await next(page);
   // Step entry schedules initial focus; finish that transition before sending keys.
-  await expect(dialog(page).locator("input[data-panel-key]").first()).toBeFocused();
+  await expect(dialog(page).getByRole("searchbox")).toBeFocused();
   await expect(currentStep).toHaveText("اختيار التحاليل");
   await page.locator('[data-individual-key="hba1c"]').focus();
   await page.keyboard.press("Space");
@@ -143,7 +145,7 @@ test("keyboard containment, previous steps, cancellation and reopening preserve 
   await next(page);
   await expect(page.locator("#lab-hba1c-value")).toBeFocused();
   await expect(currentStep).toHaveText("القيم");
-  await expect(dialog(page)).toHaveAccessibleDescription("«السابق» يحتفظ بإدخالك. «إلغاء» يغلق النافذة دون حفظ.");
+  await expect(dialog(page)).toHaveAccessibleDescription("«السابق» يحتفظ بإدخالك. «إلغاء» يطلب تأكيد تجاهل التغييرات غير المحفوظة.");
   const hba1cGroup = dialog(page).getByRole("group", { name: /السكر التراكمي.*HbA1c/ });
   await expect(hba1cGroup).toBeVisible();
   await expect(hba1cGroup.getByRole("textbox", { name: "القيمة" })).toHaveAttribute("id", "lab-hba1c-value");
@@ -152,6 +154,7 @@ test("keyboard containment, previous steps, cancellation and reopening preserve 
   await back(page); await next(page);
   await expect(page.locator("#lab-hba1c-value")).toHaveValue("5.270");
   await dialog(page).getByRole("button", { name: "إلغاء", exact: true }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "تجاهل التغييرات", exact: true }).click();
   await expect(opener).toBeFocused();
   await opener.click();
   await expect(currentStep).toHaveText("التاريخ");

@@ -1,4 +1,5 @@
 import { ApiError } from "@/lib/api";
+import { parseNumericInput } from "@/lib/numeric-input";
 import safetyCopy from "./profile-safety-copy.json";
 import type { ActivityLevel, CutIntensity, Goal, ProfileInput, ProfileResponse, Sex, TargetPlanWriteResponse, TargetResponse } from "@/lib/types";
 
@@ -157,10 +158,7 @@ function formatEditableNumber(value: number): string {
 }
 
 export function normalizeNumber(value: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed || !/^(?:\d+\.?\d*|\.\d+)$/.test(trimmed)) return null;
-  const number = Number(trimmed);
-  return Number.isFinite(number) ? number : null;
+  return parseNumericInput(value);
 }
 
 export function normalizeDraft(draft: DraftProfile): string {

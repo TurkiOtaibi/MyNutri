@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { type AdminAccount, getAdminUser } from "@/lib/api";
 import type { Sex } from "@/lib/types";
-import { AccountIdentity, FormDialog } from "./AdminAccountActions";
+import { AccountIdentity, DiscardAccountDraft, FormDialog } from "./AdminAccountActions";
 
 export function AdminSexCorrectionDialog({ account, busy, error, onClose, onSave }: {
   account: Pick<AdminAccount, "principal_id" | "username" | "email">;
@@ -17,6 +17,7 @@ export function AdminSexCorrectionDialog({ account, busy, error, onClose, onSave
   const identityId = useId();
   const profile = useQuery({ queryKey: ["admin-profile-sex", principalId], queryFn: () => getAdminUser(principalId), retry: false, staleTime: 0, gcTime: 0 });
   const [selected, setSelected] = useState<Sex | null>(null);
+  const [discard, setDiscard] = useState(false);
   const warningId = useId();
   const errorRef = useRef<HTMLParagraphElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -27,7 +28,14 @@ export function AdminSexCorrectionDialog({ account, busy, error, onClose, onSave
     event.preventDefault();
     if (current) await onSave(selected ?? current);
   }
-  return <FormDialog busy={busy} title="تصحيح الجنس" className="account-sex-dialog" descriptionId={`${identityId} ${warningId}`} onClose={onClose}>
+  function requestClose() {
+    if (busy) return;
+    if (discard) { setDiscard(false); return; }
+    if (selected && selected !== current) setDiscard(true);
+    else onClose();
+  }
+  return <FormDialog busy={busy} title="تصحيح الجنس" className="account-sex-dialog" descriptionId={discard ? undefined : `${identityId} ${warningId}`} onClose={requestClose}>
+    {discard ? <DiscardAccountDraft onKeep={() => setDiscard(false)} onDiscard={onClose} /> : <>
     <AccountIdentity account={account} id={identityId} />
     <p id={warningId}>تصحيح الجنس يغيّر حساب الأهداف وتقييم نتائج التحاليل.</p>
     {profile.isPending ? <p role="status">جارٍ تحميل بيانات المستخدم...</p>
@@ -41,8 +49,9 @@ export function AdminSexCorrectionDialog({ account, busy, error, onClose, onSave
               </label>)}
             </fieldset>
             {error && <p ref={errorRef} tabIndex={-1} role="alert">{error}</p>}
-            <div className="actions"><button type="button" className="btn" disabled={busy} onClick={onClose}>إلغاء</button><button className="btn primary" type="submit" disabled={busy}>حفظ التغييرات</button></div>
+            <div className="actions"><button type="button" className="btn" disabled={busy} onClick={requestClose}>إلغاء</button><button className="btn primary" type="submit" disabled={busy}>حفظ التغييرات</button></div>
           </form>}
     {(!current || profile.isError || profile.isPending) && <button className="btn" type="button" onClick={onClose}>إلغاء</button>}
+    </>}
   </FormDialog>;
 }

@@ -23,6 +23,7 @@ import {
   defaultUnitOptions,
   emptyFoodForm,
   foodToForm,
+  foodFormFingerprint,
   foodTextMax,
   hasFoodErrors,
   mapFoodApiError,
@@ -50,14 +51,14 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   const [deleteTarget, setDeleteTarget] = useState<FoodResponse | null>(null);
   const [hydratedFoodId, setHydratedFoodId] = useState<string | null>(null);
   const [pendingServerFood, setPendingServerFood] = useState<FoodResponse | null>(null);
-  const [initialForm, setInitialForm] = useState(JSON.stringify(emptyFoodForm));
+  const [initialForm, setInitialForm] = useState(foodFormFingerprint(emptyFoodForm));
   const isEdit = mode === "edit";
   const { account, session, loading: authLoading } = useAuth();
   const accessToken = session?.access_token;
   const subjectId = session?.user.id ?? null;
   const formSubjectRef = useRef(subjectId);
   const sessionSignal = useSessionAbortSignal();
-  const dirty = JSON.stringify(form) !== initialForm;
+  const dirty = foodFormFingerprint(form) !== initialForm;
   const usage = useFoodUsage(isEdit ? foodId : undefined);
   const checkedName = useDebouncedValue(form.name.trim(), 275);
   const sameName = useQuery({
@@ -87,7 +88,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
       if (dirty && hydratedFoodId === foodQuery.data.id) {
         // Preserve an in-progress form when a newer server response arrives.
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        if (JSON.stringify(loaded) !== initialForm) setPendingServerFood(foodQuery.data);
+        if (foodFormFingerprint(loaded) !== initialForm) setPendingServerFood(foodQuery.data);
         return;
       }
       if (dirty) {
@@ -95,7 +96,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
         return;
       }
       setForm(loaded);
-      setInitialForm(JSON.stringify(loaded));
+      setInitialForm(foodFormFingerprint(loaded));
       setHydratedFoodId(foodQuery.data.id);
       setPendingServerFood(null);
     }
@@ -108,7 +109,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     if (formSubjectRef.current === subjectId) return;
     formSubjectRef.current = subjectId;
     setForm(emptyFoodForm);
-    setInitialForm(JSON.stringify(emptyFoodForm));
+    setInitialForm(foodFormFingerprint(emptyFoodForm));
     setHydratedFoodId(null);
     setPendingServerFood(null);
     setErrors({});
@@ -124,7 +125,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     onSuccess: async (food) => {
       if (sessionSignal.aborted) return;
       const saved = foodToForm(food);
-      setInitialForm(JSON.stringify(saved));
+      setInitialForm(foodFormFingerprint(saved));
       setForm(saved);
       setPendingServerFood(null);
       await queryClient.invalidateQueries({ queryKey: ["foods"] });
@@ -148,7 +149,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   const deleteMutation = useFoodDelete({
     onDeleted: () => {
       if (!sessionSignal.aborted) {
-        setInitialForm(JSON.stringify(form));
+        setInitialForm(foodFormFingerprint(form));
         if (account) rememberFoodDeletion(queryClient, account.principal_id);
         completeAndNavigate("/foods");
       }
@@ -163,7 +164,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
     dirty,
     enabled: !saveMutation.isPending && !deleteMutation.isPending,
     discard: () => {
-      setInitialForm(JSON.stringify(form));
+      setInitialForm(foodFormFingerprint(form));
       setPendingServerFood(null);
     }
   });
@@ -239,6 +240,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
           {FOOD_READ_ERROR}
         </div>
         <div className="actions">
+          <button className="btn" type="button" disabled={foodQuery.isFetching} onClick={() => foodQuery.refetch()}>إعادة المحاولة</button>
           <Link className="btn" href="/foods">
             <ArrowRight size={18} />
             رجوع
@@ -284,7 +286,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
   const previewErrors = validateFoodForm(form);
   const servingPreview = !previewErrors.unit_amount && !previewErrors.unit_basis
     && !previewErrors.default_unit_type && form.unit_amount !== null
-    ? defaultServingText({ ...form, unit_amount: form.unit_amount })
+    ? defaultServingText(normalizeFoodForm(form))
     : null;
 
   return (
@@ -311,7 +313,7 @@ export function FoodFormPage({ mode, foodId }: { mode: "create" | "edit"; foodId
               <button className="btn danger" type="button" onClick={() => requestDiscard(() => {
                 const loaded = foodToForm(pendingServerFood);
                 setForm(loaded);
-                setInitialForm(JSON.stringify(loaded));
+                setInitialForm(foodFormFingerprint(loaded));
                 setHydratedFoodId(pendingServerFood.id);
                 setPendingServerFood(null);
               })}>تحميل نسخة الخادم</button>

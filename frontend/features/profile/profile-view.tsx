@@ -4,7 +4,7 @@ import type { ActivityLevel, Goal, NutritionRegistryResponse, Sex, TargetPlanHis
 import { NumericSettingsRow, OptionList, SelectionCard, SettingsButton, CutIntensitySelector } from "./profile-controls";
 import { AdditionalTargetsCard, CalculationExplanation, ExpectedTargetsCard, RegistryState, TargetPlanHistory, TargetsCard } from "./profile-targets";
 import { ProfileConfirm, ProfileSheet } from "./profile-dialogs";
-import { FAT_DEFAULTS, PROFILE_LIMITS, PROTEIN_DEFAULT, activityDescriptions, activityDisplayLabels, activityLabels, goalDescriptions, goalDisplayLabels, goalLabels, sexLabels, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type SheetKind, type TargetPlanWritePhase } from "./profile-model";
+import { isPreviewActivatable, FAT_DEFAULTS, PROFILE_LIMITS, PROTEIN_DEFAULT, activityDescriptions, activityDisplayLabels, activityLabels, goalDescriptions, goalDisplayLabels, goalLabels, sexLabels, type BlockingSafetyOutcome, type DraftProfile, type FieldErrors, type SheetKind, type TargetPlanWritePhase } from "./profile-model";
 import "./profile.module.css";
 import { formatGregorianArabicDate } from "@/lib/dates";
 
@@ -133,7 +133,7 @@ export function ProfileView({
   const { savedTargets, registry, history, preview } = targets;
   const { registryReady, validationHasPayload, writeErrorCode, writePhase, restoreWriteFocusRef } = write;
   return (
-    <main className={`profile-page ${dirty ? "is-dirty" : ""}`}>
+    <div className={`profile-page ${dirty ? "is-dirty" : ""}`}>
       <header className="profile-page-head">
         <h1>بياناتك وأهدافك</h1>
         <p>حدّث بياناتك لنحسب احتياجك اليومي.</p>
@@ -158,6 +158,7 @@ export function ProfileView({
               </div>
             </div>
           ) : null}
+          {dirty ? <p className="profile-effective-hint" role="status">{!validationHasPayload ? "أكمل البيانات وصحح الحقول للمتابعة." : !registryReady ? "سجل التغذية غير جاهز" : preview.pending ? "جارٍ تحديث المعاينة…" : preview.safetyOutcome || (preview.current && !isPreviewActivatable(preview.current)) ? "راجع قرار السلامة قبل المتابعة." : preview.failed ? "تعذر تحديث المعاينة. أعد المحاولة." : "راجع الأهداف المتوقعة وتاريخ السريان قبل الحفظ."}</p> : null}
           <TargetsCard title="الأهداف اليومية" badge="محسوبة تلقائيًا" targets={savedTargets} />
           <section className="profile-settings-card body-data-card" aria-labelledby="body-data-title">
             <h2 id="body-data-title">بيانات الجسم</h2>
@@ -187,6 +188,7 @@ export function ProfileView({
                 ariaLabel={`تغيير الجنس، القيمة الحالية ${sexLabels[draft.sex]}`}
               />
             )}
+            {!hasSavedProfile ? <p className="profile-effective-hint">لا يمكن تعديل الجنس بعد حفظ الملف الشخصي.</p> : null}
             <label className={`profile-setting-row profile-date-row ${errors.birth_date ? "has-error" : ""}`}>
               <CalendarDays size={19} aria-hidden="true" />
               <span className="profile-setting-copy"><strong>تاريخ الميلاد</strong><bdi>{displayBirthDate}</bdi></span>
@@ -403,6 +405,7 @@ export function ProfileView({
             value={draft.sex}
             options={(Object.keys(sexLabels) as Sex[]).map((value) => ({ value, label: sexLabels[value] }))}
             onChoose={(value) => intents.selectSex(value as Sex)}
+            onClose={intents.closeSheet}
           />
         </ProfileSheet>
       ) : null}
@@ -412,6 +415,7 @@ export function ProfileView({
             value={draft.activity_level}
             options={(Object.keys(activityLabels) as ActivityLevel[]).map((value) => ({ value, label: activityDisplayLabels[value], description: activityDescriptions[value] }))}
             onChoose={(value) => intents.selectActivity(value as ActivityLevel)}
+            onClose={intents.closeSheet}
           />
         </ProfileSheet>
       ) : null}
@@ -421,6 +425,7 @@ export function ProfileView({
             value={draft.goal}
             options={(Object.keys(goalLabels) as Goal[]).map((value) => ({ value, label: goalDisplayLabels[value], description: goalDescriptions[value] }))}
             onChoose={(value) => intents.selectGoal(value as Goal)}
+            onClose={intents.closeSheet}
           />
         </ProfileSheet>
       ) : null}
@@ -459,11 +464,19 @@ export function ProfileView({
           description={`المعاينة وحدها لا تحفظ الأهداف. تاريخ السريان ${formatGregorianArabicDate(writePhase.submission.effectiveFrom)}.`}
           safeLabel="متابعة المراجعة"
           confirmLabel="حفظ الخطة"
+          reviewRequired={!hasSavedProfile}
           restoreFocusRef={restoreWriteFocusRef}
           pending={writePhase.kind === "submitting"}
           onClose={intents.cancelWriteConfirmation}
           onConfirm={intents.confirmWrite}
         >
+          <dl className="profile-preview-summary">
+            <div><dt>الجنس</dt><dd>{sexLabels[writePhase.submission.payload.sex]}</dd></div>
+            <div><dt>مستوى النشاط</dt><dd>{activityDisplayLabels[writePhase.submission.payload.activity_level]}</dd></div>
+            <div><dt>الهدف</dt><dd>{goalDisplayLabels[writePhase.submission.payload.goal]}</dd></div>
+            {savedTargets ? <div><dt>الأهداف اليومية الحالية</dt><dd><bdi dir="ltr">{savedTargets.final_target_calories}</bdi> سعرة حرارية يوميًا</dd></div> : null}
+          </dl>
+          {!hasSavedProfile ? <p>لا يمكن تعديل الجنس بعد حفظ الملف الشخصي.</p> : null}
           <div className="profile-calorie-target">
             <strong><bdi dir="ltr">{writePhase.submission.preview.final_target_calories}</bdi></strong>
             <span>سعرة حرارية يوميًا</span>
@@ -471,7 +484,7 @@ export function ProfileView({
         </ProfileConfirm>
       ) : null}
 
-    </main>
+    </div>
 
   );
 }

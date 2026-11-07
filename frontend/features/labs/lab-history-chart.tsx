@@ -1,4 +1,4 @@
-import React, { useId, useRef } from "react";
+import React, { useId, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { LabTestDetailResponse } from "@/lib/types";
 import { chartGeometry } from "./lab-chart-model";
@@ -6,12 +6,13 @@ import { LabEnteredReading } from "./lab-entered-reading";
 import { formatGregorianArabicDate } from "@/lib/dates";
 import styles from "./labs.module.css";
 
-export function LabHistoryChart({ detail, selectedResultId, onSelectResult }: {
-  detail: LabTestDetailResponse; selectedResultId: string | null; onSelectResult: (id: string) => void;
+export function LabHistoryChart({ detail, selectedResultId, onSelectResult, showSelectedReading = true }: {
+  detail: LabTestDetailResponse; showSelectedReading?: boolean; selectedResultId: string | null; onSelectResult: (id: string) => void;
 }) {
   const labelId = useId(), captionId = useId();
   const controls = useRef(new Map<string, HTMLButtonElement>());
-  const geometry = chartGeometry(detail.results, detail.chart_zones, 360, 240);
+  const [scale, setScale] = useState<"references" | "results">("references");
+  const geometry = chartGeometry(detail.results, detail.chart_zones, 360, 240, scale);
   const results = new Map(detail.results.map(result => [result.id, result]));
   const statuses = new Map(detail.chart_zones.flatMap(segment => segment.zones.map(zone => [zone.status.code, zone.status] as const)));
   const selected = selectedResultId ?? detail.results[0]?.id;
@@ -20,13 +21,15 @@ export function LabHistoryChart({ detail, selectedResultId, onSelectResult }: {
   return <figure className={styles.historyFigure} aria-labelledby={labelId} aria-describedby={captionId}>
     <h2 id={labelId}>سجل النتائج عبر الزمن</h2>
     {geometry.points.length ? <>
-      {reading && <div className={styles.chartReading} data-testid="chart-selected-reading">
+      {showSelectedReading && reading && <div className={styles.chartReading} data-testid="chart-selected-reading">
         <span>{reading.entered_unit === reading.display_unit ? "النتيجة المختارة" : "النتيجة المختارة بوحدة العرض"}</span>
         <time dateTime={reading.test_date}>{formatGregorianArabicDate(reading.test_date)}</time>
         <strong><bdi dir="ltr">{reading.display_is_approximate ? "≈ " : ""}{reading.display_value} <small>{reading.display_unit}</small></bdi></strong>
         <span className={styles.status} data-tone={reading.status.tone}>{reading.status.label_ar}</span>
         <LabEnteredReading result={reading} />
       </div>}
+      <label className={styles.chartScale}>مقياس الرسم<select value={scale} onChange={event => setScale(event.target.value as "references" | "results")}><option value="references">النتائج والقيم المرجعية</option><option value="results">تكبير نطاق النتائج</option></select></label>
+      <p role="status">{scale === "results" ? "المحور مكبّر حسب نطاق النتائج؛ قد تقع بعض الحدود المرجعية خارج الرسم." : "المحور يعرض نطاق النتائج والحدود المرجعية."}</p>
       <div className={styles.chartUnit} aria-label={`القيمة (${detail.test.canonical_unit})`}>القيمة (<bdi dir="ltr">{detail.test.canonical_unit}</bdi>)</div>
       <div className={styles.chartPlot} dir="ltr">
         <svg viewBox="0 0 360 240" preserveAspectRatio="none" role="img" aria-label="الرسم التاريخي للنتائج والقيم المرجعية للنظام">
@@ -34,7 +37,7 @@ export function LabHistoryChart({ detail, selectedResultId, onSelectResult }: {
             {geometry.bands.map((band, index) => <rect key={index} data-chart-band={band.statusCode} data-tone={statuses.get(band.statusCode)?.tone} className={styles.chartBand}
               x={band.fromX} y={band.highY} width={band.toX - band.fromX} height={band.lowY - band.highY} />)}
             {geometry.ticks.map((tick, index) => <g key={index}>
-              {tick.axis === "y" ? <><line x1="60" x2="336" y1={tick.position} y2={tick.position} className={styles.chartGrid} /><text x="54" y={tick.position + 4} textAnchor="end">{tick.label}</text></>
+              {tick.axis === "y" ? <><line x1="60" x2="336" y1={tick.position} y2={tick.position} className={styles.chartGrid} /><text x="24" y={tick.position + 4} textAnchor="end">{tick.label}</text></>
                 : <text x={tick.position} y="226" direction="rtl" textAnchor={index === geometry.ticks.length - 1 && geometry.points.length > 1 ? "start" : "middle"}>{formatGregorianArabicDate(tick.label)}</text>}
             </g>)}
             {geometry.points.length > 1 ? <polyline className={styles.chartLine} points={geometry.points.map(point => `${point.x},${point.y}`).join(" ")} /> : null}

@@ -26,7 +26,10 @@ test("@issue151 detail shows a range bar above the governed reference list and a
   await expect(bar).toBeVisible();
   await expect(bar).toHaveAttribute("aria-hidden", "true");
   await expect(bar.locator("[data-tone]")).toHaveCount(await reference.locator("[data-reference-zone]").count());
-  // The governed list stays the accessible source.
+  // The governed list stays the accessible source behind the native disclosure.
+  await expect(reference.locator("[data-reference-zone]").first()).toBeHidden();
+  await reference.locator("summary").focus();
+  await page.keyboard.press("Enter");
   await expect(reference.locator("[data-reference-zone]").first()).toBeVisible();
   const axis = await page.locator("svg text[text-anchor='end']").allTextContents();
   expect(axis.map(Number).every(value => value >= 0)).toBe(true);

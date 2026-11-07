@@ -67,6 +67,7 @@ async function expectFullDetail(page: Page, detail: LabTestDetailResponse) {
 async function expectReferences(page: Page, result: LabTestDetailResponse["results"][number]) {
   const panel = page.locator(`[data-reference-date="${result.test_date}"]`);
   await expect(panel).toBeVisible();
+  if (!(await panel.locator("details").evaluate(element => (element as HTMLDetailsElement).open))) await panel.locator("summary").click();
   await expect(panel.getByRole("status")).toContainText(result.display_value);
   await expect(panel.getByRole("status")).toContainText(result.status.label_ar);
   await expect(panel.getByTestId("reference-context").locator("time")).toHaveAttribute("datetime", result.test_date);

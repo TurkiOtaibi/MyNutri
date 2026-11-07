@@ -3,6 +3,19 @@ import { chartGeometry } from "@/features/labs/lab-chart-model";
 import { ferritinAge51Segments, ferritinFemaleHistory, historyFixture, zoneFixture } from "./fixtures/labs";
 
 describe("Lab chart geometry", () => {
+  it("zooms the result range without changing facts and clips reference bands to the visible scale", () => {
+    const results = historyFixture(2).map((result, index) => ({ ...result, display_value: String(10 + index) }));
+    const before = structuredClone(results);
+    const segments = [{ age_min: 30, from_date: results[0].test_date, to_date_exclusive: "2030-01-01", zones: [
+      { low: "0", high: "1000", low_inclusive: true, high_inclusive: true, status: { code: "reference", label_ar: "مرجعي", tone: "within" } },
+    ] }];
+    const wide = chartGeometry(results, segments, 360, 240);
+    const zoom = chartGeometry(results, segments, 360, 240, "results");
+    expect(Math.abs(zoom.points[0].y - zoom.points[1].y)).toBeGreaterThan(Math.abs(wide.points[0].y - wide.points[1].y));
+    expect(zoom.bands.every(band => band.highY >= 20 && band.lowY <= 202 && band.highY <= band.lowY)).toBe(true);
+    expect(results).toEqual(before);
+    expect(zoom.ticks.filter(tick => tick.axis === "y")).toHaveLength(3);
+  });
   it("sorts a copy of newest-first history and retains all 120 results", () => {
     const ascending = historyFixture(120);
     const input = [...ascending].reverse();
@@ -27,8 +40,8 @@ describe("Lab chart geometry", () => {
   it.each(["9".repeat(128), `0.${"0".repeat(125)}1`, "0", "1.0000000000000000000000000001"])("keeps finite coordinates for extreme or collapsed decimal %s", value => {
     const points = historyFixture(2).map(p => ({ ...p, display_value: value }));
     const original = structuredClone(points);
-    for (const [width, height] of [[360, 240], [0, 0]]) {
-      const g = chartGeometry(points, [], width, height);
+    for (const [width, height] of [[360, 240], [0, 0]]) for (const scale of ["references", "results"] as const) {
+      const g = chartGeometry(points, [], width, height, scale);
       expect(g.points).toHaveLength(2);
       expect(g.points.every(p => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true);
       expect(g.ticks.every(t => Number.isFinite(t.position) && t.label.length <= 16)).toBe(true);

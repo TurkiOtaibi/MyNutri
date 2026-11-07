@@ -6,6 +6,7 @@ import { AlertDialog } from "@base-ui-components/react/alert-dialog";
 import type { LabCatalogTest, LabFieldError, LabResultPatch, LabResultResponse } from "@/lib/types";
 import { enteredTriplet, freezeResultPatch, resultErrorTarget } from "./lab-result-model";
 import { labErrorMessage } from "./lab-batch-model";
+import { LabDiscardDialog } from "./lab-discard-dialog";
 import { LabEnteredReading } from "./lab-entered-reading";
 import { formatGregorianArabicDate } from "@/lib/dates";
 import styles from "./labs.module.css";
@@ -23,6 +24,10 @@ export function LabEditDialog(props: LabEditDialogProps) {
   // Parent keys by opened session/id: query refreshes never replace a live draft.
   const [draft, setDraft] = useState(() => enteredTriplet(result));
   const submitted = useRef(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const original = enteredTriplet(result);
+  const dirty = draft.entered_value !== original.entered_value || draft.entered_unit !== original.entered_unit || draft.test_date !== original.test_date;
+  const requestCancel = () => { if (pending || submitted.current) return; if (dirty) setDiscardOpen(true); else props.onCancel(); };
   const firstError = errors[0];
   useEffect(() => {
     if (!firstError) return;
@@ -42,7 +47,7 @@ export function LabEditDialog(props: LabEditDialogProps) {
   };
   const valueError = fieldError("lab-edit-value"), unitError = fieldError("lab-edit-unit"), dateError = fieldError("lab-edit-date");
   return <Dialog.Root open disablePointerDismissal={pending} onOpenChange={(open, event) => {
-    if (!open) { if (pending || submitted.current) event.cancel(); else props.onCancel(); }
+    if (!open) { event.cancel(); requestCancel(); }
   }}>
     <Dialog.Portal><Dialog.Backdrop className={styles.batchBackdrop} />
       <Dialog.Popup className={styles.batchDialog} dir="rtl" initialFocus={() => props.isCurrent?.() === false ? false : document.getElementById("lab-edit-value")} finalFocus={props.returnFocus}>
@@ -78,11 +83,12 @@ export function LabEditDialog(props: LabEditDialogProps) {
             <p id="lab-edit-today">تاريخ اليوم: <time dateTime={props.serverToday}>{formatGregorianArabicDate(props.serverToday)}</time></p>
           </fieldset>
           <footer className={styles.batchActions}>
-            <button type="button" className="btn" disabled={pending} onClick={() => { if (!submitted.current) props.onCancel(); }}>{props.writeBlocked ? "إغلاق" : "إلغاء"}</button>
+            <button type="button" className="btn" disabled={pending} onClick={requestCancel}>{props.writeBlocked ? "إغلاق" : "إلغاء"}</button>
             {props.onReread ? <button type="button" className="btn" disabled={pending} onClick={props.onReread}>إعادة قراءة النتيجة</button> : null}
             {!props.writeBlocked ? <button type="submit" className="btn primary" disabled={pending}>{pending ? "جارٍ الحفظ..." : "حفظ التعديل"}</button> : null}
           </footer>
         </form>
+        <LabDiscardDialog open={discardOpen} onContinue={() => setDiscardOpen(false)} onDiscard={props.onCancel} />
       </Dialog.Popup>
     </Dialog.Portal>
   </Dialog.Root>;

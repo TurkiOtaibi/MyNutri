@@ -4,16 +4,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { ApiError, createDiaryEntry, listFoodPicker, updateDiaryEntry } from "@/lib/api";
 import { formatLongArabicDate } from "@/lib/dates";
+import { parseNumericInput } from "@/lib/numeric-input";
 import { countedUnitText, defaultServingText, defaultUnitLabels, formatServingMacro, unitBasisLabels } from "@/lib/food";
 import type { DiaryEntryInput, DiaryEntryResponse, FoodPickerItem, MealType, RecentFoodPickerItem } from "@/lib/types";
 import { useUnsavedChanges } from "@/components/UnsavedChangesProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { useSessionAbortSignal } from "@/components/SessionQueryProvider";
-import { convertDiaryQuantity, entryQuantityLabel, validateMeasuredQuantity, mealAddLabels, mealLabels, multiplyServing, parseQuantity, pickerServingNutrition, scaleEntryPreview, standardMeals, validateQuantity } from "./diary-model";
+import { convertDiaryQuantity, entryQuantityLabel, validateMeasuredQuantity, mealAddLabels, mealLabels, multiplyServing, parseQuantity, pickerServingNutrition, scaleEntryPreview, standardMeals } from "./diary-model";
 import { useDebouncedValue } from "./diary-hooks";
 import { ModalFrame } from "./diary-modal";
 
-const WRITE_ERROR = "تعذر الاتصال بالخادم. لم يتم حفظ التغييرات.";
+const WRITE_ERROR = "تعذر الاتصال بالخادم.";
 
 export function AddEntrySheet({ selectedDate, initialMeal, initialFood = null, onClose, onSaved }: { selectedDate: string; initialMeal: MealType | null; initialFood?: FoodPickerItem | null; onClose: () => void; onSaved: (meal: MealType) => Promise<void> }) {
   const [measured, setMeasured] = useState(false);
@@ -24,12 +25,14 @@ export function AddEntrySheet({ selectedDate, initialMeal, initialFood = null, o
   const [error, setError] = useState("");
   const [discardOpen, setDiscardOpen] = useState(false);
   const [saveSucceeded, setSaveSucceeded] = useState(false);
+  const [uncertainWrite, setUncertainWrite] = useState(false);
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const sessionSignal = useSessionAbortSignal();
   const searchRef = useRef<HTMLInputElement>(null);
   const dragStartRef = useRef<number | null>(null);
   const submitLockRef = useRef(false);
+  const submittedPayloadRef = useRef<DiaryEntryInput | null>(null);
   const debouncedSearch = useDebouncedValue(search, 275);
   const normalizedSearch = debouncedSearch.trim();
   const foodsQuery = useInfiniteQuery({
@@ -52,15 +55,23 @@ export function AddEntrySheet({ selectedDate, initialMeal, initialFood = null, o
     onSuccess: async (_entry, submitted) => {
       if (sessionSignal.aborted) return;
       setSaveSucceeded(true);
+      setUncertainWrite(false);
       setError("");
-      await new Promise((resolve) => window.setTimeout(resolve, 320));
-      if (sessionSignal.aborted) return;
-      await onSaved(submitted.meal_type);
+      try {
+        await onSaved(submitted.meal_type);
+      } catch {
+        if (sessionSignal.aborted) return;
+        submitLockRef.current = false;
+        setError(WRITE_ERROR);
+      }
       if (sessionSignal.aborted) return;
     },
     onError: (error) => {
       if (sessionSignal.aborted) return;
       submitLockRef.current = false;
+      const uncertain = !(error instanceof ApiError) || error.status >= 500;
+      setUncertainWrite(uncertain);
+      if (!uncertain) submittedPayloadRef.current = null;
       setError(error instanceof ApiError && error.code === "DIARY_ENTRY_DATE_TOO_FAR" ? "يمكن إضافة الأطعمة حتى 7 أيام قادمة فقط." : "تعذر إضافة الطعام");
     }
   });
@@ -81,7 +92,7 @@ export function AddEntrySheet({ selectedDate, initialMeal, initialFood = null, o
   const recentFoods = normalizedSearch ? [] : foodsQuery.data?.pages[0]?.recent_items ?? [];
   const recentIds = new Set(recentFoods.map((food) => food.id));
   const visibleFoods = debouncedSearch.trim() ? allFoods : allFoods.filter((food) => !recentIds.has(food.id));
-  const hasMeaningfulChanges = Boolean(selectedFood) || quantity !== "1" || mealType !== initialMeal || search !== "" || measured;
+  const hasMeaningfulChanges = Boolean(selectedFood) || parseNumericInput(quantity) !== 1 || mealType !== initialMeal;
   useUnsavedChanges({
     identity: `diary-add:${session?.user.id}:${selectedDate}`,
     dirty: hasMeaningfulChanges && !saveSucceeded,
@@ -113,13 +124,15 @@ export function AddEntrySheet({ selectedDate, initialMeal, initialFood = null, o
   }
 
   function quickAdd(food: RecentFoodPickerItem) {
-    if (submitLockRef.current || mutation.isPending || saveSucceeded || !mealType || mealType === "unspecified") return;
+    if (submitLockRef.current || mutation.isPending || saveSucceeded || uncertainWrite || !mealType || mealType === "unspecified") return;
     submitLockRef.current = true;
     setSelectedFood(food);
     setMeasured(false);
     setQuantity(String(food.last_quantity));
     setError("");
-    mutation.mutate({ entry_date: selectedDate, food_id: food.id, quantity: food.last_quantity, meal_type: mealType });
+    const payload = { id: crypto.randomUUID(), entry_date: selectedDate, food_id: food.id, quantity: food.last_quantity, meal_type: mealType };
+    submittedPayloadRef.current = payload;
+    mutation.mutate(payload);
   }
 
   function changeFood() {
@@ -131,10 +144,23 @@ export function AddEntrySheet({ selectedDate, initialMeal, initialFood = null, o
   }
 
   function saveCurrent() {
+    // A confirmed write is never repeated when only refreshing the day failed.
+    if (saveSucceeded) {
+      if (submitLockRef.current || !submittedPayloadRef.current) return;
+      submitLockRef.current = true;
+      void onSaved(submittedPayloadRef.current.meal_type).catch(() => {
+        if (sessionSignal.aborted) return;
+        submitLockRef.current = false;
+        setError(WRITE_ERROR);
+      });
+      return;
+    }
     if (submitLockRef.current || mutation.isPending || saveSucceeded || !selectedFood || !mealType || mealType === "unspecified" || amount == null || quantityError) return;
     submitLockRef.current = true;
     setError("");
-    mutation.mutate({ entry_date: selectedDate, food_id: selectedFood.id, quantity: amount, meal_type: mealType });
+    const payload = submittedPayloadRef.current ?? { id: crypto.randomUUID(), entry_date: selectedDate, food_id: selectedFood.id, quantity: amount, meal_type: mealType };
+    submittedPayloadRef.current = payload;
+    mutation.mutate(payload);
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -207,23 +233,23 @@ export function AddEntrySheet({ selectedDate, initialMeal, initialFood = null, o
             </div>
           ) : (
             <div className="add-food-configure-state">
-              <SelectedFoodSummary food={selectedFood} disabled={mutation.isPending || saveSucceeded} onChange={changeFood} />
+              <SelectedFoodSummary food={selectedFood} disabled={mutation.isPending || saveSucceeded || uncertainWrite} onChange={changeFood} />
               <section className="add-config-section add-meal-section">
                 <h3>قسم الوجبة</h3>
-                <MealTypeSelector value={mealType} disabled={mutation.isPending || saveSucceeded} onChange={(value) => { setMealType(value); setError(""); }} />
+                <MealTypeSelector value={mealType} disabled={mutation.isPending || saveSucceeded || uncertainWrite} onChange={(value) => { setMealType(value); setError(""); }} />
               </section>
               <section className="add-config-section">
                 <h3 id="add-measurement-title">طريقة إدخال الكمية</h3>
                 <div className="actions add-measurement-options" role="group" aria-labelledby="add-measurement-title">
-                  <button className="btn" type="button" aria-pressed={!measured} disabled={mutation.isPending || saveSucceeded} onClick={() => changeMeasurement(false)}>{!measured && <Check size={16} aria-hidden="true" />}{defaultServingText(selectedFood)}</button>
-                  <button className="btn" type="button" aria-pressed={measured} disabled={mutation.isPending || saveSucceeded} onClick={() => changeMeasurement(true)}>{measured && <Check size={16} aria-hidden="true" />}{unitBasisLabels[selectedFood.unit_basis]}</button>
+                  <button className="btn" type="button" aria-pressed={!measured} disabled={mutation.isPending || saveSucceeded || uncertainWrite} onClick={() => changeMeasurement(false)}>{!measured && <Check size={16} aria-hidden="true" />}{defaultServingText(selectedFood)}</button>
+                  <button className="btn" type="button" aria-pressed={measured} disabled={mutation.isPending || saveSucceeded || uncertainWrite} onClick={() => changeMeasurement(true)}>{measured && <Check size={16} aria-hidden="true" />}{unitBasisLabels[selectedFood.unit_basis]}</button>
                 </div>
             <QuantityStepper
               value={quantity}
               unitLabel={measured ? unitBasisLabels[selectedFood.unit_basis] : defaultUnitLabels[selectedFood.default_unit_type]}
               unitAmount={measured ? selectedFood.unit_amount : 1}
               errorId={quantityError ? "entry-form-error" : undefined}
-              disabled={mutation.isPending || saveSucceeded}
+              disabled={mutation.isPending || saveSucceeded || uncertainWrite}
               onChange={(value) => { setQuantity(value); setError(""); }}
             />
                 {quantityError ? <p id="entry-form-error" className="field-error quantity-inline-error" role="alert">{quantityError}</p> : null}
@@ -351,50 +377,86 @@ export function EditEntryDialog({ entry, onClose, onSaved }: { entry: DiaryEntry
   const accessToken = session?.access_token;
   const sessionSignal = useSessionAbortSignal();
   const [quantity, setQuantity] = useState(String(entry.quantity));
+  const [measured, setMeasured] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const [saveSucceeded, setSaveSucceeded] = useState(false);
+  const submitLockRef = useRef(false);
   const [mealType, setMealType] = useState<MealType>(entry.meal_type ?? "unspecified");
   const [error, setError] = useState("");
   const mutation = useMutation({
     mutationFn: ({ amount: submittedAmount, meal: submittedMeal }: { amount: number; meal: MealType }) => updateDiaryEntry(entry.id, submittedAmount, submittedMeal, accessToken, sessionSignal),
     onSuccess: async (_entry, submitted) => {
       if (sessionSignal.aborted) return;
-      await onSaved(submitted.meal);
+      setSaveSucceeded(true);
+      try {
+        await onSaved(submitted.meal);
+      } catch {
+        if (sessionSignal.aborted) return;
+        submitLockRef.current = false;
+        setError(WRITE_ERROR);
+      }
       if (sessionSignal.aborted) return;
     },
     onError: () => {
       if (sessionSignal.aborted) return;
+      submitLockRef.current = false;
       setError(WRITE_ERROR);
     }
   });
-  const amount = parseQuantity(quantity);
-  const quantityError = validateQuantity(quantity, entry.recorded_unit_label ?? defaultUnitLabels[entry.recorded_unit_type]);
+  const recordedAmount = Number(entry.recorded_unit_amount);
+  const amount = measured ? convertDiaryQuantity(quantity, recordedAmount) : parseQuantity(quantity);
+  const quantityError = validateMeasuredQuantity(quantity, measured ? recordedAmount : 1, entry.recorded_unit_label ?? defaultUnitLabels[entry.recorded_unit_type]);
   const preview = amount == null ? null : scaleEntryPreview(entry, amount);
   const equivalentAmount = amount == null ? null : Number(entry.recorded_unit_amount) * amount;
   const unitLabel = entry.recorded_unit_label ?? defaultUnitLabels[entry.recorded_unit_type];
+  const pending = mutation.isPending || saveSucceeded;
+  const dirty = amount !== entry.quantity || mealType !== (entry.meal_type ?? "unspecified");
+  useUnsavedChanges({ identity: `diary-edit:${entry.id}`, dirty: dirty && !saveSucceeded, enabled: !saveSucceeded, discard: onClose });
+
+  function requestClose() {
+    if (pending) return;
+    if (dirty) setDiscardOpen(true);
+    else onClose();
+  }
+
+  function changeMeasurement(next: boolean) {
+    if (next === measured) return;
+    if (amount != null) setQuantity(String(next ? Number((amount * recordedAmount).toFixed(6)) : amount));
+    setMeasured(next);
+    setError("");
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitLockRef.current || pending) return;
     if (amount == null || quantityError) {
       setError(quantityError || "أدخل كمية صحيحة.");
       return;
     }
-    if (!mutation.isPending) mutation.mutate({ amount, meal: mealType });
+    submitLockRef.current = true;
+    mutation.mutate({ amount, meal: mealType });
   }
 
   return (
-    <ModalFrame labelledBy="edit-entry-title" onClose={onClose} pending={mutation.isPending}>
+    <ModalFrame labelledBy="edit-entry-title" onClose={requestClose} pending={pending}>
       <form onSubmit={submit}>
         <div className="sheet-header">
           <div><p className="section-eyebrow-text" dir="auto">{entry.food.name}</p><h2 id="edit-entry-title">تعديل الكمية والقسم</h2></div>
-          <button className="btn icon" type="button" onClick={onClose} disabled={mutation.isPending} aria-label="إغلاق تعديل الكمية"><X size={19} /></button>
+          <button className="btn icon" type="button" onClick={requestClose} disabled={pending} aria-label="إغلاق تعديل الكمية"><X size={19} /></button>
         </div>
         <p className="dialog-help"><strong>الكمية قبل التعديل: <bdi>{entryQuantityLabel(entry)}</bdi></strong><br />تُحسب القيم الغذائية من بيانات الطعام الحالية.</p>
-        <MealTypeSelector value={mealType} disabled={mutation.isPending} onChange={setMealType} />
+        <MealTypeSelector value={mealType} disabled={pending} onChange={setMealType} />
+        <div className="actions" role="group" aria-label="طريقة إدخال الكمية">
+          <button className="btn" type="button" aria-pressed={!measured} disabled={pending} onClick={() => changeMeasurement(false)}>{unitLabel}</button>
+          <button className="btn" type="button" aria-pressed={measured} disabled={pending} onClick={() => changeMeasurement(true)}>{unitBasisLabels[entry.recorded_unit_basis]}</button>
+        </div>
         <QuantityStepper
           value={quantity}
-          unitLabel={unitLabel}
+          unitLabel={measured ? unitBasisLabels[entry.recorded_unit_basis] : unitLabel}
+          unitAmount={measured ? recordedAmount : 1}
           errorId={quantityError || error ? "edit-quantity-error" : undefined}
           initialFocus
-          disabled={mutation.isPending}
+          disabled={pending}
           onChange={(value) => { setQuantity(value); setError(""); }}
         />
         {preview ? (
@@ -404,14 +466,31 @@ export function EditEntryDialog({ entry, onClose, onSaved }: { entry: DiaryEntry
             </p>
             <div>
               <span><strong>{Math.round(preview.calories)}</strong> سعرة</span>
-              <span><strong>{formatServingMacro(preview.protein_g)}</strong> بروتين</span>
-              <span><strong>{formatServingMacro(preview.carb_g)}</strong> كربوهيدرات</span>
-              <span><strong>{formatServingMacro(preview.fat_g)}</strong> دهون</span>
+              <span><strong>{formatServingMacro(preview.protein_g)}</strong> جم بروتين</span>
+              <span><strong>{formatServingMacro(preview.carb_g)}</strong> جم كربوهيدرات</span>
+              <span><strong>{formatServingMacro(preview.fat_g)}</strong> جم دهون</span>
             </div>
           </div>
         ) : null}
         {quantityError || error ? <p id="edit-quantity-error" className="field-error" role="alert">{error || quantityError}</p> : null}
-        <div className="sheet-actions"><button className="btn" type="button" onClick={onClose} disabled={mutation.isPending}>إلغاء</button><button className="btn primary" type="submit" disabled={mutation.isPending || Boolean(quantityError)}>{mutation.isPending ? "جارٍ الحفظ…" : "حفظ التغييرات"}</button></div>
+        {saveSucceeded && error ? <button className="btn" type="button" onClick={() => {
+          if (submitLockRef.current || !mutation.variables) return;
+          submitLockRef.current = true;
+          void onSaved(mutation.variables.meal).catch(() => {
+            if (!sessionSignal.aborted) submitLockRef.current = false;
+          });
+        }}>إعادة المحاولة</button> : null}
+        <div className="sheet-actions"><button className="btn" type="button" onClick={requestClose} disabled={pending}>إلغاء</button><button className="btn primary" type="submit" disabled={pending || Boolean(quantityError)}>{pending ? "جارٍ الحفظ…" : "حفظ التغييرات"}</button></div>
+        {discardOpen ? (
+          <ModalFrame role="alertdialog" labelledBy="edit-discard-title" describedBy="edit-discard-description" onClose={() => setDiscardOpen(false)} pending={false}>
+            <h3 id="edit-discard-title">تجاهل التغييرات؟</h3>
+            <p id="edit-discard-description">ستفقد التغييرات الحالية.</p>
+            <div className="sheet-actions">
+              <button data-initial-focus className="btn primary" type="button" onClick={() => setDiscardOpen(false)}>متابعة التعديل</button>
+              <button className="btn" type="button" onClick={onClose}>تجاهل التغييرات</button>
+            </div>
+          </ModalFrame>
+        ) : null}
       </form>
     </ModalFrame>
   );
@@ -465,7 +544,7 @@ function QuantityStepper({
   onChange: (value: string) => void;
 }) {
   const invalid = Boolean(validateMeasuredQuantity(value, unitAmount, unitLabel));
-  const amount = invalid ? null : Number(value);
+  const amount = invalid ? null : parseNumericInput(value);
   const min = 0.01 * unitAmount;
   const max = 50 * unitAmount;
 

@@ -1,4 +1,5 @@
 import { formatLongArabicDate } from "@/lib/dates";
+import { parseNumericInput } from "@/lib/numeric-input";
 import { countedUnitText, formatServingMacro, unitBasisLabels } from "@/lib/food";
 import type { DiaryEntryResponse, FoodPickerItem, MealType, NutritionTotals } from "@/lib/types";
 
@@ -76,27 +77,21 @@ export function scaleEntryPreview(entry: DiaryEntryResponse, quantity: number) {
 }
 
 export function parseQuantity(value: string): number | null {
-  const trimmed = value.trim();
-  if (!/^(?:\d+\.?\d*|\.\d+)$/.test(trimmed)) return null;
-  const amount = Number(trimmed);
-  return Number.isFinite(amount) && amount >= 0.01 && amount <= 50 ? amount : null;
+  const amount = parseNumericInput(value);
+  return amount != null && amount >= 0.01 && amount <= 50 ? amount : null;
 }
 
 export function validateQuantity(value: string, unitLabel: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return "أدخل كمية صحيحة";
-  if (!/^(?:\d+\.?\d*|\.\d+)$/.test(trimmed)) return "أدخل كمية صحيحة";
-  const amount = Number(trimmed);
-  if (!Number.isFinite(amount)) return "أدخل كمية صحيحة";
+  const amount = parseNumericInput(value);
+  if (amount == null) return "أدخل كمية صحيحة";
   if (amount < 0.01) return "أدخل كمية أكبر من 0";
   if (amount > 50) return `الكمية يجب ألا تتجاوز 50 ${unitLabel}`;
   return "";
 }
 
 export function validateMeasuredQuantity(value: string, unitAmount: number, unitLabel: string): string {
-  if (!/^(?:\d+\.?\d*|\.\d+)$/.test(value.trim()) || !Number.isFinite(unitAmount) || unitAmount <= 0) return "أدخل كمية صحيحة";
-  const measured = Number(value);
-  if (!Number.isFinite(measured)) return "أدخل كمية صحيحة";
+  const measured = parseNumericInput(value);
+  if (measured == null || !Number.isFinite(unitAmount) || unitAmount <= 0) return "أدخل كمية صحيحة";
   // Food unit_amount has two decimal places; scaled bounds need at most four.
   if (measured < Number((0.01 * unitAmount).toFixed(4))) return "أدخل كمية أكبر من 0";
   if (measured > Number((50 * unitAmount).toFixed(4))) return `الكمية يجب ألا تتجاوز 50 ${unitLabel}`;
@@ -105,7 +100,7 @@ export function validateMeasuredQuantity(value: string, unitAmount: number, unit
 
 export function convertDiaryQuantity(value: string, unitAmount: number): number | null {
   if (validateMeasuredQuantity(value, unitAmount, "")) return null;
-  return Math.round((Number(value) / unitAmount + Number.EPSILON) * 1000) / 1000;
+  return Math.round((parseNumericInput(value)! / unitAmount + Number.EPSILON) * 1000) / 1000;
 }
 
 export function entryQuantityLabel(entry: Pick<DiaryEntryResponse, "quantity" | "recorded_unit_label" | "recorded_unit_type" | "recorded_unit_amount" | "recorded_unit_basis">): string {

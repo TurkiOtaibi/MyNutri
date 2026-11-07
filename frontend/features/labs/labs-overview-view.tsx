@@ -63,9 +63,10 @@ const SORT_LABELS: Record<LabSort, string> = {
   category: "التصنيف",
 };
 
-function EligibilityNotice({ eligibility }: { eligibility: LabsViewProps["eligibility"] }) {
+function EligibilityNotice({ eligibility, adminSelected }: { eligibility: LabsViewProps["eligibility"]; adminSelected?: boolean }) {
   if (eligibility.allowed) return null;
   if (eligibility.reason === "profile_required") {
+    if (adminSelected) return <p className={styles.notice}>ملف المستخدم غير مكتمل. التحاليل للقراءة فقط.</p>;
     return <div className={styles.notice}><span>أكمل ملفك قبل تسجيل نتائج التحاليل.</span><Link className="btn primary" href="/profile">إكمال الملف</Link></div>;
   }
   if (eligibility.reason === "adult_only") {
@@ -75,9 +76,9 @@ function EligibilityNotice({ eligibility }: { eligibility: LabsViewProps["eligib
 }
 
 // Search stays visible; category and sort sit behind one toggle (Product Owner decision, 29 Oct 2026).
-function Controls({ catalog, search, category, sort, filtersOpen, adminSelected, onToggleFilters, onSearchChange, onCategoryChange, onSortChange, searchRef }: LabsViewProps & { searchRef: RefObject<HTMLInputElement | null> }) {
+function Controls({ catalog, search, category, sort, filtersOpen, onToggleFilters, onSearchChange, onCategoryChange, onSortChange, searchRef }: LabsViewProps & { searchRef: RefObject<HTMLInputElement | null> }) {
   const activeFilters = Number(category !== null) + Number(sort !== DEFAULT_SORT);
-  const showSummary = !adminSelected && !filtersOpen && activeFilters > 0;
+  const showSummary = !filtersOpen && activeFilters > 0;
   return <div className={styles.controls}>
     <div className={styles.searchRow}>
       <label className={styles.searchField}>
@@ -141,7 +142,7 @@ function LabRows({ rows, emptyMessage, onAddTest, detailHref, emptyContent }: { 
 
 function LabsView(props: LabsViewProps & { mode: "owned" | "catalog" }) {
   const searchRef = useRef<HTMLInputElement>(null);
-  const hasFilters = Boolean(props.search || props.category);
+  const hasFilters = Boolean(props.search || props.category || props.sort !== DEFAULT_SORT);
   const showCatalogMatches = Boolean(props.hasCatalogMatches && props.search.trim()) && !props.adminOwn;
   const emptyMessage = props.adminOwn && props.mode === "owned"
     ? "تسجيل التحاليل غير متاح لحساب المشرف."
@@ -149,7 +150,7 @@ function LabsView(props: LabsViewProps & { mode: "owned" | "catalog" }) {
     ? props.mode === "owned" ? "لا توجد نتائج ضمن هذا التصنيف." : "لا توجد تحاليل ضمن هذا التصنيف."
     : props.search ? "لا توجد تحاليل مطابقة." : props.adminSelected ? "لم يسجل المستخدم أي نتائج بعد." : "لم تسجل أي نتائج بعد.";
   return <section className={styles.panel} aria-label={props.mode === "owned" ? "نتائج التحاليل" : "كتالوج التحاليل"}>
-    <EligibilityNotice eligibility={props.eligibility} />
+    <EligibilityNotice eligibility={props.eligibility} adminSelected={props.adminSelected} />
     <Controls {...props} searchRef={searchRef} />
     <div className={styles.resultBar}><span role="status" aria-atomic="true"><bdi>{props.rows.length}</bdi> تحليلاً</span>{props.readOnly ? <strong>للقراءة فقط</strong> : null}
       {hasFilters && props.onClearFilters ? <button className="btn" type="button" onClick={() => { props.onClearFilters?.(); searchRef.current?.focus(); }}>مسح البحث والتصفية</button> : null}
