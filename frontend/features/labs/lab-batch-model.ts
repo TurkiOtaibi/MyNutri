@@ -187,3 +187,13 @@ export function mapLabErrors(detail: LabFieldError[]): LabMappedErrors {
   }
   return mapped;
 }
+
+// Navigation and catalog search are presentation state, not unsaved facts.
+export function batchDraftChanged(draft: BatchDraft, initial: BatchDraft): boolean {
+  const facts = (value: BatchDraft) => JSON.stringify({
+    date: value.date, note: value.note,
+    panels: [...value.panelKeys].sort(), individuals: [...value.individualKeys].sort(),
+    rows: Object.entries(value.rows).sort(([a], [b]) => a.localeCompare(b)),
+  });
+  return facts(draft) !== facts(initial);
+}

@@ -1,5 +1,5 @@
 import { Check, ChevronLeft } from "lucide-react";
-import type { ReactNode, RefObject } from "react";
+import { useId, type ReactNode, type RefObject } from "react";
 import type { CutIntensity } from "@/lib/types";
 
 export function SettingsButton({ icon, label, value, onClick, ariaLabel }: { icon: ReactNode; label: string; value: string; onClick: () => void; ariaLabel: string }) {
@@ -61,6 +61,11 @@ export function CutIntensitySelector({ value, onChange }: { value: CutIntensity;
   );
 }
 
-export function OptionList({ value, options, onChoose }: { value: string; options: Array<{ value: string; label: string; description?: string }>; onChoose: (value: string) => void }) {
-  return <div className="profile-option-list" role="radiogroup">{options.map((option) => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} onClick={() => onChoose(option.value)}><span><strong>{option.label}</strong>{option.description ? <small>{option.description}</small> : null}</span>{value === option.value ? <Check size={19} aria-hidden="true" /> : <span className="profile-radio-dot" />}</button>)}</div>;
+export function OptionList({ value, options, onChoose, onClose }: { value: string; options: Array<{ value: string; label: string; description?: string }>; onChoose: (value: string) => void; onClose: () => void }) {
+  const name = useId();
+  return <div className="profile-option-list" role="radiogroup" aria-labelledby="profile-sheet-title">{options.map((option) => <label key={option.value}>
+    <span><strong>{option.label}</strong>{option.description ? <small>{option.description}</small> : null}</span>
+    {value === option.value ? <Check size={19} aria-hidden="true" /> : <span className="profile-radio-dot" />}
+    <input type="radio" name={name} value={option.value} checked={value === option.value} onChange={() => onChoose(option.value)} onClick={event => { if (event.detail > 0) onClose(); }} />
+  </label>)}</div>;
 }

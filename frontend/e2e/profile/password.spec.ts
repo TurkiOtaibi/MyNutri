@@ -114,3 +114,22 @@ for (const width of [320, 390, 1280]) {
     await expect(saveBar).toBeVisible();
   });
 }
+
+
+test("password visibility toggles independently without submitting", async ({ page }) => {
+  let writes = 0;
+  await page.route("**/auth/change-password", route => { writes += 1; return route.abort(); });
+  await page.goto("/profile?tab=account");
+  const current = page.getByLabel("كلمة المرور الحالية", { exact: true });
+  const next = page.getByLabel("كلمة المرور الجديدة", { exact: true });
+  await current.fill("Synthetic-current-only!");
+  await next.fill("Synthetic-new-only!");
+  await page.getByRole("button", { name: "إظهار كلمة المرور الحالية", exact: true }).click();
+  await expect(current).toHaveAttribute("type", "text");
+  await expect(next).toHaveAttribute("type", "password");
+  await page.getByRole("button", { name: "إظهار كلمة المرور الجديدة", exact: true }).click();
+  await expect(next).toHaveAttribute("type", "text");
+  await page.getByRole("button", { name: "إخفاء كلمة المرور الحالية", exact: true }).click();
+  await expect(current).toHaveAttribute("type", "password");
+  expect(writes).toBe(0);
+});

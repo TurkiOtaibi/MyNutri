@@ -85,10 +85,28 @@ export function FormDialog({ title, className, onClose, children, busy = false, 
       else document.querySelector<HTMLSelectElement>(".admin-status-filter")?.focus({ preventScroll: true });
     };
   }, []);
-  return <dialog ref={dialog} className={`account-delete-dialog account-form-dialog ${className ?? ""}`} onCancel={event => { if (busy) event.preventDefault(); }} onClose={event => { if (!event.currentTarget.open) onClose(); }} aria-label={title} aria-describedby={descriptionId}>
+  function requestClose() {
+    if (busy) return;
+    onClose();
+    requestAnimationFrame(() => {
+      const element = dialog.current;
+      if (element?.open && !element.contains(document.activeElement)) element.querySelector<HTMLInputElement>("input")?.focus();
+    });
+  }
+  return <dialog ref={dialog} className={`account-delete-dialog account-form-dialog ${className ?? ""}`} onCancel={event => { event.preventDefault(); requestClose(); }} onClick={event => { if (event.target === event.currentTarget) requestClose(); }} aria-label={title} aria-describedby={descriptionId}>
     <h2>{title}</h2>
     {children}
   </dialog>;
+}
+
+export function DiscardAccountDraft({ onKeep, onDiscard }: { onKeep: () => void; onDiscard: () => void }) {
+  const keepRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { keepRef.current?.focus(); }, []);
+  return <section role="alertdialog" aria-labelledby="account-discard-title" aria-describedby="account-discard-description">
+    <h3 id="account-discard-title">تجاهل التغييرات؟</h3>
+    <p id="account-discard-description">لديك تغييرات غير محفوظة.</p>
+    <div className="actions"><button ref={keepRef} className="btn primary" type="button" onClick={() => { const dialog = keepRef.current?.closest("dialog"); onKeep(); requestAnimationFrame(() => dialog?.querySelector<HTMLInputElement>("input")?.focus()); }}>متابعة التعديل</button><button className="btn danger" type="button" onClick={onDiscard}>تجاهل التغييرات</button></div>
+  </section>;
 }
 
 const passwordHint = "استخدم 8 أحرف على الأقل.";
@@ -99,7 +117,7 @@ export function PasswordInput({ label, value, onChange }: { label: string; value
   return <div className="account-field"><label>{label}
     <span className="password-field">
       <input type={visible ? "text" : "password"} dir="ltr" autoComplete="new-password" aria-required="true" aria-describedby={hintId} value={value} onChange={event => onChange(event.target.value)} />
-      <button type="button" onClick={() => setVisible(current => !current)} aria-label={visible ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}>
+      <button type="button" aria-pressed={visible} onClick={() => setVisible(current => !current)} aria-label={visible ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}>
         {visible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
       </button>
     </span>
@@ -134,7 +152,15 @@ function AccountActionsMenu({ name, items }: { name: string; items: MenuItem[] }
       <MoreVertical size={20} aria-hidden="true" />
     </button>
     {open && <div className="food-actions-popover">
-      <div className="food-actions-list" role="menu">
+      <div className="food-actions-list" role="menu" aria-label={`إجراءات ${name}`} onKeyDown={event => {
+        if (event.key === "Tab") { setOpen(false); return; }
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not(:disabled)")];
+        const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+        buttons[next]?.focus();
+      }}>
         {items.map(item => <button key={item.label} type="button" role="menuitem" disabled={item.disabled} className={item.danger ? "danger-menu-item" : undefined} onClick={() => { setOpen(false); buttonRef.current?.focus(); item.onSelect(); }}>{item.label}</button>)}
       </div>
     </div>}
@@ -168,6 +194,9 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
   const [selected, setSelected] = useState<ActionAccount | null>(null);
   const [mode, setMode] = useState<EditorMode | null>(null);
   const [editorError, setEditorError] = useState("");
+  const editorErrorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => { if (editorError) editorErrorRef.current?.focus(); }, [editorError]);
+  const [discardEditor, setDiscardEditor] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ActionAccount | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -184,7 +213,10 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
   function select(account: ActionAccount, nextMode: EditorMode) {
     onActionStart?.(); setSelected(account); setMode(nextMode); setDisplayName(account.display_name ?? ""); setPassword(""); setEditorError(""); setNotice("");
   }
-  function closeEditor() {
+  function closeEditor(discard = false) {
+    if (busy) return;
+    if (!discard && (mode === "edit" ? displayName !== (selected?.display_name ?? "") : Boolean(password))) { setDiscardEditor(true); return; }
+    setDiscardEditor(false);
     setMode(null); setSelected(null); setPassword(""); setEditorError("");
   }
   async function submitEditor(event: FormEvent) {
@@ -197,7 +229,7 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
     const id = selected.principal_id;
     const succeeded = mode === "edit" ? await execute(() => editAdminAccount(id, { display_name: displayName }), "edit", setEditorError)
       : await execute(() => resetAdminAccountPassword(id, password), "password", setEditorError);
-    if (succeeded) closeEditor();
+    if (succeeded) { setDiscardEditor(false); setMode(null); setSelected(null); setPassword(""); setEditorError(""); }
   }
   function rowActions(account: ActionAccount): { primary: ReactNode; menu: MenuItem[] } {
     const remove: MenuItem = { label: "حذف المستخدم نهائيًا", danger: true, onSelect: () => { onActionStart?.(); setNotice(""); setDeleteTarget(account); } };
@@ -238,15 +270,17 @@ export function AdminAccountActionsProvider({ children, onDeleted, externalNotic
       }}>تعطيل المستخدم</button></div>
     </FormDialog>}
 
-    {selected && mode && <FormDialog busy={busy} title={editorTitles[mode]} className="account-editor" descriptionId={mode === "password" ? "edit-account-identity reset-session-note" : "edit-account-identity"} onClose={closeEditor}>
+    {selected && mode && <FormDialog busy={busy} title={editorTitles[mode]} className="account-editor" descriptionId={discardEditor ? undefined : mode === "password" ? "edit-account-identity reset-session-note" : "edit-account-identity"} onClose={() => discardEditor ? setDiscardEditor(false) : closeEditor()}>
+      {discardEditor ? <DiscardAccountDraft onKeep={() => setDiscardEditor(false)} onDiscard={() => closeEditor(true)} /> : <>
       <AccountIdentity account={selected} id="edit-account-identity" />
       <form className="account-form" onSubmit={submitEditor}>
         {mode === "edit" ? <div className="account-field"><label>الاسم المعروض<input required maxLength={120} aria-describedby="edit-name-note" value={displayName} onChange={event => setDisplayName(event.target.value)} /></label><small id="edit-name-note" className="account-field-hint">120 حرفًا كحد أقصى</small></div>
           : <PasswordInput label="كلمة المرور الجديدة" value={password} onChange={setPassword} />}
         {mode === "password" && <p id="reset-session-note">سيخرج المستخدم من كل أجهزته.</p>}
-        {editorError && <p role="alert" className="account-dialog-error">{editorError}</p>}
-        <div className="actions"><button type="button" className="btn" disabled={busy} onClick={closeEditor}>إلغاء</button><button type="submit" className="btn primary" disabled={busy}>{mode === "edit" ? "حفظ التغييرات" : "إعادة تعيين كلمة المرور"}</button></div>
+        {editorError && <p ref={editorErrorRef} tabIndex={-1} role="alert" className="account-dialog-error">{editorError}</p>}
+        <div className="actions"><button type="button" className="btn" disabled={busy} onClick={() => closeEditor()}>إلغاء</button><button type="submit" className="btn primary" disabled={busy}>{mode === "edit" ? "حفظ التغييرات" : "إعادة تعيين كلمة المرور"}</button></div>
       </form>
+      </>}
     </FormDialog>}
     {deleteTarget && <DeleteDialog account={deleteTarget} onClose={() => setDeleteTarget(null)} onDelete={async confirmation => {
       try {

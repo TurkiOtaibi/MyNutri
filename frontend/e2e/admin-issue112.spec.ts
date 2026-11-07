@@ -134,3 +134,58 @@ test("create displays exact duplicate and short password errors without creating
   await dialog.getByRole("button", { name: "إلغاء" }).click();
   await expect(page.locator(".account-row").filter({ hasText: username })).not.toContainText("قيد الإنشاء");
 });
+
+
+test("account creation preserves drafts on Escape and cancel until explicit discard", async ({ page }) => {
+  let writes = 0;
+  await page.route("**/admin/accounts", route => {
+    if (route.request().method() === "POST") { writes += 1; return route.abort(); }
+    return route.continue();
+  });
+  await page.goto("/admin/users");
+  const opener = page.getByRole("button", { name: "إضافة مستخدم", exact: true });
+  await opener.click();
+  const dialog = page.getByRole("dialog", { name: "إضافة مستخدم", exact: true });
+  await dialog.getByLabel("اسم المستخدم", { exact: true }).fill("synthetic_draft");
+  await page.keyboard.press("Escape");
+  await expect(dialog.getByRole("alertdialog")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "متابعة التعديل" })).toBeFocused();
+  await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
+  await expect(dialog.getByLabel("اسم المستخدم", { exact: true })).toHaveValue("synthetic_draft");
+  await dialog.getByRole("button", { name: "إلغاء", exact: true }).click();
+  await dialog.getByRole("button", { name: "تجاهل التغييرات", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(opener).toBeFocused();
+  await opener.click();
+  await expect(dialog.getByLabel("اسم المستخدم", { exact: true })).toHaveValue("");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  expect(writes).toBe(0);
+});
+
+
+test("account menu keyboard and reset draft preserve recovery controls", async ({ page, request }) => {
+  const username = `draft_${Date.now()}`;
+  await create(request, username);
+  await page.goto(`/admin/users?search=${username}`);
+  const menuButton = page.locator(".account-row").filter({ hasText: username }).getByRole("button", { name: /^إجراءات/ });
+  await menuButton.click();
+  const first = page.getByRole("menuitem", { name: "تعديل المستخدم", exact: true });
+  await expect(first).toBeFocused();
+  await first.press("ArrowDown");
+  const reset = page.getByRole("menuitem", { name: "إعادة تعيين كلمة المرور", exact: true });
+  await expect(reset).toBeFocused();
+  await reset.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "إعادة تعيين كلمة المرور", exact: true });
+  const password = dialog.getByLabel("كلمة المرور الجديدة", { exact: true });
+  await password.fill("Synthetic-unsaved-password!");
+  await page.keyboard.press("Escape");
+  await dialog.getByRole("button", { name: "متابعة التعديل" }).click();
+  await expect(password).toHaveValue("Synthetic-unsaved-password!");
+  await expect(password).toBeFocused();
+  await expect(dialog).toContainText("سيخرج المستخدم من كل أجهزته.");
+  await dialog.getByRole("button", { name: "إلغاء", exact: true }).click();
+  await dialog.getByRole("button", { name: "تجاهل التغييرات", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(menuButton).toBeFocused();
+});

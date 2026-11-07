@@ -133,6 +133,7 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
   const nutritionSourceLabel = registry?.nutrition_data_sources.find(
     (item) => item.key === food.nutrition_data_source
   )?.label_ar;
+  const registryLabelFallback = registryQuery.isPending ? "جارٍ التحميل…" : "غير متوفر";
 
   return (
     <>
@@ -144,7 +145,7 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
           <h1 className="food-detail-name"><bdi dir="auto">{food.name}</bdi></h1>
           <p className="food-detail-secondary">
             {food.brand && <><bdi dir="auto">{food.brand}</bdi>{" · "}</>}
-            <bdi dir="auto">{categoryLabel || food.primary_category}</bdi>
+            <bdi dir="auto">{categoryLabel || registryLabelFallback}</bdi>
           </p>
         </div>
         {account?.role === "admin" ? <div className="food-detail-actions">
@@ -191,6 +192,11 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
           </p>
         )}
         <p className="basis-reference">القيم محسوبة من بيانات {basisLabel}</p>
+        <p className="basis-reference">مصدر البيانات الغذائية: {nutritionSourceLabel ?? registryLabelFallback}</p>
+        {registryQuery.isError ? <div className="state-note" role="alert">
+          تعذر تحميل البيانات الغذائية
+          <button className="btn" type="button" onClick={() => registryQuery.refetch()} disabled={registryQuery.isFetching}>إعادة المحاولة</button>
+        </div> : null}
         <div className="actions food-detail-primary-action">
           <button className="btn primary" type="button" onClick={openDiary} aria-disabled={openingAdd} aria-busy={openingAdd} aria-describedby="serving-summary-title">
             <Plus size={18} aria-hidden="true" />
@@ -251,12 +257,12 @@ export function FoodDetailsPage({ foodId }: { foodId: string }) {
         </div>
         <dl className="metadata-rows">
           {food.brand ? <MetadataRow label="العلامة التجارية" value={food.brand} autoDirection /> : null}
-          <MetadataRow label="التصنيف الرئيسي" value={categoryLabel ?? food.primary_category} />
-          <MetadataRow label="التصنيف الفرعي" value={subcategoryLabel ?? food.subcategory} />
+          <MetadataRow label="التصنيف الرئيسي" value={categoryLabel ?? registryLabelFallback} />
+          <MetadataRow label="التصنيف الفرعي" value={subcategoryLabel ?? registryLabelFallback} />
           <MetadataRow label="أساس القيم" value={basisLabel} />
           <MetadataRow label="تعريف الوحدة الافتراضية" value={defaultUnitText(food)} />
           {food.notes ? <MetadataRow label="ملاحظات" value={food.notes} multiline autoDirection /> : null}
-          <MetadataRow label="مصدر البيانات الغذائية" value={nutritionSourceLabel ?? food.nutrition_data_source} />
+          <MetadataRow label="مصدر البيانات الغذائية" value={nutritionSourceLabel ?? registryLabelFallback} />
           {food.ingredients ? <MetadataRow label="المكونات" value={food.ingredients} multiline autoDirection /> : null}
           <MetadataRow label="تاريخ الإنشاء" value={formatFoodDate(food.created_at)} />
           <MetadataRow label="آخر تحديث" value={formatFoodDate(food.updated_at)} />

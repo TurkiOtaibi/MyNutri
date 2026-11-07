@@ -8,7 +8,7 @@ export type ChartGeometry = {
   ticks: { axis: "x" | "y"; position: number; label: string }[];
 };
 
-export function chartGeometry(results: LabResultResponse[], segments: LabChartZoneSegment[], width: number, height: number): ChartGeometry {
+export function chartGeometry(results: LabResultResponse[], segments: LabChartZoneSegment[], width: number, height: number, scale: "references" | "results" = "references"): ChartGeometry {
   if (!results.length) return { points: [], bands: [], ticks: [] };
   const ordered = [...results].sort((a, b) => a.test_date.localeCompare(b.test_date) || a.id.localeCompare(b.id));
   const date = (value: string) => Date.parse(`${value}T00:00:00Z`);
@@ -23,7 +23,7 @@ export function chartGeometry(results: LabResultResponse[], segments: LabChartZo
   let min = Number(ordered[0].display_value), max = min;
   const include = (value: string) => { min = Math.min(min, Number(value)); max = Math.max(max, Number(value)); };
   for (const result of ordered) include(result.display_value);
-  for (const segment of segments) for (const zone of segment.zones) {
+  if (scale === "references") for (const segment of segments) for (const zone of segment.zones) {
     if (zone.low !== null) include(zone.low);
     if (zone.high !== null) include(zone.high);
   }
@@ -39,8 +39,8 @@ export function chartGeometry(results: LabResultResponse[], segments: LabChartZo
     const fromX = singleDate ? left : x(Math.max(first, start));
     const toX = singleDate ? right : x(Math.min(domainEnd, end));
     return segment.zones.map(zone => ({ fromX, toX,
-      lowY: zone.low === null ? bottom : y(Number(zone.low)),
-      highY: zone.high === null ? top : y(Number(zone.high)), statusCode: zone.status.code,
+      lowY: zone.low === null ? bottom : Math.max(top, Math.min(bottom, y(Number(zone.low)))),
+      highY: zone.high === null ? top : Math.max(top, Math.min(bottom, y(Number(zone.high)))), statusCode: zone.status.code,
     }));
   });
   const ticks: ChartGeometry["ticks"] = [0, 0.5, 1].map(ratio => {

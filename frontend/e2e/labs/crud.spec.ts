@@ -59,6 +59,10 @@ test("edit uses full entered precision and supported units, immutable identity a
   await expect(page.locator("#lab-edit-unit")).toHaveAccessibleDescription("عند تغيير الوحدة يبقى الرقم كما أدخلته. راجعه قبل الحفظ.");
   await expect(original.locator("time")).toHaveAttribute("datetime", date);
   await page.keyboard.press("Escape");
+  await page.getByRole("alertdialog").getByRole("button", { name: "متابعة التعديل" }).click();
+  await expect(page.locator("#lab-edit-value")).toHaveValue("6.10");
+  await page.keyboard.press("Escape");
+  await page.getByRole("alertdialog").getByRole("button", { name: "تجاهل التغييرات", exact: true }).click();
   await expect(edit(page)).toHaveCount(0);
   await expect(row(page, id).getByRole("button", { name: /^خيارات نتيجة/ })).toBeFocused();
   await open(page, id);
@@ -67,6 +71,7 @@ test("edit uses full entered precision and supported units, immutable identity a
   await expect(page.locator("#lab-edit-unit-hint")).toHaveCount(0);
   await page.locator("#lab-edit-unit").selectOption("%");
   await edit(page).getByRole("button", { name: "إلغاء", exact: true }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "تجاهل التغييرات", exact: true }).click();
   expect((await labsApi.detail("hba1c")).results.find(result => result.id === id)).toEqual(saved);
 });
 

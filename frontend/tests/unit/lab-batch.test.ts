@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildLabRows,
+  batchDraftChanged, buildLabRows,
   mapLabErrors,
   normalizeLabNumber,
   selectedTestKeys,
@@ -11,6 +11,14 @@ import {
 import { catalogFixture, draftFixture } from "./fixtures/labs";
 
 describe("Labs batch model", () => {
+  it("guards changed facts and selection but ignores navigation and unchanged initial individual defaults", () => {
+    const initial = createBatchDraft("actor", "2026-09-20", catalogFixture, ["hba1c"]);
+    expect(batchDraftChanged({ ...initial, step: "selection" }, initial)).toBe(false);
+    expect(batchDraftChanged({ ...initial, note: "note" }, initial)).toBe(true);
+    expect(batchDraftChanged({ ...initial, rows: { hba1c: { value: "٠٫٠٠", unit: "%" } } }, initial)).toBe(true);
+    expect(batchDraftChanged({ ...initial, rows: { hba1c: { value: "", unit: "mmol/mol" } } }, initial)).toBe(true);
+    expect(batchDraftChanged({ ...initial, date: "2026-09-19" }, initial)).toBe(true);
+  });
   it("freezes the trimmed note across ambiguous retries and maps note errors to the date step", () => {
     const draft = { ...draftFixture, note: "  مختبر تجريبي  " };
     const pending = freezeBatch(draft, "note-key");

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { ApiError, changeAccountPassword } from "@/lib/api";
 
 const SHORT_PASSWORD = "كلمة المرور قصيرة. استخدم 8 أحرف على الأقل.";
@@ -93,24 +94,32 @@ export function useProfilePassword(subjectId: string | null, accessToken: string
 
 export function ProfilePasswordSection({ password }: { password: ReturnType<typeof useProfilePassword> }) {
   const { currentPassword, newPassword, pending, error, success, currentRef, newRef, resultRef, submit, updateCurrent, updateNew } = password;
+  const [currentVisible, setCurrentVisible] = useState(false);
+  const [newVisible, setNewVisible] = useState(false);
   return (
     <section className="card" dir="rtl" aria-labelledby="profile-password-title">
       <h2 id="profile-password-title">تغيير كلمة المرور</h2>
       <form className="account-form" onSubmit={(event) => void submit(event)} noValidate aria-busy={pending}>
         <div className="field">
           <label htmlFor="profile-current-password">كلمة المرور الحالية</label>
-          <input id="profile-current-password" ref={currentRef} className="input" type="password" autoComplete="current-password"
+          <div className="password-field">
+          <input id="profile-current-password" ref={currentRef} className="input" dir="ltr" type={currentVisible ? "text" : "password"} autoComplete="current-password"
             required disabled={pending} value={currentPassword}
             aria-invalid={error?.field === "current"} aria-describedby={error?.field === "current" ? "profile-password-result" : undefined}
             onChange={(event) => updateCurrent(event.target.value)} />
+          <button type="button" disabled={pending} aria-label={currentVisible ? "إخفاء كلمة المرور الحالية" : "إظهار كلمة المرور الحالية"} aria-pressed={currentVisible} onClick={() => setCurrentVisible(value => !value)}>{currentVisible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}</button>
+          </div>
           {error?.field === "current" ? <p id="profile-password-result" role="alert" className="field-error">{error.message}</p> : null}
         </div>
         <div className="field">
           <label htmlFor="profile-new-password">كلمة المرور الجديدة</label>
-          <input id="profile-new-password" ref={newRef} className="input" type="password" autoComplete="new-password"
+          <div className="password-field">
+          <input id="profile-new-password" ref={newRef} className="input" dir="ltr" type={newVisible ? "text" : "password"} autoComplete="new-password"
             required disabled={pending} value={newPassword}
             aria-invalid={error?.field === "new"} aria-describedby={`profile-password-hint${error?.field === "new" ? " profile-password-result" : ""}`}
             onChange={(event) => updateNew(event.target.value)} />
+          <button type="button" disabled={pending} aria-label={newVisible ? "إخفاء كلمة المرور الجديدة" : "إظهار كلمة المرور الجديدة"} aria-pressed={newVisible} onClick={() => setNewVisible(value => !value)}>{newVisible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}</button>
+          </div>
           {error?.field === "new" ? <p id="profile-password-result" role="alert" className="field-error">{error.message}</p> : null}
           <p id="profile-password-hint">استخدم 8 أحرف على الأقل.</p>
         </div>

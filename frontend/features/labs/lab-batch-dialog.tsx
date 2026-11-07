@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Dialog } from "@base-ui-components/react/dialog";
 
 import type { LabCatalogResponse } from "@/lib/types";
-import { batchErrorTarget, labErrorMessage, mapLabErrors, populatedCount, resultCountLabel, type BatchPhase } from "./lab-batch-model";
+import { batchDraftChanged, batchErrorTarget, labErrorMessage, mapLabErrors, populatedCount, resultCountLabel, type BatchDraft, type BatchPhase } from "./lab-batch-model";
+import { LabDiscardDialog } from "./lab-discard-dialog";
+import { filterLabs } from "./lab-model";
 import { formatGregorianArabicDate } from "@/lib/dates";
 import styles from "./labs.module.css";
 
@@ -25,6 +27,13 @@ type LabBatchDialogProps = {
 
 export function LabBatchDialog(props: LabBatchDialogProps) {
   const { phase, catalog } = props;
+  const draft = phase && "draft" in phase ? phase.draft : null;
+  const [initialDraft, setInitialDraft] = useState<BatchDraft | null>(draft);
+  if (draft && (!initialDraft || initialDraft.actorId !== draft.actorId)) setInitialDraft(draft);
+  if (!draft && initialDraft) setInitialDraft(null);
+  const [search, setSearch] = useState("");
+  const [discardOpen, setDiscardOpen] = useState(false);
+  if ((!phase || phase.kind === "saved") && (search || discardOpen)) { setSearch(""); setDiscardOpen(false); }
   const popup = useRef<HTMLDivElement>(null);
   const step = phase && "draft" in phase ? phase.draft.step : null;
   const firstError = phase?.kind === "validation_error" ? phase.errors[0] : undefined;
@@ -48,19 +57,21 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
     });
     return () => cancelAnimationFrame(frame);
   }, [firstError]);
-  const draft = phase && "draft" in phase ? phase.draft : null;
   const panelTestKeys = new Set(catalog?.panels.filter((panel) => draft?.panelKeys.includes(panel.key)).flatMap((panel) => panel.test_keys));
   const locked = phase?.kind === "submitting" || phase?.kind === "ambiguous";
+  const dirty = Boolean(draft && initialDraft && batchDraftChanged(draft, initialDraft));
+  const requestCancel = () => { if (locked) return; if (dirty) setDiscardOpen(true); else props.onCancel(); };
+  const matchingKeys = new Set(filterLabs((catalog?.tests ?? []).map(test => ({ test_key: test.test_key, test, latest: null, last_updated_at: null })), search, null).map(item => item.test_key));
   const errors = phase?.kind === "validation_error" ? mapLabErrors(phase.errors) : { rows: {} };
   return <Dialog.Root open={Boolean(draft)} disablePointerDismissal={locked} onOpenChange={(open, event) => {
     if (open) return;
-    if (locked) event.cancel(); else props.onCancel();
+    event.cancel(); requestCancel();
   }}>
     <Dialog.Portal>
       <Dialog.Backdrop className={styles.batchBackdrop} />
       <Dialog.Popup ref={popup} className={styles.batchDialog} data-step={draft?.step} dir="rtl" initialFocus={false} finalFocus={props.returnFocusRef}>
         <Dialog.Title>إضافة نتائج</Dialog.Title>
-        <Dialog.Description className={styles.batchNavigationHint}>{locked ? "التاريخ، ثم اختيار التحاليل، ثم إدخال القيم." : step === "date" ? "«إلغاء» يغلق النافذة دون حفظ." : "«السابق» يحتفظ بإدخالك. «إلغاء» يغلق النافذة دون حفظ."}</Dialog.Description>
+        <Dialog.Description className={styles.batchNavigationHint}>{locked ? "التاريخ، ثم اختيار التحاليل، ثم إدخال القيم." : step === "date" ? "«إلغاء» يطلب تأكيد تجاهل التغييرات غير المحفوظة." : "«السابق» يحتفظ بإدخالك. «إلغاء» يطلب تأكيد تجاهل التغييرات غير المحفوظة."}</Dialog.Description>
         {draft && catalog ? <>
           <ol className={styles.batchSteps} role="list" aria-label="خطوات إضافة النتائج">
             {([ ["date", "التاريخ"], ["selection", "اختيار التحاليل"], ["values", "القيم"] ] as const).map(([key, label]) => <li key={key} aria-current={draft.step === key ? "step" : undefined}>{label}</li>)}
@@ -88,17 +99,18 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
               {errors.note ? <span id="lab-note-error" className={styles.batchError}>{errors.note}</span> : null}
             </div> : null}
             {draft.step === "selection" ? <>
+              <label>البحث في التحاليل<input type="search" dir="auto" value={search} onChange={event => setSearch(event.target.value)} /></label>
               <h3>مجموعات التحاليل</h3>
-              <p className={styles.batchSelectionHint}>اختيار المجموعة يضيف تحاليلها تلقائيًا بدون تكرار.</p>
+              <p className={styles.batchSelectionHint}>اختيار المجموعة يضيف تحاليلها تلقائيًا بدون تكرار. لإزالة تحليل مضاف ضمن مجموعة، ألغِ اختيار المجموعات التي تضيفه؛ يبقى التحليل إذا كان محددًا فرديًا أو ضمن مجموعة أخرى.</p>
               <div className={styles.batchChoiceGrid}>{catalog.panels.map((panel) => <label className={styles.batchChoice} data-selected={draft.panelKeys.includes(panel.key)} key={panel.key}>
                 <input data-panel-key={panel.key} type="checkbox" checked={draft.panelKeys.includes(panel.key)} onChange={(event) => props.onPanel(panel.key, event.target.checked)} />
                 <span className={styles.batchChoiceText}><strong>{panel.name_ar}</strong><bdi dir="ltr">{panel.name_en}</bdi><small>عدد التحاليل: {panel.test_keys.length}</small></span>
               </label>)}</div>
-              <h3>تحاليل فردية</h3>
+              <h3>تحاليل فردية</h3>{!matchingKeys.size ? <p role="status">لا توجد تحاليل مطابقة.</p> : null}
               {catalog.categories.map((category) => <div className={styles.batchCategory} key={category.key}><h4>{category.name_ar}</h4>
-                <div className={styles.batchChoiceGrid}>{catalog.tests.filter((test) => test.primary_category === category.key).map((test) => <label className={styles.batchChoice} data-selected={Boolean(draft.rows[test.test_key])} key={test.test_key}>
-                  <input data-individual-key={test.test_key} type="checkbox" checked={draft.individualKeys.includes(test.test_key)} onChange={(event) => props.onIndividual(test.test_key, event.target.checked)} />
-                  <span className={styles.batchChoiceText}><strong>{test.name_ar}</strong><bdi dir="ltr">{test.abbreviation ?? test.name_en}</bdi>{panelTestKeys.has(test.test_key) ? <small>مضاف ضمن مجموعة</small> : null}</span>
+                <div className={styles.batchChoiceGrid}>{catalog.tests.filter((test) => test.primary_category === category.key && matchingKeys.has(test.test_key)).map((test) => <label className={styles.batchChoice} data-selected={Boolean(draft.rows[test.test_key])} key={test.test_key}>
+                  <input data-individual-key={test.test_key} type="checkbox" checked={Boolean(draft.rows[test.test_key])} disabled={panelTestKeys.has(test.test_key)} aria-describedby={panelTestKeys.has(test.test_key) ? `lab-panel-source-${test.test_key}` : undefined} onChange={(event) => props.onIndividual(test.test_key, event.target.checked)} />
+                  <span className={styles.batchChoiceText}><strong>{test.name_ar}</strong><bdi dir="ltr">{test.abbreviation ?? test.name_en}</bdi>{panelTestKeys.has(test.test_key) ? <small id={`lab-panel-source-${test.test_key}`}>مضاف ضمن مجموعة: {catalog.panels.filter(panel => draft.panelKeys.includes(panel.key) && panel.test_keys.includes(test.test_key)).map(panel => panel.name_ar).join("، ")}</small> : null}</span>
                 </label>)}</div>
               </div>)}
             </> : null}
@@ -124,19 +136,21 @@ export function LabBatchDialog(props: LabBatchDialogProps) {
           </fieldset></div>
           {draft.step === "selection" ? <div className={styles.batchSummary} data-testid="lab-selection-summary" aria-live="polite" aria-atomic="true">
             <strong>التحاليل المحددة: <bdi>{Object.keys(draft.rows).length}</bdi></strong>
+            <details><summary>عرض التحاليل المحددة</summary><p className={styles.selectedTests}>{catalog.tests.filter(test => draft.rows[test.test_key]).map(test => test.name_ar).join("، ")}</p></details>
           </div> : null}
           {draft.step === "values" ? <div className={styles.batchSummary} data-testid="lab-values-summary">
             <span>تاريخ التحليل: <time dateTime={draft.date}>{formatGregorianArabicDate(draft.date)}</time></span>
             <span aria-live="polite">سيتم حفظ <bdi dir="auto">{resultCountLabel(populatedCount(draft))}</bdi></span>
           </div> : null}
           <footer className={styles.batchActions}>
-            <button className="btn" type="button" disabled={locked} onClick={props.onCancel}>إلغاء</button>
+            <button className="btn" type="button" disabled={locked} onClick={requestCancel}>إلغاء</button>
             {draft.step !== "date" ? <button className="btn" type="button" disabled={locked} onClick={props.onBack}>السابق</button> : null}
             {draft.step !== "values" ? <button className="btn primary" type="button" disabled={locked || (draft.step === "date" ? !draft.date : !Object.keys(draft.rows).length)} onClick={props.onNext}>التالي</button>
               : phase?.kind === "ambiguous" ? <button className="btn primary" type="button" onClick={props.onRetry}>إعادة المحاولة</button>
               : <button className="btn primary" type="button" disabled={locked || !populatedCount(draft)} onClick={props.onSave}>{phase?.kind === "submitting" ? "جارٍ الحفظ..." : "حفظ النتائج"}</button>}
           </footer>
         </> : null}
+        <LabDiscardDialog open={discardOpen} onContinue={() => setDiscardOpen(false)} onDiscard={() => { setDiscardOpen(false); setSearch(""); props.onCancel(); }} />
       </Dialog.Popup>
     </Dialog.Portal>
   </Dialog.Root>;

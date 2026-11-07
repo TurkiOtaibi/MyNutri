@@ -1,7 +1,8 @@
 import { ApiError } from "@/lib/api";
+import { parseNumericInput } from "@/lib/numeric-input";
 import type { DefaultUnitType, FoodInput, FoodResponse } from "@/lib/types";
 
-export type FoodFormValues = Omit<
+type NumericFoodFormValues = Omit<
   FoodInput,
   "calories" | "protein_g" | "carb_g" | "fat_g" | "unit_amount"
 > & {
@@ -10,6 +11,13 @@ export type FoodFormValues = Omit<
   carb_g: number | null;
   fat_g: number | null;
   unit_amount: number | null;
+};
+
+type FoodNumericField = {
+  [K in keyof FoodInput]-?: NonNullable<FoodInput[K]> extends number ? K : never
+}[keyof FoodInput];
+export type FoodFormValues = Omit<NumericFoodFormValues, FoodNumericField> & {
+  [K in FoodNumericField]: number | string | null;
 };
 
 export type FoodFormErrors = Partial<Record<keyof FoodFormValues | "form", string>>;
@@ -150,7 +158,19 @@ function cleanOptionalText(value: string | null): string | null {
   return cleaned || null;
 }
 
-export function normalizeFoodForm(values: FoodFormValues): FoodInput {
+function parseFoodNumbers(draft: FoodFormValues): NumericFoodFormValues {
+  const parsed = { ...draft } as NumericFoodFormValues;
+  const fields = ["unit_amount", "calories", "protein_g", "carb_g", "fat_g", ...Object.keys(optionalMax)] as FoodNumericField[];
+  for (const field of fields) {
+    const raw = draft[field];
+    // Invalid drafts remain invalid, distinct from intentionally unknown values.
+    parsed[field] = typeof raw === "string" ? (raw.trim() === "" ? null : parseNumericInput(raw) ?? NaN) : raw;
+  }
+  return parsed;
+}
+
+export function normalizeFoodForm(draft: FoodFormValues): FoodInput {
+  const values = parseFoodNumbers(draft);
   return {
     ...values,
     name: values.name.trim().replace(/\s+/g, " "),
@@ -165,9 +185,19 @@ export function normalizeFoodForm(values: FoodFormValues): FoodInput {
   };
 }
 
+export function foodFormFingerprint(draft: FoodFormValues): string {
+  return JSON.stringify(parseFoodNumbers(draft), (key, value: unknown) => {
+    // JSON normally turns NaN into null, which would hide malformed drafts.
+    if (typeof value === "number" && !Number.isFinite(value)) {
+      return { invalidNumericDraft: String(draft[key as keyof FoodFormValues]) };
+    }
+    return value;
+  });
+}
+
 function validateNumber(
   errors: FoodFormErrors,
-  values: FoodFormValues,
+  values: NumericFoodFormValues,
   field: keyof FoodFormValues,
   options: { required?: boolean; min?: number; max?: number }
 ) {
@@ -176,7 +206,7 @@ function validateNumber(
     if (options.required) errors[field] = REQUIRED_MESSAGE;
     return;
   }
-  if (typeof value !== "number" || Number.isNaN(value)) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
     errors[field] = INVALID_NUMBER_MESSAGE;
     return;
   }
@@ -189,7 +219,8 @@ function validateNumber(
   }
 }
 
-export function validateFoodForm(values: FoodFormValues): FoodFormErrors {
+export function validateFoodForm(draft: FoodFormValues): FoodFormErrors {
+  const values = parseFoodNumbers(draft);
   const errors: FoodFormErrors = {};
   const normalizedName = values.name.trim().replace(/\s+/g, " ");
   if (!normalizedName) errors.name = REQUIRED_MESSAGE;

@@ -825,6 +825,7 @@ test.describe("@profile Profile and targets redesign", () => {
     });
 
     await page.goto("/profile?plan011-first-profile=1");
+    await expect(page.getByText("لا يمكن تعديل الجنس بعد حفظ الملف الشخصي.", { exact: true })).toBeVisible();
     const sexButton = page.getByRole("button", { name: /تغيير الجنس/ });
     expect((await sexButton.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await sexButton.click();
@@ -838,6 +839,11 @@ test.describe("@profile Profile and targets redesign", () => {
     await page.getByLabel("الطول").fill("170");
     await page.getByLabel("الوزن", { exact: true }).fill("70");
     await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+    const firstConfirmation = page.getByRole("dialog", { name: "تأكيد الأهداف الجديدة؟" });
+    await expect(firstConfirmation.getByRole("button", { name: "حفظ الخطة" })).toBeDisabled();
+    await expect(firstConfirmation).toContainText("أنثى");
+    expect(activationRequests).toBe(0);
+    await firstConfirmation.getByRole("checkbox", { name: "راجعت الجنس ومستوى النشاط والهدف." }).check();
     await page.getByRole("dialog").getByRole("button", { name: "حفظ الخطة" }).click();
 
     await expect(page.getByRole("status").filter({ hasText: "تعذر تحديث البيانات المعروضة" })).toBeVisible();
@@ -984,6 +990,7 @@ test.describe("@profile Profile and targets redesign", () => {
       await page.getByRole("dialog", { name: "اختر هدفك" }).getByRole("radio", { name: /المحافظة/ }).click();
       await expect.poll(() => previewPayloads.at(-1)?.goal).toBe("maintain");
       await page.getByRole("button", { name: "مراجعة وتأكيد" }).click();
+      await page.getByRole("checkbox", { name: "راجعت الجنس ومستوى النشاط والهدف." }).check();
       await page.getByRole("dialog", { name: /تأكيد الأهداف الجديدة/ })
         .getByRole("button", { name: "حفظ الخطة" }).click();
       await expect.poll(() => activationPayloads.at(-1)?.goal).toBe("maintain");
@@ -1670,14 +1677,25 @@ test.describe("@profile Profile and targets redesign", () => {
         const sheet = page.getByRole("dialog", { name: "اختر الجنس" });
         await expect(sheet).toBeVisible();
         await expect(sheet.getByRole("radio")).toHaveCount(2);
-        await expect(sheet.locator('[role="radio"][aria-checked="true"]')).toHaveCount(1);
-        const maleIsChecked = await sheet.getByRole("radio", { name: "ذكر", exact: true }).getAttribute("aria-checked") === "true";
+        await expect(sheet.locator('input[type="radio"]:checked')).toHaveCount(1);
+        const maleIsChecked = await sheet.getByRole("radio", { name: "ذكر", exact: true }).isChecked();
         const otherLabel = maleIsChecked ? "أنثى" : "ذكر";
         await page.keyboard.press("Escape");
         await expect(sheet).toHaveCount(0);
         await expect(opener).toBeFocused();
         await opener.click();
-        await sheet.getByRole("radio", { name: otherLabel, exact: true }).click();
+        await sheet.getByRole("radio", { name: maleIsChecked ? "ذكر" : "أنثى", exact: true }).focus();
+        await page.keyboard.press("ArrowDown");
+        await expect(sheet).toBeVisible();
+        await expect(sheet.getByRole("radio", { name: otherLabel, exact: true })).toBeChecked();
+        await page.keyboard.press("ArrowDown");
+        await expect(sheet).toBeVisible();
+        await expect(sheet.getByRole("radio", { name: maleIsChecked ? "ذكر" : "أنثى", exact: true })).toBeChecked();
+        await page.keyboard.press("ArrowUp");
+        await expect(sheet.getByRole("radio", { name: otherLabel, exact: true })).toBeChecked();
+        await page.keyboard.press("Tab");
+        await expect(sheet.getByRole("button", { name: "إغلاق اختر الجنس", exact: true })).toBeFocused();
+        await page.keyboard.press("Enter");
         await expect(sheet).toHaveCount(0);
         await expect(opener).toHaveAccessibleName(`تغيير الجنس، القيمة الحالية ${otherLabel}`);
         await expect(page.getByText("تغييرات غير محفوظة", { exact: true })).toBeVisible();

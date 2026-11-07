@@ -105,8 +105,8 @@ export function NumberField({
 }: {
   field: keyof FoodFormValues;
   label: string;
-  value: number | null;
-  onChange: (value: number | null) => void;
+  value: number | string | null;
+  onChange: (value: string) => void;
   error?: string;
   hint?: string;
   required?: boolean;
@@ -120,12 +120,12 @@ export function NumberField({
       <input
         id={id}
         className="input"
-        type="number"
-        min="0"
-        step="0.01"
+        type="text"
+        inputMode="decimal"
+        dir="ltr"
         value={value ?? ""}
         aria-labelledby={hint ? `${id}-label` : undefined}
-        onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))}
+        onChange={(event) => onChange(event.target.value)}
         aria-invalid={Boolean(error)}
         aria-describedby={[error ? `${id}-error` : "", hint ? `${id}-hint` : ""].filter(Boolean).join(" ") || undefined}
       />

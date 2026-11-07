@@ -26,6 +26,8 @@ describe("shared Lab detail presentation", () => {
     const html = renderToStaticMarkup(createElement(LabTestView, {
       detail, selectedResultId: results[1].id, onSelectResult: () => undefined, showReadingFirst: true,
     }));
+    expect(html).toContain('data-testid="selected-lab-reading"');
+    expect(html).not.toContain('data-testid="chart-selected-reading"');
     const beforeChart = html.split("<figure")[0];
     expect(beforeChart).toContain(`data-reference-date="${results[1].test_date}"`);
     expect(beforeChart).toContain(results[1].display_value);

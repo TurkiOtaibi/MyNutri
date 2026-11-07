@@ -116,7 +116,7 @@ export function AuthShell() {
               setPassword(e.target.value);
               if (message === PASSWORD_SHORT) setMessage("");
             }} aria-invalid={message === PASSWORD_SHORT || undefined} aria-describedby={message === PASSWORD_SHORT ? "login-message" : undefined} type={visible ? "text" : "password"} autoComplete="current-password" required dir="ltr" />
-            <button type="button" onClick={() => setVisible((value) => !value)} aria-label={visible ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}>
+            <button type="button" aria-pressed={visible} onClick={() => setVisible((value) => !value)} aria-label={visible ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}>
               {visible ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>

@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+html { scroll-padding-block: 5rem 7rem; }
+.skip-link {
+  position: fixed;
+  inset-block-start: .5rem;
+  inset-inline-start: .5rem;
+  z-index: 10000;
+  padding: .75rem 1rem;
+  background: var(--surface);
+  color: var(--ink);
+  border: 2px solid var(--accent);
+  border-radius: .5rem;
+  transform: translateY(-200%);
+}
+.skip-link:focus { transform: translateY(0); }
+#main-content:focus { outline: none; }
+
 :root {
   color-scheme: light;
   --bg: #f6f7f5;

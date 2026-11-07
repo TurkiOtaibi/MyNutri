@@ -1,6 +1,6 @@
 import { LoaderCircle, RotateCcw, X } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const PROFILE_READ_ERROR = "تعذر تحميل بياناتك";
 const PROFILE_READ_HELP = "تحقق من الاتصال ثم أعد المحاولة";
@@ -26,7 +26,7 @@ export function ProfileSheet({ title, children, onClose, restoreFocusRef, dismis
         if (dismissibleRef.current) onCloseRef.current();
       }
       if (event.key !== "Tab" || !panel) return;
-      const focusable = [...panel.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex='-1'])")];
+      const focusable = [...panel.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled):not([type='radio']), input[type='radio']:checked:not(:disabled), [tabindex]:not([tabindex='-1'])")];
       if (!focusable.length) return;
       const first = focusable[0]; const last = focusable[focusable.length - 1];
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
@@ -46,14 +46,15 @@ export function ProfileSheet({ title, children, onClose, restoreFocusRef, dismis
   return <div className="profile-sheet-backdrop" role="presentation" onMouseDown={(event) => { if (dismissible && event.target === event.currentTarget) onClose(); }}><section ref={panelRef} className="profile-sheet" role="dialog" aria-modal="true" aria-labelledby="profile-sheet-title" aria-busy={busy || undefined} tabIndex={-1}><div className="profile-sheet-handle" /><header><h2 id="profile-sheet-title">{title}</h2><button ref={closeRef} type="button" onClick={onClose} aria-label={`إغلاق ${title}`} disabled={!dismissible}><X size={19} /></button></header><div className="profile-sheet-content">{children}</div></section></div>;
 }
 
-export function ProfileConfirm({ title, description, children, safeLabel, confirmLabel, pending = false, onClose, onConfirm, restoreFocusRef }: { title: string; description: string; children?: ReactNode; safeLabel: string; confirmLabel: string; pending?: boolean; onClose: () => void; onConfirm: () => void; restoreFocusRef?: RefObject<boolean> }) {
-  return <ProfileSheet title={title} onClose={onClose} restoreFocusRef={restoreFocusRef} dismissible={!pending} busy={pending}><div className="profile-confirm"><p>{description}</p>{children}<button className="btn primary" type="button" onClick={onClose} disabled={pending}>{safeLabel}</button><button className="btn" type="button" onClick={onConfirm} disabled={pending}>{pending ? <><LoaderCircle className="spin" size={17} /> جارٍ الحفظ…</> : confirmLabel}</button></div></ProfileSheet>;
+export function ProfileConfirm({ title, description, children, safeLabel, confirmLabel, pending = false, reviewRequired = false, onClose, onConfirm, restoreFocusRef }: { title: string; description: string; children?: ReactNode; safeLabel: string; confirmLabel: string; pending?: boolean; reviewRequired?: boolean; onClose: () => void; onConfirm: () => void; restoreFocusRef?: RefObject<boolean> }) {
+  const [reviewed, setReviewed] = useState(false);
+  return <ProfileSheet title={title} onClose={onClose} restoreFocusRef={restoreFocusRef} dismissible={!pending} busy={pending}><div className="profile-confirm"><p>{description}</p>{children}{reviewRequired ? <label><input type="checkbox" checked={reviewed} disabled={pending} onChange={event => setReviewed(event.target.checked)} /> راجعت الجنس ومستوى النشاط والهدف.</label> : null}<button className="btn primary" type="button" onClick={onClose} disabled={pending}>{safeLabel}</button><button className="btn" type="button" onClick={onConfirm} disabled={pending || (reviewRequired && !reviewed)}>{pending ? <><LoaderCircle className="spin" size={17} /> جارٍ الحفظ…</> : confirmLabel}</button></div></ProfileSheet>;
 }
 
 export function ProfileSkeleton() {
-  return <main className="profile-page profile-loading" aria-label="جارٍ تحميل بياناتك"><header className="profile-page-head"><span /><span /></header><div className="profile-card-skeleton tall" /><div className="profile-card-skeleton" /><div className="profile-card-skeleton" /><div className="profile-card-skeleton targets" /></main>;
+  return <div className="profile-page profile-loading" aria-label="جارٍ تحميل بياناتك"><header className="profile-page-head"><span /><span /></header><div className="profile-card-skeleton tall" /><div className="profile-card-skeleton" /><div className="profile-card-skeleton" /><div className="profile-card-skeleton targets" /></div>;
 }
 
 export function ProfileLoadError({ onRetry }: { onRetry: () => void }) {
-  return <main className="profile-page"><header className="profile-page-head"><h1>بياناتك وأهدافك</h1><p>حدّث بياناتك لنحسب احتياجك اليومي.</p></header><section className="profile-load-error" role="alert"><strong>{PROFILE_READ_ERROR}</strong><span>{PROFILE_READ_HELP}</span><button className="btn" type="button" onClick={onRetry}><RotateCcw size={17} /> إعادة المحاولة</button></section></main>;
+  return <div className="profile-page"><header className="profile-page-head"><h1>بياناتك وأهدافك</h1><p>حدّث بياناتك لنحسب احتياجك اليومي.</p></header><section className="profile-load-error" role="alert"><strong>{PROFILE_READ_ERROR}</strong><span>{PROFILE_READ_HELP}</span><button className="btn" type="button" onClick={onRetry}><RotateCcw size={17} /> إعادة المحاولة</button></section></div>;
 }

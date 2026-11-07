@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { clearFoodDeletionNotice, readFoodDeletionNotice } from "@/features/foods/food-notices";
+import { readFoodCatalogContext, rememberFoodCatalogContext } from "@/features/foods/food-catalog-context";
 
 import {
   DesktopPagination,
@@ -35,17 +36,32 @@ export function FoodsPage() {
   const { account } = useAuth();
   const queryClient = useQueryClient();
   const isAdmin = account?.role === "admin";
-  const [searchInput, setSearchInput] = useState("");
+  const [initialContext] = useState(() => readFoodCatalogContext(queryClient));
+  const [searchInput, setSearchInput] = useState(initialContext.searchInput);
   const searchRef = useRef<HTMLInputElement>(null);
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("");
-  const [sort, setSort] = useState<FoodSort>("name");
-  const [page, setPage] = useState(1);
-  const [mobileItems, setMobileItems] = useState<FoodResponse[]>([]);
+  const [search, setSearch] = useState(initialContext.search);
+  const [category, setCategory] = useState(initialContext.category);
+  const [sort, setSort] = useState<FoodSort>(initialContext.sort);
+  const [page, setPage] = useState(initialContext.page);
+  const [mobileItems, setMobileItems] = useState<FoodResponse[]>(() => {
+    const items = new Map<string, FoodResponse>();
+    for (let previousPage = 1; previousPage <= initialContext.page; previousPage += 1) {
+      const key = ["foods", "catalog", initialContext.search, initialContext.category, initialContext.sort, previousPage];
+      // Edits/deletions invalidate these pages. Never restore their old snapshots.
+      if (queryClient.getQueryState(key)?.isInvalidated) continue;
+      const cached = queryClient.getQueryData<{ items: FoodResponse[] }>(key);
+      cached?.items.forEach(food => items.set(food.id, food));
+    }
+    return [...items.values()];
+  });
   const [knownCategories, setKnownCategories] = useState<string[]>([]);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FoodResponse | null>(null);
   const [note, setNote] = useState(() => readFoodDeletionNotice(queryClient, account?.principal_id));
+
+  useEffect(() => {
+    rememberFoodCatalogContext(queryClient, { searchInput, search, category, sort, page });
+  }, [queryClient, searchInput, search, category, sort, page]);
 
   useEffect(() => {
     clearFoodDeletionNotice(queryClient, account?.principal_id);
@@ -87,17 +103,18 @@ export function FoodsPage() {
 
   useEffect(() => {
     const data = foodsQuery.data;
-    if (!data) return;
+    if (!data || foodsQuery.isFetching) return;
     // The paged query is the external source for the accumulated mobile collection.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setKnownCategories(data.categories);
     setMobileItems((current) => {
       if (data.page === 1) return data.items;
-      const ids = new Set(current.map((food) => food.id));
-      return [...current, ...data.items.filter((food) => !ids.has(food.id))];
+      const items = new Map(current.map((food) => [food.id, food]));
+      data.items.forEach(food => items.set(food.id, food));
+      return [...items.values()];
     });
     if (data.total_pages > 0 && page > data.total_pages) setPage(data.total_pages);
-  }, [foodsQuery.dataUpdatedAt]);
+  }, [foodsQuery.data, foodsQuery.dataUpdatedAt, foodsQuery.isFetching, page]);
 
   const deleteMutation = useFoodDelete({
     onDeleted: () => {
@@ -116,10 +133,13 @@ export function FoodsPage() {
   const categoryOptions = useMemo(
     () => [
       { value: "", label: "الكل" },
-      ...knownCategories.map((value) => ({
+      ...knownCategories.flatMap((value) => {
+        const label = registryQuery.data?.food_taxonomy.find((item) => item.key === value)?.label_ar;
+        return label ? [{
         value,
-        label: registryQuery.data?.food_taxonomy.find((item) => item.key === value)?.label_ar ?? value
-      })),
+        label
+      }] : [];
+      }),
     ],
     [knownCategories, registryQuery.data]
   );
@@ -219,11 +239,16 @@ export function FoodsPage() {
           ))}
         </div>
 
+        {registryQuery.isError ? <div className="state-note" role="alert">
+          تعذر تحميل التصنيفات.
+          <button className="btn" type="button" onClick={() => registryQuery.refetch()} disabled={registryQuery.isFetching}>إعادة المحاولة</button>
+        </div> : null}
+
         <div className="foods-result-bar">
           {data && !foodsQuery.isError ? (
             <>
               <span className="foods-result-count foods-result-count-range">
-                عرض {(data.page - 1) * data.page_size + 1}-
+                عرض {data.total === 0 ? 0 : (data.page - 1) * data.page_size + 1}-
                 {Math.min(data.page * data.page_size, data.total)} من {data.total} طعامًا
               </span>
               {/* Mobile appends pages with «عرض المزيد», so it shows the running total once, at the top. */}
@@ -305,7 +330,7 @@ export function FoodsPage() {
                       onMenuChange={(open) => setOpenMenuId(open ? `table:${food.id}` : null)}
                       onDelete={() => setDeleteTarget(food)}
                       isAdmin={isAdmin}
-                      categoryLabel={categoryLabels.get(food.primary_category) ?? food.primary_category}
+                      categoryLabel={categoryLabels.get(food.primary_category) ?? "غير متوفر"}
                     />
                   ))}
                 </tbody>
@@ -321,7 +346,7 @@ export function FoodsPage() {
                   onMenuChange={(open) => setOpenMenuId(open ? `card:${food.id}` : null)}
                   onDelete={() => setDeleteTarget(food)}
                   isAdmin={isAdmin}
-                  categoryLabel={categoryLabels.get(food.primary_category) ?? food.primary_category}
+                  categoryLabel={categoryLabels.get(food.primary_category) ?? "غير متوفر"}
                 />
               ))}
               {foodsQuery.isPending && page > 1 ? <div className="loading-more" role="status">جاري تحميل المزيد...</div> : null}

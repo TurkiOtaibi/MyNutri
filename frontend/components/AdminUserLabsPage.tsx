@@ -72,8 +72,9 @@ export function AdminUserLabsPage({ principalId }: { principalId: string }) {
       search={search}
       category={category}
       sort={sort}
-      readOnly={overview.data.read_only}
+      readOnly
       detailHref={(testKey) => `/admin/users/${encodeURIComponent(principalId)}/labs/${encodeURIComponent(testKey)}`}
+      onClearFilters={() => { setSearch(""); setCategory(null); setSort("newest_updated"); }}
       onSearchChange={setSearch}
       onCategoryChange={setCategory}
       onSortChange={setSort}

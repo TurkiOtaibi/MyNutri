@@ -13,8 +13,8 @@ export function LabTestView(props: { detail: LabTestDetailResponse; selectedResu
   const selectedId = selected?.id ?? null;
   const date = selected?.test_date ?? detail.reference_at_date;
   const zones = selected?.reference_zones ?? detail.reference_zones;
-  const readingFirst = props.showReadingFirst && selected;
-  const chart = <LabHistoryChart detail={detail} selectedResultId={selectedId} onSelectResult={onSelectResult} />;
+  const readingFirst = selected;
+  const chart = <LabHistoryChart showSelectedReading={false} detail={detail} selectedResultId={selectedId} onSelectResult={onSelectResult} />;
   return <div className={styles.labsPage} data-testid="lab-detail" dir="rtl">
     <header className={styles.heading}><div><h1>{detail.test.name_ar}</h1><p><bdi dir="ltr">{detail.test.name_en}</bdi></p></div>
       {detail.read_only ? <strong>للقراءة فقط</strong> : detail.eligibility.allowed ? ownerActions : null}
@@ -22,20 +22,19 @@ export function LabTestView(props: { detail: LabTestDetailResponse; selectedResu
     {!readingFirst && chart}
     <section className={styles.referencePanel} aria-label="القيم المرجعية للنظام" data-reference-date={date}>
       {!readingFirst && <h2>القيم المرجعية للنظام</h2>}
-      {readingFirst ? <div className={styles.selectedReading} role="status" aria-atomic="true">
+      {readingFirst ? <div className={styles.selectedReading} data-testid="selected-lab-reading" role="status" aria-atomic="true">
         <span className={styles.readingLabel}>{selected.entered_unit === selected.display_unit ? "النتيجة المختارة" : "النتيجة المختارة بوحدة العرض"}</span>
         <strong><bdi dir="ltr">{selected.display_is_approximate ? "≈ " : ""}{selected.display_value} <small>{selected.display_unit}</small></bdi></strong>
         <span className={styles.status} data-tone={selected.status.tone}>{selected.status.label_ar}</span>
         <time dateTime={date}>{formatGregorianArabicDate(date)}</time>
         <LabEnteredReading result={selected} />
       </div> : <p role="status" aria-live="polite" className={styles.exactValue}><time dateTime={date}>{formatGregorianArabicDate(date)}</time>
-        {selected ? <> — {selected.entered_unit !== selected.display_unit ? "قيمة العرض: " : ""}<bdi dir="ltr">{selected.display_is_approximate ? "≈ " : ""}{selected.display_value} {selected.display_unit}</bdi> — {selected.status.label_ar}</> : null}
-        {selected && <LabEnteredReading result={selected} />}
       </p>}
       {readingFirst && <h2>القيم المرجعية للنظام</h2>}
       <p className={styles.referenceContext} data-testid="reference-context">بتاريخ <time dateTime={date}>{formatGregorianArabicDate(date)}</time></p>
       {selected ? <LabRangeBar zones={zones} value={selected.display_unit === detail.test.canonical_unit ? selected.display_value : null} /> : null}
       {selected && (selected.status.tone === "outside" || selected.status.tone === "caution") ? <p className={styles.referenceNotice}>هذه القيم للمتابعة فقط، ولا تغني عن استشارة الطبيب.</p> : null}
+      <details><summary>تفاصيل القيم المرجعية للنظام</summary>
       <ul className={styles.referenceZones}>{zones.map((zone, index) => <li key={index} data-reference-zone={zone.status.code}>
         <span className={styles.status} data-tone={zone.status.tone}>{zone.status.label_ar}</span>
         <dl className={styles.referenceBounds}>
@@ -43,6 +42,7 @@ export function LabTestView(props: { detail: LabTestDetailResponse; selectedResu
           <div><dt>الحد الأعلى</dt><dd>{zone.high === null ? "بلا حد أعلى" : <bdi dir="ltr">{zone.high_inclusive ? "≤" : "<"} {zone.high} {detail.test.canonical_unit}</bdi>}</dd></div>
         </dl>
       </li>)}</ul>
+      </details>
       {detail.test.fasting_assumption === "fasting" ? <p>يفترض هذا التحليل الصيام.</p> : null}
     </section>
     {readingFirst && chart}

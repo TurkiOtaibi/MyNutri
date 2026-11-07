@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, Plus, Search } from "lucide-react";
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   type AdminAccount, createAdminAccount, listAdminAccounts
 } from "@/lib/api";
@@ -13,7 +13,7 @@ import { reconcileAdminSearch } from "@/lib/admin-search";
 import { AdminStatusBadge } from "./AdminStatusBadge";
 import { useAuth } from "./AuthProvider";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AdminAccountActions, AdminAccountActionsProvider, FormDialog, PasswordInput } from "./AdminAccountActions";
+import { AdminAccountActions, AdminAccountActionsProvider, DiscardAccountDraft, FormDialog, PasswordInput } from "./AdminAccountActions";
 
 type AccountStatus = AdminAccount["status"];
 const countStatuses = ["active", "disabled", "provisioning", "deleting"] as const;
@@ -77,14 +77,19 @@ export function AdminUsersPage() {
   }
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState("");
+  const createErrorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => { if (createError) createErrorRef.current?.focus(); }, [createError]);
   const [username, setUsername] = useState("");
   const [createName, setCreateName] = useState("");
   const [createPassword, setCreatePassword] = useState("");
   const [key, setKey] = useState(() => crypto.randomUUID());
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
-  function closeCreate() {
+  const [discardCreate, setDiscardCreate] = useState(false);
+  function closeCreate(discard = false) {
     if (busy) return;
+    if (!discard && Boolean(username || createName || createPassword)) { setDiscardCreate(true); return; }
+    setDiscardCreate(false);
     setCreateOpen(false); setUsername(""); setCreateName(""); setCreatePassword(""); setCreateError(""); setKey(crypto.randomUUID());
   }
   async function submitCreate(event: FormEvent) {
@@ -157,7 +162,8 @@ export function AdminUsersPage() {
         <button className="btn" disabled={page * query.data.page_size >= query.data.total} onClick={() => updateUrl({ page: page + 1 })}>التالي</button>
       </div>}
     </section>
-    {createOpen && <FormDialog title="إضافة مستخدم" className="account-create-dialog" busy={busy} onClose={closeCreate}>
+    {createOpen && <FormDialog title="إضافة مستخدم" className="account-create-dialog" busy={busy} onClose={() => discardCreate ? setDiscardCreate(false) : closeCreate()}>
+      {discardCreate ? <DiscardAccountDraft onKeep={() => setDiscardCreate(false)} onDiscard={() => closeCreate(true)} /> :
       <form className="account-form" onSubmit={submitCreate}>
         <div className="account-field">
           <label>اسم المستخدم<input type="text" dir="ltr" autoComplete="off" aria-required="true" aria-describedby="account-username-format account-username-note" value={username} onChange={event => { setUsername(event.target.value); setKey(crypto.randomUUID()); }} /></label>
@@ -166,9 +172,10 @@ export function AdminUsersPage() {
         </div>
         <div className="account-field"><label>الاسم المعروض<input required maxLength={120} aria-describedby="create-name-note" value={createName} onChange={event => { setCreateName(event.target.value); setKey(crypto.randomUUID()); }} /></label><small id="create-name-note" className="account-field-hint">120 حرفًا كحد أقصى</small></div>
         <PasswordInput label="كلمة المرور الأولية" value={createPassword} onChange={value => { setCreatePassword(value); setKey(crypto.randomUUID()); }} />
-        {createError && <p role="alert" className="account-dialog-error">{createError}</p>}
-        <div className="actions"><button type="button" className="btn" disabled={busy} onClick={closeCreate}>إلغاء</button><button className="btn primary" type="submit" disabled={busy}>إنشاء المستخدم</button></div>
+        {createError && <p ref={createErrorRef} tabIndex={-1} role="alert" className="account-dialog-error">{createError}</p>}
+        <div className="actions"><button type="button" className="btn" disabled={busy} onClick={() => closeCreate()}>إلغاء</button><button className="btn primary" type="submit" disabled={busy}>إنشاء المستخدم</button></div>
       </form>
+      }
     </FormDialog>}
   </div></AdminAccountActionsProvider>;
 }

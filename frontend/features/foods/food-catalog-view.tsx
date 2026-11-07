@@ -122,9 +122,14 @@ function FoodActionsMenu({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const firstItemRef = useRef<HTMLAnchorElement | null>(null);
+  const openAtEnd = useRef(false);
+  const menuId = useId();
 
   useEffect(() => {
-    if (open) firstItemRef.current?.focus();
+    if (open) {
+      const last = rootRef.current?.querySelector<HTMLElement>('[role="menuitem"]:last-child');
+      (openAtEnd.current ? last : firstItemRef.current)?.focus();
+    }
   }, [open]);
 
   useEffect(() => {
@@ -134,6 +139,7 @@ function FoodActionsMenu({
     };
     const keydown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
         onOpenChange(false);
         buttonRef.current?.focus();
       }
@@ -147,7 +153,9 @@ function FoodActionsMenu({
   }, [open, onOpenChange]);
 
   return (
-    <div className="food-actions-menu" ref={rootRef}>
+    <div className="food-actions-menu" ref={rootRef} onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) onOpenChange(false);
+    }}>
       <button
         ref={buttonRef}
         className="icon-button"
@@ -155,18 +163,34 @@ function FoodActionsMenu({
         aria-label={`إجراءات ${food.name}`}
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => onOpenChange(!open)}
+        aria-controls={open ? menuId : undefined}
+        onClick={() => { openAtEnd.current = false; onOpenChange(!open); }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            openAtEnd.current = event.key === "ArrowUp";
+            onOpenChange(true);
+          }
+        }}
       >
         <MoreVertical size={20} aria-hidden="true" />
       </button>
       {open ? (
         <div className="food-actions-popover">
-          <div className="food-actions-list" role="menu">
-            <Link ref={firstItemRef} href={`/foods/${food.id}/edit`} role="menuitem" onClick={() => onOpenChange(false)}>
+          <div id={menuId} className="food-actions-list" role="menu" aria-label={`إجراءات ${food.name}`} onKeyDown={(event) => {
+            const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+            const index = items.indexOf(document.activeElement as HTMLElement);
+            const next = event.key === "ArrowDown" ? (index + 1) % items.length
+              : event.key === "ArrowUp" ? (index - 1 + items.length) % items.length
+              : event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : null;
+            if (next !== null) { event.preventDefault(); items[next]?.focus(); }
+            if (event.key === "Tab") { onOpenChange(false); buttonRef.current?.focus(); }
+          }}>
+            <Link ref={firstItemRef} href={`/foods/${food.id}/edit`} role="menuitem" tabIndex={-1} onClick={() => onOpenChange(false)}>
               <Pencil size={17} aria-hidden="true" />
               تعديل
             </Link>
-            <button type="button" role="menuitem" className="danger-menu-item" onClick={onDelete}>
+            <button type="button" role="menuitem" tabIndex={-1} className="danger-menu-item" onClick={onDelete}>
               <Trash2 size={17} aria-hidden="true" />
               حذف
             </button>

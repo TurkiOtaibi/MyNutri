@@ -195,8 +195,8 @@ export function ExpectedTargetsCard({
               </ul>
             </section>
           ) : null}
-          <section className="profile-protein-calculation" aria-labelledby="profile-protein-calculation-title">
-            <h3 id="profile-protein-calculation-title">تفاصيل حساب البروتين</h3>
+          <details className="profile-protein-calculation">
+            <summary>تفاصيل حساب البروتين</summary>
             <p>{targets.protein_calculation.explanation_ar}</p>
             <dl>
               <div><dt>أساس الحساب</dt><dd>{targets.protein_calculation.basis === "actual_weight" ? "الوزن الفعلي" : "الوزن المعدل"}</dd></div>
@@ -207,7 +207,7 @@ export function ExpectedTargetsCard({
               <div><dt>البروتين لكل كجم</dt><dd><bdi dir="ltr">{formatTargetNumber(targets.protein_calculation.protein_per_kg)}</bdi> جم</dd></div>
               <div><dt>هدف البروتين</dt><dd><bdi dir="ltr">{formatTargetNumber(targets.protein_calculation.target_g)}</bdi> جم</dd></div>
             </dl>
-          </section>
+          </details>
         </>
       ) : null}
       {!pending && !failed && safetyMessage ? (

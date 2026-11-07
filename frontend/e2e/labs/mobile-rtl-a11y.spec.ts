@@ -147,6 +147,7 @@ test("the CBC value step names all twenty groups and wraps focus at the modal bo
     expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
     await assertMobileSurface(page);
     await page.keyboard.press("Escape");
+    await page.getByRole("alertdialog").getByRole("button", { name: "تجاهل التغييرات", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(opener).toBeFocused();
   }
@@ -185,7 +186,7 @@ test("extreme converted history remains readable and chart points support keyboa
   const figure = page.getByRole("figure", { name: "سجل النتائج عبر الزمن" });
   const older = figure.getByRole("button", { name: "الأقدم", exact: true });
   const newer = figure.getByRole("button", { name: "الأحدث", exact: true });
-  const reading = figure.getByTestId("chart-selected-reading");
+  const reading = page.getByTestId("selected-lab-reading");
   for (const width of [375, 1440]) {
     for (const colorScheme of ["light", "dark"] as const) {
       await page.setViewportSize({ width, height: 900 });
